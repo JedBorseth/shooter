@@ -40,7 +40,7 @@ uniform float detail_colour = 0.0;
 uniform float slab_variation = 0.09;
 uniform float patch_fraction = 0.1;
 // The painted masks' world rectangle (x0, z0, width, depth).
-uniform vec4 layout_rect = vec4(-18.0, -36.0, 64.0, 80.0);
+uniform vec4 layout_rect = vec4(-36.0, -38.0, 82.0, 82.0);
 uniform float grime_strength = 0.85;
 // Broken slab: the damage tile's size in metres, the spalls' depth in metres.
 uniform float damage_size = 2.0;
@@ -192,7 +192,9 @@ void fragment() {
 	rough = mix(rough, 0.95, soot);
 	// Extinguisher powder: a pale chalky fan.
 	float powder = smoothstep(0.1, 0.8, lb.b * (0.6 + 0.8 * edge));
-	col = mix(col, vec3(0.78, 0.76, 0.7), powder * 0.85);
+	// The apron paints bay markings in the powder channel of the plan mask.
+	vec3 marker_color = world_pos.z >= 33.4 ? vec3(0.63, 0.43, 0.045) : vec3(0.78, 0.76, 0.7);
+	col = mix(col, marker_color, powder * 0.85 * facing_up);
 	rough = mix(rough, 0.95, powder);
 
 	// Broken slab: rough and darker in the pits, aggregate showing.

@@ -67,18 +67,17 @@ const MAPS := {
 			[Vector3(-36, 0.05, 22.5), -PI / 2 + 0.2, 0.02],
 		],
 	},
-	# Warehouse's photo-matched views: the rotary's feed corner looking south,
-	# down the south aisle, the centre looking north, and the west wing.
+	# Warehouse's Field, Docks, Catwalk, Pick Mezzanine, and mid stockpile.
 	"warehouse":
 	{
 		"scene": "res://scenes/warehouse.tscn",
 		"views":
 		[
-			[Vector3(30.6, 0.05, 7.6), -3.58, -0.05],
-			[Vector3(40.0, 0.05, 18.0), PI / 2, 0.0],
-			[Vector3(13.5, 0.05, 4.0), 0.0, 0.0],
-			[Vector3(-26.0, 0.05, -20.0), PI, 0.0],
-			[Vector3(8.5, 0.05, -30.5), PI, -0.05],
+			[Vector3(6.5, 0.05, -33.0), PI / 2 + 0.35, -0.05],
+			[Vector3(28.6, -1.2, 41.0), PI / 2 - 0.45, -0.03],
+			[Vector3(22.5, 2.85, -9.2), PI - 0.35, -0.14],
+			[Vector3(12.6, 3.05, 15.2), -0.45, -0.14],
+			[Vector3(18.75, 0.05, 3.25), 0.65, 0.05],
 		],
 	},
 	# Close-ups of the expensive cases on Slamcity (smoke filling the screen,

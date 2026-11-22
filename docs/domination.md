@@ -104,7 +104,7 @@ each team's spawn and B in the middle:
 | --- | --- | --- | --- |
 | Slamcity | Slam Avenue between the west depot and the plaza, among the van, the crate, and the car | Junction Plaza round the kiosk (4.5 m circle) | A's twin on the east avenue |
 | Nuketown | The west house's side yard | The cul-de-sac road beside the bus | The east house's side yard, past the garage |
-| Warehouse | The north aisle inside the blue dock | The middle floor by the pallet stack | The south aisle inside the red dock |
+| Warehouse | The north production aisle | The east edge of the Mid Stockpile | The dispatch aisle near the dock ramp |
 | Breakwater | The west main road, between the pickup and the analyser shelter | The crossing under the loading rack's deck (3 m circle) | A's twin on the east main road |
 
 Slamcity's are in `DOM_FLAGS` in `tools/slamcity_layout.py` (A and C are

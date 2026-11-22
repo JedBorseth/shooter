@@ -1,7 +1,11 @@
 [gd_resource type="Environment" format=3]
 
+[ext_resource type="Sky" path="res://assets/skies/warehouse_sky.tres" id="1_sky"]
+
 [resource]
-background_mode = 1
+background_mode = 2
+sky = ExtResource("1_sky")
+sky_rotation = Vector3(0, -1.14, 0)
 background_color = Color(0.62, 0.66, 0.7, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.62, 0.64, 0.68, 1)

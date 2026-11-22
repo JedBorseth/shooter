@@ -124,6 +124,22 @@ const BEHIND_SHELF_GAIN: f32 = 0.42;
 const BEHIND_DB: f32 = 1.5;
 /// Group the environment joins, for Settings to reach it.
 pub const GROUP: &str = "audio_environment";
+/// Zones whose reverb wet is below this threshold are treated as outdoor
+/// reflection zones (e.g. Warehouse's Field zones use `wet = 0.06` for light
+/// wall slap while keeping the listener outdoors). Every enclosed room uses
+/// `wet >= 0.16`.
+pub const OUTDOOR_REVERB_WET_THRESHOLD: f32 = 0.10;
+/// Metadata key on an `AudioStreamPlayer3D` that opts out of wall occlusion
+/// raycasts (used for far off-map ambient emitters that are already filtered
+/// through the outdoor bus and must not be blocked by the map's invisible
+/// yard boundary).
+pub const SKIP_OCCLUSION_META: &str = "skip_occlusion";
+
+/// Pure classification of whether a `ReverbZone` counts as indoors for
+/// gunshot tails, slapback, and the soundscape's indoor/outdoor cross-fade.
+pub fn is_indoor_zone_params(outdoor: bool, wet: f32) -> bool {
+    !outdoor && wet >= OUTDOOR_REVERB_WET_THRESHOLD
+}
 
 /// A box of a map with its own acoustics, in the node's local space (centred
 /// on its origin). Zones may overlap; the smallest one around the listener
@@ -150,6 +166,12 @@ pub struct ReverbZone {
     #[export]
     #[init(val = 20.0)]
     predelay_ms: f32,
+    /// True for an outdoor reflection zone (light slap off nearby walls):
+    /// applies its reverb, but keeps the listener outdoors for gunshot tails,
+    /// slapback, and the soundscape's outdoor bed.
+    #[export]
+    #[init(val = false)]
+    outdoor: bool,
     base: Base<Node3D>,
 }
 
@@ -183,6 +205,10 @@ impl ReverbZone {
 
     fn volume(&self) -> f32 {
         self.size.x * self.size.y * self.size.z
+    }
+
+    pub fn is_indoor(&self) -> bool {
+        is_indoor_zone_params(self.outdoor, self.wet)
     }
 }
 
@@ -330,6 +356,9 @@ impl AudioEnvironment {
         let Ok(player) = node.try_cast::<AudioStreamPlayer3D>() else {
             return;
         };
+        if player.has_meta(SKIP_OCCLUSION_META) {
+            return;
+        }
         let id = player.instance_id();
         self.sources.entry(id).or_insert_with(|| Source {
             bus: player.get_bus(),
@@ -520,7 +549,11 @@ impl AudioEnvironment {
 
     fn update_reverb(&mut self, listener: Vector3, delta: f32) {
         let zone = zone_at(&self.base().get_tree(), listener);
-        let inside = if zone.is_some() { 1.0 } else { 0.0 };
+        let inside = if zone.as_ref().is_some_and(|z| z.bind().is_indoor()) {
+            1.0
+        } else {
+            0.0
+        };
         self.indoors += (inside - self.indoors) * (1.0 - (-8.0 * delta).exp());
         LISTENER_INDOORS.with(|c| c.set(self.indoors));
         let target = zone.map(|z| z.bind().settings());
@@ -764,6 +797,12 @@ pub fn zone_at(tree: &Gd<SceneTree>, point: Vector3) -> Option<Gd<ReverbZone>> {
         .min_by(|a, b| a.bind().volume().total_cmp(&b.bind().volume()))
 }
 
+/// True if `point` lies inside an enclosed (indoor) reverb zone, ignoring
+/// outdoor reflection zones such as Warehouse's Field zones.
+pub fn is_indoors_at(tree: &Gd<SceneTree>, point: Vector3) -> bool {
+    zone_at(tree, point).is_some_and(|z| z.bind().is_indoor())
+}
+
 /// Turns the ducked buses down by their share of `amount` (0 to 1), with an
 /// amplifier of this module's own, so their volume settings stay as set.
 fn set_duck(amount: f32) {
@@ -841,5 +880,22 @@ fn set_reverb(reverb: Option<Reverb>) {
         effect.set_wet(reverb.wet);
         effect.set_predelay_msec(reverb.predelay_ms);
         server.set_bus_effect_enabled(index, slot, true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outdoor_reverb_zones_do_not_count_as_indoors() {
+        // Explicit outdoor flag wins even with higher wet.
+        assert!(!is_indoor_zone_params(true, 0.25));
+        // Warehouse FieldNorth / FieldWest light outdoor slap zones (wet = 0.06).
+        assert!(!is_indoor_zone_params(false, 0.06));
+        // Enclosed rooms (ShiftOffice 0.16, Hall 0.30, default 0.25).
+        assert!(is_indoor_zone_params(false, 0.16));
+        assert!(is_indoor_zone_params(false, 0.25));
+        assert!(is_indoor_zone_params(false, 0.30));
     }
 }

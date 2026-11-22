@@ -13,12 +13,14 @@ import json
 import sys
 from collections import defaultdict
 
+from perf_gate import views_for_adapter
 
-def summarize(path):
+
+def summarize(path, adapter=None):
     with open(path) as f:
         data = json.load(f)
     groups = defaultdict(lambda: {"frame": [], "gpu": [], "p99": []})
-    for r in data["results"]:
+    for r in views_for_adapter(data, adapter or data.get("adapter")):
         g = groups[(r["map"], r["preset"])]
         g["frame"].append(r["frame_ms"])
         g["gpu"].append(r["gpu_ms"])
@@ -42,8 +44,8 @@ def main():
     parser.add_argument("after")
     parser.add_argument("--max-regression", type=float, default=5.0)
     args = parser.parse_args()
-    meta, before = summarize(args.before)
-    _, after = summarize(args.after)
+    meta, after = summarize(args.after)
+    _, before = summarize(args.before, meta.get("adapter"))
     order = {"low": 0, "medium": 1, "high": 2}
     keys = sorted(set(before) | set(after), key=lambda k: (k[0], order.get(k[1], 9)))
     w, h = meta["resolution"]

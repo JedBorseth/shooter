@@ -196,13 +196,51 @@ kill, so it is never lost. All of these are synthesized by
 ## The world and the match
 
 Each map's `Soundscape` (`ambience.rs`) plays an outdoor bed and an indoor
-room tone that cross-fade at reverb zones, the hum and buzz of props, and
-one-shots every 7 to 18 s outdoors: wind gusts that sweep across, or loose
-metal rattling 10 to 25 m away. A map can set `distant_battle` for a fight far
-beyond its edges: bursts of the game's own guns' far recordings and now and
-then a distant explosion, 250 to 400 m out, one voice. The Testing Area and
-the Zombies arena have it; multiplayer maps do not, so every gunshot heard in
-a match is real.
+room tone that cross-fade at enclosed reverb zones, the hum and buzz of props,
+and one-shots every 7 to 18 s outdoors: wind gusts that sweep across, or loose
+metal rattling 10 to 25 m away. Outdoor reflection zones (for example
+Warehouse's `FieldNorth` and `FieldWest`, with `outdoor = true` or `wet < 0.10`)
+still apply their light exterior reverb while keeping the listener outdoors for
+the soundscape, gunshot tails, and wall slapback.
+
+Maps with contrasting outdoor halves can set `preset` (defined in
+`ambience_areas.rs`). On Warehouse (`preset = "warehouse"`, modelled on CoD4's
+Vacant and Modern Warfare's Hackney Yard and Atlas Superstore):
+
+- **Area-aware outdoor beds and one-shots.** The Field (north and demolished
+  west wing grass lot) plays a grass-wind, sparse daytime bird/insect, and
+  distant-road bed (`warehouse_field.ogg`) with wind gusts, rattling chain-link
+  fence, loose corrugated roofing bangs, and distant crows. The Docks (lowered
+  south concrete truck apron) plays a harder industrial bed of distant highway,
+  far truck idling, and hall machinery bleeding out of the dock bays
+  (`warehouse_docks.ogg`), with trailer creaks, distant pallet drops, air
+  brakes, and occasional reversing alarms. Stepping inside the hall smoothly
+  muffles whichever outdoor bed is nearest; crossing the hall shifts the
+  muffled exterior bleed from the Field to the Docks.
+- **Hall plant hum and roof breach.** The hall keeps its room tone with a very
+  quiet continuous off-room plant machinery thrum underneath
+  (`warehouse_hall.ogg`). Under the 12 × 12 m mid-hall roof breach
+  (`x 7.5..19.5, z -2.5..9.5`, tapering over 5 m), a faint sky-wind layer
+  (`warehouse_breach_wind.ogg`) fades in and the outdoor low-pass lifts gently
+  from 650 Hz toward 1.5 kHz.
+- **Sparse off-map working-industrial layer.** One voice (`IndustrialOffMap`,
+  `max_polyphony = 1`, routed on `Ambience (outdoor)` so walls muffle it
+  indoors and gunfire ducks it) plays distant plant noises 30 to 80 m beyond
+  the perimeter walls: steel hammering bursts (4–6 blows), indistinct muffled
+  worker shouts, dock-biased short truck reversing alarms (5–6 s), forklift
+  horns, dropped steel/pallets, pneumatic impact wrench bursts, rolling doors,
+  and speech-free PA chimes. Following Call of Duty's industrial maps, the
+  scheduler (`IndustrialScheduler`) keeps them sparse so they stay atmosphere
+  rather than combat noise: 12–24 s start grace period, 25–60 s random gaps,
+  no back-to-back repeats, 90 s per-category cooldown, 120 s reversing-alarm
+  cooldown (shared with the Docks outdoor slot), and 150 s muffled-shout
+  cooldown. All Warehouse ambience files are built from verified CC0 recordings
+  with `uv run tools/build_world_audio.py warehouse`.
+
+A map can set `distant_battle` for a fight far beyond its edges: bursts of the
+game's own guns' far recordings and now and then a distant explosion, 250 to
+400 m out, one voice. The Testing Area and the Zombies arena have it;
+multiplayer maps do not, so every gunshot heard in a match is real.
 
 `MatchStings` (`godot/scripts/net/match_stings.gd`, added with the match HUD)
 plays short drum, riser, and brass cues: when a match goes live, its result

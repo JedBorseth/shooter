@@ -29,14 +29,21 @@ import sys
 from collections import defaultdict
 
 
-def worst_views(*paths):
+def views_for_adapter(data, adapter):
+    """A baseline can override its default adapter on individual rows."""
+    return (r for r in data["results"] if r.get("adapter", data.get("adapter")) == adapter)
+
+
+def worst_views(*paths, adapter=None):
     """Each map and preset's worst viewpoint, each viewpoint at its best run."""
     best = {}
     data = None
     for path in paths:
         with open(path) as f:
             data = json.load(f)
-        for r in data["results"]:
+        if adapter is None:
+            adapter = data.get("adapter")
+        for r in views_for_adapter(data, adapter):
             view = (r["map"], r["preset"], r["view"])
             best[view] = min(best.get(view, float("inf")), r["gpu_ms"])
     worst = defaultdict(float)
@@ -61,7 +68,7 @@ def main():
               "only the regression check applies", file=sys.stderr)
         budgets = {}
     try:
-        _, base = worst_views(args.baseline)
+        _, base = worst_views(args.baseline, adapter=meta.get("adapter"))
     except FileNotFoundError:
         base = {}
     failed = []

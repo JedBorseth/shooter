@@ -1,10 +1,9 @@
 """Warehouse detail pass: what makes the hall look lived in and run down.
 
-Called by warehouse_photo_layout.py once the 6v6 layout is placed. It adds:
+Called by warehouse_photo_layout.py once the asymmetric layout is placed. It adds:
 
 - set pieces that tell a story, each with its smoke, sparks, or water:
-  a forklift on its side against the west wall, smouldering where the low
-  stock used to stand (north); a switchboard that arced and burnt out on the
+  a forklift on its side against the west wall in receiving; a switchboard that arced and burnt out on the
   east wall (south); roofing that came down through the breach (middle); a
   high-bay hanging off its chain over the back aisle (north); a roof leak
   dripping into a mop bucket (south);
@@ -26,16 +25,13 @@ from __future__ import annotations
 import math
 import random
 
-CX, CZ = 13.5, 3.5
+import warehouse_outdoors
+
 HALL = (-16.8, 44.0, -26.0, 33.0)  # inner faces x0, x1, z0, z1
-BOUNDS = (-18.0, 46.0, -36.0, 44.0)  # the floor masks' world rectangle
+BOUNDS = (-36.0, 46.0, -38.0, 44.0)  # the floor masks' world rectangle
 CELL = 0.25
 
 rng = random.Random(2611)
-
-
-def mirror(x, z):
-    return 2 * CX - x, 2 * CZ - z
 
 
 class Occupancy:
@@ -92,7 +88,14 @@ def occupancy(data) -> Occupancy:
             occ.add_box(b["lo"][0], b["hi"][0], b["lo"][2], b["hi"][2])
     for w in data["walls"]:
         occ.add_box(w[1], w[2], w[3], w[4])
-    # Rooms dressed by hand (the scanned office) take no litter or wall dressing.
+    for d in detail:
+        for clip in d.get("clip", []):
+            yaw = d["rot"][1]
+            a = math.radians(yaw)
+            x = d["pos"][0] + clip[0] * math.cos(a) + clip[2] * math.sin(a)
+            z = d["pos"][2] - clip[0] * math.sin(a) + clip[2] * math.cos(a)
+            occ.add_rect(x, z, clip[3], clip[5], yaw)
+    # Keep litter and wall dressing out of rooms, entrances and access kits.
     for x0, x1, z0, z1 in data.get("clear", []):
         occ.add_box(x0, x1, z0, z1)
     return occ
@@ -105,7 +108,6 @@ scatter: dict[str, list] = {}
 stains: list[dict] = []
 tracks: list[dict] = []
 effects: list[dict] = []
-removed_props: list[tuple] = []
 
 
 def piece(model, x, y, z, yaw=0.0, pitch=0.0, roll=0.0, shadow=True, clip=None, hull=None, back=False,
@@ -149,9 +151,6 @@ def track(points, width=1.0, strength=1.0, passes=3):
 
 # The fallen forklift stands where the north half's low stock by the west wall
 # was (it was 1.1 m cover; the wreck lying on its side is 1.15 m cover).
-WRECK_AREA = (-17.2, -14.3, -6.8, -3.2)
-
-
 def fallen_forklift():
     # The model's forks point +Z, its counterweight -Z; 3.35 m long, 1.2 m
     # wide, 2.3 m to the top of the guard. Rolled onto its side, its open
@@ -159,33 +158,33 @@ def fallen_forklift():
     # the aisle. One box clips it: flush with the chassis on the aisle side
     # (the wheels stand a few centimetres proud), back to the wall over the
     # guard, so nothing stops a player or a round in empty air.
-    x, z = -15.55, -5.0
+    x, z = -15.55, -7.45
     piece("forklift", x, 0.0, z, yaw=7.0, roll=86.0, name="FallenForklift",
           clip=[[-0.24, 0.575, -0.78, 1.96, 1.15, 1.76]])
     # Its load went over with it: a broken pallet, sheets and board blanks.
-    strew("broken_pallet", -13.6, -2.7, 35)
-    strew("litter_cardboard", -13.9, -3.4, 80)
-    strew("litter_wrap", -14.6, -7.6, 160)
-    piece("cut_sheets_white", -13.65, 0.0, -2.0, yaw=24, pitch=0, roll=3.0, shadow=True)
-    piece("traffic_cone_down", -13.4, 0.0, -6.9, yaw=110, shadow=False)
+    strew("broken_pallet", -13.6, -5.15, 35)
+    strew("litter_cardboard", -13.9, -5.85, 80)
+    strew("litter_wrap", -14.6, -10.05, 160)
+    piece("cut_sheets_white", -13.65, 0.0, -4.45, yaw=24, pitch=0, roll=3.0, shadow=True)
+    piece("traffic_cone_down", -13.4, 0.0, -9.35, yaw=110, shadow=False)
     # Oil and hydraulic fluid pooled under it and ran toward the aisle; the
     # slab is scorched round the engine end and the wall above it sooted.
-    stain("oil", -15.4, -5.6, 1.7, 1.2, 15, 1.0)
-    stain("oil", -14.0, -4.4, 0.8, 0.5, 40, 0.8)
-    stain("soot", -16.2, -6.3, 2.3, 1.8, 0, 1.0)
-    stain("damage", -14.6, -6.6, 0.9, 0.6, 20, 0.7)
+    stain("oil", -15.4, -8.05, 1.7, 1.2, 15, 1.0)
+    stain("oil", -14.0, -6.85, 0.8, 0.5, 40, 0.8)
+    stain("soot", -16.2, -8.75, 2.3, 1.8, 0, 1.0)
+    stain("damage", -14.6, -9.05, 0.9, 0.6, 20, 0.7)
     # The scrape it left skidding over from the aisle.
     for k in range(3):
-        stain("scrape", -12.4 + k * 0.25, -7.9 + k * 0.6, 2.6, 0.06, -38, 0.9)
-    effects.append(dict(kind="smolder", pos=[-15.15, 1.05, -6.15]))
-    effects.append(dict(kind="embers", pos=[-15.25, 0.75, -6.35]))
-    effects.append(dict(kind="arc", pos=[-14.85, 0.55, -5.5]))
+        stain("scrape", -12.4 + k * 0.25, -10.35 + k * 0.6, 2.6, 0.06, -38, 0.9)
+    effects.append(dict(kind="smolder", pos=[-15.15, 1.05, -8.60]))
+    effects.append(dict(kind="embers", pos=[-15.25, 0.75, -8.80]))
+    effects.append(dict(kind="arc", pos=[-14.85, 0.55, -7.95]))
 
 
 def burnt_switchboard():
     # East wall, south half, where the cross aisle meets the wall between the
     # low stock and the racking. Its back stands on the wall's face.
-    x, z = 44.0, 15.25
+    x, z = 44.0, 17.15
     # Clip follows the cabinet: the two closed sections (the left one with
     # the blown door swung flat against it) and the burnt-out bay's back.
     piece("switchgear_burnt", x, 0.0, z, yaw=-90, back=True, name="BurntSwitchboard",
@@ -270,9 +269,9 @@ def dangling_light():
 def roof_leak():
     """A roof leak in the south half, dripping into a mop bucket pushed under
     it, a wet-floor sign beside it."""
-    x, z = 31.4, 14.55
+    x, z = 32.2, 17.0
     piece("mop_bucket", x, 0.0, z, yaw=8, clip=[[0.0, 0.21, 0.0, 0.6, 0.42, 0.4]], name="LeakBucket")
-    piece("wet_floor_sign", 32.6, 0.0, 15.6, yaw=-25, shadow=True)
+    piece("wet_floor_sign", 33.4, 0.0, 17.4, yaw=-25, shadow=True)
     effects.append(dict(kind="drip", pos=[x + 0.08, 8.9, z], fast=True))
     stain("water", x + 0.6, z + 0.9, 1.6, 1.1, 20, 1.0)
     stain("water", x - 0.5, z + 1.8, 0.8, 0.5, -10, 0.8)
@@ -304,7 +303,7 @@ def find_spot(occ, x, z, w, d, yaw=0.0, reach=4.0, backed=True):
 def drum_station(occ):
     """Oil drums on a spill tray outside the maintenance shop (north), one
     knocked over and leaking across the slab."""
-    x, z = find_spot(occ, 27.8, -23.6, 1.4, 3.2)
+    x, z = find_spot(occ, 28.4, -24.4, 1.4, 3.2)
     piece("oil_drip_tray", x, 0.0, z - 0.6, yaw=90, shadow=False)
     for k, dz in enumerate((-0.93, -0.27)):
         piece("barrel_steel" if k == 0 else "barrel_blue", x, 0.1, z + dz, yaw=rng.uniform(0, 360),
@@ -318,21 +317,12 @@ def drum_station(occ):
 
 def pallet_jacks(occ):
     """Pallet jacks left where their operators dropped them."""
-    for k, (x, z, yaw) in enumerate(((-1.5, -21.5, 100), (31.0, 21.0, -60))):
+    for k, (x, z, yaw) in enumerate(((-11.4, -18.6, 100), (40.0, 21.0, -60))):
         px, pz = find_spot(occ, x, z, 0.75, 1.65, yaw)
         piece("pallet_jack", px, 0.0, pz, yaw=yaw, name=f"PalletJack{k}",
               clip=[[0.0, 0.14, 0.0, 0.6, 0.26, 1.3]])
         strew("broken_pallet", px + 0.9, pz + 0.4, yaw + 30)
         occ.add_rect(px, pz, 1.0, 2.0, yaw)
-
-
-def tyre_stack(x, z, count, lean=None):
-    for k in range(count):
-        piece("tyre", x + rng.uniform(-0.04, 0.04), 0.155 * k, z + rng.uniform(-0.04, 0.04),
-              yaw=rng.uniform(0, 180), pitch=90, shadow=True)
-    if lean:
-        lx, lz, yaw = lean
-        piece("tyre", lx, 0.0, lz, yaw=yaw, roll=12, shadow=True)
 
 
 # --- dressing ------------------------------------------------------------------------------
@@ -365,7 +355,9 @@ def wall_dressing(occ, doors):
             model = cycle[k % len(cycle)]
             k += 1
             base = {"extinguisher_station": 0.95, "junction_box": 1.2, "notice_board": 1.25}[model]
-            piece(model, x, base, z, yaw=yaw, back=True, shadow=model != "notice_board")
+            mounted = piece(model, x, base, z, yaw=yaw, back=True, shadow=model != "notice_board")
+            if not a + 0.4 <= t <= b - 0.4:
+                mounted["visible"] = False
             if model == "junction_box":
                 stain("grime", fx, fz, 0.6, 0.4, 0, 0.5)
 
@@ -380,7 +372,7 @@ def litter_drifts(occ, spawns):
         tries += 1
         x = rng.uniform(hx0 + 0.8, hx1 - 0.8)
         z = rng.uniform(hz0 + 0.8, hz1 - 0.8)
-        if not occ.free(x, z, 0.3):
+        if not occ.free(x, z, 0.45):
             continue
         # Only where something stands within a metre: litter banks up, it
         # does not sit in the middle of a swept aisle.
@@ -394,54 +386,39 @@ def litter_drifts(occ, spawns):
         placed += 1
 
 
-def yard(side):
-    """The two yards: a dumpster and bags by the fence, tyres, pallets, weeds
-    along every wall foot, oil under the trucks, broken concrete and puddles."""
-    def at(x, z):
-        return (x + CX, z + CZ) if side == 0 else mirror(x + CX, z + CZ)
-    yaw0 = 0.0 if side == 0 else 180.0
-    dx, dz = at(25.9, -37.45)
-    # (The lid thrown back over its back shifts the model's centre 0.13 m off the body.)
-    piece("dumpster", dx, 0.0, dz, yaw=yaw0 + 3, clip=[[0.0, 0.62, 0.13, 1.88, 1.18, 1.22]],
-          name="Dumpster" + "NS"[side])
-    bx, bz = at(28.2, -37.9)
-    strew("trash_bags", bx, bz, rng.uniform(0, 360))
-    tx, tz = at(-29.2, -38.0)
-    lx, lz = at(-28.2, -38.2)
-    tyre_stack(tx, tz, 4 if side == 0 else 3, (lx, lz, yaw0 + 5))
-    bx, bz = at(23.6, -38.0)
-    strew("trash_bags", bx, bz, rng.uniform(0, 360), scale=0.8)
-    for (x, z, rot) in ((-24.0, -37.6, 20), (8.8, -37.9, 70), (-9.0, -31.5, 140)):
-        px, pz = at(x, z)
-        strew("broken_pallet", px, pz, rot + yaw0)
-    for (x, z, rot) in ((-29.0, -36.5, 0), (5.5, -37.3, 60), (20.5, -29.0, 100)):
-        px, pz = at(x, z)
-        strew("litter_mixed", px, pz, rot)
-    # Weeds along the screen walls and the building's foot.
-    t = -29.5
-    while t < 30.0:
-        for zz in (-38.2, -30.05):
-            if rng.random() < 0.55:
-                wx, wz = at(t + rng.uniform(-0.6, 0.6), zz)
-                strew("weeds", wx, wz, yaw0 + rng.uniform(-10, 10), scale=rng.uniform(0.7, 1.2))
-        t += rng.uniform(1.8, 3.2)
-    # Oil under the trucks, potholes, a crack line or two, puddles in the dips.
-    for x in (-19.5, 12.5):
-        ox, oz = at(x, -36.4)
-        stain("oil", ox, oz, 1.1, 1.6, 0, 0.8)
-        ox, oz = at(x + 0.4, -33.2)
-        stain("oil", ox, oz, 0.5, 0.4, 30, 0.6)
-    for (x, z, r, rot) in ((-10.0, -33.0, 1.1, 20), (3.0, -31.0, 0.8, 0), (17.0, -34.5, 1.4, 60),
-                           (-22.0, -32.5, 0.9, 10), (27.0, -31.0, 0.7, 45)):
-        px, pz = at(x, z)
-        stain("damage", px, pz, r * 1.4, r, rot, 1.0)
-        stain("water", px + 0.2, pz + 0.1, r * 1.1, r * 0.75, rot, 0.95)
-    for (x, z, rot) in ((-15.0, -35.5, 70), (22.0, -36.0, 110)):
-        px, pz = at(x, z)
-        stain("damage", px, pz, 3.5, 0.18, rot, 0.8)
-        stain("damp", px, pz, 2.0, 1.0, rot, 0.6)
-    gx, gz = at(-8.0, -30.5)
-    stain("grime", gx, gz, 6.0, 2.0, 0, 0.6)
+def field_stains(occ):
+    """Original concrete islands remain in the Field material's paint mask."""
+    for x, z, rx, rz, rot in (
+        (-21.0, -21.0, 4.2, 1.4, -14), (-21.1, -12.5, 3.6, 1.6, 9),
+        (-33.2, -24.8, 2.5, 3.8, -26), (-24.2, -27.0, 2.8, 1.1, 35),
+        (-6.4, -35.1, 3.2, 1.7, 10), (11.8, -27.0, 3.0, 1.35, 0),
+    ):
+        stain("damage", x, z, rx, rz, rot, 0.92)
+    for x, z, angle in ((-27.3, -29.5, 28), (-13.6, -34.7, 73), (-34, -20, 115),
+                        (-24.4, -22.5, 30), (-24.4, -9.5, 62), (16.4, -31.9, 107)):
+        if occ.free(x, z, 0.5):
+            strew("rubble_scatter", x, z, angle, scale=0.5)
+            strew("litter_mixed", x + 0.33, z, angle + 70, scale=0.6)
+
+
+def dock_dressing(occ):
+    """The lowered apron has tyre polish, oil and service litter."""
+    y = -1.25
+    for x in (-4.25, 33.95):
+        stain("oil", x, 39.0, 0.7, 1.5, strength=0.85)
+        stain("grime", x, 37.1, 1.9, 4.1, strength=0.72)
+        track([(x - 0.2, 42.7), (x, 40.8), (x, 35.8)], width=2.0, passes=5)
+    for x, z in ((-8.7, 39.7), (5.5, 35.5), (24.4, 40.2), (41.3, 37.8)):
+        stain("damage", x, z, 1.4, 0.72, 30, 0.9)
+        stain("water", x - 0.2, z, 0.9, 0.46, 28, 0.64)
+    for x in (-15.8, -10.5, -0.5, 2.8, 8.8, 14.2, 23.2, 29.8, 37.8, 43.5):
+        z = rng.uniform(41.65, 42.3)
+        if occ.free(x, z, 0.45):
+            strew(rng.choice(["weeds", "litter_mixed", "broken_pallet"]), x, z,
+                  rng.uniform(0, 360), y=y, scale=rng.uniform(0.6, 1.0))
+    strew("trash_bags", 43.5, 41.8, 15, y=y)
+    track([(-11, 38), (-9, 38.6), (-4.9, 40.3), (0.6, 40.45), (7, 39.7), (12, 39.5)],
+          width=1.8, strength=0.55, passes=3)
 
 
 def forklift_tracks(occ):
@@ -537,51 +514,27 @@ def machine_stains(data):
 
 
 def slab_damage():
-    """Spalled joints and a few broken patches across the hall (both halves,
-    each turned like the layout)."""
-    for (x, z, rx, rz, rot, s) in ((-1.0, -20.0, 1.2, 0.5, 0, 0.7), (20.0, -23.0, 0.8, 0.6, 30, 0.6),
-                                   (28.5, -2.0, 1.5, 0.4, 90, 0.7), (-14.5, 0.0, 0.7, 0.5, 0, 0.6),
-                                   (6.0, -4.5, 0.6, 0.6, 0, 0.5), (38.0, -16.0, 1.0, 0.7, 45, 0.7)):
-        stain("damage", x, z, rx, rz, rot, s)
-        mx, mz = mirror(x + 0.7, z - 0.5)
-        stain("damage", mx, mz, rx * 0.9, rz * 1.1, rot + 25, s)
+    """Scattered spalls in the production slab and high-bay aisles."""
+    for x, z, rx, rz, rot in (
+        (-1, -20, 1.2, 0.5, 0), (20, -23, 0.8, 0.6, 30), (28.5, -2, 1.5, 0.4, 90),
+        (-14.5, 0, 0.7, 0.5, 0), (6, -4.5, 0.6, 0.6, 0), (38, -16, 1, 0.7, 45),
+        (-7.5, 15.1, 1.25, 0.7, 85), (5, 30.1, 1.4, 0.35, 20),
+        (25, 17, 0.9, 0.5, 5), (33.6, 26.5, 0.6, 0.6, 75),
+    ):
+        stain("damage", x, z, rx, rz, rot, 0.7)
 
 
 def dress(data):
-    """Adds the detail pass to the layout data (see the module docstring)."""
-    # The wreck replaces the north half's low stock by the west wall.
-    x0, x1, z0, z1 = WRECK_AREA
-    keep = []
-    for p in data["props"]:
-        if x0 <= p["x"] <= x1 and z0 <= p["z"] <= z1:
-            removed_props.append((p["model"], p["x"], p["z"]))
-            continue
-        keep.append(p)
-    data["props"][:] = keep
-    # The wreck's smoke and the switchboard's sparks replace the wall steam.
-    # The back aisle's flickering high-bay now dangles (dangling_light).
-    data["effects"][:] = [e for e in data["effects"] if e["kind"] != "steam"
-                          and not (e["kind"] == "flicker" and e["pos"] == list(DANGLE))]
-    occ = occupancy(data)
-    for name, (x, z, w, d) in {"wreck": (-15.55, -5.4, 2.2, 2.4), "switchboard": (43.7, 15.25, 0.6, 2.4),
-                               "bucket": (31.4, 14.55, 0.6, 0.4), "rubble": (9.9, 2.4, 2.6, 2.2),
-                               "dumpster N": (39.4, -33.95, 1.9, 1.25),
-                               "dumpster S": (mirror(39.4, -33.95) + (1.9, 1.25))}.items():
-        if not occ.free_rect(x, z, w, d, 0):
-            raise SystemExit(f"detail pass: the {name} would stand on something")
+    """Place set pieces before scattering and marking their surrounding slab."""
     fallen_forklift()
     burnt_switchboard()
     breach_fall(data["roof_holes"][0])
     dangling_light()
     roof_leak()
+    occ = occupancy(data)
+    occ.add_box(7.5, 12.5, 0.0, 5.0)
     drum_station(occ)
     pallet_jacks(occ)
-    for d in detail:
-        if d.get("clip") or d.get("hull"):
-            occ.add_rect(d["pos"][0], d["pos"][2], 2.0, 2.0, 0)
-    occ.add_box(-17.0, -14.2, -7.2, -2.8)
-    occ.add_box(42.0, 44.0, 13.0, 17.5)
-    occ.add_box(7.5, 12.5, 0.0, 5.0)
     doors = []
     for w in data["walls"]:
         along_x = (w[2] - w[1]) >= (w[4] - w[3])
@@ -589,12 +542,15 @@ def dress(data):
             doors.append(("z" if along_x else "x", o[0], o[1], (w[3] + w[4]) / 2 if along_x else (w[1] + w[2]) / 2))
     wall_dressing(occ, doors)
     litter_drifts(occ, data["spawns"])
-    yard(0)
-    yard(1)
+    field_stains(occ)
+    dock_dressing(occ)
     forklift_tracks(occ)
     dust_and_wear(occ)
     machine_stains(data)
     slab_damage()
+    warehouse_outdoors.bank_plants(occ, data["spawns"], strew)
+    warehouse_outdoors.dress_field(piece, strew, stain, track)
+    warehouse_outdoors.dress_docks(piece, strew, stain, effects)
     data["fallback"].update({
         "barrel_steel": "res://assets/props/barrel_steel/barrel_steel.gltf",
         "barrel_blue": "res://assets/props/barrel_blue/barrel_blue.gltf",
@@ -607,5 +563,5 @@ def dress(data):
     data["floor_marks"] = dict(bounds=list(BOUNDS), stains=stains, tracks=tracks,
                                dangle=list(DANGLE))
     print(f"detail: {len(detail)} pieces, {sum(len(v) for v in scatter.values())} strewn, "
-          f"{len(stains)} stains, {len(tracks)} tracks; removed {removed_props}")
+          f"{len(stains)} stains, {len(tracks)} tracks")
     return data

@@ -44,7 +44,7 @@ uniform float rough = 0.81;
 uniform float panel_variation = 0.07;
 // Where the roof flashing sits (the walls' tops); leak streaks run down from it.
 uniform float roof_line = 9.45;
-uniform vec4 layout_rect = vec4(-18.0, -36.0, 64.0, 80.0);
+uniform vec4 layout_rect = vec4(-36.0, -38.0, 82.0, 82.0);
 // The detail albedo is a baked shade (tools/build_warehouse_wall_damage.py):
 // half the wall's tone times the light its relief gets from above (bug holes
 // dark, bumps lit on top and shaded beneath), in one grey channel.
@@ -490,6 +490,19 @@ void fragment() {
 		}
 	}
 
+	// The demolished wing kept its paint sheltered below the old flashing.
+	if (world_normal.x < -0.8 && abs(world_pos.x + 17.2) < 0.07
+			&& world_pos.z > -26.0 && world_pos.z < -8.3) {
+		float room_edge = smoothstep(0.0, 0.34, min(world_pos.z + 26.0, -8.3 - world_pos.z));
+		float dust_line = 1.0 - smoothstep(0.035, 0.19, abs(world_pos.y - 5.68));
+		float primer = room_edge * (1.0 - smoothstep(5.45, 5.60, world_pos.y));
+		col = mix(col, col * vec3(0.94, 1.055, 1.10) + vec3(0.035), primer * 0.36);
+		col *= 1.0 - 0.25 * room_edge * dust_line;
+		float dent = abs(world_pos.z + 12.70);
+		float impact = (1.0 - smoothstep(1.82, 3.16, dent))
+			* smoothstep(2.75, 3.38, world_pos.y) * (1.0 - smoothstep(4.24, 4.65, world_pos.y));
+		col *= 1.0 - 0.21 * impact;
+	}
 	col *= 1.0 - 0.6 * joint;
 	col = mix(col, vec3(0.05, 0.05, 0.05), inserts * 0.85);
 	ALBEDO = col;

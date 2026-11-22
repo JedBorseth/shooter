@@ -114,8 +114,9 @@ loops, and sides that are different but balanced. The approved plan is
 
 ## Warehouse, November 2026
 
-[Warehouse](../godot/scenes/warehouse.tscn) is an editable Cyclops blockout
-based on supplied reference photos and a top-down sketch. The sketch sets
+[Warehouse](../godot/scenes/warehouse.tscn) uses an editable Cyclops shell
+based on supplied reference photos and a top-down sketch. The following passes
+record how the map developed. The asymmetric rework describes the live layout. The sketch sets
 the layout: a parking strip across the top, a narrow left wing, a large main
 hall, and a truck-bay apron along the bottom. The two office footprints are
 open-top rooms with provisional interior doorways. Spawn 2 and the truck
@@ -208,23 +209,24 @@ card out of memory.
 
 #### Playing Warehouse
 
-Warehouse is on the title screen under Free Roam and in the local match
-setup for every mode except Search and Destroy. Servers load it with
-`--map warehouse`. The layout is the 6v6 rebuild below. Team 0 starts in the
-north parking lot and team 1 on the south truck apron; each has four doors into
-the hall. Twenty-eight neutral respawns sit in the aisles of both halves and at
-the yards' ends (see [tdm-spawns.md](tdm-spawns.md)). Bots follow three lanes,
-west to east: the west racking aisle, the centre aisle through the mid
-stockpile, and the east rolls aisle. Capture the Flag falls back to flag
-positions derived from the spawns. Hardpoint rotates through five zones
-(`Hardpoints`): the Mid Stockpile, Shipping, the South Crossover, the North
-Crossover, and Receiving; the two crossovers and Shipping and Receiving are
-each other's 180-degree twins, and the order alternates halves. Reverb zones give the
-hall and the two upstairs offices their own echo. Screen walls close the yards
-and an invisible boundary stands behind them; the wing is sealed.
-`godot/tests/warehouse_test.gd` checks the spawns, floor, and body clearance,
-the prop collision, the tunnels, roofs, offices, and walkways (below), and the
-route from the menu.
+Warehouse is on the title screen under Free Roam and in local match setup for
+every mode except Search and Destroy. Servers load it with `--map warehouse`.
+Team 0 starts in the Field, the overgrown lot that wraps around the hall's
+northwest corner. Team 1 starts at the Docks, 1.25 m below the hall. The Field
+has two north and two west entrances. The Docks have a personnel stair, a
+vehicle ramp, and two open trailers with a mantle at the apron end.
+
+Twenty-eight neutral respawns cover the interior aisles and both yards. Bots
+follow three lanes through receiving, the mid stockpile, and the east aisle.
+Capture the Flag uses the centre of each team's six starts. Domination puts A
+inside the north end of production, B by the mid stockpile, and C in the
+dispatch aisle near the ramp. Hardpoint rotates through the Mid Stockpile,
+Receiving, Pick Mezzanine, Catwalk, and Quality Control. Separate acoustic
+zones cover the hall, the upstairs shift office, and the Field.
+
+`godot/tests/warehouse_test.gd` checks spawn placement, props and clearance,
+the flexo tunnel, room roofs, the shift office, the access structures, dock
+traversal, and entry through the menu.
 
 ### 6v6 rebuild (November 2026)
 
@@ -662,6 +664,156 @@ uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py st
 WAREHOUSE_PARTS=stock xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
 tools/bake_lightmaps.sh res://scenes/warehouse.tscn
 ```
+
+### Asymmetric rework (November 2026)
+
+The user asked for a grassy start, rebuilt walkways, and two sides that play
+differently. CoD4's **Vacant** supplied the contrast between an overgrown
+outdoor approach and industrial interiors. The route geometry follows
+Warehouse's own approved [asymmetric blockout](../tools/map_blockout/warehouse_2026_11b.py).
+
+| Area | North | South |
+| --- | --- | --- |
+| Starts | The Field has grass, exposed slab, a guard booth, and cover in the demolished west wing. A fence closes off the substation. | The Docks have a lowered concrete apron with scrap bales, barriers, pallets, and a container. |
+| Entries | Two north doors, a west dock door, and the truck breach. Inside baffles interrupt the yard sightlines. | The personnel stair and vehicle ramp offer direct approaches. Two backed-in dry vans have level thresholds to the hall and a 1.25 m mantle from the apron. |
+| Interior | Production runs north–south past a flexo line with a crouch tunnel, die cutter, ink room, maintenance, and receiving. The two-storey shift office keeps the scanned ground floor. | High-bay storage runs east–west through staggered rack ends, with a QC cell, charging bay, plate room, wrapper, and strapper. |
+| Upper routes | A steel catwalk at 2.8 m has a stair from the back aisle and a ladder at the south end. Two crate levels lead to the ink room roof. | The 3 m pick mezzanine has a stair from the dispatch aisle, flow racks beneath it, and a ladder toward mid. A separate ladder serves the plate room roof. |
+
+The mid stockpile still sits under the roof breach. The scene generator places
+the objectives and starts alongside the geometry. From their own starts, teams
+reach their near Domination flags in about 2.0 s and 1.9 s. The baked hall and
+trailer lights fill the interiors, and the sun lights the yards and roof
+breach. Ground masks blend worn paths and fractured concrete into the Field's
+grass. Footsteps and impacts use the grass surface. Scattered plants and floor
+debris carry no collision. Low reduces the grass instance count and draw range.
+The asset sources and clip guidance are in the [Field and access kit manifest](../godot/assets/props/warehouse_field/manifest.json).
+
+**Built-scene measurements.** The grid samples real collision every 0.5 m.
+Times below use the mean team start and the same mid-stockpile point on both
+builds, at world (18.75, 3.25).
+
+| Measure | Previous scene | Asymmetric scene | Target |
+| --- | ---: | ---: | --- |
+| Start to start | 75 m (10.1 s) | 87 m (11.7 s) | 75–90 m |
+| Start to mid, north / south | 5.1 / 5.2 s | 5.8 / 6.0 s | 5–6 s, within 0.3 s |
+| Walkable footprint | 60.5 × 76 m | 79 × 79.5 m | 70–90 m per side |
+| Median longest eye-height line | 21.0 m | 24.5 m | ≤32 m |
+| Floor seeing past 40 m | 1.6% | 6.5% | <10% |
+| Longest eye-height line | 48 m | 53 m | ≤60 m |
+| Opposite-half floor visible from starts | — | 0 sampled points | None |
+
+**GPU cost.** On the GTX 1660 Ti at 1440 × 849, the paired benchmarks used
+five viewpoints per layout. The new views cover the Field, Docks, Catwalk,
+Pick Mezzanine, and mid stockpile.
+
+| Preset | Previous average / worst | Asymmetric average / worst | Asymmetric 1080p average / worst |
+| --- | ---: | ---: | ---: |
+| Low | 3.19 / 4.22 ms | 2.56 / 3.71 ms | 1.75 / 1.83 ms |
+| Medium | 3.71 / 5.80 ms | 3.55 / 4.20 ms | 3.66 / 3.80 ms |
+| High | 5.64 / 7.09 ms | 5.10 / 5.70 ms | 6.29 / 6.60 ms |
+
+The 1080p run used `tools/steady.sh` to hold the GPU in its performance
+state. Each preset stayed within its standard budget.
+
+Rebuild from the repository root after importing the Field and walkway assets.
+The minimap is rebuilt from scene collision.
+The shell stays editable, the access kits use separate fitted clip at the decks
+and stairs, and the lightmap stays on the scene root at 0.7 texel scale.
+The full map uses Godot's Low bake sampling with denoising.
+
+```sh
+python3 tools/map_blockout/warehouse_photo_layout.py
+uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
+uv run tools/build_warehouse_wall_damage.py
+export DISPLAY=:10 XAUTHORITY="$HOME/.local/state/shooter/Xauthority"
+flock ~/.cache/shooter-fidelity/gpu.lock godot --path godot --script res://tools/warehouse_build_headless.gd
+flock ~/.cache/shooter-fidelity/gpu.lock tools/bake_lightmaps.sh res://scenes/warehouse.tscn
+MINIMAPS=warehouse godot --headless --path godot --script res://tools/build_minimaps.gd
+GRID_OUT=/tmp/warehouse-grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
+uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py /tmp/warehouse-grid.json --centre=18.75,3.25
+```
+
+### Warehouse outdoor refresh
+
+The second pass follows the abandoned industrial edges of CoD4's **Vacant**
+and the working loading bays of Modern Warfare's **Atlas Superstore**. The
+Field reads as a demolished building site and the Docks as an active freight
+apron. The approved routes, starts, objectives, and yard boundary volumes
+continue to define play.
+
+- **The Field.** A world-space painted mask blends dry and green grass,
+  packed dirt, gravel, the wing's fractured slab, wet patches, and tyre ruts.
+  The same path centrelines thin the vegetation on the approaches from the
+  starts to all four entrances. Shadowless MultiMesh batches put clumps and
+  weeds along the walls, fence, and slab joints. The existing visibility fade
+  and Low density reduction still apply. Cut column feet, torn flashing,
+  paint ghosting, rubble, and a demolition skip mark the former wing.
+- **The truck breach.** A crumpled, tilted Blender variant of the delivery
+  truck points into the hall. Its original fitted clip still defines cover
+  and leaves the established passage beside the cab. Fractured aggregate and
+  bent rebar frame the opening, and rubble, oil, and coolant sit on both sides.
+- **The Docks.** Numbered shelters, padded seals, dock lights, bumpers, yellow
+  bay lines, chocks, bollards, pallet hardware, a waste skip, a trench drain,
+  and a leveler plate dress the working sides of the apron. The existing dry
+  vans have their rear doors folded along the flanks. Both yards use chain-link
+  over segmented concrete bases and the south run includes a gate. The
+  original boundary shapes supply the yard clip.
+- **Daylight.** The key keeps its existing direction with a slightly more
+  neutral daylight colour. Baked fill lifts the apron in the hall's shadow
+  and the loading lamps contribute local pools of light. The scene uses the
+  Warehouse horizon at a sky rotation of −1.14 radians with the existing
+  baked hall's ambient energy. The backdrop extends terrain roughly 90 m
+  beyond the fences with one shadowless mesh outside the collision and bake.
+  Scrub and lamps close to the fence connect the foreground to the horizon.
+- **Ambience.** The builder authors one Warehouse soundscape. FieldNorth and
+  FieldWest keep their reverb values and are flagged outdoors.
+
+`tools/build_warehouse_outdoors.py` builds the Blender variants and
+`tools/map_blockout/warehouse_outdoors.py` places the dressing. To regenerate
+the models, run the following command before importing them into Godot. Then
+regenerate the layout and floor masks and rebuild and bake the scene using the
+commands above.
+
+```sh
+blender -b --factory-startup --python-exit-code 1 --python tools/build_warehouse_outdoors.py
+```
+
+The final collision grid matches the asymmetric rework on every walkable
+cell, including height and sight samples. Start to start is 87 m (11.7 s)
+and the approaches to mid are 5.8 s and 6.0 s. Median and longest sightlines
+are 24.5 m and 53 m. The floor share seeing past 40 m is 6.5%.
+
+GPU ms at 1920 × 1080 on the GTX 1660 Ti, using `tools/steady.sh` with the
+same five viewpoints before and after the refresh:
+
+| Preset | Asymmetric rework avg / worst | Outdoor refresh avg / worst | Budget |
+| --- | ---: | ---: | ---: |
+| Low | 1.75 / 1.83 | 1.90 / 1.96 | 4.00 |
+| Medium | 3.66 / 3.80 | 3.95 / 4.15 | 6.50 |
+| High | 6.29 / 6.60 | 6.72 / 6.92 | 12.00 |
+
+### Warehouse review fixes
+
+The Dock 1 and Dock 3 seals now fill the space between the trailer and the
+concrete jambs and header. The cargo passages stay open. Bots use the personnel
+stair or ramp to reach the apron. The west lane jogs around the storage rack
+ends. Neutral spawns with nearby cover ahead now face along the open aisles.
+
+Quality Control moved into the aisle just south of the test cell. The Catwalk
+hill is centred at deck height. Each hill extends 20 cm below the hall floor,
+and the standing-clearance test checks both a floor hit and room for a 1.8 m
+capsule. Quality Control went from 45% to 87% standable under that check.
+
+The skips and dock pallet jack have simple fitted collision. The small bay
+bollards stay clear of the passage as visual markers. The Field saplings have
+grounded trunks, and Low thins each grass batch using a deterministic shuffle.
+The far ground stays level along the Field before it grades down toward the
+Docks. Galvanized cobra-head lights continue the industrial road lighting from
+the horizon strip.
+
+The rebuilt scene still measures 87 m between team starts (11.7 s), with
+5.8 s and 6.0 s approaches to mid. Median and maximum sightlines are 24.2 m and
+53 m, with 6.5% of floor seeing past 40 m. No team start sees the opposite half.
 
 ## Breakwater, November 2026
 

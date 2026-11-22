@@ -8,7 +8,7 @@ extends SceneTree
 const LEVEL := "res://scenes/warehouse.tscn"
 const CELL := 0.5
 const X := [-38.0, 45.5]
-const Z := [-35.5, 47.0]
+const Z := [-38.0, 44.0]
 
 
 func _initialize() -> void:
@@ -100,8 +100,41 @@ func _run() -> void:
 	for m: Node3D in scene.get_node("SpawnPoints").get_children():
 		spawns.append([m.position.x, m.position.y, m.position.z, m.get_meta("team", -1)])
 	out["spawns"] = spawns
+	out["enemy_half_visible_samples"] = _spawn_exposure(space, nx, nz, move, floor, spawns)
 	var f := FileAccess.open(OS.get_environment("GRID_OUT"), FileAccess.WRITE)
 	f.store_string(JSON.stringify(out))
 	f.close()
 	print("grid %d x %d" % [nx, nz])
 	quit()
+
+
+## A 1 m sample of opposite-half hall floor at standing eye height. Yard
+## sightlines can be long as they run laterally along the Field's perimeter.
+func _spawn_exposure(
+	space: PhysicsDirectSpaceState3D,
+	nx: int,
+	nz: int,
+	move: PackedByteArray,
+	floor: PackedFloat32Array,
+	spawns: Array
+) -> Array[int]:
+	var visible: Array[int] = [0, 0]
+	for spawn: Array in spawns:
+		var team: int = spawn[3]
+		if team < 0:
+			continue
+		var eye := Vector3(spawn[0], spawn[1] + 1.55, spawn[2])
+		for i in range(1, nz, 2):
+			var z: float = Z[0] + (i + 0.5) * CELL
+			if z < -26.0 or z > 33.0 or (z > 3.5) != (team == 0):
+				continue
+			for j in range(1, nx, 2):
+				var x: float = X[0] + (j + 0.5) * CELL
+				var k := i * nx + j
+				if x < -16.8 or x > 44.0 or move[k] or floor[k] > 0.35:
+					continue
+				var target := Vector3(x, floor[k] + 1.55, z)
+				var ray := PhysicsRayQueryParameters3D.create(eye, target, 1)
+				if space.intersect_ray(ray).is_empty():
+					visible[team] += 1
+	return visible

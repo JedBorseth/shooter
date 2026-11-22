@@ -1151,6 +1151,13 @@ def main() -> None:
     sub.add_parser("bullets", help="bullet cracks, whizzes, ricochets, and layered impacts")
     sub.add_parser("player", help="hit and kill markers, health, breath, and body sounds")
     sub.add_parser("stings", help="match stings and world one-shots")
+    wh = sub.add_parser("warehouse", help="Warehouse area beds, outdoor one-shots, and off-map industrial layer")
+    wh.add_argument(
+        "--preview-dir",
+        type=Path,
+        default=None,
+        help="also render 3-minute stereo listening previews (Field, Docks, Hall) into this directory",
+    )
     args = parser.parse_args()
     if args.command == "footsteps":
         footsteps(args.kenney)
@@ -1160,6 +1167,10 @@ def main() -> None:
         player()
     elif args.command == "stings":
         stings_and_world()
+    elif args.command == "warehouse":
+        import warehouse_audio
+
+        warehouse_audio.build_warehouse(args.preview_dir)
     else:
         ambience()
 
