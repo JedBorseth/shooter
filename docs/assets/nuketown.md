@@ -1,140 +1,55 @@
-# Nuketown export
+# Nuketown
 
-Nuketown 2025 (`mp_nuketown_2020`) was extracted from the supplied BO2 files on
-2026-11-15 using [C2Mv3 v3.0.5](https://github.com/o-Astral-o/C2Mv3/releases/tag/v3.0.5)
-and the installed Plutonium r5369 client in local LAN mode.
+How Black Ops 2's Nuketown 2025 (`mp_nuketown_2020`) gets from the game's
+files into the game: the export, the conversion, the collision fixes, the
+interactive props, and the easter egg. How it plays is in
+[maps.md](../maps.md); its lighting in
+[nuketown-lighting.md](../nuketown-lighting.md).
 
-## Artifacts
+## Playing it
 
-Raw assets are in `builds/nuketown/source/` (ignored by Git):
+The ready-to-play resources (`godot/assets/maps/nuketown/generated/` and
+`props/`) are in Git LFS: install Git LFS before cloning, or run
+`git lfs pull`. Play and client exports need nothing else. A checkout without
+them shows "Nuketown is not installed in this build." instead of loading it.
 
-- `exported_maps/black_ops_2/mp_nuketown_2020/`: map OBJ, C2M, entities, lights,
-  material/techset metadata, and static/dynamic placement JSON.
-- `exported_models/black_ops_2/`: individual model OBJs.
+On the borseth machine, `tools/run_on_borseth.sh res://scenes/nuketown.tscn`
+runs the debug build on its remote desktop (`:10`) at 1280 x 720, Forward+,
+60 fps. `SHOOTER_RESERVE_GPU=1` pauses the machine's TTS and music-AI services
+while it runs and restores the ones it paused on exit
+(`tools/restore_borseth_gpu.sh`); `tools/shooter-nuketown.service` is a user
+service that runs it that way.
+
+## Export
+
+The map was extracted from the supplied Black Ops 2 files with
+[C2Mv3 v3.0.5](https://github.com/o-Astral-o/C2Mv3/releases/tag/v3.0.5), with
+the map loaded in a local LAN Plutonium (T6) client. The raw export stays out
+of Git, under `builds/nuketown/source/`:
+
+- `exported_maps/black_ops_2/mp_nuketown_2020/`: the map OBJ and C2M,
+  entities, lights, material and techset data, and static and dynamic
+  placements;
+- `exported_models/black_ops_2/`: one OBJ per model;
 - `exported_images/black_ops_2/`: TIFF textures.
 
-The complete archive is `builds/nuketown/nuketown-c2mv3-3.0.5.tar.gz`.
-A verified backup is on `jedborseth@borseth.ddns.net` at
-`/home/jedborseth/plutonium/bo2/exports/nuketown-c2mv3-3.0.5.tar.gz`.
+The archive is `builds/nuketown/nuketown-c2mv3-3.0.5.tar.gz`, SHA-256
+`818d6686ba68c976063fd803aafb192dbb6d1ba39f9976a34a1266e3da2610e7`. The
+export has 327 geometry surfaces, 580 materials, and 2,992 static and 131
+dynamic placements of 368 distinct models, all exported. `$black` and
+`$identitynormalmap` are engine built-ins the importer supplies as constant
+textures.
 
-Archive SHA-256 (identical on Windows, borseth, and this checkout):
+To export it again: in C2M (settings in `%APPDATA%\C2M\settings.cfg`, with
+`t6_path` at the game), enable the map, model OBJ, image (TIFF), instance,
+material, light, entity, and techset exports. Start the game through
+Plutonium with
+`t6mp "<game dir>" -lan +set g_gametype dm +map mp_nuketown_2020`, then use
+**Load Map** and **Export Map**.
 
-```text
-818d6686ba68c976063fd803aafb192dbb6d1ba39f9976a34a1266e3da2610e7
-```
+## Conversion
 
-`builds/nuketown/verification.json` records the inventory and reference checks.
-The export contains 1,570 files, 327 geometry surfaces, 580 materials, and 1,149
-texture files. All 368 distinct model names used by the 2,992 static and 131
-dynamic placements have exported OBJs. Every external texture reference resolves.
-`$black` and `$identitynormalmap` are engine builtin texture references; an importer
-must supply constant black and flat-normal textures for those names.
-
-## Windows setup
-
-C2Mv3 is installed at `C:\Users\JedBorseth\Tools\C2Mv3`.
-Use `Launch-C2M.cmd` there when the machine has no active monitor. It temporarily
-enables WPF software rendering and restores the previous registry value when C2M
-exits. The original user rendering setting was restored after extraction.
-
-The live C2M configuration is `%APPDATA%\C2M\settings.cfg`, rather than a file
-beside the executable. Its `t6_path` is `Z:\Games\pluto_t6_full_game`.
-Enable C2M, map/model OBJ, image, instance, material, light, entity, and techset
-exports. The saved export configuration uses `image_format=1`, which produces TIFF.
-The hash package was updated through C2M before extraction.
-
-The map was loaded using the installed Plutonium bootstrapper from
-`%LOCALAPPDATA%\Plutonium`, with these arguments:
-
-```text
-t6mp "Z:\Games\pluto_t6_full_game" -lan +name ShooterExport +set r_fullscreen 0 +set r_mode 1024x768 +set com_maxfps 30 +set g_gametype dm +map mp_nuketown_2020
-```
-
-After the map loads, use **Load Map**, confirm the map name, then **Export Map**.
-The captured successful export log is `builds/nuketown/export-log.txt`.
-
-## Play in Shooter
-
-The home screen now has a **Nuketown** button. It loads the converted map with
-3,123 prop placements, textured materials, shared world/large-prop collision,
-authored deathmatch spawn positions, and the existing FPS player/weapons/HUD.
-Press Escape to release the mouse and click **Home** to return.
-
-### Collision and mode fixes
-
-The render export carries none of the original player-clip brushes and keeps some
-surfaces that never block anything in Black Ops 2. The bake and the props script
-correct them the way the original map plays:
-
-- **Edge of the map.** BO2 player clip stops you at the outer yard fences and at
-  the street gate under the two swinging Nuketown signs. Without it the gate's
-  end leaves stand open (you could walk straight out under either sign), and a
-  jump clears the low street fences and many yard fences. `tools/bake_nuketown.gd`
-  adds a `Boundary` body: thin walls from 4 m below the ground to 30 m up along
-  the outer fences, across the gate, and round the back of the closed north
-  garage building. It is on the movement layer (as the stair ramps are): bullets pass
-  through it and thrown grenades bounce off it, as they do off CoD's map-edge clip.
-- **Invisible walls.** CoD's `shadowcaster` brushes only shade the baked lighting;
-  they are invisible and non-solid. The export kept them, and the bake used to give
-  them collision: one filled the blue house's open front doorway and two the
-  doorway at the top of its stairs. They are left out of the collision shape now.
-  `caulk_shadow_primary` is caulk, which is solid in CoD, and stays solid.
-- **Population sign.** The big population sign by the yellow house is a script
-  model (its screen is driven by script), and the props script only gave
-  collision to unscripted models. It is solid again, as in BO2. The animated
-  `fxanim` models (the swinging gate signs, the car-wash hoses, the sprinkler) stay
-  non-solid, as client-side animations are in CoD.
-- **Bomb sites.** The wrecked bomb stacks at the Search and Destroy and
-  Demolition sites (`targetname` `exploder` with a `script_exploder` id) are only
-  revealed in CoD when that site's bomb goes off. They showed, and could be shot,
-  in every mode; they are skipped now, like the other objective-mode models.
-
-`godot/tests/nuketown_bounds_test.gd` drives the real player against every edge
-of the boundary (walking and jumping at two places per edge, about twenty of
-which got out before), walks through both doorways, and checks the sign, the
-bomb sites, the interior lighting boxes, and the easter-egg vault. Falling off
-the scenery still reloads the map, as a last resort.
-
-Windows deployment: `C:\Users\JedBorseth\Games\ShooterNuketown`.
-The desktop **Play Shooter.cmd** launches this build. The previous launcher is
-saved as **Play Shooter (previous).cmd**. This deployment is separate from the
-existing Windows source checkout.
-
-Borseth deployment: `/home/jedborseth/games/shooter-nuketown`.
-`tools/run_on_borseth.sh` runs it on the existing remote desktop. The optional
-`shooter-nuketown` user service reserves the GPU while running and restores the
-previously active Qwen TTS and music-AI services on exit, including service-stop
-cleanup. It is installed but not enabled at login. The AI services are left running
-when playing on the separate Windows PC.
-
-## Easter egg
-
-A faint pink triangle marks a spot on a wall near the player's spawn. Walk into
-it and keep pushing for under a second to phase into a hidden vault holding the
-**Prism Laser**: full auto, no spread or recoil, and lethal in one hit at any
-range. The glowing ring in the vault leads back out. Taking the laser puts
-target soldiers on the eight spawn points farthest from yours.
-
-The vault sits 120 m above the map. It is only drawn while you are inside it;
-drawn all the time, its lit room showed as a grey box in the sky.
-
-The converted map has no gameplay markers, so `godot/scripts/secret_laser.gd`
-picks the wall at runtime: the first upright surface a ray finds looking back
-from the spawn, sweeping outward until a wall is tall enough and has floor in
-front of it. `godot/tests/secret_laser_test.gd` checks the whole flow on a
-stand-in level.
-
-## Rebuild the generated map
-
-The ready-to-play resources in `godot/assets/maps/nuketown/generated/` are
-tracked in Git LFS. Install Git LFS before cloning, or run `git lfs pull` in an
-existing checkout. Normal play and client exports do not require the source
-archive or the conversion tools.
-
-The commands below are only needed to regenerate the map from the supplied source
-archive. Raw BO2/C2M exports in `builds/` remain excluded from Git.
-From the repository root, using Python with Pillow and NumPy installed and Godot
-4.7.2:
+From the repository root, with Python (Pillow and NumPy) and Godot 4.7.2:
 
 ```sh
 python3 tools/import_nuketown.py builds/nuketown/source godot/assets/maps/nuketown/generated
@@ -146,79 +61,127 @@ godot --headless --path godot --script res://tools/bake_nuketown.gd
 godot --headless --path godot --script res://tests/nuketown_test.gd
 ```
 
-The converter maps CoD inches/z-up to meters/y-up, flips normal-map green channels,
-converts TIFF to PNG, reconstructs base materials, and splits large meshes below
-Godot's surface limit. Meshes and collision shapes are shared across repeated props.
-Textures use mipmaps and VRAM compression; the configuration tool defaults to a
-1024-pixel limit. Source layered decals, animated foliage, and destructible-prop
-simulation are not recreated; layered decals are baked into their base textures.
+`tools/import_nuketown.py` maps Call of Duty inches and Z-up to metres and
+Y-up, converts TIFF to PNG, flips normal maps' green channel, rebuilds the
+materials, and splits meshes under Godot's surface limit. Meshes and
+collision shapes are shared across repeated props. Textures are mipmapped and
+VRAM-compressed, at most 1024 pixels by default
+(`godot/tools/configure_nuketown_textures.gd`, which also gives normal maps
+normal-map compression from `textures.json`).
 
-Material reconstruction follows the exported C2M data rather than guessing:
+Materials follow the exported C2M data:
 
-- `colorMap` plus the model slots (`diffuse_map`, `Color_Map`, `Layer1Map`/highest
-  layer map, and the Nuketown TV welcome screen) supply base colour.
-- Layered BSP surfaces joined with `__` are baked in order. Multiply layers
-  (`m0`, `a0`, and `unlitdecalblend_multiply`) darken the base; `b0` layers alpha
-  blend. Standalone multiply decals become alpha overlays so they no longer
-  render as white bands. The overlay is exact for grayscale grime; saturated
-  coloured multiply decals are necessarily an approximation because glTF has no
-  per-channel multiply blend.
-- Glass and other `b0` surfaces use alpha blending; foliage and `t0` surfaces use
-  alpha testing. Caulk and `shadowcaster` surfaces are invisible as in game, and
-  use a fully discarded alpha-scissor material rather than an alpha-blended depth
-  prepass. Collision stays on the full source mesh.
-- The alpha channel of a specular map is gloss: uniform gloss becomes a constant
-  roughness and varying gloss becomes a glTF metallic/roughness texture.
-- `detailMap` normals are tiled at the exported `detailScale` and baked into the
-  base normal with a whiteout blend, because glTF has no detail-normal stage.
-- Source colour is bled outward into discarded alpha-test texels so mipmapped
-  foliage edges do not turn black.
-- `textures.json` marks normal maps for `tools/configure_nuketown_textures.gd`, so
-  they use Godot's normal-map VRAM compression instead of colour-oriented S3TC.
+- Base colour comes from `colorMap` and the model slots (`diffuse_map`,
+  `Color_Map`, the highest `Layer*Map`, and the TV welcome screen).
+- Layered BSP surfaces (joined with `__`) are baked in order: multiply layers
+  (`m0`, `a0`, `unlitdecalblend_multiply`) darken the base, `b0` layers alpha
+  blend. A standalone multiply decal becomes an alpha overlay.
+- Glass and other `b0` surfaces blend; foliage and `t0` surfaces alpha-test,
+  with colour bled into the cut-out texels so mipmapped edges do not go black.
+- Caulk and `shadowcaster` surfaces are invisible, as in the game, through a
+  fully discarded alpha-scissor material.
+- A specular map's alpha is gloss: uniform gloss becomes a constant
+  roughness, varying gloss a roughness texture. Metallic stays 0, because
+  Call of Duty's material names do not tell raw metal from painted metal.
+- `detailMap` normals are tiled at the exported `detailScale` and baked into
+  the base normal, since glTF has no detail-normal stage.
 - `unlit_*`, `sw4_3d_unlit*`, and `sw4_3d_nuketown_tv` materials use
-  `KHR_materials_unlit` so screens and light fixtures stay self-lit.
+  `KHR_materials_unlit`, so screens and fixtures stay self-lit.
 
-`tools/test_import_nuketown.py` checks coordinates, mesh splitting, blend rules,
-layered compositing, multiply decals, detail normals, specular roughness, alpha
-bleed, unlit materials, and hidden caulk surfaces. On a GPU, capture the converted
-views with `CAPTURE_DIR=/tmp/nuketown CAPTURE_HUD=0 godot --path godot --resolution
-1600x900 --script res://tests/nuketown_capture.gd`; `CAPTURE_QA=1` also frames the
-known hearth floor gap.
+`tools/test_import_nuketown.py` covers these rules.
 
-## Remaining glTF approximations
+What glTF cannot express stays approximate: coloured multiply decals are
+tinted overlays rather than a true multiply; per-layer UV transforms that C2M
+does not export are lost; multi-layer unlit screens show one layer instead of
+cycling; animated foliage, alpha-to-coverage, and the original's destructible
+shaders are not recreated.
 
-These are deliberate limits of expressing the CoD material system in glTF:
+## Collision
 
-- A standalone coloured multiply decal becomes an alpha overlay. It is exact for
-  the greyscale grime decals used here; saturated source colours become tinted
-  overlays rather than true `colour × base`.
-- `metallicFactor` stays `0`. CoD's specular model does not identify raw metal
-  reliably (`METAL` also covers painted metal), so only gloss-derived roughness
-  is imported.
-- glTF has no shadow-only surface. Caulk/`shadowcaster` faces are invisible and
-  keep collision, but a true shadow-only copy would need to be split out by the
-  bake step. The importer does not remove their triangles because collision is
-  owned by `bake_nuketown.gd`.
-- BSP layers are baked into one colour texture using the single UV set C2M
-  exports. Per-layer UV transforms that C2M does not export cannot be recovered.
-- Detail normals are baked into the base normal because glTF has no detail-normal
-  stage. Multi-layer unlit screens select one source layer rather than recreating
-  the game's animated layer cycle.
-- Alpha blending and masking are static; alpha-to-coverage and the original
-  animated foliage/destructible-prop shaders are not recreated.
+The render export has none of the original player-clip brushes and keeps
+some surfaces that never block anything in Black Ops 2.
+`godot/tools/bake_nuketown.gd` builds the collision the way the original
+plays:
 
-Known source gap: the exported BSP has no floor in the hearth area around
-`x 18.6–21.3, z -9.75–-10.85` (source floor triangles surround a hole of about
-`x 18.0–22.0, z -11.4–-9.0`). The importer preserves the export as-is; the
-gameplay/physics layer supplies the matching floor and collider. The blue
-house also has the same missing caulk floor in the living room
-(`x 13.9–18.4, z -9.7–-3.8`) and back room (`x 16.6–21.8, z -20.2–-17.8`).
-`godot/tools/bake_nuketown.gd` adds carpet/tile patch meshes with source-scaled
-UVs and trimesh collision at the surrounding heights, plus collision-only
-player-clip ramps over both staircases so the capsule moves at walking speed
-without riser teleports. The ramps are solid box segments on movement-only layer
-16, which the player mask includes and hitscan ignores; the visible stair
-trimeshes still take bullets. `godot/tests/nuketown_physics_test.gd` checks the surfaces, seams,
-diagonal approach, ledges, ramp width/height, and both stairs;
-`godot/tests/nuketown_climb_test.gd` checks the real camera stays smooth while
-climbing.
+- **The map's edge.** A `Boundary` body of thin walls from 4 m below the ground
+  to 30 m up follows the outer yard fences, crosses the street at the gate
+  under the two swinging signs, and runs round the back of the closed north
+  garage building. It is on the movement-only layer (16), so it stops players
+  and bullets pass through it.
+- **Non-solid surfaces.** `shadowcaster` brushes only shade the original's
+  baked light, so they are left out of collision (one filled the blue house's
+  front doorway, two its upstairs doorway). `caulk_shadow_primary` is caulk,
+  solid in Call of Duty, and stays solid.
+- **Missing floors.** The export has no floor where the original used caulk:
+  the blue house's living room, its back room, and the hearth. The bake adds
+  carpet and tile patches there, with UVs at the surrounding floor's scale,
+  and solid boxes beneath them.
+- **Stairs.** Collision-only ramps over both staircases, on layer 16, so
+  players climb at walking speed without stepping up each riser; the visible
+  treads still take bullets.
+
+`godot/tools/configure_nuketown_spawns.gd` regrounds the spawn data
+(`godot/data/nuketown_spawns.json`) after the collision changes.
+
+Tests: `godot/tests/nuketown_physics_test.gd` (floors, seams, ledges, both
+stairs, diagonal approaches, and bullets ignoring the ramps),
+`nuketown_climb_test.gd` (the camera stays smooth up the blue staircase),
+and `nuketown_bounds_test.gd` (the player against every edge, walking and
+jumping; both doorways; the sign; the bomb sites; the interior probes; the
+vault). Falling off the scenery offline reloads the map as a last resort.
+
+## Interactive props
+
+`godot/scripts/nuketown_props.gd` plays the original map's scripted props,
+recovered from the game's data:
+
+- **Cars** smoke, burn, and explode, dealing 300 damage at the centre down to
+  75 at 6.5 m, through open lines only.
+- **Mannequins** and loose props break into physics debris. Of the map's
+  mannequins, 25 stand each match, chosen by a fixed-seed shuffle so every
+  player sees the same ones (the original keeps about 25 at random).
+- **The population sign** is solid and its dials count the players on the
+  server. The swinging gate signs, car-wash hoses, and sprinkler animate and
+  do not collide, as client-side animations do in Call of Duty.
+- **Mode filtering.** Only entities meant for deathmatch and team deathmatch
+  appear. The wrecked bomb stacks at the Search and Destroy and Demolition
+  sites (`exploder` entities) stay hidden, as they do until a bomb goes off.
+- At the end of a match the outro animations play and the cars swap back to
+  their pristine copies, as in the original.
+
+The server decides prop damage and sends each change as a reliable event,
+sends late joiners the current state, applies blast damage to players, and
+resets every prop when a match starts.
+
+The props come from their own pipeline, all reading raw game data under
+`builds/nuketown/` that is never committed:
+
+1. `tools/extract_nuketown_behavior.py` reads the destructible definitions,
+   physics presets, and animation clips out of the map's fastfile with the
+   open-fastfile T6 reader, into `builds/nuketown/behavior.json`.
+2. `tools/prepare_nuketown_behavior.py` turns that into the runtime
+   `godot/assets/maps/nuketown/props/behavior.json`.
+3. `tools/import_nuketown_props.py` converts the scripted models and their
+   debris into `godot/assets/maps/nuketown/props/models/` and `manifest.json`.
+4. `tools/import_nuketown_audio.py` pulls only the sounds those props use out
+   of the game's sound banks.
+
+`tools/test_import_nuketown_props.py` and `godot/tests/nuketown_props_test.gd`
+and `nuketown_prop_animation_test.gd` cover them.
+
+## Easter egg
+
+A faint pink triangle marks a stretch of wall near the spawn. Walk into it and
+keep pushing for 0.8 s to phase into a hidden vault holding the **Prism
+Laser**: full auto, no spread or recoil, and a kill in one hit at any range
+(`godot/data/weapons/laser.ron`). The glowing ring in the vault leads back.
+Taking the laser puts target soldiers on the eight spawn points farthest from
+the player's.
+
+The vault floats 120 m above the spawn and is drawn only while a player is in
+it. The converted map has no hand-placed markers, so
+`godot/scripts/secret_laser.gd` finds the wall at runtime: the first upright
+surface a ray hits looking back from the spawn, 3 to 35 m out, sweeping
+outward until a wall is tall enough with floor in front of it. The same spawn
+always gives the same wall. `godot/tests/secret_laser_test.gd` checks the
+flow on a stand-in level.

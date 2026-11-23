@@ -4,30 +4,30 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 
 ## Rules
 
-- **Choosing:** a player brings up to three streaks, chosen under the class list in the match menu (L), shared by every class. Black Ops 2's Scorestreaks menu is also separate from the classes. A new choice counts from the next spawn. New players bring the UAV and the Counter-UAV.
+- **Choosing:** a player brings up to three streaks, chosen under the class list in the match menu (L), shared by every class. Black Ops 2's Scorestreaks menu is also separate from the classes. A new choice counts from the next spawn. New players bring the UAV and the Counter-UAV; the others unlock with level (below), and ranked servers refuse streaks a player has not unlocked ([create-a-class.md](create-a-class.md)).
 - **Earning:** every point scored since the last spawn counts toward them, objective play included: kills and their bonuses, flag captures, Hardpoint time, plants and defuses. A streak is earned when the life's score reaches its cost. After the dearest one is earned, the count starts again from nothing, so a long life earns them all again. Points scored while dead do not count.
 - **Keeping:** earned streaks are held until used, through death, until the match ends. Up to 8 are held at once.
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
-- **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
+- **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies, and only while the match is being played (not in the lobby's warm-up). Custom games can turn them off ([custom-games.md](custom-games.md)). In Search and Destroy a player who survives a round keeps both the count and held streaks into the next, as Black Ops 2 does. A new match starts everyone from nothing.
 - **Bots** bring the UAV and two of the Care Package, the Guided Missile, the Airstrike, the Sentry Gun, and the Attack Chopper, varied between bots, and call in what they earn at once (trying another if one cannot go there).
 - **Roofed maps:** Warehouse is marked as roofed because the hall covers most of the play space. A crate, strike, missile, or helicopter attack needs reliable access from above. There the Care Package, the Guided Missile, the Airstrike, and the Attack Chopper are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; Warehouse applies the restriction map-wide, including the yards and roof breach. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
 
-| Streak | Cost | Black Ops 2 | Effect |
-| --- | --- | --- | --- |
-| UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps every enemy onto the team's minimaps every 3 s for 30 s |
-| Counter-UAV | 475 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
-| Care Package | 550 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
-| Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera, boosted, and split into bomblets |
-| Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map |
-| Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller, firing on enemies in front of it for 4 minutes |
-| Attack Chopper | 1100 | Stealth Chopper, 1100 | an AI helicopter guarding a point marked on the map for a minute |
+| Streak | Cost | Unlock level | Black Ops 2 | Effect |
+| --- | --- | --- | --- | --- |
+| UAV | 425 | 1 | UAV, 425 after patch 1.04 (350 at launch) | sweeps every enemy onto the team's minimaps every 3 s for 30 s |
+| Counter-UAV | 475 | 1 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
+| Care Package | 550 | 7 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
+| Guided Missile | 700 | 10 | Hellstorm Missile, 700 | a missile flown down from its nose camera, boosted, and split into bomblets |
+| Airstrike | 750 | 13 | Lightning Strike, 750 | three strikes on points marked on the map |
+| Sentry Gun | 800 | 16 | Sentry Gun, 800 | an automated gun set down in front of the caller, firing on enemies in front of it for 4 minutes |
+| Attack Chopper | 1100 | 22 | Stealth Chopper, 1100 | an AI helicopter guarding a point marked on the map for a minute |
 
 ## UAV
 
 While a side's UAV is up, it sweeps every 3 seconds. Each living enemy shows on that side's minimaps as a red dot where they stood at the sweep, fading out before the next sweep. Several UAVs on one side overlap rather than speeding up, and the side shows the effect while any is up.
 
-- **Ghost** hides a player from sweeps while they move faster than 0.5 m/s, plant, or defuse. Standing still shows them, as in Black Ops 2.
+- **Ghost** (shown as Low Profile) hides a player from sweeps while they move faster than 0.5 m/s, plant, or defuse. Standing still shows them, as in Black Ops 2.
 - **Unsuppressed fire** still shows a Ghost player.
 
 Black Ops 2's UAV lasts 30 seconds. The 3 s sweep is an estimate of its refresh.
@@ -46,7 +46,7 @@ A UAV or Counter-UAV is an aircraft in the world, not only an effect. Each circl
 
 ## Counter-UAV
 
-While an enemy Counter-UAV is up, the minimap shows static and no dots at all, not even teammates. That covers fire, sweeps, and our own side's UAV. **Hard Wired** players keep their minimap. The 30 s duration is an estimate in line with Black Ops 2.
+While an enemy Counter-UAV is up, the minimap shows static and no dots at all, not even teammates. That covers fire, sweeps, and our own side's UAV. **Hard Wired** (shown as Jam Proof) players keep their minimap. The 30 s duration is an estimate in line with Black Ops 2.
 
 ## Care Package
 
@@ -72,7 +72,7 @@ Anyone holding use within 1.8 m of a landed crate captures it:
 | Sentry Gun | 80 | 17.2% |
 | Attack Chopper (Stealth Chopper) | 20 | 4.3% |
 
-A crate never holds another Care Package. Black Ops 2's booby-trapped and rerolled crates (Engineer, Black Hat) are left out; Engineer here only shows enemy crates through walls.
+A crate never holds another Care Package. Black Ops 2's booby-trapped and rerolled crates (Engineer, Black Hat) are left out; Engineer here shows enemy crates and Sentry Guns through walls (see Perks below).
 
 **On screen:**
 
@@ -157,7 +157,7 @@ The Attack Chopper follows Black Ops 2's Stealth Chopper (`_helicopter.gsc`, `he
 
   The rate (600 rounds a minute) and damage (40 a round, three to kill) are estimates: Black Ops 2 keeps them in the gun's weapon file. Its kills show as "Attack Chopper" and count nothing toward streaks.
 - **Shooting it down:** it has 1000 health (`heli_maxhealth`). Bullets do half their damage (`heli_armor_bulletdamage`), checked where the shooter saw it, and any rocket passing within 6 m downs it. The shooter scores 100 and the "Destroyed Attack Chopper" medal; both sides hear the call, and its wreck spins down. Bots carrying a launcher go after it as they do UAVs (Black Ops 2's `threat_requires_rocket` covers helicopters).
-- **Minimap:** it never shows on the enemy's minimap, as the Stealth Chopper's name says. No streak draws there yet.
+- **Minimap:** it never shows on the enemy's minimap, as the Stealth Chopper's name says.
 - **Calls:** "ATTACK CHOPPER INBOUND" and "ENEMY ATTACK CHOPPER INBOUND" when it is called.
 - **Roofed maps** leave it out.
 
@@ -182,15 +182,15 @@ The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are i
 
   Shots meet it in a sphere around its gun. Destroying one pays 100 points and the "Destroyed Sentry Gun" medal, and both sides hear "ENEMY SENTRY GUN DESTROYED" or "SENTRY GUN DESTROYED". It blows apart.
 - **Bots** set theirs down where they stand. With no enemy player in sight, they shoot an armed enemy Sentry Gun they can see within 45 m with whatever they hold. Black Ops 2's bots count an active one as a threat.
-- **Sounds:** none of its own yet. It fires with the AK's shot pitched up, as the training sentry does.
+- **Sound:** it fires the AK-47's shot pitched up, as the training sentry does.
 
 `sentry_gun_test` plays it through on a server.
 
 ## On screen
 
 - **Streak column:** the three streaks, bottom right above the weapon cluster, the cheapest lowest, as Black Ops 2 stacks them. Each shows its cost and a thin bar filling with this life's score toward it. An earned streak is lit, with a count when more than one is held. The selected one carries the use key's cap (`godot/scripts/net/streaks_hud.gd`).
-- **"UAV READY"** shows in the upper third with the key to call it in.
-- **Calls** when a UAV or Counter-UAV goes up: "UAV ONLINE", "ENEMY UAV OVERHEAD", "COUNTER-UAV ONLINE", "ENEMY COUNTER-UAV". These stand in for Black Ops 2's announcer until there are voice lines.
+- **"UAV READY"** (or the streak's name) shows in the upper third when one is earned, with the use key ("[4] CALL IN").
+- **Calls** when a UAV or Counter-UAV goes up: "UAV ONLINE", "ENEMY UAV OVERHEAD", "COUNTER-UAV ONLINE", "ENEMY COUNTER-UAV", each with a chime. Black Ops 2's announcer says these; there is no announcer here.
 - **Minimap tags:** small tags along the minimap's foot show every UAV and Counter-UAV up, ours blue and the enemy's red.
 
 ![The streak column with a held Airstrike and the UAV's bar filling](media/scorestreaks-hud.jpg)
@@ -204,15 +204,30 @@ The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are i
 | Use scorestreak | 4 | D-pad right |
 | Next scorestreak | 5 | D-pad left |
 
-Black Ops 2 puts scorestreaks on the D-pad, and on 4 and the mouse wheel on PC. The D-pad left and right no longer pick the primary and secondary weapons; Y switches weapons, as in Call of Duty.
+Black Ops 2 puts scorestreaks on the D-pad, and on 4 and the mouse wheel on PC. Y switches weapons on a controller, as in Call of Duty.
 
 ## Server authority
 
 The server keeps every count and held streak and decides every use (`ClientMessage::UseStreak` names a held streak; a use of one not held is ignored). Each player hears of their own count and held streaks (`StreakEvent::State`), and everyone of the UAVs and Counter-UAVs up (`StreakEvent::Sky`). Each snapshot carries only the dots that player's radar shows (`RadarView`). `streaks_test` plays it through on a server.
 
-## Still to come
+## Perks
 
-UAV assist points and announcer lines. Blind Eye, Cold-Blooded, and Engineer act on these streaks ([create-a-class.md](create-a-class.md#perks)). They are tracked in [TODO.md](../TODO.md).
+Six perks act on scorestreaks ([create-a-class.md](create-a-class.md)); the game shows them under its own names:
+
+| Perk | Shown as | Here |
+| --- | --- | --- |
+| Hardline | Fast Track | score counts 20% more toward streaks (12 tenths of each point) |
+| Ghost | Low Profile | hidden from UAV sweeps and a custom game's constant radar while moving, planting, or defusing |
+| Hard Wired | Jam Proof | an enemy Counter-UAV does not jam the minimap |
+| Blind Eye | Cloud Cover | an enemy Attack Chopper never targets the player |
+| Cold-Blooded | Unmarked | an enemy Guided Missile neither boxes the player nor sends a bomblet at them |
+| Engineer | Field Tech | enemy Sentry Guns and landed Care Packages not ours show through walls (`godot/scripts/net/engineer_view.gd`) |
+
+Not built yet: UAV assist points, an announcer, and the aircraft's own sounds; see [TODO.md](../TODO.md).
+
+## Killcams
+
+A kill by a scorestreak plays its killcam from the streak: behind the Sentry Gun's or Attack Chopper's gun, or in the sky over an Airstrike's or Guided Missile's blast ([killcam.md](killcam.md)).
 
 ## Call of Duty reference
 
