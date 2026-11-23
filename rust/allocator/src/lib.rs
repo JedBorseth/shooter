@@ -1,7 +1,7 @@
 //! The server allocator: starts a dedicated server container for each match
 //! the matchmaker makes, and says where players should connect.
 //!
-//! Nakama's match handler (`docker/online/nakama/modules/matches.lua`) calls
+//! Nakama's match handler (`docker/online/nakama/modules/shooter_match.lua`) calls
 //! `POST /allocate` with the match's mode and map. The allocator picks a free
 //! UDP port pair from its range, starts the server image through the Docker
 //! Engine API (the Docker socket), waits for the image's health check (the

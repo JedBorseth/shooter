@@ -1,174 +1,94 @@
-# Nuketown lighting and visual review
+# Nuketown lighting
 
-The converted Nuketown 2025 map keeps its original geometry and materials. Its
-lighting is rebuilt from the map's own exported light data rather than a generic
-cinematic grade.
+The converted Nuketown 2025 keeps its original geometry and materials (see
+[assets/nuketown.md](assets/nuketown.md)). Its lighting is rebuilt in
+`godot/scenes/nuketown.tscn` from the map's own exported light data, and its
+colour grade is set in `godot/scripts/looks.gd`.
 
-## Source evidence
+## Source
 
-`builds/nuketown/source/exported_maps/black_ops_2/mp_nuketown_2020/` (also in
-`~/plutonium/bo2/exports/nuketown-c2mv3-3.0.5.tar.gz`) contains
-`mp_nuketown_2020_lights.json`. Its one directional light is the sun:
+The export's `mp_nuketown_2020_lights.json` holds one directional light, the
+sun, and 16 spot lights inside the two houses.
 
-- CoD Z-up direction: `(-0.6027, -0.5240, 0.6018)`
-- Converted to Godot Y-up, direction toward the sun:
-  `(-0.6027, 0.6018, 0.5240)`
-- Elevation: `asin(0.6018) = 37.0°`
-- Sun yaw: `-0.854 rad`; light pitch: `-0.645 rad`
-- Export colour: white
+- Sun direction, Call of Duty Z-up: `(-0.6027, -0.5240, 0.6018)`; in Godot's
+  Y-up, toward the sun: `(-0.6027, 0.6018, 0.5240)`.
+- Elevation `asin(0.6018)` = 37 degrees, so the `Sun` node's rotation is
+  pitch -0.645 rad and yaw -0.854 rad.
+- The spot lights' positions place the warm interior lights and the carport
+  fill.
 
-The same file holds 16 spot lights inside the two houses. Their positions are
-used to place the warm practical lights and the carport bounce fill in
-`scenes/nuketown.tscn`.
+The target is Black Ops 2's bright retro-future daylight: a blue sky with hazy
+horizons, warm cream concrete, a salmon-orange house and a blue-grey modern
+one, shaded walls that keep their colour, and dark but readable interiors.
 
-Visual target references (BO2 Nuketown 2025, bright retro-future daylight):
+## The scene
 
-- <https://static.wikia.nocookie.net/callofduty/images/4/41/Nuketown_2025_BOII.jpg>
-- <https://static.wikia.nocookie.net/callofduty/images/6/6f/Nuketown_2025_Aerial_View_BOII.jpg>
-- <https://static.wikia.nocookie.net/callofduty/images/d/d5/Nuketown_2025_Sniper_BOII.jpg>
+| Setting | Value |
+| --- | --- |
+| Sky | `assets/skies/range_day.hdr` panorama, `sky_rotation` 0.12 |
+| Sun | Energy 2.7, warm white, shadows to 100 m |
+| Ambient | From the sky, energy 1.1, so shaded facades stay blue-grey instead of near-black |
+| Tonemap | AgX, exposure 0.9 |
+| SSAO | Radius 1.2, intensity 1.4 |
+| Fog | Density 0.0022, cool light colour, light sun scatter |
 
-They show a bright blue sky with hazy horizons, warm cream concrete, a salmon
-orange house, a blue-grey modern house, readable shaded walls, and dark but
-legible interiors.
+`scripts/looks.gd` replaces the scene's contrast and saturation with a graded
+look-up table for a hard desert noon (firmer contrast and a toe, warm sunlit
+paint against cool shade, the candy colours a shade calmer so soldiers read
+against them) and raises the aerial perspective to 0.8 so the far rooftops
+and the tower fade. It also gets the bloom and lens dirt every graded map
+shares. The grade runs inside the tonemap pass, so it costs
+nothing per frame ([art-direction.md](art-direction.md)).
 
-## What the scene does
+Inside the houses:
 
-`scenes/nuketown.tscn` uses the same building blocks as the other maps, tuned
-to the exported Nuketown sun:
+- Four interior `ReflectionProbe`s (`Interior` in the scene) give the ground
+  floors and garages a darker local ambient: 0.4 in the living rooms, 0.55 in
+  the garages. Each box is turned to its house (17 degrees for the blue house,
+  -20.7 for the yellow one), its faces sit halfway through the walls, and it
+  blends over 0.1 m, so the inner faces of the walls get the interior ambient
+  and the outer faces never do. `godot/tests/nuketown_bounds_test.gd` checks
+  points inside and outside the rooms.
+- Low-energy warm omni lights sit at the fixtures in both houses (living room,
+  kitchen, hallway, fireplace, staircase), with a cool fill under the blue
+  house's carport.
 
-- `range_day.hdr` panorama sky (`sky_rotation` 0.12) for sky light and
-  reflections instead of the previous procedural blue.
-- One warm directional sun (energy 2.7, 37° elevation) with shadows.
-- Sky ambient at 1.1 so shaded facades keep their blue-grey colour instead of
-  going near-black.
-- AgX tonemap with exposure 0.9, contrast 1.06, saturation 1.04; no unrelated
-  sunset grading.
-- SSAO for contact darkening, a light haze for distance, and subtle glow.
-- Four `ReflectionProbe`s with local ambient colour inside the houses' ground
-  floors and garages, so their ceilings and walls read darker than the street
-  without making the shaded exterior black. Each box is turned to its house
-  (17° for the blue house, -20.7° for the yellow one) and its faces sit halfway
-  through the walls, with a 0.1 m blend: the inner faces of the walls get the
-  interior ambient and the outer faces never do. The earlier two boxes were
-  square to the world axes and poked through the walls, so the outside of each
-  garage door had a hard-edged dark rectangle on it, and the yellow garage's
-  back wall a dark band. The garages use a slightly brighter ambient (0.55
-  against 0.4) than the living rooms. `godot/tests/nuketown_bounds_test.gd`
-  checks points inside and outside the rooms.
-- Low-energy warm practical lights in both houses (living room, kitchen,
-  hallway, fireplace, staircase) and a cool carport fill, placed near the
-  exported light positions and the actual fixtures.
+### No lightmap
 
-The previous baseline was a procedural sky, a white 1.2-energy sun, no SSAO,
-no fog, no interior fill, and AgX at default exposure. The result was a flat
-scene with a shaded blue facade that read almost black.
+A lightmap bake needs a second UV set, and the converted world has none on
+any of its surfaces. SSAO and the interior probes stand in for baked bounce
+light, so interiors are flatter than Black Ops 2's baked ones. Adding UV2 in
+the importer and baking would replace them. Nuketown also has no benchmark
+viewpoints, which is why its look changes only settings that cost
+nothing.
 
-### Why there is no baked LightmapGI
+## Review captures
 
-A lightmap bake needs a second UV set on every mesh. The converted world has
-none: a headless probe of `nuketown_world.scn` found 0 of 4,873 surfaces with
-`ARRAY_FORMAT_TEX_UV2`. Adding one would mean regenerating the importer output
-and a global bake, which is outside this lighting pass. SSAO plus the local
-interior probes are the restrained substitute; a later importer/bake pass can
-replace them.
-
-## Capture
-
-The eye heights come from downward collision rays on the converted map. Both
-houses' ground floors are at `y = -1.45`, so a 1.6 m player eye is at
-`y = 0.15`; the street sidewalk is at `y = -1.68` (`eye -0.08`). The earlier
-review cameras were 1.5 m too high.
-
-The review set loads the real `scenes/nuketown.tscn` (player, HUD, viewmodel,
-environment, collision) on the GPU and saves fixed views:
+`godot/tests/nuketown_capture.gd` loads the real scene (player, HUD,
+viewmodel, environment, collision) on a GPU and saves fixed views:
 
 ```sh
-CAPTURE_DIR=/tmp/nuketown-shots godot --path godot --resolution 1600x900 \
-  --script res://tests/nuketown_capture.gd
+CAPTURE_DIR=<dir> xvfb-run -a -s "-screen 0 1600x900x24" \
+  godot --path godot --resolution 1600x900 --script res://tests/nuketown_capture.gd
 ```
 
-On a headless machine with a GPU, wrap it in Xvfb:
+Drop `xvfb-run` on a machine with a display. `CAPTURE_HUD=0` hides the HUD;
+`CAPTURE_QA=1` adds a view of the hearth, where the export has a floor hole
+that the bake repairs. The houses' ground floors are at y = -1.45 and the
+street sidewalk at about -1.68, so free cameras sit at standing eye height
+above those.
 
-```sh
-CAPTURE_DIR=/tmp/nuketown-shots xvfb-run -a -s "-screen 0 1600x900x24" \
-  godot --path godot --resolution 1600x900 \
-  --script res://tests/nuketown_capture.gd
-```
-
-Set `CAPTURE_HUD=0` for clean architectural views. Set `CAPTURE_QA=1` to also
-frame the converted map's known floor hole at `(19.8, -1.45, -10.1)` for
-collision diagnostics.
-
-| View | Camera | Purpose |
+| View | Camera (x, y, z), yaw | Shows |
 | --- | --- | --- |
-| `01_street_spawn` | `(-1.5, -0.08, 14)` yaw -4° | Street at the sidewalk eye height, both houses, bus, haze |
-| `02_blue_house_exterior` | `(8, -0.17, -4)` yaw -80° | Shaded blue house facade, entrance, glass |
-| `03_blue_house_fireplace` | `(17, 0.15, -6)` yaw 0° | Suspended red fireplace, stone chimney, hearth |
-| `04_blue_house_stairs` | `(17, 0.15, -3)` yaw -90° pitch 5° | Blue-house staircase, landing, and pendant lights |
-| `05_yellow_house_exterior` | `(-2, -0.15, -12)` yaw 90° | Opposite (yellow/orange) house |
-| `06_player_spawn` | player camera | Actual first-person player, HUD, and weapon |
-| `07_player_fireplace` | player camera | Actual first-person fireplace at 1.6 m eye height |
-| `08_player_stairs` | player camera | Actual first-person staircase at 1.6 m eye height |
-| `09_player_back_room` | player camera at `(22, -1.45, -17)` | Garage/back-room floor and doorway |
-| `10_qa_floor_hole` | `(18, 0.15, -8)` yaw -41° pitch -30° | Optional hearth/collision-gap evidence |
+| `01_street_spawn` | (-1.5, -0.08, 14), -4 | The street from the sidewalk: both houses, the bus, the haze |
+| `02_blue_house_exterior` | (8, -0.17, -4), -80 | The shaded blue house's front, entrance, and glass |
+| `03_blue_house_fireplace` | (17, 0.15, -6), 0 | The suspended fireplace, chimney, and hearth |
+| `04_blue_house_stairs` | (17, 0.15, -3), -90 | The staircase, landing, and pendant lights |
+| `05_yellow_house_exterior` | (-2, -0.15, -12), 90 | The yellow house |
+| `06` to `09_player_*` | Player camera | The first-person player at the spawn, the fireplace, the stairs, and the back room |
+| `10_qa_floor_hole` | (18, 0.15, -8), -41 | With `CAPTURE_QA=1`: the repaired hearth floor |
 
-Reviewed GPU captures: [street](media/nuketown-fidelity-street.jpg),
+Captures: [street](media/nuketown-fidelity-street.jpg),
 [blue house](media/nuketown-fidelity-blue-house.jpg),
 [stairs](media/nuketown-fidelity-stairs.jpg), and
 [repaired hearth floor](media/nuketown-fidelity-floor.jpg).
-
-## Climb smoothness
-
-Walking up the blue staircase must not teleport the camera. The diagnostic
-script presses `move_forward` at the stair bottom and reports the largest
-per-frame camera delta:
-
-```sh
-godot --headless --path godot --script res://tests/nuketown_climb_test.gd
-```
-
-The final local acceptance run climbed 3.455 m to the upper floor, with maximum
-sampled camera deltas of 0.040 m vertically and 0.071 m horizontally, and zero
-teleport spikes. Collision-only stair ramps supply a continuous walking surface;
-the shared player movement controller is unchanged. The separate physics test
-also climbs and descends both houses, checks diagonal approaches, and verifies
-that bullets ignore the movement-only ramps.
-
-## Play the current build
-
-From the repository root, on the borseth machine:
-
-```sh
-SHOOTER_RESERVE_GPU=1 tools/run_on_borseth.sh res://scenes/nuketown.tscn
-```
-
-This runs the debug Godot build on the existing `:10` remote desktop at
-1280x720, Forward+, 60 fps cap, and opens Nuketown directly. GPU reservation is
-optional: it records and temporarily pauses the active Qwen TTS and music-AI
-services, then restores them when the game exits. Use `SHOOTER_RESERVE_GPU=0`
-to leave those services running. The wrapper uses the usual Xauthority in
-`~/.cache/shooter-nuketown/`, so connect to the remote desktop as usual and
-play in the window.
-
-The equivalent direct command is:
-
-```sh
-godot --path godot --windowed --resolution 1280x720 --rendering-method forward_plus --max-fps 60 res://scenes/nuketown.tscn
-```
-
-The capture set above is produced by a separate headless GPU run, so the
-playable window and the review screenshots use the same scene and renderer
-settings.
-
-## Limitations
-
-- There is no bounced global illumination: interior bounce is approximated by
-  local probe ambient and practical lights, so it is flatter than the original
-  baked BO2 lightmaps.
-- The render export's missing floors are repaired in the bake tool; these are
-  local reconstructed surfaces, not recovered original invisible brush data.
-- The review captures run on the borseth GTX 1660 Ti; the machine also runs a
-  local TTS service that holds GPU memory. The screenshots are visual evidence,
-  not a performance benchmark. A controlled 1600x900 comparison measured roughly
-  78–110 FPS with GPU services paused, versus about 12 FPS when VRAM was full.
-  The same memory-pressure cliff affected the old lighting setup.

@@ -1,70 +1,55 @@
 # Map design
 
 How we lay out multiplayer maps, what we learned from real Call of Duty maps,
-and the decisions behind our own. Agents follow the
+and the rules a map scene follows. Agents follow the
 [map-design skill](../.agents/skills/map-design/SKILL.md); this page is the
-background.
-
-## Looking at a map
-
-With a display available, run `just capture slamcity /tmp/slamcity` to save
-eye-level PNGs with the game's lighting. On a fresh checkout, run `just import`
-first. The command accepts the map keys `arena` (Testing Area), `nuketown`,
-`slamcity`, `warehouse`, `breakwater`, and `zombies`, or a `res://` scene path.
-
-The script picks up to 12 distinct viewpoints from the map's spawn, bot lane,
-and objective markers, using floor collision to place the camera at standing
-eye height. Set `CAPTURE_AUTO=6` to change the count,
-`CAPTURE_TOP=1` to include an orthographic overhead image, or
-`CAPTURE_PRESET=medium` to use a different graphics preset (default high).
-
-Set `CAPTURE_VIEWS='yard:-39.5,0.05,-1,90,0;plaza:-14,0.05,1,90,0,62'`
-for custom views. Coordinates are world-space feet positions in metres.
-Heading 0 faces north (−Z), 90 faces east, and positive pitch looks up.
-The optional last field is vertical FOV in degrees and defaults to the game's
-default. To reshoot the same cameras after a map change, use the same resolution
-and preset and set `CAPTURE_VIEWS_FILE=/tmp/slamcity/views.json` with a new
-output directory.
+background. Each shipped map is described in [maps.md](maps.md).
 
 ## References
 
 We study real Call of Duty minimaps before drawing a layout. They are
 Activision's images, so they live only on the developer's machine, never in
-this repository:
+this repository, a PR, or a build:
 
-- `~/.local/share/shooter/map-references/cod-minimaps/by-game/` (about 285
-  minimaps from CoD4 to BO6, one contact sheet per game, and `index.json` with
-  each file's wiki source).
-- `tools/map_blockout/fetch_cod_minimaps.py` downloads them again from the Call
-  of Duty wiki ([example](https://callofduty.fandom.com/wiki/File:Raid_Minimap_BOII.png))
-  and builds the contact sheets.
+- `~/.local/share/shooter/map-references/cod-minimaps/by-game/<game>/<Map>.png`:
+  about 285 multiplayer minimaps from CoD4 to BO6, a `sheet_<game>.jpg`
+  contact sheet per game, and `index.json` with each file's wiki source.
+- `uv run --with pillow tools/map_blockout/fetch_cod_minimaps.py` downloads
+  them again from the Call of Duty wiki and rebuilds the sheets. It skips maps
+  it already has, so it can be rerun to add games.
 
 We take structure from them (proportions, how lanes form, where landmarks and
-power positions sit), never a whole map.
+power positions sit), never a whole map: no layout, name, landmark, or look
+copied one to one, even renamed.
 
 ### What each family teaches
 
 | Family | Maps | What to take |
 | --- | --- | --- |
 | CoD4 city blocks | Crash, Strike, District, Backlot, Crossfire | A dense block of two-storey buildings with streets cut between them; a central landmark street or plaza (Crash's wreck, Strike's statue); streets that jog so lines stay short; buildings you can enter that overlook streets. |
-| BO2 compact loops | Raid, Standoff, Slums, Express, Hijacked | A small, rounded footprint; a clear centre with loops around it; every route spawn to spawn about the same length; Slums' plaza landmark with many ways in. |
+| BO2 compact loops | Raid, Standoff, Slums, Express, Hijacked | A small, rounded footprint; a clear centre with loops round it; every route spawn to spawn about the same length; Slums' plaza landmark with many ways in. |
 | MW2 and MW3 towns | Skidrow, Invasion, Seatown, Resistance, Karachi, Terminal, Arkaden | Denser interiors; a curving main street; many cut-throughs between lanes. |
 | Open junctions | Piccadilly, Crossfire | One dominant street or junction with buildings round its edges. MW 2019's Piccadilly is the furthest from three lanes, and players often avoid its open middle. |
+| Big-shed interiors | Atlas Superstore (MW 2019), Vacant (CoD4) | A yard start at each end and several staggered ways in; big blocks in a grid with aisles between, not three corridors; a middle under a breach in the roof; an upstairs room near each side; Vacant's overgrown lot against industrial interiors. |
+| Container yards | Shipment, Crash | Containers and stacked stock as hard cover in an outdoor yard. |
 
-### Principles
+### What the good ones share
 
-The good maps share these (Treyarch's "every lane needs a purpose",
-[Xbox Wire, 2025](https://news.xbox.com/en-us/2025/10/27/how-treyarch-crafts-multiplayer-maps-call-of-duty-black-ops-7/),
-and players' views in
-[GamesRadar](https://www.gamesradar.com/how-to-build-a-great-call-of-duty-multiplayer-map-according-to-the-players-that-know-the-game-best)
-agree):
+Treyarch's "every lane needs a purpose"
+([Xbox Wire, 2025](https://news.xbox.com/en-us/2025/10/27/how-treyarch-crafts-multiplayer-maps-call-of-duty-black-ops-7/))
+and players' views
+([GamesRadar](https://www.gamesradar.com/how-to-build-a-great-call-of-duty-multiplayer-map-according-to-the-players-that-know-the-game-best))
+agree on these:
 
-1. A roughly square footprint. Long strips turn lanes into hallways.
-2. Lanes formed by many medium buildings, with streets that loop, not three
-   parallel bands.
-3. Streets that bend or run diagonally; no line runs the length of the map.
+1. A roughly square footprint (1.4:1 at most). Long strips turn lanes into
+   hallways.
+2. Lanes formed by many medium buildings (8 to 20 m) with streets that loop,
+   not three parallel bands.
+3. Streets that bend, jog, or run diagonally; no line runs the length of the
+   map.
 4. Balance from matched walking times and sightlines, not identical halves.
-   Each area has its own identity.
+   Each area has its own identity. A 180 degree turn about the centre,
+   dressed differently, is a good middle ground.
 5. A strong central landmark with four or more ways in.
 6. Two-storey buildings you can enter that overlook streets and link lanes,
    with a place to hold near each team's side.
@@ -72,879 +57,225 @@ agree):
 
 ## Measuring a layout
 
-`tools/map_blockout/` draws a plan (`carve.py`), measures it, and renders it
-(`blockout.py`): walking times from both spawns, the longest clear eye-height
-line from every metre of floor, where the teams meet, and a minimap in the
-style of the references. The skill lists the targets.
-
-## Bot navigation
-
-The server bakes the bots' navigation mesh from the map's static colliders on
-the world layer when it loads the map (`BotNavigation::bake` in
-`rust/game/src/net/bots.rs`), inside a box around every spawn point, bot lane,
-and objective, widened by 40 m sideways, 20 m down, and 40 m up. Far scenery
-can keep its collision: without the box, Nuketown's backdrop mountains, more
-than a kilometre across, made Godot's crash check stop the bake ("Baking
-interrupted"), and bots stood still there in every mode. Keep spawns and
-objectives inside the playable space and the box covers it.
-
-## Slamcity, November 2026
-
-The first rebuild (#97) laid Slamcity out as three parallel strips, 124 × 61 m
-and mirrored across x = 0. Measured, it walked 118 m spawn to spawn (16 s), and
-45% of its floor saw further than 40 m (median longest line 39 m, longest
-120 m): the alley, the avenue, and the space under the El ran together into one
-open field. The user called it terrible and rejected a first redesign that kept
-the strips.
-
-After studying the minimaps, the user chose CoD4 city blocks with BO2 compact
-loops, and sides that are different but balanced. The approved plan is
-[`tools/map_blockout/slamcity_2026_11.py`](../tools/map_blockout/slamcity_2026_11.py):
-
-- 84 × 68 m of carved city blocks round Junction Plaza, where a derailed El
-  car lies diagonally under the station platform.
-- Three lanes: Slam Avenue into the plaza (mid range); the north street through
-  the pawn shop into the far market (close quarters); the market through the
-  ticket hall into the far south street.
-- Each team's half is the other's turned 180 degrees about the centre, dressed
-  differently (tenement and hotel, diner and laundromat, pawn shop and ticket
-  hall).
-- 79 m spawn to spawn (11 s); both teams reach the plaza in 5.6 s; median
-  longest line 30 m, 8% of floor past 40 m, longest 60 m.
-
-## Warehouse, November 2026
-
-[Warehouse](../godot/scenes/warehouse.tscn) uses an editable Cyclops shell
-based on supplied reference photos and a top-down sketch. The following passes
-record how the map developed. The asymmetric rework describes the live layout. The sketch sets
-the layout: a parking strip across the top, a narrow left wing, a large main
-hall, and a truck-bay apron along the bottom. The two office footprints are
-open-top rooms with provisional interior doorways. Spawn 2 and the truck
-apron sit 1.25 m below the hall, with a 5 m ramp at each of the two marked
-bays and another at the left wing entrance.
-
-The [blockout plan](../tools/map_blockout/warehouse.py) uses estimated
-dimensions. Its measurements approximate routes on a single horizontal
-plane. The 8 m Cyclops shell remains editable. Hide the fitout's separate
-`Overhead` group in the editor to see the floor from above.
-
-The first detail pass uses the box-machine reference photos for the
-inspection windows, corrugated-sheet infeed, and control pendant. The
-blue rolling bin and palletized sheets come from the surrounding staging
-area in the photos. The props use the readable industrial silhouettes of
-[Meat](https://www.callofduty.com/guides/multiplayer-maps/call-of-duty-guide-modern-warfare-iii-multiplayer-map-meat)
-as a style reference. The custom props are generated by
-[`tools/build_warehouse_props.py`](../tools/build_warehouse_props.py).
-The parked forklift is from the [Innerscene 3D Parts Library](https://www.innerscene.com/tools/library/3d-parts/electric-counterbalance-forklift-7acc0547)
-under CC0, with paint changed to yellow and static meshes batched by material.
-
-The full fitout uses the original photos as its material and equipment guide.
-The Jumbo infeed, crawl hood, die cutter, sheeter, and rotary press have
-separate Blender models over the existing collision brushes. Stock racks,
-paper rolls, pallet stacks, scrap hoppers, and strapping carts make the
-production and storage areas feel crowded. Offices have workstations,
-filing cabinets, and their own ceilings. The exterior uses marked bays,
-delivery trucks, and pallet staging. Rebuild the models with
-[`tools/build_warehouse_dressing.py`](../tools/build_warehouse_dressing.py).
-The [placement definitions](../tools/map_blockout/warehouse_dressing_layout.py)
-are also used by the 2D blockout to account for the new floor obstacles.
-
-The second pass adds four glass cubicles, scattered packing slips, and a
-wraparound dispatch counter to the fictional office modules. Fixed
-personnel-door panels and contrasting dock bumpers visually distinguish
-the service and loading areas. The shop floor adds supply carts, loose
-cartons, and paperwork around the existing production stations. Rebuild
-the new models with
-[`tools/build_warehouse_second_pass.py`](../tools/build_warehouse_second_pass.py).
-
-The wing has a stock annex and the dispatch office now sits under an
-L-shaped roof.
-
-### Photo-matched pass
-
-The 6v6 rebuild below replaced this pass's interior layout, spawns, and yards;
-its shell, roof structure, materials, and models remain.
-
-A third pass rebuilds Warehouse from nine reference photos of a corrugated-box
-plant and the camera map that marks where each was taken. Where the photos and
-the sketch disagree, the photos win for what is visible and the sketch fills in
-the rest. The hall now runs east to x 44, and the roof is a grey corrugated deck
-at 9.3 m on black open-web joists and girders, with gray steel columns. The
-southeast corner has a 3.8 m CMU storage platform, and the dispatch office and
-shipping room walls rise to the roof. Three production lines run east–west on
-the sketch's machine blocks. The north line ends in the white die-cutter and
-turns north into the blue delivery section and its duct. The middle line ends at
-the east aisle. The south line starts at the arch strapper beside the AOPACK
-finishing cell. Palletized corrugated stock, paper rolls, hoppers, and pallet
-towers stand where the photos show them. The high-bays are shadowed downlights
-with a faint uplight, over a polished slab with saw cuts and cracks. Tilt-up
-walls show lifting inserts, and the scene adds light haze and dust.
-
-The hall is lit by a baked lightmap (`scenes/warehouse.lmbake`), as the other
-maps are: the high-bays, their uplights, and the office lamps are bake-only
-lights (`BakedLights`, removed in the game), and the sun through the roof
-breach is baked too, with a live copy for players and the haze on High only.
-One failing high-bay stays live so it can flicker. The reflection probes are
-High-only. Drawn live (with SDFGI, SSIL, and screen-space reflections) the hall
-cost 23 to 29 ms a frame on Medium on the reference card; baked it costs 5.7
-(6.5 at the worst view). The builder keeps the setup, so after a rebuild bake
-again with `tools/bake_lightmaps.sh res://scenes/warehouse.tscn`. Two traps:
-a LightmapGI bakes only what is under its parent, so it sits at the scene's
-root, and the fixture housings are kept out of the bake, or each lamp, which
-sits inside its housing, is shadowed off the whole hall. The bake runs at
-0.7 of the meshes' texel density: at full density it runs the 3 GB reference
-card out of memory.
-
-- Layout source: [`tools/map_blockout/warehouse_photo_layout.py`](../tools/map_blockout/warehouse_photo_layout.py)
-  writes `godot/tools/warehouse_photo_layout.json`.
-- Builder: [`godot/tools/warehouse_photo_build.gd`](../godot/tools/warehouse_photo_build.gd)
-  rebuilds the Cyclops shell and the `PhotoPass` group in the open scene. It is
-  run from the editor, for example through the Godot AI MCP bridge's `execute_gdscript`.
-- Assets: [`tools/build_warehouse_photo_textures.py`](../tools/build_warehouse_photo_textures.py)
-  (procedural textures), [`tools/build_warehouse_photo_props.py`](../tools/build_warehouse_photo_props.py)
-  (stock, building parts), and [`tools/build_warehouse_photo_machines.py`](../tools/build_warehouse_photo_machines.py)
-  (production equipment), all written to `godot/assets/props/warehouse_photo/`.
-- Surfaces: `godot/shaders/warehouse_floor.gdshader`, `godot/shaders/warehouse_tiltup.gdshader`,
-  and `godot/materials/warehouse/`.
-
-#### Playing Warehouse
-
-Warehouse is on the title screen under Free Roam and in local match setup for
-every mode except Search and Destroy. Servers load it with `--map warehouse`.
-Team 0 starts in the Field, the overgrown lot that wraps around the hall's
-northwest corner. Team 1 starts at the Docks, 1.25 m below the hall. The Field
-has two north and two west entrances. The Docks have a personnel stair, a
-vehicle ramp, and two open trailers with a mantle at the apron end.
-
-Twenty-eight neutral respawns cover the interior aisles and both yards. Bots
-follow three lanes through receiving, the mid stockpile, and the east aisle.
-Capture the Flag uses the centre of each team's six starts. Domination puts A
-inside the north end of production, B by the mid stockpile, and C in the
-dispatch aisle near the ramp. Hardpoint rotates through the Mid Stockpile,
-Receiving, Pick Mezzanine, Catwalk, and Quality Control. Separate acoustic
-zones cover the hall, the upstairs shift office, and the Field.
-
-`godot/tests/warehouse_test.gd` checks spawn placement, props and clearance,
-the flexo tunnel, room roofs, the shift office, the access structures, dock
-traversal, and entry through the menu.
-
-### 6v6 rebuild (November 2026)
-
-The user's direction: flow like a real 6v6 Call of Duty map rather than match
-the building exactly, with Modern Warfare's **Atlas Superstore** as the model of
-a warehouse map done properly. The approved plan is
-[`warehouse_2026_11.py`](../tools/map_blockout/warehouse_2026_11.py); the
-building is the real one's single square hall from its fire plan (no wing).
-
-What it takes from Atlas Superstore, as structure rather than layout:
-
-- **A yard start at each end.** Atlas starts one team in the Backlot and the
-  other at the Loading Docks; here the parking lot (north) and the truck apron
-  (south), each with box trucks and pallet walls set as staggered gates.
-- **Several ways in, each staggered.** Four doors per side, with a pallet
-  baffle just inside each so no line runs from a yard into the hall, and PVC
-  strip curtains in the doorways.
-- **Big blocks in a grid, aisles between.** Atlas's shelving blocks become
-  machine lines (flexo and die cutter in the north; rotary, folder-gluers, and
-  strapping in the south), pallet racking faced onto the aisles, and roll and
-  stock blocks, about 6 to 13 m with 4 to 5 m aisles: many routes, not three
-  corridors. Wall departments (ink room, maintenance shop; plate room, and an
-  open forklift charging bay since the variation pass) cut the back and front
-  aisles into stretches.
-- **A middle under an open roof.** Atlas's ceiling is open to the sky in
-  places; here a 12 m roof breach over the mid stockpile lets a sun shaft and
-  haze fall on a stack of jumbo rolls, with fallen deck panels around it.
-- **An upstairs office near each team** (Carpenters Office and Security in
-  Atlas): the shift office (north-east) and the QC lab (south-west), two
-  storeys, a stair inside, an open-plan upper floor whose window band looks
-  over the racking and the bay.
-- **Overwatch reached by a stair:** a steel crossover deck at 2.6 m over a
-  middle-row machine in each half, with rails along its sides and a stair from
-  the cross aisle.
-
-Verticality and set pieces added on review:
-
-- **Room roofs.** The ink room (north) and plate room (south) are one storey
-  with a flat roof at 3.4 m, which looks down the back aisle over a parapet.
-  At the ink room, two pallets of stock against the wall step 1.1 m and 2.2 m,
-  so players mantle up to the roof (Call of Duty's mantle reaches 1.35 m
-  here); the plate room has a fixed ladder instead (see the variation pass).
-- **The roll perch** in the mid stockpile: 1.1 m, then 2.0 m, then the roll
-  tops at 2.6 m.
-- **Crouch tunnels.** Each long north–south production line is split by a
-  transfer conveyor at 1.4 m: a crouching or sliding player (1.1 m) gets
-  through, a standing one does not (Atlas's shortcuts).
-- **Effects:** the breach's sun shaft and denser haze, a torn cable tray over
-  the north crossover throwing sparks with a flash, two failing high-bays that
-  flicker (back and front aisles), an amber beacon turning on the parking
-  lot's forklift, and a toppled rack's spilled sheets in the north bay. (The
-  wall steam went in the detail pass; the south half's twins of the sparks,
-  beacon, and spill went in the variation pass.)
-
-Stairs are clipped as one ramp (steps to see, a slope to walk on), as Call of
-Duty clips stairs, and rails as one box from deck to top rail.
-
-| Measure | Photo pass | 6v6 rebuild | Target |
-| --- | --- | --- | --- |
-| Start to start | 110 m (14.8 s) | 75 m (10.1 s) | 75 to 90 m |
-| Median longest eye-height line | 33.8 m | 20.5 m | 32 m or less |
-| Floor that sees past 40 m | 33% | 2% | under 10% |
-| Longest line | 80 m | 50 m | 60 m or less |
-
-Measured on the built scene: `godot/tests/warehouse_grid.gd` samples its real
-collision on a 0.5 m grid and [`warehouse_measure.py`](../tools/map_blockout/warehouse_measure.py)
-reports the targets (one floor per cell, so upstairs is not measured).
-
-**Bots.** Lanes used to be read as running west to east, with a team's
-direction taken from its spawns' mean X; Warehouse's teams start north and
-south. Bots now take the direction between the two teams' starts and run each
-lane that way (`lane_route` in `rust/game/src/net/bots.rs`), which is
-unchanged on maps whose teams start west and east. `bots_test.gd -- --warehouse`
-plays a minute of bot TDM on Warehouse in CI.
-
-**Collision.** Every prop collided as one box around its whole model, so the
-overhead extraction hood walled off the floor under it, forklifts blocked the
-air around their forks and mast, the incline conveyor blocked everything under
-its belt, and every shelf of a rack stopped bullets. [`build_warehouse_clip.py`](../tools/build_warehouse_clip.py)
-voxelizes each model and writes clip boxes to
-`godot/assets/props/warehouse_photo/clip.json`, the way Call of Duty maps use
-player clip: boxes that follow the solid parts, keep every opening at least
-0.3 m tall open (rack shelves, the space under overhead parts), and skip
-details too thin to matter. The builder gives every placed prop those boxes. The test fails on a collider
-with nothing visible around it, a prop box that reaches past its model, or a
-return to single boxes.
-
-**Photo 10** looks across the feed end of the rotary die-cutter. Its models,
-now placed by the 6v6 layout:
-
-- `rotary_feeder`: the navy feed section with yellow handwheels, a black
-  bellows guard, a blue and silver roller feed table behind a rusted yellow side
-  guide, the control column and red lockout box, the operator's clipboard, cup,
-  bottle, and ear defenders, and an overhead blue rail with red LED counters and
-  a convex safety mirror. It sits under the south crossover.
-- `pallet_rack_orange` (orange uprights, teal beams, curved board formers)
-  faces the racking blocks onto the aisles, and `trim_duct` (a 1 m galvanized
-  duct on the floor) runs along the bay walls as waist-high cover.
-- Cable ladder trays at 5.8 m across the south bay and a branch north at 6.5 m.
-- A grey primed roof deck in place of the black one, and stronger high-bay
-  uplight, so the deck reads light grey above black joists as in the photo.
-
-Rebuild:
+A plan is a Python module written with `tools/map_blockout/carve.py`: the
+map starts solid, streets, yards, and rooms are carved open, and cover is set
+back in. Every piece is placed with its twin (turned 180 degrees about the
+centre by default, mirrored across x = 0 with `carve.SYMMETRY = "mirror"`)
+unless it says `twin=False`, which is how an asymmetric plan is drawn. x runs
+west to east, z north to south, in metres. The plan also names its two
+spawns, `ROUTES`, `PROBES`, and `LANES`.
 
 ```sh
-uv run --with numpy --with matplotlib tools/map_blockout/blockout.py tools/map_blockout/warehouse_2026_11.py
-python3 tools/map_blockout/warehouse_photo_layout.py
-blender -b --python tools/build_warehouse_photo_machines.py -- rotary_feeder pallet_rack_orange trim_duct
-uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py
-# A real renderer is needed: headless Godot saves MultiMesh instances empty,
-# so the script refuses to rebuild those parts under --headless.
-xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
-GRID_OUT=grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
-uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py grid.json --centre=13.5,8
+uv run --with numpy --with matplotlib tools/map_blockout/blockout.py <plan.py> [--out DIR]
 ```
 
-`godot/tests/capture_warehouse.gd` renders the photo viewpoints and a top-down
-plan for comparison.
+It prints walking distances and times (sprinting, 7.4 m/s) spawn to spawn,
+along each route, and from each spawn to each probe; the longest clear
+eye-height line from every metre of floor (cover marked `low` does not block
+it); and any floor that cannot be reached. It writes `plan.png`,
+`sightlines.png` (with the line where both teams arrive at the same moment),
+and `minimap.png`, drawn like a Call of Duty minimap to sit beside the
+references.
 
-### Detail pass (November 2026)
+Targets for a 6v6 core map:
 
-![Warehouse before (left) and after (right) the detail pass: the fallen forklift by the west wall, the burnt-out switchboard, the smoke reaching the roof, the breach's rubble and puddles, the roof leak, and the south yard](media/warehouse-detail.jpg)
+| Measure | Target |
+| --- | --- |
+| Footprint | 70 to 90 m a side |
+| Spawn to spawn | 75 to 90 m walk (10 to 12 s sprinting) |
+| Spawn to the centre | 5 to 6 s, both teams within 0.3 s |
+| Median longest eye-height line | 32 m or less |
+| Floor that sees past 40 m | under 10% |
+| Longest line anywhere | 60 m or less |
+| From a spawn area | no line into the enemy's half |
 
-The user's direction: make the hall look lived in and run down, as if a
-professional map maker had done a large detail pass; break up the repeating
-floor and walls; keep collision clean; and replace the steam on a blank wall
-with a fallen-over forklift smoking like it is broken, and more like it.
+A plan only approximates the built map. To measure what players get,
+sample the scene's real collision: `godot/tests/warehouse_grid.gd` writes a
+0.5 m grid of it and `tools/map_blockout/warehouse_measure.py` reports the
+same targets (one floor per cell, so upper floors are not measured).
 
-Call of Duty's warehouse maps (Modern Warfare's Atlas Superstore, the
-wrecked interiors of Black Ops 3) dress a big shed this way: a few story set
-pieces you can read from across the room, clutter banked where it would
-gather, ground blended from painted masks rather than tiled, and none of the
-clutter in player clip.
+Approved plans stay in `tools/map_blockout/`: `slamcity_2026_11.py`,
+`breakwater_2026_11.py`, and `warehouse_2026_11b.py` (Warehouse's
+asymmetric plan; `warehouse_2026_11.py`, a turned-twin plan, is kept for
+comparison).
 
-- **Floor** (`warehouse_floor.gdshader`). Every 5.5 m slab between the saw
-  cuts is its own pour: its own tone, roughness, and shifted, turned patch of
-  the detail and mask textures, with the seams hidden in the joints, so the
-  repeat never shows. One slab in ten is a newer patch pour ringed in sealant.
-  On top, masks painted over the whole map from the layout
-  (`tools/build_warehouse_floor_masks.py`, `floor_layout_a/b.png` at 10 px/m):
-  dust banked against walls, stock, and machines; forklift tyre tracks down
-  every long clear aisle with the polish they leave; puddles that fill the
-  slab's low spots first; oil under machines, trucks, and the wreck; scorch;
-  extinguisher powder; damp; and broken slab. Broken slab is cut in with
-  parallax occlusion mapping (`floor_damage.png`, spalls and cracks 3.5 cm
-  deep indoors, potholes 6 cm in the yards): purely visual, so collision stays
-  the flat slab. The yards use the same shader with weathered, stained
-  concrete.
-- **Walls** (`warehouse_tiltup.gdshader`). Every tilt-up panel is its own
-  casting (tone and texture patch), some lifting inserts weep rust, rain
-  streaks run down from the roof flashing on some panels, and a damp band with
-  a salt line sits at the foot. Walls read the floor masks at their foot: dust
-  banks against them, damp rises where water stands, and soot climbs above a
-  fire, widening as it rises.
-- **Set pieces** (`tools/map_blockout/warehouse_detail_layout.py`):
-  - North, west wall: a forklift on its side where the low stock stood,
-    smouldering. A dark smoke column rises, slows, and spreads into a haze
-    under the roof; small flames lick in the engine bay; a cable arcs; oil and
-    scorch spread on the slab and soot up the wall; its load, a broken pallet,
-    and a knocked-over cone lie round it. It lies with its guard against the
-    wall and its chassis to the aisle, and collides as one box 1.15 m high,
-    flush with the chassis: the same cover the low stock gave, and players
-    mantle onto it.
-  - South, east wall: a switchboard that arced and burnt out, its middle door
-    blown open and swung flat against the next section, breakers charred,
-    cables spilled, blue-white arcing and a wisp
-    of smoke, soot up the wall, cordoned with cones and barrier tape, an
-    emptied extinguisher in its powder.
-  - Middle: the roofing that came down through the breach: a rubble mound, a
-    folded deck sheet, debris, torn insulation hanging off the edges, a joist
-    hanging by one end (above 5 m), rain dripping off the edges into puddles,
-    and weeds in the wet slab.
-  - North, back aisle: the flickering high-bay now hangs off one hanger on its
-    chain at 5.5 m, swinging, its light swinging with it, spitting sparks.
-  - South: a roof leak dripping into a mop bucket, with a wet-floor sign.
-  - Oil drums on a spill tray by the maintenance shop, one knocked over and
-    leaking; pallet jacks left in two aisles.
-- **Clutter**: litter drifts (box blanks, stretch film, strapping, paper,
-  cups, bottles, offcuts), broken pallets, and debris against stock, machines,
-  and walls; extinguisher points, disconnect boxes, and notice boards on the
-  walls; a dumpster, bin bags, tyres, weeds, potholes, and oil stains in each
-  yard. Models: `tools/build_warehouse_detail_props.py` (Blender).
+## Generator checks
 
-**Collision.** Litter, debris, cones, tape, signs, weeds, and wall dressing
-never collide. A set piece that blocks has one simple shape: the wreck's box,
-the switchboard's cabinet, the drums, the dumpster, the bucket. The rubble
-mound is one low convex hull (0.3 m crown, slopes under 20 degrees), so
-sprinting or sliding players ride over it. `warehouse_test.gd` checks the
-wreck is mantle-height cover clipped flush with its chassis, the mound rises
-smoothly, no clip box is an
-ankle-high snag, and clutter casts no shadow.
+Slamcity and Breakwater are generated from one layout file each, and the
+generator refuses a layout that breaks the map's rules
+(`tools/slamcity_checks.py`, `tools/breakwater_checks.py`; CI runs both
+through `tools/test_slamcity_layout.py` and `tools/test_breakwater_layout.py`):
 
-**Cost** (GTX 1660 Ti, 1080p, GPU ms, before / after, six views): Low
-5.5–7.3 / 5.6–8.1, Medium 9.6–11.9 / 9.9–12.4, High 12.1–14.6 /
-12.5–15.5. Views add 0.1–0.8 ms (the floor's masks about 0.2 ms); looking
-straight at the wreck's smoke adds about 1 ms. Warehouse was already over the
-budget before this pass.
+- collision is the same on both halves, turned about the centre (rooms
+  dressed differently on each side are exempt);
+- no spawn point is in sight of the enemy's spawns or high ground, and on
+  Breakwater no eye-height line runs from one spawn yard into the other;
+- no ground line at eye height runs past 50 m (Slamcity) or 55 m
+  (Breakwater), nor past 50 m between the two teams' high ground;
+- every Hardpoint move goes at least 16 m, to a zone that does not overlap
+  the last one seen from above;
+- whichever of our high ground or streets the enemy takes, some spawn points
+  stay out of their sight, so the server always has somewhere safe to put us.
 
-Rebuild:
+The checks shape the build. Breakwater's pipe bridges across the main road,
+the control house's blank east face, and the screens round the workshop's
+roof deck all exist to pass them.
 
-```sh
-blender -b --python tools/build_warehouse_detail_props.py
-python3 tools/map_blockout/warehouse_photo_layout.py
-uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
-xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
-```
+## Lessons from our maps
 
-### Variation pass (November 2026)
+- **Strips fail.** A three-strip Slamcity, 124 x 61 m and mirrored, measured
+  118 m spawn to spawn with 45% of its floor seeing past 40 m and a 120 m
+  longest line: the alley, the avenue, and the space under the El ran into one
+  open field. The owner rejected it and a redesign drawn the same way. The
+  city-block plan that replaced it meets every target.
+- **A turned twin can still read as a mirror.** Warehouse's halves were one
+  half turned 180 degrees; even dressed differently, the owner found it a
+  mirror. Its plan draws each half on its own (`twin=False`), a grass field
+  against a truck dock, balanced by walking times and sightlines.
+- **High ground faces its own fight.** A roof or upper floor that sees across
+  the map to the enemy's high ground or spawn turns into a sniper duel; give
+  it walls or screens so it covers its own lane.
+- **Close spawn-yard lines with structure, not fog.** Screens, bridges, and
+  staggered baffles inside doorways keep a street open to walk while cutting
+  the line from a yard into the map.
 
-![Warehouse after the variation pass: the scanned office's break area and a desk room through its glass (top), the plate room's ladder and the truck apron's container (bottom)](media/warehouse-variation.jpg)
+## Building for play
 
-The user's direction: the map read as a mirror image, so take out duplicated
-pieces and give the two halves their own identity with ideas from other Call
-of Duty maps, make one office look like an office they scanned in real life,
-and add a ladder up onto an area.
+Collision follows Call of Duty's player clip, not the visible mesh:
 
-Call of Duty's maps are rarely mirrored: balance comes from matched walking
-times and sightlines, while each side's rooms, yards, and ways up differ (see
-"What the good ones share" above). The halves keep the 6v6 plan's footprints
-and cover heights where they block lines, so the measures hold, and change
-what stands in them:
+- Stairs collide as one ramp (steps to see, a slope to walk on); rails as one
+  box from deck to top rail.
+- A prop collides with a few boxes fitted to its solid parts that keep every
+  opening at least 0.3 m tall open (rack shelves, the space under overhead
+  parts) and skip thin details: `tools/build_warehouse_clip.py` voxelizes
+  each model to write them.
+- Anything a sprinting or sliding player could catch a foot on either never
+  collides (litter, debris, cones, tape, signs, weeds, wall dressing) or gets
+  one smooth shape (a rubble mound is one low hull, slopes under 20 degrees).
+- A map edge that needs player clip (Nuketown's) is tall, thin walls on the
+  movement-only layer (16): they stop players, while bullets pass through.
 
-| | North (team 0) | South (team 1) | Reference |
-| --- | --- | --- | --- |
-| Yard | Two box trucks, pallet stock, a forklift with its beacon, a covered car in the parking lot | One truck, a 20 ft shipping container where the second truck stood (same gate overlap), a wall of scrap bales three high, empty pallets | Shipment's and Crash's container yards |
-| Door baffles | Four pallet stacks | Two pallet stacks, two of paper rolls | |
-| Room roof | Ink room: crates to mantle | Plate room: a fixed ladder, the only way up | Crash's courtyard ladder onto a rooftop; Rust's ladder up from Maintenance |
-| Wall department | Maintenance shop (walled room) | Open forklift charging bay: chargers, a forklift on charge, a spare battery, a guard rail | |
-| Office, ground floor | The scanned office (below) | QC lab: a box compression tester, sample files | Vacant's and Atlas's lived-in rooms |
-| Office, upstairs | Desks | QC test benches | |
-| Effects | Sparks over the crossover, spilled sheets, beacon | Burnt switchboard's arcing (detail pass) | |
+Heights and widths that matter (`MoveParams` in `rust/sim/src/movement.rs`):
 
-**The ladder** is the sim's ladder (`rust/sim/src/movement/ladder.rs`, Call of
-Duty's grab, climb, slide down, and lowered weapon), marked with a
-`LadderVolume` from the layout's `ladders` list. It is a 3.4 m yellow steel
-ladder with 0.3 m rungs on the plate room's hall-facing wall, its stiles
-carried 1.05 m past the roof edge as grab rails; one clip box fills the gap
-between rungs and wall, no higher than the roof. The roof is a riskier perch
-than the ink room's: the climb is slower than two mantles and the weapon is
-down the whole way.
-
-**The scanned office.** The user's phone LiDAR scan of a real in-plant office
-(about 10.6 x 6.0 m inside, a 2.84 m ceiling) is the reference, not an asset:
-like a Call of Duty map's photogrammetry, it was measured and rebuilt as clean
-game models (`tools/build_warehouse_variation_props.py`), and the scan is not
-in the repository. It fills the shift office's ground floor beside its stair:
-
-- a desk room at each end behind a full-height glass partition with a black
-  anodized frame and head track, its glass door standing open, and plank
-  vinyl floors; a polished-concrete break area between;
-- in the break area, a wall TV over a stainless table with a laser printer
-  on its undershelf, a black mini fridge with a microwave and paper cups on
-  it, framed woodland prints, two chairs, and a putting mat on the floor;
-- grey oak-laminate desks with drawer pedestals and monitors, a filing
-  cabinet, a jacket and a hi-vis vest on hooks;
-- white panel walls, a suspended ceiling at 2.85 m with linear LED strips, a
-  white-framed glass door to the back aisle, and a window over the plant.
-
-The partitions, door, and window collide for players but carry
-`surface = glass`, so rounds pass through them as they do Call of Duty's
-interior glass: glass keeps up to 95% of a round's damage, less a share for
-the pane's thickness (`rust/sim/src/penetration.rs`), about 91% for an M4
-round through a partition straight on. Bots see, and are seen, through glass
-and never take it for cover (`clear_line` in `rust/game/src/net/bots.rs`).
-The way through jinks: the bay door (moved to the office's west end) into the
-south desk room, its partition door at the east end into the break area, then
-the north partition's door at the east end again. The partition doorways are
-1.6 m wide under a 2.3 m head and the glass door 1.7 m by 2.4 m, so the bots'
-navigation mesh (0.4 m radius, 1.8 m tall, baked in 0.25 m cells) runs through
-each; `warehouse_test.gd` bakes it with the bots' settings and walks every
-door and the stair. The glass draws with an unlit fresnel sheen
-(`shaders/office_glass.gdshader`, single-sided, no fog): lit, double-sided
-panes cost about 5 ms on Medium with a partition filling the screen. One lamp
-lights all three rooms through the glass. Litter and wall dressing keep out of
-the office (the layout's `clear` areas).
-
-**Measures** (the built scene through `warehouse_grid.gd` and
-`warehouse_measure.py`, which sample collision, so the office glass counts as
-opaque there; the office is interior, off every long line): start to start 75 m (10.1 s) both before and after;
-median longest eye-height line 20.4 m before, 21.0 m after; floor seeing past
-40 m 2% before and after; longest line 50 m before, 48 m after.
-
-**Cost** (GTX 1660 Ti, 1080p, GPU ms, before / after, at the new places):
-
-| View | Low | Medium | High |
-| --- | --- | --- | --- |
-| Scanned office, break area | 5.87 / 6.18 | 10.21 / 10.88 | 13.13 / 14.11 |
-| Through the office glass | 6.23 / 6.79 | 10.77 / 11.81 | 14.12 / 15.44 |
-| Plate room ladder | 6.46 / 6.41 | 11.22 / 11.22 | 14.15 / 14.11 |
-| Charging bay | 5.37 / 5.43 | 9.38 / 9.54 | 11.99 / 12.15 |
-| Truck apron | 5.73 / 5.70 | 9.57 / 9.54 | 12.38 / 12.33 |
-| Hall, centre looking north | 6.29 / 6.46 | 10.19 / 10.28 | 13.34 / 13.41 |
-
-Rebuild:
-
-```sh
-blender -b --python tools/build_warehouse_variation_props.py
-uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py shipping_container_blue qc_bench
-# The office glass material is set in the models' .gltf.import files.
-python3 tools/map_blockout/warehouse_photo_layout.py
-uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
-xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
-```
-
-### Wall damage pass (November 2026)
-
-The user's direction: another detail pass on Warehouse's walls, adding bumps
-and cracks. The target is the project's graphics target (Black Ops 2 and 3's
-readable shapes with modern Modern Warfare's scanned surfaces): concrete that
-reads as cast and used, with damage that tells where things hit it, rather than
-a flat painted panel.
-
-Everything is in the tilt-up wall material
-(`godot/shaders/warehouse_tiltup.gdshader`, `materials/warehouse/tiltup_wall.tres`),
-so no geometry, collision, or lightmap changed: the damage is purely visual,
-like the slab's broken concrete.
-
-- **Bumps.** The cast face is a scan, ambientCG's `Concrete042A`: bug holes and
-  a gentle undulation. The hall is lit by a lightmap without direction, so a
-  normal map alone barely shows; the builder bakes the light the relief would
-  take from the high-bays above (bumps lit on top, shaded beneath, the bug
-  holes dark) into one grey shade map with the face's tone. Its normal map still
-  serves the live sun and the failing high-bay.
-- **Spalls.** Corners knocked off at panel feet by forklift tines and pallets
-  (most panels, at the joints), a strike higher up at mast height on some, and
-  a few spalls round lifting inserts. Their broken face is the same scan broken
-  back to its mesh (`Concrete042D`): shallow at the rim, the rusted mesh
-  showing only at the heart. Parallax occlusion mapping cuts them in within
-  14 m, and their slopes are shaded as if lit from above. Some joints have
-  short runs of chipped arris.
-- **Cracks.** Hairline cracks rise from the panel feet, often from a strike;
-  some run down from the roof line; and cracks run out diagonally, up and away
-  from the opening, from the top corners of every doorway in the tilt-up
-  walls, where a real panel cracks first. Each has a dark open core, chipped
-  lips, and a damp halo that weeps below it, some with a pale salt bloom. No
-  CC0 scan has wall hairlines (the scanned slab cracks are 4 to 8 cm of rubble),
-  so the four crack strips are drawn by the builder.
-- **Repairs.** Some panels have a trowelled grout patch over an old spall:
-  paler, smoother, its raised rim lit along the top.
-
-Each panel's damage comes from its own hash, so the halves differ and nothing
-repeats panel to panel; it fades out between 36 and 45 m, where a spall is a
-few pixels. The doorway corners come from the layout's openings:
-`tools/build_warehouse_wall_damage.py` writes them into the material
-(`opening_corners`, 16 at most), so run it again when the openings change.
-
-**Cost** (GTX 1660 Ti at 1440 x 849, GPU ms, the benchmark's five Warehouse
-views, best of two 300-frame runs, before / after): Low 2.20 / 2.22 average,
-worst view 2.93 / 2.66; Medium 3.52 / 3.55, worst 4.09 / 4.28 (+4.8%); High
-4.90 / 4.94, worst 5.45 / 5.52. The cost is in the worst view, the parking
-lot looking at the north wall from 4 m, where wall fills the screen: about
-0.2 ms of per-pixel work deciding each panel's damage. To keep it there, the
-damage changes only the wall's colour (shading the slopes as if lit, rather
-than changing its normal and roughness, which the depth prepass would also
-pay for), and the soot code now skips its texture reads on walls with no fire
-below them, which paid for the new surface itself.
-
-Rebuild:
-
-```sh
-uv run tools/build_warehouse_wall_damage.py
-godot --headless --path godot --import
-```
-
-### Prop variation pass (November 2026)
-
-The user's direction: the same props were spammed round the map; make slight
-changes so they are not identical. The pallet stock alone is about 170 sheet
-stacks from six models and 47 roll stacks from two.
-
-Call of Duty's warehouse and stockyard maps dress repeated stock this way:
-one model's variants and per-instance colour and wear, so a row never reads as
-copies. The layout already turns each piece a little and varies its height;
-`godot/scripts/prop_variation.gd` (`PropVariation`, called by
-`scripts/warehouse.gd` when the map loads) varies the rest:
-
-- **Board** in six shades (as made, bleached, recycled grey-brown, dark,
-  yellowed, dusty), with a white-top liner on some; **pallets** in pine as
-  made, fresh, weathered grey, or dark; **straps** grey-green, black, white,
-  blue, or yellow; **paper rolls** in four grades; **scrap bales** in the board
-  shades; the **racks' loads** too; **concrete barriers** in four tones.
-- Some loads are **opened**: straps cut (a fifth), the cap board lifted off (a
-  fifth, taking its straps with it), the label torn away (a third), the
-  stretch wrap stripped from a roll stack (a third).
-
-Only materials and part visibility change, never a transform: collision, the
-measured sightlines, and the baked lighting stand, and nothing is saved into
-the scene (variants marked editable in the scene embedded every model's mesh
-in it). Each prop's choices come from a hash of its node name, so every
-player sees the same loads; a dedicated server skips it.
-
-The busiest stock also has **variant models**
-(`tools/build_warehouse_photo_props.py`, `STACK_SPECS` and `ROLL_SPECS`):
-every sheet stack the layout places has a `_picked` variant (the top bundle
-opened, straps cut and cap gone, a quarter to two fifths of one half's sheets
-picked so the top steps down, three to six loose sheets skewed on the low
-half) and a `_knocked` one (a bottom corner crushed in 15 to 20 cm by a
-forklift tine, the top bundle slumped 3.5 to 5 degrees); both roll stacks
-have `_torn` (the top roll's outer layer peeled into a hanging flap, a roll
-knocked off centre) and `_crushed` (a dropped, out-of-round roll with the next
-one shoved off centre and leaning). Each keeps its base's outer size, so the
-builder's fit, and the cover a placement gives, stay the same. The builder
-(`_stock_variant` in `godot/tools/warehouse_photo_build.gd`) keeps the base on
-half the placements and gives a quarter each variant, by a hash of the
-placement, so the layout and its measures are untouched; a placement keeps
-its node name whichever it gets. Only stacks 2.4 m or taller are picked, so
-the low half stays above eye height, and nothing under 1.5 m is knocked, so the
-stacks players mantle are as they were. 102 of the 261 placements are
-variants. Their clip boxes are fitted like every model's. Measured on the
-built scene (`warehouse_grid.gd`, `warehouse_measure.py`), nothing moved:
-start to start 75 m (10.1 s), median longest line 21.0 m, 2% of floor seeing
-past 40 m, longest line 48 m, before and after.
-
-**Not yet baked.** The lightmap is still the one baked before the variants:
-the 102 variant props, whose models changed, are lit by the lightmap's probes
-until Warehouse is baked again (`tools/bake_lightmaps.sh
-res://scenes/warehouse.tscn`; with all 127 bake-only lights it ran past two
-hours on a GTX 1660 Ti without finishing). A few read flatter or darker than
-their neighbours until then.
-
-`tools/warehouse_build_headless.gd` used to drop the bake-only lights when it
-saved (they free themselves outside the editor unless `keep_baked_lights` is
-set on Engine), so the next bake came out black; it now keeps them, and saves
-instanced nodes without the root type the editor leaves out.
-
-`tests/prop_variation_test.gd` checks the variety, that no strap floats over
-a load without its cap, that nothing moves or loses collision, that the same
-names give the same loads, and that variants keep to those heights.
-
-Rebuild:
-
-```sh
-blender -b --python tools/build_warehouse_photo_props.py -- stack_tall_b_picked roll_stack_kraft_torn  # ...
-uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py stack_tall_b_picked  # ...
-WAREHOUSE_PARTS=stock xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
-tools/bake_lightmaps.sh res://scenes/warehouse.tscn
-```
-
-### Asymmetric rework (November 2026)
-
-The user asked for a grassy start, rebuilt walkways, and two sides that play
-differently. CoD4's **Vacant** supplied the contrast between an overgrown
-outdoor approach and industrial interiors. The route geometry follows
-Warehouse's own approved [asymmetric blockout](../tools/map_blockout/warehouse_2026_11b.py).
-
-| Area | North | South |
+| Size | Value | Use |
 | --- | --- | --- |
-| Starts | The Field has grass, exposed slab, a guard booth, and cover in the demolished west wing. A fence closes off the substation. | The Docks have a lowered concrete apron with scrap bales, barriers, pallets, and a container. |
-| Entries | Two north doors, a west dock door, and the truck breach. Inside baffles interrupt the yard sightlines. | The personnel stair and vehicle ramp offer direct approaches. Two backed-in dry vans have level thresholds to the hall and a 1.25 m mantle from the apron. |
-| Interior | Production runs north–south past a flexo line with a crouch tunnel, die cutter, ink room, maintenance, and receiving. The two-storey shift office keeps the scanned ground floor. | High-bay storage runs east–west through staggered rack ends, with a QC cell, charging bay, plate room, wrapper, and strapper. |
-| Upper routes | A steel catwalk at 2.8 m has a stair from the back aisle and a ladder at the south end. Two crate levels lead to the ink room roof. | The 3 m pick mezzanine has a stair from the dispatch aisle, flow racks beneath it, and a ladder toward mid. A separate ladder serves the plate room roof. |
+| Standing height | 1.8 m | Headroom everywhere players walk |
+| Crouch and slide height | 1.1 m | A 1.4 m gap is a crouch tunnel: crouch or slide through, never stand |
+| Prone height | 0.72 m | |
+| Mantle | 0.5 to 1.35 m | Ledges to climb onto; stack cover in steps under 1.35 m to make a way up |
+| Bot doorway | 1.4 m or wider | The bots' navigation mesh (0.375 m radius, 0.125 m cells) stays open through it at any grid alignment |
 
-The mid stockpile still sits under the roof breach. The scene generator places
-the objectives and starts alongside the geometry. From their own starts, teams
-reach their near Domination flags in about 2.0 s and 1.9 s. The baked hall and
-trailer lights fill the interiors, and the sun lights the yards and roof
-breach. Ground masks blend worn paths and fractured concrete into the Field's
-grass. Footsteps and impacts use the grass surface. Scattered plants and floor
-debris carry no collision. Low reduces the grass instance count and draw range.
-The asset sources and clip guidance are in the [Field and access kit manifest](../godot/assets/props/warehouse_field/manifest.json).
+A collider's `surface` metadata sets its footsteps, impacts, and
+penetration: `glass` stops players but keeps up to 95% of a round's damage
+(`rust/sim/src/penetration.rs`), and bots see through it and never take it as
+cover. Ladders are `LadderVolume` nodes (`rust/sim/src/movement/ladder.rs`).
 
-**Built-scene measurements.** The grid samples real collision every 0.5 m.
-Times below use the mean team start and the same mid-stockpile point on both
-builds, at world (18.75, 3.25).
+Bots bake their navigation mesh from the map's static colliders on the world
+layer when the server loads the map (`BotNavigation::bake` in
+`rust/game/src/net/bots.rs`), inside a box round every spawn point, bot lane,
+and objective, widened by 40 m sideways, 20 m down, and 40 m up. Keep spawns
+and objectives inside the playable space and the box covers it; far scenery
+can keep its collision.
 
-| Measure | Previous scene | Asymmetric scene | Target |
-| --- | ---: | ---: | --- |
-| Start to start | 75 m (10.1 s) | 87 m (11.7 s) | 75–90 m |
-| Start to mid, north / south | 5.1 / 5.2 s | 5.8 / 6.0 s | 5–6 s, within 0.3 s |
-| Walkable footprint | 60.5 × 76 m | 79 × 79.5 m | 70–90 m per side |
-| Median longest eye-height line | 21.0 m | 24.5 m | ≤32 m |
-| Floor seeing past 40 m | 1.6% | 6.5% | <10% |
-| Longest eye-height line | 48 m | 53 m | ≤60 m |
-| Opposite-half floor visible from starts | — | 0 sampled points | None |
+## Map markers
 
-**GPU cost.** On the GTX 1660 Ti at 1440 × 849, the paired benchmarks used
-five viewpoints per layout. The new views cover the Field, Docks, Catwalk,
-Pick Mezzanine, and mid stockpile.
+The server reads a map's gameplay from named `Node3D` children of the scene's
+root (`rust/game/src/net/server.rs`). Each is optional and has a fallback.
 
-| Preset | Previous average / worst | Asymmetric average / worst | Asymmetric 1080p average / worst |
-| --- | ---: | ---: | ---: |
-| Low | 3.19 / 4.22 ms | 2.56 / 3.71 ms | 1.75 / 1.83 ms |
-| Medium | 3.71 / 5.80 ms | 3.55 / 4.20 ms | 3.66 / 3.80 ms |
-| High | 5.64 / 7.09 ms | 5.10 / 5.70 ms | 6.29 / 6.60 ms |
+| Node | Children | Metadata | Without it |
+| --- | --- | --- | --- |
+| `SpawnPoints` | One per spawn, facing the way players should | `team` 0 or 1; none or -1 for either team | Each team lined up through the player start, 14 m apart |
+| `BotLanes` | One per lane, its children points from team 0's side to team 1's | | Bots roam the navigation mesh |
+| `Flags` | Capture the Flag bases | `team` 0 or 1 | Each base at the centre of its team's spawns |
+| `DominationFlags` | A, B, C in order | `radius` (default `domination::DEFAULT_RADIUS`, 1 to 12 m), `label` | A by team 0's spawns, B in the middle, C by team 1's |
+| `Hardpoints` | Zones in rotation order | `size` (full box, default 10 x 4 x 10 m), `label` | No Hardpoint zones |
+| `ChargeSites` | Search and Destroy sites | `size` (default 5 x 3.6 x 5 m), `label` | Two sites on the defenders' side of the middle, one to each flank |
 
-The 1080p run used `tools/steady.sh` to hold the GPU in its performance
-state. Each preset stayed within its standard budget.
+A map script can build its markers in `prepare_server()`, which the server
+calls before reading them (Nuketown builds `SpawnPoints` from a JSON file). A
+`roofed` metadata of `true` on the root takes out the scorestreaks that need
+open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
+([audio.md](audio.md)).
 
-Rebuild from the repository root after importing the Field and walkway assets.
-The minimap is rebuilt from scene collision.
-The shell stays editable, the access kits use separate fitted clip at the decks
-and stairs, and the lightmap stays on the scene root at 0.7 texel scale.
-The full map uses Godot's Low bake sampling with denoising.
+## Tools
 
-```sh
-python3 tools/map_blockout/warehouse_photo_layout.py
-uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
-uv run tools/build_warehouse_wall_damage.py
-export DISPLAY=:10 XAUTHORITY="$HOME/.local/state/shooter/Xauthority"
-flock ~/.cache/shooter-fidelity/gpu.lock godot --path godot --script res://tools/warehouse_build_headless.gd
-flock ~/.cache/shooter-fidelity/gpu.lock tools/bake_lightmaps.sh res://scenes/warehouse.tscn
-MINIMAPS=warehouse godot --headless --path godot --script res://tools/build_minimaps.gd
-GRID_OUT=/tmp/warehouse-grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
-uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py /tmp/warehouse-grid.json --centre=18.75,3.25
-```
+- **Look at a map.** With a display, `just capture <map> <dir>` saves
+  eye-level PNGs with the game's lighting (`godot/tests/capture_view.gd`).
+  `<map>` is a server key (`arena`, `nuketown`, `slamcity`, `warehouse`,
+  `breakwater`, `zombies`), `testing`, or a `res://` scene path. It picks up
+  to 12 viewpoints from the map's spawn, lane, and objective markers, at
+  standing eye height on the floor below. Environment variables:
+  `CAPTURE_AUTO` (number of views), `CAPTURE_TOP=1` (adds an overhead
+  `top.png`), `CAPTURE_PRESET` (`low`, `medium`, or `high`, the default),
+  `CAPTURE_VIEWS='name:x,y,z,heading,pitch[,fov];...'` (feet position in
+  world metres; heading 0 faces -Z, 90 faces +X; positive pitch looks up; FOV
+  vertical), and `CAPTURE_VIEWS_FILE` to reshoot a saved `views.json`.
+- **Drive the editor.** `just agent-editor` and the editor's MCP bridge let an
+  agent open a scene and render it from any eye
+  ([editor-mcp.md](editor-mcp.md)).
+- **Minimaps.** `godot --headless --path godot --script
+  res://tools/build_minimaps.gd` renders each multiplayer map's minimap from
+  its collision (`MINIMAPS=slamcity,warehouse` limits it) into
+  `godot/assets/minimaps/` and `godot/scripts/net/minimap_data.gd`. Rebuild it
+  whenever a map's collision changes.
+- **Props.** `python3 tools/prop_catalog.py --find <tags>` searches
+  `godot/assets/props/catalog.json` (size, triangles, tags, source);
+  `--write` rebuilds it from `tools/prop_library.py`, and CI checks it.
+  `godot/tests/capture_props.gd` renders studio pictures and contact sheets of
+  the library beside a 1.8 m post.
+- **Decals.** `python3 tools/decal_catalog.py --find <tags>` searches
+  `godot/assets/textures/decals/catalog.json`.
+- **Dressing the generated maps.** `tools/map_dressing.py` dresses the Testing
+  Area and the Zombies arena and shades their slabs and panels per vertex;
+  Slamcity and Breakwater place props from their layout files; Warehouse from
+  its layout scripts in `tools/map_blockout/`.
+- **Lightmaps.** `tools/bake_lightmaps.sh [res://scenes/<map>.tscn ...]` bakes
+  (with no argument: the Testing Area, Slamcity, Zombies, and Warehouse).
+  Lights that exist only for the bake go under a `BakedLights` node
+  (`scripts/baked_lights.gd`), which frees them in the game. A LightmapGI bakes
+  only what is under its parent, so it sits at the scene's root; keep lamp
+  housings out of the bake or each lamp shadows itself off the room.
+  `godot/tests/lightmaps_test.gd` fails a bake that is black.
 
-### Warehouse outdoor refresh
+### ProtonScatter, FuncGodot, and TrenchBroom
 
-The second pass follows the abandoned industrial edges of CoD4's **Vacant**
-and the working loading bays of Modern Warfare's **Atlas Superstore**. The
-Field reads as a demolished building site and the Docks as an active freight
-apron. The approved routes, starts, objectives, and yard boundary volumes
-continue to define play.
+- **ProtonScatter** scatters props along paths or across areas in the editor.
+  Pick them from the prop catalog.
+- **FuncGodot** builds TrenchBroom `.map` brush geometry into a scene. New
+  `FuncGodotMap` nodes use `trenchbroom/shooter_map_settings.tres`, which
+  shares TrenchBroom's entity definitions and FuncGodot's default inverse
+  scale of 32 (one Quake unit is 1/32 m).
 
-- **The Field.** A world-space painted mask blends dry and green grass,
-  packed dirt, gravel, the wing's fractured slab, wet patches, and tyre ruts.
-  The same path centrelines thin the vegetation on the approaches from the
-  starts to all four entrances. Shadowless MultiMesh batches put clumps and
-  weeds along the walls, fence, and slab joints. The existing visibility fade
-  and Low density reduction still apply. Cut column feet, torn flashing,
-  paint ghosting, rubble, and a demolition skip mark the former wing.
-- **The truck breach.** A crumpled, tilted Blender variant of the delivery
-  truck points into the hall. Its original fitted clip still defines cover
-  and leaves the established passage beside the cab. Fractured aggregate and
-  bent rebar frame the opening, and rubble, oil, and coolant sit on both sides.
-- **The Docks.** Numbered shelters, padded seals, dock lights, bumpers, yellow
-  bay lines, chocks, bollards, pallet hardware, a waste skip, a trench drain,
-  and a leveler plate dress the working sides of the apron. The existing dry
-  vans have their rear doors folded along the flanks. Both yards use chain-link
-  over segmented concrete bases and the south run includes a gate. The
-  original boundary shapes supply the yard clip.
-- **Daylight.** The key keeps its existing direction with a slightly more
-  neutral daylight colour. Baked fill lifts the apron in the hall's shadow
-  and the loading lamps contribute local pools of light. The scene uses the
-  Warehouse horizon at a sky rotation of −1.14 radians with the existing
-  baked hall's ambient energy. The backdrop extends terrain roughly 90 m
-  beyond the fences with one shadowless mesh outside the collision and bake.
-  Scrub and lamps close to the fence connect the foreground to the horizon.
-- **Ambience.** The builder authors one Warehouse soundscape. FieldNorth and
-  FieldWest keep their reverb values and are flagged outdoors.
-
-`tools/build_warehouse_outdoors.py` builds the Blender variants and
-`tools/map_blockout/warehouse_outdoors.py` places the dressing. To regenerate
-the models, run the following command before importing them into Godot. Then
-regenerate the layout and floor masks and rebuild and bake the scene using the
-commands above.
-
-```sh
-blender -b --factory-startup --python-exit-code 1 --python tools/build_warehouse_outdoors.py
-```
-
-The final collision grid matches the asymmetric rework on every walkable
-cell, including height and sight samples. Start to start is 87 m (11.7 s)
-and the approaches to mid are 5.8 s and 6.0 s. Median and longest sightlines
-are 24.5 m and 53 m. The floor share seeing past 40 m is 6.5%.
-
-GPU ms at 1920 × 1080 on the GTX 1660 Ti, using `tools/steady.sh` with the
-same five viewpoints before and after the refresh:
-
-| Preset | Asymmetric rework avg / worst | Outdoor refresh avg / worst | Budget |
-| --- | ---: | ---: | ---: |
-| Low | 1.75 / 1.83 | 1.90 / 1.96 | 4.00 |
-| Medium | 3.66 / 3.80 | 3.95 / 4.15 | 6.50 |
-| High | 6.29 / 6.60 | 6.72 / 6.92 | 12.00 |
-
-### Warehouse review fixes
-
-The Dock 1 and Dock 3 seals now fill the space between the trailer and the
-concrete jambs and header. The cargo passages stay open. Bots use the personnel
-stair or ramp to reach the apron. The west lane jogs around the storage rack
-ends. Neutral spawns with nearby cover ahead now face along the open aisles.
-
-Quality Control moved into the aisle just south of the test cell. The Catwalk
-hill is centred at deck height. Each hill extends 20 cm below the hall floor,
-and the standing-clearance test checks both a floor hit and room for a 1.8 m
-capsule. Quality Control went from 45% to 87% standable under that check.
-
-The skips and dock pallet jack have simple fitted collision. The small bay
-bollards stay clear of the passage as visual markers. The Field saplings have
-grounded trunks, and Low thins each grass batch using a deterministic shuffle.
-The far ground stays level along the Field before it grades down toward the
-Docks. Galvanized cobra-head lights continue the industrial road lighting from
-the horizon strip.
-
-The rebuilt scene still measures 87 m between team starts (11.7 s), with
-5.8 s and 6.0 s approaches to mid. Median and maximum sightlines are 24.2 m and
-53 m, with 6.5% of floor seeing past 40 m. No team start sees the opposite half.
-
-## Breakwater, November 2026
-
-Breakwater is the third 6v6 core map, built to contrast with Slamcity (a city
-at dusk) and Warehouse (an industrial interior): a coastal fuel terminal on a
-mole between two harbour basins, in late-morning sun. Its plan is
-[`breakwater_2026_11.py`](../tools/map_blockout/breakwater_2026_11.py), in the
-Black Ops 2 three-lane tradition. It takes structure, never a layout, from:
-
-- **BO2's compact loops** (Raid, Standoff, Slums): a nearly square footprint,
-  a central landmark with four ways in, and every route spawn to spawn about
-  the same length.
-- **A landmark with high ground each team climbs on its own side** (Slums'
-  plaza, Standoff's market): the truck loading rack, an island deck under a
-  canopy, set diagonally across the middle like Slamcity's derailed car, with
-  a tanker parked in the bay on each side. Each team's stair climbs onto its
-  own end of the deck; a crossing under the deck's middle joins the bays.
-- **Lanes that change character halfway**, as Slamcity's do: the north route
-  runs along Blue's quay (mid to long range, stacked containers and the
-  loading-arm berth for cover) and then through the pump house into Red's
-  tank farm (close quarters round the storage tanks); the south route is its
-  turned twin. The main road is the mid-range lane into the rack.
-- **Two-storey buildings near each team's side** that link the lanes: the
-  control house (Red: the laboratory) with an upper floor over the main road
-  and the quay, and the workshop (Red: the fire station) with a roof deck over
-  the tank farm.
-
-Each team's half is the other's turned 180 degrees about the centre, dressed
-differently (white block and blue cladding against sand block and cream;
-white tanks against silver; control room consoles against lab benches; a
-lathe against a foam unit).
-
-| Measure | Plan | Target |
-| --- | --- | --- |
-| Footprint | 84 × 74 m | 70 to 90 m a side |
-| Spawn to spawn | 78.6 m (10.6 s) | 75 to 90 m |
-| Spawn to the rack | 5.7 s and 5.8 s | 5 to 6 s, within 0.3 s |
-| Median longest eye-height line | 29.0 m | 32 m or less |
-| Floor that sees past 40 m | 7% | under 10% |
-| Longest line | 58 m | 60 m or less |
-
-### Building it
-
-Breakwater is built the way Slamcity is, and reuses Slamcity's kit:
-
-- [`tools/breakwater_layout.py`](../tools/breakwater_layout.py) describes the
-  map once with Slamcity's primitives (`shell`, `Wall`, `stair`, `roof`, ...).
-- [`tools/breakwater_models.py`](../tools/breakwater_models.py) models the
-  terminal: the tanker trucks, storage tanks with their spiral stairs, pipe
-  racks, pumps, switchgear, transformers, containers, the marine loading
-  arms, bollards and fenders, and the moored product tanker and far tank farm
-  beyond the boundary. Its `LOOKS` table adds the terminal's paints and
-  claddings to Slamcity's looks.
-- [`tools/build_breakwater_city.py`](../tools/build_breakwater_city.py) runs in
-  Blender and writes `godot/assets/maps/breakwater/city.gltf`, merged by chunk
-  and material with shadow-only proxies, as Slamcity's builder does.
-- [`tools/build_breakwater.py`](../tools/build_breakwater.py) writes
-  `godot/scenes/breakwater.tscn`. It refuses a layout that fails
-  [`tools/breakwater_checks.py`](../tools/breakwater_checks.py), which CI also
-  runs (`tools/test_breakwater_layout.py`): collision twinned; **no clear
-  eye-height line from anywhere in one spawn yard to anywhere in the other**;
-  no spawn point in sight of the enemy's spawns, upper floor, roof deck, or
-  half of the deck; no line over 55 m across the ground or 50 m between the
-  teams' high ground; Hardpoint moves of at least 16 m; and at least 15 spawn
-  points hidden from our own high ground and 8 from an enemy inside our half.
-
-The checks shaped the build: pipe bridges with clad screens cross the main
-road at the gate and where it meets the rack (they close the deck's and the
-far upper floors' lines down the road into the yard while the road stays open
-under them); the control house's upper floor has no windows on its east face;
-and a plant room and a louvred screen bound the workshop's roof deck, so it
-fights over the tank farm rather than across the map to the other roof.
-
-Rebuild:
-
-```sh
-uv run --with numpy --with matplotlib tools/map_blockout/blockout.py tools/map_blockout/breakwater_2026_11.py
-blender -b --python tools/build_breakwater_city.py
-python3 tools/build_breakwater.py
-tools/bake_lightmaps.sh res://scenes/breakwater.tscn
-MINIMAPS=breakwater godot --headless --path godot --script res://tools/build_minimaps.gd
-```
-
-### Playing Breakwater
-
-Breakwater is on the title screen under Free Roam and in the local match
-setup for every mode, Search and Destroy included; servers load it with
-`--map breakwater`.
-
-- **Spawns:** 20 per team, the first ones in the gate yard, then the gate
-  road, the gate lane, and the ground floors of the control house and the
-  workshop.
-- **Bots** follow three lanes, west to east: the quay and the pump house; the
-  main road, through the crossing under the deck; and the tank farm and the
-  fire pumps.
-- **Capture the Flag:** each team's flag stands in its gate yard by the main
-  road's mouth.
-- **Domination:** A on Blue's main road between the pickup and the analyser
-  shelter, B in the crossing under the rack's deck (3 m circle), C A's twin
-  on Red's main road.
-- **Hardpoint** rotates through the Loading Rack (round the crossing), the
-  Pump House, the Rack Deck (a floor up), and the Fire Pumps.
-- **Search and Destroy:** Red defends. A is in the pump house's east room on
-  the north route; B is on Red's quay by the containers on the south route.
-
-## Editor add-ons for dressing
-
-- Use **ProtonScatter** to distribute clutter along paths or across areas in
-  Godot. Choose props from the [prop catalog](../godot/assets/props/catalog.json).
-- Use **FuncGodot** to build TrenchBroom `.map` brush geometry into a Godot scene.
-  New FuncGodotMap nodes use `trenchbroom/shooter_map_settings.tres`, which shares
-  the entity definitions used by TrenchBroom. It uses FuncGodot's default inverse
-  scale of 32, so one Quake unit is 1/32 meter and player-sized spaces have a
-  texture density similar to Quake. [FuncGodot build guide](https://func-godot.github.io/func_godot_docs/FuncGodot%20Manual/pages/guide_building_maps.html#inverse-scale-factor)
-
-On Linux x86-64, download the TrenchBroom 2025.1 AppImage, make it executable with
-`chmod +x TrenchBroom-Linux-x86_64-v2025.1-Release.AppImage`, and launch it from
-outside the checkout. [TrenchBroom 2025.1 release](https://github.com/TrenchBroom/TrenchBroom/releases/tag/v2025.1)
+To set up TrenchBroom 2025.1 (on Linux, its AppImage, run from outside the
+checkout):
 
 1. In Godot, open `addons/func_godot/func_godot_local_config.tres`. Set
-   **TrenchBroom Game Config Folder** to the absolute path to your TrenchBroom
-   user games folder plus `Shooter` (on Linux, `~/.TrenchBroom/games/Shooter`).
-   Set **Map Editor Game Path** to the checkout's `godot/` directory and click
-   **Export func_godot settings**.
-2. Open `trenchbroom/shooter_game_config.tres` and click **Export GameConfig**.
-   This writes `GameConfig.cfg`, `Shooter.fgd`, and the game icon to the user
-   games folder. [FuncGodot configuration guide](https://func-godot.github.io/func_godot_docs/FuncGodot%20Manual/pages/guide_map_editor_config.html)
-3. Restart TrenchBroom, select **Shooter** from its game list, and set its
-   **Game Path** in Preferences to the same `godot/` directory so it finds
-   `assets/textures`.
+   **TrenchBroom Game Config Folder** to your TrenchBroom user games folder
+   plus `Shooter` (on Linux, `~/.TrenchBroom/games/Shooter`) and **Map Editor
+   Game Path** to the checkout's `godot/` directory, then click **Export
+   func_godot settings**.
+2. Open `trenchbroom/shooter_game_config.tres` and click **Export
+   GameConfig**. This writes the game config, `Shooter.fgd`, and the icon to
+   the games folder.
+3. Restart TrenchBroom, pick **Shooter**, and set its **Game Path** to the
+   same `godot/` directory so it finds `assets/textures`.
 
-Before shipping a dressed scene, keep the generated geometry and prop instances
-as ordinary Godot resources and nodes. The export presets exclude both add-ons
-and the TrenchBroom configuration.
+Keep what they generate as ordinary Godot resources and nodes before shipping
+a scene: the export presets leave out both add-ons and `trenchbroom/`.
+
+## Decisions
+
+The owner made these; follow them unless the owner changes them.
+
+- Maps play like real Call of Duty maps, and every layout is approved as a
+  minimap before it is built.
+- Slamcity: CoD4 city blocks with BO2 compact loops, and two sides that are
+  different but balanced rather than mirrored.
+- Warehouse: flow like a real 6v6 map rather than match the real building,
+  with Atlas Superstore as the model of a warehouse map; a grassy start, and
+  two sides that play differently.
+- Everything a player looks at is a modelled mesh built in Blender; Godot
+  primitives and CSG stay for collision, effects, and debug shapes. Warehouse's
+  shell is the exception: Cyclops blocks, kept editable.
+- Reference material (the Call of Duty minimaps, the office scan behind
+  Warehouse's shift office) is measured and rebuilt from, never committed.

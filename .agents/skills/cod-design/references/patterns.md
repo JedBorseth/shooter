@@ -104,7 +104,7 @@ scoreboard and the next match counting down.
 - Spawn away from enemies, out of their sightlines, and away from recent
   deaths, near teammates when it is safe. Objective modes spawn by side.
 - Initial spawns are fixed per side; Search and Destroy never respawns.
-- Write-up: docs/tdm-spawns.md.
+- Write-up: docs/spawns.md.
 
 ## Loadouts and progression
 

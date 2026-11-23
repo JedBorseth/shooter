@@ -1,260 +1,393 @@
 # Sound
 
 How the game's sound is built and mixed, and where each part lives. The
-reference is a modern military shooter: every gun has its own voice, the space
-around a shot answers it, and handling is heard beat by beat.
+reference is a modern Call of Duty: every gun has its own voice, the space
+around a shot answers it, footsteps tell you where people are, and handling is
+heard beat by beat. Sources and licences for every file are in
+[`godot/assets/CREDITS.md`](../godot/assets/CREDITS.md).
 
 ## Buses
 
+The layout is `godot/default_bus_layout.tres`.
+
 | Bus | Sends to | What plays on it |
 | --- | --- | --- |
-| Master | | Hard limiter at -0.5 dBFS. |
-| Weapons | Master | Gunshot layers, yours and everyone else's (near). Keys the ambience ducker. No engine reverb: tails are baked. |
-| WeaponsDistant | Weapons | Other players' mid and far gunfire. Ducked by close gunfire. |
-| Effects | Master | Impacts, shells, landing and hurt sounds. Room reverb indoors. |
-| WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`). Its own bus so a reload never ducks the ambience. |
-| Footsteps | Master | Everyone's steps and body sounds. |
-| Ambience | Master | Beds and prop emitters, ducked by gunfire. |
-| UI | Master | Menus, hit markers, medals. |
+| Master | | `MixCompressor` (off unless the audio mix turns it on), then a hard limiter at -0.5 dBFS. |
+| Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's and chopper's guns. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
+| WeaponsDistant | Weapons | Other players' `mid` and `far` layers. Ducked by close gunfire. |
+| Effects | Master | Impacts, near misses, case clinks, explosions, grenades, zombie voices, Zombies barriers and doors. Gets the room reverb indoors. |
+| WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`), so a reload follows the Effects slider and never ducks anything. |
+| Footsteps | Master | Everyone's steps, ladder rungs, landings, slides, mantles. Gets the room reverb indoors. |
+| Ambience | Master | Beds, prop hums, one-shots. `GunfireDuck`, a compressor keyed from Weapons (threshold -30 dB, ratio 6, 600 ms release), pulls it down under gunfire. |
+| UI | Master | Menus, hit markers, medals, match stings, mode and streak calls. |
 | Player | Master | Your own breath, heartbeat, being hit, death. |
 
-`AudioEnvironment` (`acoustics.rs`) adds filtered copies of buses on demand:
-`"<bus> (occluded)"` (low-pass) and `"<bus> (behind)"` (high shelf).
+Buses made at runtime:
+
+- `AudioEnvironment` (`acoustics.rs`) adds filtered copies on demand:
+  `"<bus> (occluded)"` (a 900 Hz low-pass) and `"<bus> (behind)"` (a high
+  shelf).
+- `Soundscape` (`ambience.rs`) adds `"Ambience (outdoor)"`, the outdoor bed's
+  own bus, so it can be muffled indoors.
+
+The volume sliders (Master, Weapons, Effects, Footsteps, Ambience, Interface)
+and the Audio mix choice (Headphones, Speakers, Competitive, Night) are in
+`godot/scripts/settings.gd`. A mix sets the panning width of every positional
+sound, dB offsets on top of the sliders, and whether `MixCompressor` runs
+(Competitive and Night). See [settings.md](settings.md).
 
 ### Loudness priority
 
-Rather than a compressor that pumps everything, close gunfire asks for a
-duck (`acoustics::request_duck`): your own shot at full strength, anyone
-else's falling off to nothing at 15 m. The environment turns Footsteps down
-4 dB and WeaponsDistant 6 dB by that amount, with an amplifier of its own
-(`PriorityDuck`) so the volume settings stay as set, and lets go over 0.35 s.
-Reloads and other handling never duck anything.
+Close gunfire asks for a duck (`acoustics::request_duck`): your own shot at full
+strength, anyone else's falling off to nothing at 15 m (`DUCK_RANGE`). The
+environment turns Footsteps down 4 dB and WeaponsDistant 6 dB by that amount,
+with an amplifier of its own (`PriorityDuck`) so the sliders stay as set, and
+lets go over 0.35 s. Handling sounds never duck anything.
 
-Being hurt never dulls your hearing: there is no low-pass on the world's
-buses at low health and no ringing ears after a hit, so footsteps and
-gunfire stay as clear as at full health.
+Being shot never dulls your hearing: there is no low-pass on the world at low
+health and no ringing after a hit, so footsteps and gunfire stay as clear as at
+full health. Only a blast rings the ears: a flashbang by how hard it caught
+you, and a frag or the Search and Destroy charge within 9 m of the eye
+(`BLAST_RING_RANGE`, twice as far for the charge). The ring is a beating
+3.15 kHz tone generated in `godot/scripts/equipment/ear_ring.gd`, 0.6 to 2 s
+long by strength.
 
-### Voice budget
+### Voices
 
-Every sound plays from a fixed pool; nothing is instantiated per shot:
+Every sound plays from a fixed set of players; nothing is made per shot.
 
 | Source | Voices |
 | --- | --- |
-| Your gun (snap, body, tail, indoor tail, mech, hollow) | 6 players, 1 to 4 voices each (a whole-shot snap 14) |
-| Your weapon's handling (`WeaponFoley`) | 4 per view |
-| Each other player: gunfire (snap, body, tail, mid, far), steps, body, reload | 8 players |
-| Impacts and ricochets, everyone's (`ShotTracer`) | 10 |
+| Your gun (`WeaponView`): snap, body, tail, indoor tail, mech, hollow | snap 4 (14 for a whole shot), body 4, each tail 1, mech and hollow 3 |
+| Your weapon's handling (`WeaponFoley`) | 4, round-robin |
+| Each other player's gunfire (`Gunfire`): snap, body, tail, mid, far | snap 14, body 4, tail 1, mid 2, far 2 |
+| Each other player's movement (`footsteps::Foley`): steps, body, gear | 3, 2, 2 |
+| Impacts and ricochets, everyone's (`ShotTracer`) | 10, taken in turn |
 | Near misses | 2 |
-| Slapback | 2 |
-| Your body (breath, heart, hurt, ears, moves, step gear) | 6 |
+| Slapback | 2 players of 2 voices |
+| Fired cases' clinks (`CombatEffects`) | 4 |
+| Your body (`PlayerSounds`): breath, heart, hurt, body, gear | 2 each |
 
-Delayed sounds (speed of sound, bullet flight, slapback) wait in bounded
-queues (8, 16, and 4 entries).
+Sounds that wait to arrive wait in bounded queues: other players' gunfire at
+the speed of sound (8 per player), bullet sounds at the bullet's speed (16),
+and slapback (4).
 
 ## Gunshots
 
-Every gun has its own recordings, from the raw master tracks of the CC0 Free
-Firearm Sound Library. The BR-3 is an SKS and the LSW-6 a Mosin-Nagant (a
-full-power rifle round), so no weapon borrows another's voice.
+Each gun's shot is a folder under `godot/assets/audio/weapons/<key>/`, from the
+raw master tracks of the CC0 Free Firearm Sound Library. The BR-3 is an SKS and
+the LSW-6 a Mosin-Nagant, so each of the original nine has its own recording.
+Newer guns borrow a close one's folder until their own lands (`sound_from` on
+the view scene, `audio::shot_source`):
 
-Guns are being rebuilt one at a time the way the
-[gun-sound-design](../.agents/skills/gun-sound-design/SKILL.md) skill
-describes, with `tools/build_gunshots.py`; each is approved by ear first.
+| Weapon | Plays |
+| --- | --- |
+| KR-12 | AK-47 |
+| CQ-10 | PDW-9 |
+| BP-9 | M1911 |
+| DM-7 | BR-3 |
+| SG-12, RL-4 | M870 |
+
+A borrowing gun still uses its own folder for any layer it has (`mech`,
+`hollow`, foley), and its own `mid` and `far` first. Once a `snap` exists in its
+own folder, its own shot takes over with no code change.
+
+Guns are remade one at a time with the
+[gun-sound-design](../.agents/skills/gun-sound-design/SKILL.md) skill, each
+approved by ear before it merges.
 
 ### Whole shots (`tools/build_gunshots.py`): the AK-47
 
-Each take is one real shot mixed from every microphone that caught it at once
-(near the muzzle, beside and behind the shooter, lined up to the sample),
-put in a short bright room, squashed so it stays loud until the next round,
-and EQ'd so a spray matches the reference game's gun (Counter-Strike's AK for
-the AK-47). It is written whole, about 1.2 s with its room and echo, as the
-gun's `snap_N.wav`; the gun has no `body`, `tail`, `tail_indoor` or `mech`.
-`WeaponView` and `Gunfire` then give the snap 14 voices
-(`audio::WHOLE_SHOT_VOICES`), so full auto overlaps in full and builds into
-one dense wall instead of each shot cutting the last one's tail. Each gun's
-recipe (microphone mix, room, density, EQ, loudness) is in
-`build_gunshots.RECIPES`; the EQ comes from `build_gunshots.py match`.
+Each take is one real shot mixed from every microphone that caught it (near the
+muzzle, beside and behind the shooter, lined up to the sample), put in a short
+bright room, squashed so it stays loud until the next round, and EQ'd so a spray
+matches the reference game's gun (Counter-Strike's AK for the AK-47). It is
+written whole, about 1.2 s with its room and echo, as `snap_N.wav`; the gun has
+no `body`, `tail`, `tail_indoor` or `mech`. With no tail, `WeaponView` and
+`Gunfire` give the snap 14 voices (`audio::WHOLE_SHOT_VOICES`), so full auto
+overlaps in full and builds into one dense wall instead of each shot cutting the
+last one's tail. Each gun's recipe (microphone mix, room, density, EQ) is in
+`build_gunshots.RECIPES`; `build_gunshots.py match` prints the EQ against
+reference clips, which are never committed. The AK-47 is the only gun built
+this way on `main`.
 
-### Layered shots (`tools/build_weapon_audio.py layers`): the other guns
-
-The local player's shot is five layers, each picked from five takes on its
-own, so automatic fire does not repeat:
+### Layered shots (`tools/build_weapon_audio.py`): the other guns
 
 | Layer | What it is |
 | --- | --- |
-| `snap` | The first 200 ms above 1.5 kHz: the crack, from the microphone beside the muzzle. |
-| `body` | The first 200 ms below 1.5 kHz: the blast and chest, from the microphone behind the shooter, with a synthesized low thump and body under it. |
-| `tail` / `tail_indoor` | Outdoors the recorded terrain echo with a synthesized room; indoors a synthesized room (early reflections, 0.55 s decay). `WeaponView` cross-fades them by `acoustics::listener_indoors()`. |
-| `mech` | The action cycling (synthesized). |
-| `hollow` | The last rounds' ring (synthesized). |
+| `snap` | The first 200 ms above 1.5 kHz: the crack, from the near microphone. |
+| `body` | The first 200 ms below 1.5 kHz: the blast, from behind the shooter, with a synthesized low body under it. |
+| `tail` | The recorded terrain echo with a synthesized outdoor room. |
+| `tail_indoor` | The shot through a synthesized room (early reflections, 0.55 s decay). `WeaponView` cross-fades the two by `acoustics::listener_indoors()`. |
+| `mid`, `far` | Real recordings from down the range, for other players' fire at distance. |
+| `mech` | The action cycling, synthesized (`mech` subcommand). |
+| `hollow` | The ring of a nearly empty magazine, synthesized: over the last 2 to 5 rounds (a fifth of the magazine), rising from -9 dB to full and up to 6% in pitch. |
 
-Outdoors, a shot also answers off the two nearest walls within 45 m: the
+`layers` cuts the recorded layers with a Linkwitz-Riley crossover, so snap,
+body, and tail at 0 dB add back to the recording. Each layer picks from up to
+eight numbered takes and never plays the same take twice running
+(`audio::variations`). The tail plays one at a time, so full auto stays tight.
+
+A suppressor takes 14 dB off the snap, 7 off the body, 12 off the tail, and 10
+more off the slapback.
+
+### Space around a shot
+
+Outdoors, your shot answers off the two nearest walls between 3 and 45 m: the
 `AudioEnvironment` tracks the walls around the listener with one ray a frame
-over eight directions and plays the gun's `mid` recording at each wall,
-delayed by the round trip at 343 m/s.
+over eight directions and plays the gun's `mid` recording at each wall, delayed
+by the round trip at 343 m/s, 8 dB under the snap and 6 dB quieter per doubling
+past 5 m.
 
-Other players' shots (`gunfire.rs`) play at their muzzle when the sound gets
-there (distance / 343 m/s). Up to about 50 m they use the same snap, body,
-and tail (the indoor tail if the shooter is in a reverb zone); from about 25
-to 200 m the `mid` recording, and beyond about 100 m the `far` one, both made
-from microphones down the range and cross-faded by distance
-(`gunfire::layer_weights`), falling 6 dB per doubling.
+Other players' shots (`gunfire.rs`) play at their muzzle once the sound gets
+there (distance / 343 m/s), 2 dB under your own. The near layers (snap, body,
+and tail, the indoor tail if the shooter is in an indoor reverb zone) fade out
+between 30 and 70 m; snap and body fall 12 dB per doubling past 12 m, the tail
+6 dB per doubling past 26 m. The `mid` recording fades in from 20 to 45 m and
+out from 140 to 220 m, and the `far` one in from 100 to 170 m, each falling 6 dB
+per doubling past its own reference (40 and 120 m), on WeaponsDistant
+(`gunfire::layer_weights`).
 
-The Weapons bus has no engine reverb: the tails are baked.
+The sentry and the attack chopper fire with `weapons/ak47_fire.ogg`.
 
 ## Weapon handling (foley)
 
-`WeaponView` (`viewmodel.rs`) emits `foley_event(name: StringName)` at each
-handling beat. The beats come from the keyed clips in `weapon_clips.rs`
-(contacts in seconds, built from each weapon's reload timings; each sound is
-emitted `weapon_foley::lead` seconds before its contact, at the end of that
-frame). The names are the contract between the animation and the sound:
+`WeaponView` (`viewmodel.rs`) emits `foley_event(name)` at each handling beat.
+The beats come from the keyed clips in `weapon_clips.rs`, built from each
+weapon's reload timings. The names are the contract between the animation and
+the sound (`weapon_foley::EVENTS`):
 
 `mag_out`, `mag_in`, `bolt_release`, `charge`, `shell_in`, `pump_back`,
 `pump_forward`, `bolt_up`, `bolt_back`, `bolt_forward`, `bolt_down`, `draw`,
-`holster`, `ads_in`, `ads_out`, `inspect`.
+`holster`, `ads_in`, `ads_out`, `inspect`, `dry`, `pickup`, `mount`, `unmount`.
 
-Every first-person view has a `WeaponFoley` child (`weapon_foley.rs`) connected
-to that signal, which plays the event's layers on a pool of four voices. The
+Every first-person view has a `WeaponFoley` child connected to that signal. The
 animation decides *when*; the sound module decides *what*. To move a beat, move
-its emit point; no sound code changes.
+its emit point; no sound code changes. The same event twice within 0.2 s plays
+once. A gun without a bolt release plays its charge instead, and the other way
+round. Handling sits 11 dB under the gun's level.
 
 Each recorded take is cut so its loudest hit (the magazine seating, the bolt
 slamming home) sits `weapon_foley::lead(name)` seconds into the file. Emit an
 event that long before the contact it animates (`weapon_foley::emit_fraction`
-does the arithmetic for a fraction-keyed timeline), and the hit lands on the
-frame. Events without a contact (`draw`, `holster`, `ads_in`, `ads_out`,
-`inspect`) have no lead.
+does the arithmetic for a fraction-keyed timeline) and the hit lands on the
+frame. Events with no contact (`draw`, `holster`, `ads_in`, `ads_out`,
+`inspect`, `dry`, `pickup`, `mount`, `unmount`) have no lead.
 
-The recordings come from the raw master tracks of the CC0 Free Firearm Sound
-Library. `tools/build_weapon_audio.py foley` reads only the tracks it needs
-out of the 3.3 GB archive with HTTP range requests, checks each against a
-pinned SHA-256, and writes `assets/audio/weapons/<key>/foley/<event>_N.ogg`.
-Where the library has no such gun, the nearest action stands in, pitched and
-coloured so no two weapons share a voice (the table is `FOLEY` in the tool).
-The layers every weapon shares (cloth, kit rattle, pouch, held breath) are
-synthesized into `assets/audio/foley/`.
+`tools/build_weapon_audio.py foley` reads only the tracks it needs out of the
+library's 3.3 GB archive with HTTP range requests, checks each against a pinned
+SHA-256, and writes `assets/audio/weapons/<key>/foley/<event>_N.ogg`. Where the
+library has no such gun, the nearest action stands in, pitched and coloured so
+no two weapons share a voice (`FOLEY` in the tool). The shared layers (aim in
+and out, draw, holster, inspect, pouch, held breath, and the knife's swing and
+strike) are synthesized into `assets/audio/foley/`. Mounting on cover uses the
+shared aim and pouch sounds.
 
-Other players' reloads play the same recordings at their position, at the same
-fractions of the reload (`weapon_foley::remote_reload_cues`).
+Other players' reloads play the same recordings at their position, on the
+WeaponFoley bus: magazine out at 20% of the reload, in at 69%, and the bolt
+release at 82% after an empty one; a pump gun's pump and shell at 0 and 50%
+(`weapon_foley::remote_reload_cues`). They carry 16 m (`RELOAD_RANGE`).
+
+## Footsteps and movement
+
+`footsteps.rs` holds the rules for everyone, the local player and others alike.
+A gait sets the stride, the level, and how far another player hears it:
+
+| Gait | When | Stride | Level | Heard to |
+| --- | --- | --- | --- | --- |
+| Crouch | crouched or prone, moving | 1.25 m | -20 dB | 8 m |
+| Quiet | standing, under 72% of walking speed (aiming down sights) | 1.6 m | -16 dB | 14 m |
+| Walk | standing | 1.9 m | -11 dB | 24 m |
+| Sprint | sprinting | 2.3 m | -6 dB | 36 m |
+
+No steps below 0.6 m/s or in a slide. Other players' steps ignore Godot's
+distance attenuation: each step's level comes from `falloff_db` over its gait's
+range, nearly full close by and silent at the edge, so every gait has a range a
+player can learn. Teammates are 7 dB quieter and carry 60% as far; your own
+steps are 10 dB under someone else's at the same spot (`OWN_STEP_DB`), so enemy
+steps stand out. Dead Silence and Awareness scale level and range
+(`perk::heard`; see [create-a-class.md](create-a-class.md)).
+
+| Movement sound | Heard to |
+| --- | --- |
+| Landing after 0.25 s in the air (louder the faster the fall) | 32 m |
+| Slide scrape (-9 dB yours, 3 dB under that for others) | 28 m |
+| Mantle | 20 m |
+| Jump push-off | a walk's range |
+| Ladder rung, every 0.3 m climbed, 2 dB over a walking step | a walk's range |
+
+Each step plays the set for the surface under the feet (`surfaces.rs`):
+concrete, wood, metal, dirt, grass, gravel, tile, and carpet, glass borrowing
+tile. A collider's `surface` metadata says what it is; untagged geometry is
+judged from the hit triangle's material name, so imported maps such as Nuketown
+get grass, carpet, and tile without hand tagging. A sprinting soldier's kit
+rattles under every stride.
 
 ## Bullets
 
 Snapshots say that another player fired, not where the round went, so the
 client rebuilds each remote shot as a ray: `ShotTracer::trace` (`bullets.rs`)
-casts from in front of the shooter's eye along their view direction against
-the world and the hit zones, and returns a `ShotRay` (muzzle, origin,
-direction, end, and what it hit: position, normal, surface, body or world).
-The local player adds the tracer (it does not exist on the dedicated server);
-`RemotePlayer` traces each round it sees fired, at most three a snapshot and
-twelve a frame across everyone.
+casts from 0.6 m in front of the shooter's eye along their view against the
+world and the hit zones, out to 300 m, and returns a `ShotRay`. At most three
+rounds a snapshot per player and twelve a frame across everyone are traced. The
+local player adds the tracer, so the dedicated server has none. Every traced
+shot is also emitted as `ShotTracer.shot_traced(muzzle, end, normal, surface,
+hit, weapon)`; effects that want other players' tracers or impacts connect to it
+(group `shot_tracer`) instead of casting their own rays.
 
-Every traced shot is also emitted as `ShotTracer.shot_traced(muzzle, end,
-normal, surface, hit, weapon)`. Effects that want tracers or impact puffs for
-other players' shots connect to that signal (find the node in group
-`shot_tracer`) instead of casting their own rays.
+- **Near miss.** A round whose path passes within 3.5 m of the camera, and more
+  than 2 m from the shooter, plays at the closest point when the bullet gets
+  there (850 m/s for rifle rounds, 330 m/s otherwise): a crack for supersonic
+  rounds (an N-wave shock, its reflections, and a late slap), a whiz for
+  pistols, the 9 mm SMGs, and buckshot (a Doppler-swept whistle), louder the
+  closer it passes. It calls `suppress(strength)` on group `lens`, weaker for
+  subsonic rounds, so the picture closes in with the sound.
+- **Impact.** Within 40 m of the listener, an impact plays at the hit from the
+  surface's own set of eight takes (flesh for a hit zone). Metal, concrete, and
+  tile ricochet 15% of the time. The local player's own impacts use the same
+  pool.
 
-What the listener hears of a traced shot:
+`tools/build_world_audio.py bullets` synthesizes the cracks, whizzes, and
+ricochets, and impact takes 4 to 8 for every surface over the recorded takes 1
+to 3.
 
-- **Near miss.** A round whose path passes within 3.5 m of the camera, and
-  more than 2 m from the shooter, plays a crack (supersonic rifle rounds: an
-  N-wave shock, its ground reflection, and a late slap) or a whiz (pistol,
-  9 mm, buckshot: a Doppler-swept whistle) at the closest point, when the
-  bullet gets there (850 or 330 m/s), louder the closer it passes. It calls
-  `suppress(strength)` on group `lens` (0 to 1, less for subsonic rounds), so
-  the picture closes in with the sound.
-- **Impact.** Within 40 m of the listener, the round's impact plays at the
-  hit, on the surface's own set (eight takes per surface; flesh for a hit
-  zone). Metal, concrete, and tile ricochet 15% of the time.
+## Room sound, occlusion, and direction
 
-All impact sounds, the local player's own included, play from the tracer's
-pool of ten positional voices taken in turn; the impact effect scene is
-visual only.
+All in `acoustics.rs`, judged from where the listener (the current camera) is.
 
-The sounds are synthesized by `tools/build_world_audio.py bullets`.
+- **Reverb zones.** A map marks its rooms and tunnels with `ReverbZone` boxes.
+  While the camera is inside one, a reverb blends onto Effects and Footsteps
+  toward that zone's settings. Gunshots carry their own tails instead. A zone
+  with `outdoor = true` or `wet` under 0.10 (Warehouse's Field zones) adds its
+  light reflection but keeps the listener outdoors for the soundscape, the
+  gunshot tails, and slapback.
+- **Occlusion.** Every playing positional sound is checked with a ray from the
+  listener every 0.1 s (12 rays a frame, 4 more for sounds just started; sounds
+  that start together within 1.5 m share one). Behind a wall it drops up to
+  9 dB and plays through the occluded bus. A wall within 0.4 m of the source
+  does not count, so an impact on the near face of a wall is not muffled.
+  Far off-map emitters opt out (`skip_occlusion` metadata).
+- **Front and back.** A sound more than about 107° from the view direction, and
+  further than 1.5 m, plays 1.5 dB quieter through the behind bus (highs above
+  2.2 kHz at 0.42), so a step behind you sounds different from one ahead.
 
 ## The player and feedback
 
 `PlayerSounds` (`player_sounds.rs`, local player only) plays:
 
 - breathing after 2.5 s of sprinting, and recovery breaths after it for up to
-  4 s; hurt breathing below 35% health; the held breath on a scope;
+  4 s; hurt breathing below 35% health; the held breath and release on a scope;
 - a heartbeat below 40% health, racing from one every 0.95 s to 0.55 s;
-- being hit (a short, soft blunt thud and the kit jolted, at -10 dB; -14 dB
-  for a hard landing), and a body fall on death;
-- a jump's push-off, hands on a ledge when mantling, and the kit and cloth
-  under each step (louder when sprinting, none when crouched).
+- being hit (a soft thud and the kit jolted, at -10 dB; -14 dB for a hard
+  landing), and a body fall on death;
+- a jump's push-off and hands on a ledge when mantling;
+- the kit under each step (sprint and walk, none crouched or quiet) and cloth
+  under each sprinting step.
 
-Other players' sprints carry the same kit rattle, and their jumps and mantles
-the same sounds, at their position.
+The HUD (`godot/scripts/hud.gd`) plays a dry tick for a hit, a struck-helmet
+ring for a headshot, and a thump with a short ding for a kill; a headshot kill
+plays the ring under the kill, so neither is lost. Medals chime
+(`score_feed.gd`). `tools/build_world_audio.py player` synthesizes all of these
+except the medal chime.
 
-The HUD plays a dry tick for a hit, a struck-helmet ring for a headshot, and a
-thump with a short ding for a kill; a headshot kill plays the ring under the
-kill, so it is never lost. All of these are synthesized by
-`tools/build_world_audio.py player`.
+## Equipment and streaks
+
+Frags, the Search and Destroy charge, airstrikes, guided missiles, and downed
+UAVs, choppers, and sentries play the distant explosion takes up close on
+Effects; a flashbang plays one of them as its bang, and a smoke grenade hisses
+with a wind gust. None of them has a recording of its own. Scavenger pickups
+play the pouch sound.
 
 ## The world and the match
 
-Each map's `Soundscape` (`ambience.rs`) plays an outdoor bed and an indoor
-room tone that cross-fade at enclosed reverb zones, the hum and buzz of props,
-and one-shots every 7 to 18 s outdoors: wind gusts that sweep across, or loose
-metal rattling 10 to 25 m away. Outdoor reflection zones (for example
-Warehouse's `FieldNorth` and `FieldWest`, with `outdoor = true` or `wet < 0.10`)
-still apply their light exterior reverb while keeping the listener outdoors for
-the soundscape, gunshot tails, and wall slapback.
+Each map's `Soundscape` (`ambience.rs`) plays an outdoor bed and an indoor room
+tone that cross-fade at indoor reverb zones: indoors the outdoor bed drops 9 dB
+behind a 650 Hz low-pass, as if through the walls. Air conditioners hum and
+street lamps, security lights, and utility boxes buzz from where they stand,
+found by the prop scene they came from, so a map gets them without placing any.
+Outdoors, every 7 to 18 s, a wind gust sweeps across or loose metal rattles 10
+to 25 m away.
 
-Maps with contrasting outdoor halves can set `preset` (defined in
-`ambience_areas.rs`). On Warehouse (`preset = "warehouse"`, modelled on CoD4's
-Vacant and Modern Warfare's Hackney Yard and Atlas Superstore):
+| Map | Outdoor bed | Distant battle |
+| --- | --- | --- |
+| Testing Area | `day` | yes |
+| Slamcity | `city` | no |
+| Breakwater | `day` | no |
+| Nuketown | `day` | no |
+| Warehouse | per area (below) | no |
+| Zombies arena | `night` | yes |
 
-- **Area-aware outdoor beds and one-shots.** The Field (north and demolished
-  west wing grass lot) plays a grass-wind, sparse daytime bird/insect, and
-  distant-road bed (`warehouse_field.ogg`) with wind gusts, rattling chain-link
-  fence, loose corrugated roofing bangs, and distant crows. The Docks (lowered
-  south concrete truck apron) plays a harder industrial bed of distant highway,
-  far truck idling, and hall machinery bleeding out of the dock bays
-  (`warehouse_docks.ogg`), with trailer creaks, distant pallet drops, air
-  brakes, and occasional reversing alarms. Stepping inside the hall smoothly
-  muffles whichever outdoor bed is nearest; crossing the hall shifts the
-  muffled exterior bleed from the Field to the Docks.
-- **Hall plant hum and roof breach.** The hall keeps its room tone with a very
-  quiet continuous off-room plant machinery thrum underneath
-  (`warehouse_hall.ogg`). Under the 12 × 12 m mid-hall roof breach
-  (`x 7.5..19.5, z -2.5..9.5`, tapering over 5 m), a faint sky-wind layer
-  (`warehouse_breach_wind.ogg`) fades in and the outdoor low-pass lifts gently
-  from 650 Hz toward 1.5 kHz.
-- **Sparse off-map working-industrial layer.** One voice (`IndustrialOffMap`,
-  `max_polyphony = 1`, routed on `Ambience (outdoor)` so walls muffle it
-  indoors and gunfire ducks it) plays distant plant noises 30 to 80 m beyond
-  the perimeter walls: steel hammering bursts (4–6 blows), indistinct muffled
-  worker shouts, dock-biased short truck reversing alarms (5–6 s), forklift
-  horns, dropped steel/pallets, pneumatic impact wrench bursts, rolling doors,
-  and speech-free PA chimes. Following Call of Duty's industrial maps, the
-  scheduler (`IndustrialScheduler`) keeps them sparse so they stay atmosphere
-  rather than combat noise: 12–24 s start grace period, 25–60 s random gaps,
-  no back-to-back repeats, 90 s per-category cooldown, 120 s reversing-alarm
-  cooldown (shared with the Docks outdoor slot), and 150 s muffled-shout
-  cooldown. All Warehouse ambience files are built from verified CC0 recordings
-  with `uv run tools/build_world_audio.py warehouse`.
+`distant_battle` plays a fight far beyond the map on one voice, 250 to 400 m
+out: bursts of the game's own guns' `far` recordings and, about one time in
+six, a distant explosion. Multiplayer maps leave it off, so every gunshot heard
+in a match is real.
 
-A map can set `distant_battle` for a fight far beyond its edges: bursts of the
-game's own guns' far recordings and now and then a distant explosion, 250 to
-400 m out, one voice. The Testing Area and the Zombies arena have it;
-multiplayer maps do not, so every gunshot heard in a match is real.
+### Warehouse (`preset = "warehouse"`, `ambience_areas.rs`)
 
-`MatchStings` (`godot/scripts/net/match_stings.gd`, added with the match HUD)
-plays short drum, riser, and brass cues: when a match goes live, its result
-(win, loss, draw), a warning at 30 seconds left, and in Search and Destroy
-each round's start and result. Hardpoint calls its zone moves with a two-tone
-radio chirp of its own. There is no announcer voice: no CC0 recordings good
-enough were found.
+Modelled on CoD4's Vacant and Modern Warfare's Hackney Yard and Atlas
+Superstore: each outdoor half has its own bed and one-shots, cross-faded by
+where the listener stands.
+
+- **The Field** (the north grass lot and the demolished west wing): grass wind,
+  sparse birds and insects, and a distant road (`warehouse_field`), with gusts,
+  a rattling chain-link fence, loose roofing, and crows.
+- **The Docks** (the lowered south truck apron): distant highway, a truck
+  idling, and hall machinery bleeding out of the bays (`warehouse_docks`), with
+  trailer creaks, pallet drops, air brakes, and reversing alarms.
+- **The hall**: room tone over a quiet plant thrum (`warehouse_hall`). Inside,
+  the nearest outdoor bed bleeds through muffled, so crossing the hall shifts
+  the bleed from the Field to the Docks. Under the 12 × 12 m roof breach
+  (`x 7.5..19.5, z -2.5..9.5`, fading over 5 m) a faint sky wind fades in and
+  the outdoor low-pass opens toward 1.5 kHz.
+- **Off-map industry**: one voice (`IndustrialOffMap`, on `Ambience (outdoor)`)
+  plays plant noises 30 to 80 m beyond the perimeter: hammering, muffled
+  shouts, reversing alarms (biased to the Docks side), forklift horns, metal
+  drops, impact wrenches, roller doors, and PA chimes. `IndustrialScheduler`
+  keeps it sparse so it stays atmosphere, never a combat cue: a 12 to 24 s
+  grace at the start, 25 to 60 s gaps, no back-to-back repeats, 90 s per
+  category, 150 s for shouts, and 120 s for reversing alarms (shared with the
+  Docks one-shot). Levels sit around -21 dB so footsteps and gunfire always
+  win.
+
+`uv run tools/build_world_audio.py warehouse` builds these from pinned CC0
+recordings (`tools/warehouse_audio.py`).
+
+### Stings and calls
+
+`MatchStings` (`godot/scripts/net/match_stings.gd`, on UI) plays short drum,
+riser, and brass cues: when a match goes live, its result (win, loss, draw), a
+warning at 30 seconds left (captioned when Subtitles is on), and in Search and
+Destroy each round's start and result. Halftime replays the round-start sting
+and overtime the time warning. Hardpoint's zone moves, Domination's flag calls,
+and scorestreak calls play a two-tone radio chirp (`ui/hardpoint_call.ogg`;
+Domination pitches it down for bad news). Capture the Flag's calls are chimes
+synthesized in `ctf_view.gd`: rising for good news, falling for bad, a fanfare
+for a capture. There is no announcer voice: no CC0 recordings good enough were
+found.
+
+During a killcam the live players are muted; the replayed bodies make the
+sounds.
+
+### Zombies
+
+Each zombie groans every 3 to 9 s, snarls when it swings, and cries out when it
+dies (`zombie.rs`, from artisticdude's Zombies Sound Pack sorted by
+`tools/build_zombie_audio.py`). A round's start and end play a drone-and-bell
+sting synthesized by the same tool (`zombies_hud.gd`). Barriers and doors use
+the wood impact, the power switch the metal one. The Zombies menu plays its
+reference theme and hover sound (see CREDITS).
 
 ## Reviewing sound without listening
 
-`tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram
-PNG per sound and a table of peak, RMS, LUFS, crest factor, spectral centroid,
-energy below 120 Hz, and decay time. `tools/audio_report.py mix` lays several
-sounds on one time axis at given offsets and gains, with event markers, and
-draws the sum: a gunshot's layers, or a reload's beats against its animation.
-`godot/tests/weapon_foley_test.gd` writes every foley event with its time when
-`FOLEY_TRACE` names a file.
+- `tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram
+  PNG per sound and a table of peak, RMS, LUFS, crest factor, spectral centroid,
+  energy below 120 Hz, and decay time. `tools/audio_report.py mix` lays several
+  sounds on one time axis at given offsets and gains, with event markers, and
+  draws the sum: a gunshot's layers, or a reload's beats against its animation.
+- `tools/audio_preview.py compare OUT.mp3 <gun> old=DIR new=DIR` renders
+  listening clips of your own gunfire mixed the way `viewmodel.rs` plays it
+  (three single shots, then a burst at the fire rate, through an approximation
+  of the Weapons compressor and the limiter), several builds back to back, with
+  loudness numbers. Every gunshot change goes to a person as a clip first.
+- `godot/tests/weapon_foley_test.gd` writes every foley event with its time when
+  `FOLEY_TRACE` names a file.

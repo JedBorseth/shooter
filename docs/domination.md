@@ -19,13 +19,16 @@ way with no twists.
 | Score limit | 200 | 200 in Black Ops 2 and Modern Warfare (2019) |
 | Time limit | 10 minutes in two halves | Black Ops 2 plays two rounds of 5 minutes |
 | Halftime | At half the clock the teams swap sides, every flag goes back to neutral, and everyone respawns at their new side; the score carries over (`halftime_due`), and the match moves to its second half (`tdm::Period::SecondHalf`) | Same: Black Ops 2's second round starts from neutral flags with the sides swapped |
-| Draw | The team ahead when the clock runs out wins; level is a draw | Same in Black Ops 2 (overtime came later) |
+| Draw | The team ahead when the clock runs out wins; level is a draw | Same in Black Ops 2; overtime belongs to later games |
 
 Flags are circles 3.5 m in radius and 4 m tall
 (`DEFAULT_RADIUS`; Black Ops 2's flag triggers are about 120 to 160 units).
-Feet up to 0.5 m below the floor still count, for uneven ground.
+Feet up to 0.5 m below the floor still count, for uneven ground. Only living
+players count. In the lobby's warm-up flags change hands for practice but
+score nothing; they stop through the countdown and the results.
 
-Kills score nothing for the team.
+Kills score nothing for the team. Halftime needs a clock: with no time limit
+there is one half.
 
 ## Player score
 
@@ -47,6 +50,7 @@ After the first spawn at each side, spawns follow the flags
 teammates at its circle, each enemy flag as an enemy there, and the side of
 the map only breaks ties (`SpawnRules::for_mode`). A team that takes the
 enemy's home flag and loses its own flips the spawns, as in Call of Duty.
+The general spawn rules are in [spawns.md](spawns.md).
 
 ## Bots
 
@@ -54,6 +58,8 @@ Bots play the objective (`domination::bot_goals`, `NetServer::dom_objectives`):
 
 - The two nearest bots run back to stop an enemy capture of a flag their
   team owns.
+- A bot within 6 m of the edge of a flag its team does not own takes it,
+  whatever else it was doing.
 - One bot in four guards a flag the team owns, holding spots inside its
   circle so an enemy capture is contested.
 - The rest take the flags the team does not own: the nearest, with every
@@ -63,9 +69,9 @@ Bots play the objective (`domination::bot_goals`, `NetServer::dom_objectives`):
 - Within 8 m of its flag a bot holds a spot inside the circle (a new one
   every 4 s); further away it hunts its way there, fighting what it meets.
 
-Call of Duty's bots (Black Ops 2's combat training) play the same way: they
-go for the nearest flags they do not hold and send a few back when one is
-being taken.
+Black Ops 2's bots (`bot_dom_think`) play the same way: a bot at a flag it
+does not hold takes it, the rest go for the nearest flags they do not hold,
+and a few go back when one is being taken. See [bots.md](bots.md).
 
 ## Network
 
@@ -85,7 +91,7 @@ between events (`NetClient::domination_info`).
 | Markers | Over each flag | The same tile with the distance under it, held at the screen's edge when off screen; none for the flag you stand in |
 | Capture bar | Under the crosshair, in a circle | CAPTURING B, CONTESTED, LOSING B (the enemy's capture of your flag; standing on it alone stops it), or B SECURED, over a bar filling with the capture |
 | World | Each flag | A ring decal at the circle's edge and a low wall of light around it, in the owner's colour (a pulse when it changes) |
-| Calls | Upper third | WE'VE TAKEN B, WE'VE LOST B, and ENEMY TOOK B, each with a short sting until there is an announcer; the match HUD calls HALFTIME (Switching sides) for the second half ([modes.md](modes.md) match periods) |
+| Calls | Upper third | WE'VE TAKEN B, WE'VE LOST B, and ENEMY TOOK B, each with a short chime (there is no announcer); the match HUD calls HALFTIME ("Switching sides") for the second half ([modes.md](modes.md)) |
 | Scoreboard | Tab | CAPS and DEF columns |
 
 Black Ops 2 shows the same pieces: flag icons along the top of the HUD in
@@ -116,8 +122,5 @@ Maps without flags get three between the teams' spawns
 50%, C at 78%) when the sides are at least 40 m apart, otherwise across the
 middle 13 m apart (the testing arena).
 
-## Still to come
-
-An announcer voice for the calls, a flag pole model at each flag, overtime,
-and better bot play on Nuketown, where one team tends to take all three flags
-and hold them: see the Domination items in [TODO.md](../TODO.md).
+Not built yet: an announcer, a flag pole model at each flag, and overtime;
+see [TODO.md](../TODO.md).

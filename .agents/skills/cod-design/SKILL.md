@@ -25,7 +25,7 @@ and tooling. When unsure, use it.
    ([weapons.md](../../../docs/weapons.md), [audio.md](../../../docs/audio.md),
    [art-direction.md](../../../docs/art-direction.md),
    [map-design.md](../../../docs/map-design.md),
-   [tdm-spawns.md](../../../docs/tdm-spawns.md)). Some are deliberate choices
+   [spawns.md](../../../docs/spawns.md)). Some are deliberate choices
    between Call of Duty eras (toggle sprint with no tactical sprint, a 120 Hz
    tick). Do not undo them to match a different game.
 3. **Call of Duty's standard behaviour,** found with the steps below.

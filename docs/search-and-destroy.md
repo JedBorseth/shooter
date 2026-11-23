@@ -2,20 +2,28 @@
 
 Rounds with one life each (`--mode snd`, `rust/sim/src/snd.rs`), played the
 classic Call of Duty way with no twists. The owner chose the plain mode and
-rejected a half-defuse checkpoint ([roadmap.md](roadmap.md) decisions).
+rejected a half-defuse checkpoint ([roadmap.md](roadmap.md) decisions). The
+match shell (lobby, countdown, results, scoring) is in [modes.md](modes.md).
 
 ## Rounds
 
-- First to 6 rounds. The teams swap sides after round 5, so both attack five
-  times before a decider (`SndRules::halftime_after`).
-- Each round: a 5 s freeze at your side (look, aim, reload, change loadout;
-  no moving or firing), then 1:45 of play, then 6 s of result.
-- Nobody respawns during a round. The dead spectate a living teammate over
-  the shoulder; players who join after the freeze wait for the next round.
+- First to 6 rounds (`--rounds N`). The teams swap sides after one round
+  short of the target, so in a 6-round match both attack five times before
+  a decider (`SndRules::halftime_after`). Team 0 attacks first.
+- Each round: a 5 s freeze at your side (look, aim, reload, change class;
+  no moving or firing), then 1:45 of play, then 6 s of result. There is no
+  match clock.
+- Nobody respawns during a round, and a death plays no killcam. After 1.5 s
+  the dead watch a living teammate over the shoulder, and fire steps to the
+  next one (`godot/scripts/net/snd_hud.gd`). Players who join after the
+  freeze wait for the next round.
 - A round ends when a team is wiped out, when the clock runs out (the
   defenders win), when the charge goes off (the attackers win), or when it
-  is defused (the defenders win). If both teams die in the same moment, the
-  defenders take it.
+  is defused (the defenders win). If both teams die in the same moment
+  before a plant, the defenders take it.
+- A round won by wiping out the other team replays its last kill for
+  everyone: ROUND WINNING KILL, or the final killcam when it wins the match
+  ([killcam.md](killcam.md)).
 
 ## The charge
 
@@ -29,7 +37,7 @@ rejected a half-defuse checkpoint ([roadmap.md](roadmap.md) decisions).
 | Defuse | Hold interact for 7 s within 1.6 m of the charge (`SndRules::defuse_time`) | 5 s stock, 7.5 s in competitive settings and Advanced Warfare |
 | Interrupted | Letting go, moving off, or dying starts a plant or defuse over from nothing | Same; Modern Warfare (2019) keeps half a defuse, which this project does not |
 | One at a time | A second defender holding interact waits until the first lets go | Same |
-| After the plant | Wiping out the attackers no longer wins: the defenders must defuse. Wiping out the defenders wins at once | Same |
+| After the plant | Wiping out the attackers does not win: the defenders must defuse. Wiping out the defenders wins at once | Same |
 | While using | Held still, weapon put away (no firing, aiming, reloading, or switching); looking around is free. In first person the charge comes up into view in the hands: planting, the left hand steadies the case and the right index finger taps its keypad; defusing, the case is turned round with its detonator block on the right, the left hand flat on it, and the right hand brings wire cutters in to snip one wire, then the other, a cut every 1.4 s (`viewmodel::defuse_hands`, `wire_cutters` in tools/gear_models.py; [snd-defuse.jpg](media/snd-defuse.jpg)) | Same; the first-person plant keys the bomb's pad and Black Ops 2's defuse works its wires |
 | Input | Hold interact (F; X / Square on a controller, the reload button, when standing where it would plant or defuse) | Hold Use (F; X / Square) |
 
@@ -67,12 +75,14 @@ Slamcity's (`CHARGE_SITES` in `tools/slamcity_layout.py`):
 Breakwater's (`CHARGE_SITES` in `tools/breakwater_layout.py`), on Red's half:
 
 - **A**: the pump house's east room on the north route, by the export pumps.
-- **B**: Red's quay by the containers, on the south route.
+- **B**: Red's quay by the loading-arm berth, on the south route.
 
 Each has a solid marker crate with its letter on every side
 (`gear_models.charge_site_a` and `_b`, built in Blender), which stands in
-every mode as set dressing. The defenders reach either site in about 7 s at a
-sprint, the attackers in about 11 s.
+every mode as set dressing. On Slamcity the defenders reach either site in
+about 7 s at a sprint, the attackers in about 11 s. Nuketown, Warehouse, and
+the Testing Area mark no sites, and the title screen offers Search and
+Destroy only on Slamcity and Breakwater.
 
 ## Bots
 
@@ -90,8 +100,9 @@ objectives, as in Capture the Flag and Hardpoint):
   85% of it is gone. About three in ten of the other attackers escort it, then
   guard spots within 6.5 m of the plant spot; with three or more attacker
   bots one lurks at the other site; the rest gather with the carrier and
-  push into the target site to clear it as the carrier goes to plant. The nearest attacker bot fetches a dropped charge; after the
-  plant they hold spots round it.
+  push into the target site to clear it as the carrier goes to plant. The
+  nearest attacker bot fetches a dropped charge; after the plant they hold
+  spots round it.
 - Switching sites: what the attackers' bots have seen in the last 4 seconds
   near each site (within 8 m), plus two for each attacker killed there in
   the last 20 seconds, is the site's threat. At 5 or more, with the other
@@ -103,15 +114,16 @@ objectives, as in Capture the Flag and Hardpoint):
   more than the other), all but the first defender of the other site rotate
   to it; that one anchors. Once the charge is planted, the nearest runs to
   defuse it and the rest clear round it.
-
 - Hard bots bait: arriving to plant or defuse with an enemy seen in the
   last 5 seconds, heard, or on the minimap within 25 m, a Hard bot taps
   interact for 0.8 s, lets go, and watches where the enemy was for 1.6 s
   before doing it for real; once per spot a life. It fakes a defuse half the
-  time and a plant one time in five: a fake plant costs the attackers time at
-  the site, and at one in two it halved Warehouse's plants on the bench.
+  time and a plant one time in five, since a fake plant costs the attackers
+  time at the site.
 
-Black Ops 2's bots (`maps/mp/bots/_bot_sd.gsc`) are the reference for the
+Defender bots frag enemies within about 10 m of the nearest site
+(Black Ops 2's `bot_sd_grenade`: 384 units), and bots pop smoke over a plant
+or defuse. Black Ops 2's bots (`maps/mp/bots/_bot_sd.gsc`) are the reference for the
 carrier's timing (`sd_get_time_frac`: the chance to go and plant is the share
 of the round gone, checked every 2.5 to 5 s, forced past 85%) and the escort
 share (`protectcarrier`: three in ten, within 256 units of the plant spot).
@@ -150,11 +162,23 @@ column, and ground skirt. The screen rattles out to about 50 m, hardest
 within 3 m. It rumbles a controller out to 50 m and rings in the ears inside
 18 m, twice a frag's reach. Clients draw it when the charge's status
 turns from planted to detonated, so nobody joining later sees it go off.
-Until the charge's own sound lands, it plays the frag's distant bang, louder.
+It sounds the frag's distant bang, louder (`godot/scripts/charge_explosion.gd`).
 
-## Still to come
+## On screen
 
-The charge's accelerating beeps, its own explosion sound and effect, and
-stings for plants, defuses, and the explosion (held for the owner's
-listening approval): see the Search and Destroy section of
-[TODO.md](../TODO.md).
+`godot/scripts/net/snd_hud.gd` and `snd_view.gd`:
+
+- Pips for who is alive on each team at the top centre, with the round
+  number and ATTACKING or DEFENDING under them.
+- The freeze banner (ROUND N, with ATTACK or DEFEND and the goal) and the
+  result (ROUND WON or ROUND LOST, with a halftime note before the swap).
+- A marker over each site (PLANT or DEFEND; once planted, DEFUSE or DEFEND
+  on that site only), the attackers' PICK UP and ESCORT markers, a line
+  under the crosshair saying what holding interact does where you stand, and
+  a bar while you plant or defuse (a smaller one for a teammate).
+- Calls: CHARGE PLANTED (with the site), CHARGE DEFUSED, CHARGE DROPPED,
+  CHARGE PICKED UP, YOU HAVE THE CHARGE.
+- The planted charge's lamp blinks once a second.
+
+The charge's beeps and its own explosion and plant sounds are not built yet;
+see [TODO.md](../TODO.md).
