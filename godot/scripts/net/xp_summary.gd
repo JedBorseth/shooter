@@ -1,10 +1,11 @@
 extends PanelContainer
 ## The match report under the results scoreboard, after Black Ops 3's After
 ## Action Report XP bar: the score made, the match bonus, and the total in
-## big squared numerals; the level badge, the XP bar (the level's XP before
+## big squared numerals; the level mark (the front end's blue hexagon with
+## the level in it), the XP bar (the level's XP before
 ## the match in grey, since orange means focus here) with this match's gain as
 ## a yellow segment at its head filling from where the match started (ease
-## out over 1.2 s), and the next level's badge. A level reached flashes the
+## out over 1.2 s), and the next level's mark, hollow. A level reached flashes the
 ## bar, pops the badge, and says LEVEL UP; under it, what the level unlocked
 ## and how far each weapon used is from its next attachment. Filled by
 ## `show_summary` with `match_xp.gd`'s summary; `tdm_hud.gd` places it.
@@ -16,8 +17,8 @@ const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 ## Seconds before the bar starts to fill, and how long it takes.
 const FILL_DELAY := 0.6
 const FILL_SECONDS := 1.2
-## The report's width, clear of the HUD's bottom corners.
-const WIDTH := 1000.0
+## The report's width (as wide as the team scoreboard over it).
+const WIDTH := 934.0
 ## How far the bar starts in from its row (past the level badge).
 const BAR_INSET := 56.0
 ## The bar's track, edge, and this match's gain.
@@ -26,7 +27,6 @@ const TRACK_EDGE := Color("2e2e2e")
 const GAIN := Color("f0e000")
 
 var _rows: HBoxContainer
-var _level_label: Label
 var _bar: Control
 var _xp_label: Label
 var _level_up: Label
@@ -75,9 +75,9 @@ func _ready() -> void:
 	var indent := Control.new()
 	indent.custom_minimum_size = Vector2(BAR_INSET, 0)
 	line.add_child(indent)
-	_level_label = _label("", UiTheme.TEXT, 17, UiTheme.tracked(UiTheme.DISPLAY, 1))
-	_level_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(_level_label)
+	var space := Control.new()
+	space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(space)
 	_xp_label = _label("", UiTheme.TEXT, 16, UiTheme.font(UiTheme.LABEL_LIGHT))
 	line.add_child(_xp_label)
 	var inset := Control.new()
@@ -159,7 +159,6 @@ func _show_xp(xp: int) -> void:
 	var level := int(rank.level)
 	if level > before and _age > 0.0:
 		_since_level = 0.0
-	_level_label.text = "LEVEL %d" % level
 	_level_up.visible = level > int(Progression.rank(_from).level)
 	var span := int(rank.level_span)
 	if span > 0:
@@ -180,10 +179,10 @@ func _draw_bar() -> void:
 	var span := int(rank.level_span)
 	var pop := 1.0 + 0.4 * (1.0 - clampf(_since_level / 0.2, 0.0, 1.0))
 	_bar.draw_set_transform(Vector2(22, middle), 0.0, Vector2(pop, pop))
-	MatchPaint.level_badge(_bar, Vector2.ZERO, 40.0, 0)
+	MatchPaint.level_mark(_bar, Vector2.ZERO, 42.0, level)
 	_bar.draw_set_transform(Vector2.ZERO)
 	if span > 0:
-		MatchPaint.level_badge(_bar, Vector2(width - 22.0, middle), 40.0, 0, false)
+		MatchPaint.level_mark(_bar, Vector2(width - 22.0, middle), 42.0, level + 1, false)
 	var track := Rect2(BAR_INSET, middle - 6.0, width - BAR_INSET * 2.0, 12.0)
 	_bar.draw_rect(track, TRACK)
 	var now := 1.0 if span <= 0 else float(rank.into_level) / span
@@ -234,7 +233,9 @@ func _stat(name: String, value: String, colour: Color) -> PanelContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", -4)
 	tile.add_child(box)
-	box.add_child(_label(name, UiTheme.TEXT_DIM, 16, UiTheme.font(UiTheme.LABEL_LIGHT)))
+	var label := _label(name, UiTheme.TEXT_DIM, 14, UiTheme.tracked(UiTheme.LABEL, 2))
+	label.uppercase = true
+	box.add_child(label)
 	box.add_child(_label(value, colour, 30, UiTheme.font(UiTheme.DISPLAY)))
 	return tile
 

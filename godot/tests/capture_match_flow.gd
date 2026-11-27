@@ -67,12 +67,10 @@ func _team_rows(names: Array, me: int, out: Array, wide := false) -> Array:
 	for i in names.size():
 		var bot := String(names[i]).begins_with("Bot")
 		var score := 1450 - i * 210
-		var cells := [names[i], str(score)]
+		var cells := [names[i], str(score), str(12 - i * 2), str(4 + i)]
 		if wide:
 			cells.append(str((7 - i) % 3))
 			cells.append(str(i % 2))
-		cells.append(str(12 - i * 2))
-		cells.append(str(4 + i))
 		cells.append("—" if bot else str([24, 61, 142, 33, 230, 18][i]))
 		rows.append({"cells": cells, "me": i == me, "faint": i in out, "tag": "BOT" if bot else ""})
 	return rows
@@ -81,7 +79,7 @@ func _team_rows(names: Array, me: int, out: Array, wide := false) -> Array:
 func _sections(wide: bool, out_ours: Array, out_theirs: Array) -> Array:
 	var headings := ["Name", "Score", "Kills", "Deaths", "Ping"]
 	if wide:
-		headings = ["Name", "Score", "Plants", "Defuses", "Kills", "Deaths", "Ping"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Plants", "Defuses", "Ping"]
 	return [
 		{
 			"name": "Your team",
@@ -104,12 +102,12 @@ func _sections(wide: bool, out_ours: Array, out_theirs: Array) -> Array:
 
 func _boards() -> void:
 	var board: Control = _piece(Scoreboard)
-	board.title = "TEAM DEATHMATCH"
+	board.title = "TEAM DEATHMATCH  ·  FIRST TO 75 KILLS"
 	board.clock = "7:32"
 	board.sections = _sections(false, [], [])
 	await _seconds(0.6)
 	await _shot("board_01_tdm")
-	board.title = "SEARCH AND DESTROY"
+	board.title = "SEARCH AND DESTROY  ·  ROUND 8"
 	board.clock = "1:48"
 	board.sections = _sections(true, [1, 4], [0, 2, 3])
 	await _frames(3)
@@ -135,7 +133,7 @@ func _boards() -> void:
 				}
 			)
 		)
-	board.title = "FREE-FOR-ALL"
+	board.title = "FREE-FOR-ALL  ·  FIRST TO 30 KILLS"
 	board.clock = "4:05"
 	board.sections = [
 		{
@@ -162,7 +160,7 @@ func _banners() -> void:
 	await _frames(2)
 	await _shot("banner_01b_countdown_pop")
 	banner.countdown = 4.4
-	banner.countdown_mode = "Round 3  ·  Attack"
+	banner.countdown_mode = "Round 3  ·  Attacking"
 	banner.countdown_objective = "Plant the charge at a site"
 	await _frames(2)
 	await _shot("banner_02_round_countdown")
@@ -171,6 +169,7 @@ func _banners() -> void:
 	banner.detail = "Enemies eliminated"
 	banner.colour = TeamColours.ally
 	banner.strip = {
+		"goal": "First to 4 rounds",
 		"left": {"name": "Your team", "score": 3, "team": 0, "colour": TeamColours.ally},
 		"right": {"name": "Enemy", "score": 2, "team": 1, "colour": TeamColours.enemy},
 	}
@@ -201,14 +200,16 @@ func _results() -> void:
 	board.visible = false
 	var banner: Control = _piece(MatchBanner)
 	var strip := {
+		"goal": "First to 75",
 		"left": {"name": "Your team", "score": 75, "team": 0, "colour": TeamColours.ally},
 		"right": {"name": "Enemy", "score": 61, "team": 1, "colour": TeamColours.enemy},
 	}
 	banner.banner_y = 0.09
 	banner.title = "VICTORY"
 	banner.plate = UiTheme.VICTORY
+	banner.colour = TeamColours.ally
 	banner.detail = "Score limit reached"
-	banner.footnote = "Next match in 24"
+	banner.footnote = "Next match  0:24"
 	banner.strip = strip
 	banner.bonus = 1500
 	await _seconds(0.16)
@@ -217,6 +218,7 @@ func _results() -> void:
 	await _shot("result_02_victory_strip")
 	banner.title = "DEFEAT"
 	banner.plate = UiTheme.DEFEAT
+	banner.colour = TeamColours.enemy
 	banner.detail = "Time limit reached"
 	strip.left.score = 37
 	strip.right.score = 52
@@ -238,19 +240,23 @@ func _results() -> void:
 	# The results board under the banner, with the match report.
 	banner.title = "VICTORY"
 	banner.plate = UiTheme.VICTORY
+	banner.colour = TeamColours.ally
 	banner.detail = "Score limit reached"
 	banner.strip = {}
 	banner.bonus = -1
 	board.visible = true
 	board.top = 214.0
-	board.title = "TEAM DEATHMATCH"
+	board.title = "TEAM DEATHMATCH  ·  FIRST TO 75 KILLS"
 	board.sections = _sections(false, [], [])
+	await _frames(2)
+	# As `tdm_hud.gd` places it: as wide as the board, 58 px off the bottom.
+	var report_w := maxf(board.panel_width(), 900.0)
 	var card: PanelContainer = XpSummary.new()
 	card.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	card.offset_left = -XpSummary.WIDTH / 2.0
-	card.offset_right = XpSummary.WIDTH / 2.0
+	card.offset_left = -report_w / 2.0
+	card.offset_right = report_w / 2.0
 	card.offset_top = -236.0
-	card.offset_bottom = -52.0
+	card.offset_bottom = -58.0
 	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_layer.add_child(card)
 	(

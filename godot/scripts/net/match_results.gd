@@ -69,14 +69,24 @@ static func reason(info: Dictionary, won: bool, winner_name: String) -> String:
 	return "Time limit reached"
 
 
-## The team strip after a match: our side left, theirs right (none in a
-## free-for-all).
+## The team strip after a match: our side left, theirs right, and the goal
+## under the VS chip (none in a free-for-all).
 static func strip(info: Dictionary) -> Dictionary:
 	var scores: PackedInt32Array = info.scores
 	var mine: int = info.my_team
 	if info.get("free_for_all", false) or mine < 0 or scores.size() != 2:
 		return {}
+	var limit := int(info.get("score_limit", 0))
 	return {
+		"goal":
+		(
+			""
+			if limit <= 0
+			else (
+				("First to %d rounds" if String(info.get("mode", "")) == "snd" else "First to %d")
+				% limit
+			)
+		),
 		"left":
 		{"name": "Your team", "score": scores[mine], "team": mine, "colour": TeamColours.ally},
 		"right":

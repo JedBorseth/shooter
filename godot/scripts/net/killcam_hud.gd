@@ -3,15 +3,16 @@ extends CanvasLayer
 ## client plays a killcam (`NetClient.killcam_info`), the rest of the HUD
 ## steps aside and this draws, in Black Ops 3's grammar and our own art:
 ##
-## - the title, top centre: KILLCAM on a steel plate with a chevron end
-##   pointing left and leader lines off it, the word in big squared caps with
-##   the colour split; FINAL KILLCAM or ROUND WINNING KILL on a dark band, with
-##   the winners (the killer's side) named under it. A thin line under the
+## - the title, top centre, on a steel plate with a chevron end pointing
+##   left and leader lines off it, the word in big squared caps with the
+##   colour split: KILLCAM, or FINAL KILLCAM or ROUND WINNING KILL with the
+##   winners (the killer's side) named under it. A thin line under the
 ##   title fills as the replay plays. It comes in with a short white flash;
 ##   - top right, KILLED BY, the weapon's silhouette, and its name and
 ##   attachment (HEADSHOT under it for one);
 ## - a strip across the bottom: the killer's name plate (their team's mark and
-##   colour) and the victim's either side of a VS chip, our own name in yellow;
+##   colour) and the victim's either side of the hexagon VS chip, our own
+##   name in yellow;
 ## - the skip prompt under the strip ("[F] Skip"), after a death only.
 ##
 ## Call of Duty shows the same parts: a KILLCAM title, the killer's card with
@@ -25,8 +26,11 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-## The KILLCAM plate's steel blue.
-const STEEL := Color(0.22, 0.318, 0.384, 0.78)
+## The title plate's steel blue, dark enough to part from a bright sky, and
+## its edge; how far its chevron end reaches.
+const STEEL := Color(0.173, 0.259, 0.329, 0.88)
+const STEEL_EDGE := Color("6f8ba9")
+const CHEVRON := 30.0
 
 var client: NetClient
 var player: FpsPlayer
@@ -122,10 +126,9 @@ func _draw_overlay() -> void:
 	_canvas.draw_set_transform(MatchPaint.design_origin(view), 0.0, Vector2(scale, scale))
 	var alpha := clampf(_age / 0.2, 0.0, 1.0)
 	var ending := String(_info.get("kind", "respawn")) != "respawn"
+	_draw_title(alpha)
 	if ending:
-		_draw_ending_title(alpha)
-	else:
-		_draw_title(alpha)
+		_draw_winners(alpha)
 	_draw_weapon(alpha)
 	_draw_strip(alpha, ending)
 	# Skip, after a death only: in the strip's right end, clear of the cards.
@@ -140,51 +143,53 @@ func _draw_overlay() -> void:
 		_canvas.draw_rect(Rect2(Vector2.ZERO, view), Color(1, 1, 1, 0.45 * flash))
 
 
-## KILLCAM on its steel plate, the chevron end pointing left.
+## The title on its steel plate, the chevron end pointing left: KILLCAM
+## after a death, FINAL KILLCAM or ROUND WINNING KILL at an end, every one
+## the same plate, sized to its word. The plate opens from its square end,
+## leader lines draw off both ends, and a thin line under it fills as the
+## replay plays.
 func _draw_title(alpha: float) -> void:
+	var title := _title()
+	var text_size := 44 if title == "KILLCAM" else 40
+	var width := Paint.text_width(Paint.DISPLAY, title, text_size, text_size * 0.06)
 	# The word centres on the screen; the chevron end hangs off to the left.
-	var plate := Rect2(593, 30, 384, 60)
+	var plate := Rect2(800.0 - width / 2.0 - 40.0 - CHEVRON, 30, width + 80.0 + CHEVRON, 60)
 	var open := 1.0 - pow(1.0 - clampf(_age / 0.22, 0.0, 1.0), 3.0)
 	var shown := Rect2(
 		plate.end.x - plate.size.x * open, plate.position.y, plate.size.x * open, plate.size.y
 	)
+	if shown.size.x < 2.0:
+		return
+	# The chevron never reaches past the plate's square end while it opens.
+	var chevron := minf(CHEVRON, shown.size.x - 1.0)
 	var points := PackedVector2Array(
 		[
 			Vector2(shown.position.x, shown.get_center().y),
-			Vector2(shown.position.x + 30.0, shown.position.y),
+			Vector2(shown.position.x + chevron, shown.position.y),
 			Vector2(shown.end.x, shown.position.y),
 			Vector2(shown.end.x, shown.end.y),
-			Vector2(shown.position.x + 30.0, shown.end.y),
+			Vector2(shown.position.x + chevron, shown.end.y),
 		]
 	)
 	_canvas.draw_colored_polygon(points, Color(STEEL, STEEL.a * alpha))
 	points.append(points[0])
-	_canvas.draw_polyline(points, Color(0.55, 0.68, 0.76, 0.6 * alpha), 1.0, true)
+	_canvas.draw_polyline(points, Color(STEEL_EDGE, alpha), 1.0, true)
 	if open >= 1.0:
-		var from := Vector2(plate.position.x, plate.get_center().y)
-		Shapes.leader_lines(_canvas, from, -1.0, Color(STEEL.lightened(0.3), 0.9 * alpha))
+		var lines := Color(STEEL_EDGE, 0.9 * alpha)
+		Shapes.leader_lines(_canvas, Vector2(plate.position.x, plate.get_center().y), -1.0, lines)
+		Shapes.leader_lines(_canvas, Vector2(plate.end.x, plate.get_center().y), 1.0, lines)
 	var split := lerpf(5.0, 1.5, clampf(_age / 0.25, 0.0, 1.0))
 	var word := Color(UiTheme.TEXT, alpha * open)
-	MatchPaint.big_word(_canvas, "KILLCAM", Vector2(800, 76), 44, word, split)
+	var baseline := plate.get_center().y + Paint.DISPLAY.get_ascent(text_size) * 0.36
+	MatchPaint.big_word(_canvas, title, Vector2(800, baseline), text_size, word, split)
 	_draw_progress(
-		Rect2(plate.position.x + 30.0, plate.end.y + 6.0, plate.size.x - 30.0, 2.0), alpha
+		Rect2(plate.position.x + CHEVRON, plate.end.y + 6.0, plate.size.x - CHEVRON, 2.0), alpha
 	)
 
 
-## FINAL KILLCAM or ROUND WINNING KILL on a dark plate with leader lines,
-## the winners (the killer's side) named under it.
-func _draw_ending_title(alpha: float) -> void:
-	var title := _title()
-	var width := Paint.text_width(Paint.DISPLAY, title, 40, 2.4)
-	var plate := Rect2(800.0 - width / 2.0 - 44.0, 32.0, width + 88.0, 58.0)
-	_canvas.draw_rect(plate, Color(0.02, 0.03, 0.04, 0.84 * alpha))
-	_canvas.draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1)), Color(1, 1, 1, 0.16 * alpha))
-	for side: float in [-1.0, 1.0]:
-		var from := Vector2(800.0 + side * plate.size.x / 2.0, plate.get_center().y)
-		Shapes.leader_lines(_canvas, from, side, Color(0.55, 0.6, 0.66, 0.8 * alpha))
-	var split := lerpf(5.0, 1.5, clampf(_age / 0.25, 0.0, 1.0))
-	MatchPaint.big_word(_canvas, title, Vector2(800, 76), 40, Color(UiTheme.TEXT, alpha), split)
-	_draw_progress(Rect2(plate.position.x, plate.end.y, plate.size.x, 2.0), alpha)
+## At an end, under the title: WINNERS in the reward yellow, the killer's
+## side's mark, and its name on a light plate.
+func _draw_winners(alpha: float) -> void:
 	var killer := int(_info.get("killer", -1))
 	var team := _team_of(killer)
 	var colour := _colour_of(killer)
@@ -193,15 +198,26 @@ func _draw_ending_title(alpha: float) -> void:
 		name = String(_info.get("killer_name", ""))
 	name = name.to_upper()
 	var label_w := Paint.text_width(Paint.LABEL, "WINNERS", 15, 2.5)
-	var plate_w := Paint.text_width(Paint.DISPLAY, name, 19, 1.0) + 18.0
-	var left := 800.0 - (44.0 + 12.0 + label_w + 12.0 + plate_w) / 2.0
-	var mark := Vector2(left + 22.0, 130)
-	MatchPaint.team_mark(_canvas, mark, 44.0, maxi(team, 0), Color(colour, alpha))
-	left += 56.0
-	var ink := Color(UiTheme.TEXT, alpha)
-	Paint.text(_canvas, Paint.LABEL, "WINNERS", Vector2(left, 136), 15, ink, 2.5)
-	var at := Vector2(left + label_w + 12.0, 116)
-	MatchPaint.label_plate(_canvas, at, name, 28.0, Paint.DISPLAY, alpha)
+	var plate_w := Paint.text_width(Paint.LABEL, name, 19, 3.0) + 16.0
+	var left := 800.0 - (40.0 + 12.0 + label_w + 14.0 + plate_w) / 2.0
+	MatchPaint.team_mark(
+		_canvas, Vector2(left + 20.0, 134), 40.0, maxi(team, 0), Color(colour, alpha)
+	)
+	left += 52.0
+	var ready := Color(UiTheme.READY, alpha)
+	Paint.text(_canvas, Paint.LABEL, "WINNERS", Vector2(left, 140), 15, ready, 2.5)
+	var plate := Rect2(left + label_w + 14.0, 120, plate_w, 28)
+	_canvas.draw_rect(plate, Color(UiTheme.LABEL_BOX, alpha))
+	Paint.text(
+		_canvas,
+		Paint.LABEL,
+		name,
+		Vector2(plate.position.x + 8.0, 141),
+		19,
+		Color(UiTheme.LABEL_INK, alpha),
+		3.0,
+		false
+	)
 
 
 func _draw_progress(rect: Rect2, alpha: float) -> void:
@@ -302,7 +318,7 @@ func _draw_strip(alpha: float, ending: bool) -> void:
 			alpha * slide,
 			true
 		)
-		MatchPaint.vs_chip(_canvas, Vector2(800, middle), alpha * slide)
+		MatchPaint.vs_hex(_canvas, Vector2(800, middle), alpha * slide, 26.0)
 
 
 func _card_width(name: String) -> float:

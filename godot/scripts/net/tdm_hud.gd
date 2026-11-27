@@ -201,9 +201,9 @@ func _process(delta: float) -> void:
 	# The header: the mode and its goal ("FIRST TO 75 KILLS"), or the round.
 	_board.title = String(info.get("mode_name", "")).to_upper()
 	if snd and phase == "playing":
-		_board.title += " : ROUND %d" % int(client.round_info().get("number", 0))
+		_board.title += "  ·  ROUND %d" % int(client.round_info().get("number", 0))
 	elif _score.footer != "":
-		_board.title += " : " + String(_score.footer)
+		_board.title += "  ·  " + String(_score.footer)
 	_board.clock = _score.clock
 	# The match report under the results board is as wide as it.
 	var report_w := maxf(_board.panel_width(), 900.0)
@@ -840,7 +840,7 @@ func _build_board() -> void:
 	_xp_card.offset_left = -XpSummary.WIDTH / 2.0
 	_xp_card.offset_right = XpSummary.WIDTH / 2.0
 	_xp_card.offset_top = -236.0
-	_xp_card.offset_bottom = -52.0
+	_xp_card.offset_bottom = -58.0
 	_xp_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_root.add_child(_xp_card)
 

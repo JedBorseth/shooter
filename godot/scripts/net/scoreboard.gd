@@ -34,8 +34,14 @@ const ROW_PITCH := 32.0
 ## A team block never gets shorter than this, so its plate and score fit.
 const BLOCK_MIN := 98.0
 const COLUMN_W := 112.0
+## Free-for-all has fewer columns: wider ones, so the numbers sit nearer the
+## names.
+const FFA_COLUMN_W := 136.0
 const WIDE_COLUMN_W := 230.0
 const PING_W := 58.0
+## First, second, and third place in a free-for-all (not yellow, which means
+## you).
+const PODIUM := [Color("e8c840"), Color("c0c6cc"), Color("c08850")]
 ## Where the panel's top sits when held open, and under the result banner.
 const TOP := 206.0
 
@@ -56,6 +62,10 @@ var _left := 154.0
 var _width := WIDTH
 ## The alpha the current row draws at (rows fade in one after another).
 var _alpha := 1.0
+var _ffa := false
+## The goal ("FIRST TO 30 KILLS") when it does not fit in the header: drawn
+## under the board's right end instead.
+var _goal_below := ""
 
 
 ## "3 / 5 ready": the players (not bots) of `roster` ready for the match.
@@ -88,6 +98,7 @@ func _draw() -> void:
 	draw_set_transform(MatchPaint.design_origin(size), 0.0, Vector2(scale, scale))
 	_alpha = clampf(_age / 0.1, 0.0, 1.0)
 	var ffa: bool = sections.size() == 1 and String(sections[0].get("score", "")) == ""
+	_ffa = ffa
 	var headings: Array = sections[0].headings
 	_width = WIDTH
 	_left = 0.0
@@ -99,8 +110,13 @@ func _draw() -> void:
 	_draw_header(headings, columns)
 	var y := top + HEADER_H + 2.0
 	var row_index := 0
-	for section: Dictionary in sections:
+	for s in sections.size():
+		var section: Dictionary = sections[s]
 		var rows: Array = section.rows
+		if s > 0:
+			# The seam between the teams: dark, so the scene never shows a
+			# bright stripe through the board.
+			draw_rect(Rect2(_left, y - 6.0, _width, 6.0), _a(Color(0, 0, 0, 0.72)))
 		var block_h := maxf(rows.size() * ROW_PITCH, BLOCK_MIN)
 		if ffa:
 			block_h = rows.size() * ROW_PITCH
@@ -119,6 +135,19 @@ func _draw() -> void:
 			)
 			row_index += 1
 		y += block_h + 6.0
+	if _goal_below != "":
+		# On a dark tab under the board's right end, so it reads on any scene.
+		var goal_w := Paint.text_width(Paint.LABEL, _goal_below, 14, 2.5) + 28.0
+		draw_rect(Rect2(_left + _width - goal_w, y - 6.0, goal_w, 26.0), _a(Color(0, 0, 0, 0.82)))
+		Paint.text_right(
+			self,
+			Paint.LABEL,
+			_goal_below,
+			Vector2(_left + _width - 14.0, y + 12.0),
+			14,
+			_a(UiTheme.TEXT_DIM),
+			2.5
+		)
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -132,6 +161,8 @@ func _columns(headings: Array) -> Array:
 			out.push_front([_left + _width, PING_W])
 			continue
 		var width := WIDE_COLUMN_W if heading.to_upper() == "WEAPON" else COLUMN_W
+		if _ffa and heading.to_upper() != "WEAPON":
+			width = FFA_COLUMN_W
 		out.push_front([right, width])
 		right -= width
 	return out
@@ -152,15 +183,21 @@ func _draw_header(headings: Array, columns: Array) -> void:
 			Paint.text(self, Paint.DISPLAY, clock, Vector2(x, baseline), 20, _a(UiTheme.TEXT))
 			+ 26.0
 		)
-	Paint.text(
-		self,
-		Paint.LABEL,
-		title.to_upper(),
-		Vector2(x, baseline - 1.0),
-		18,
-		_a(UiTheme.TEXT_DIM),
-		2.0
-	)
+	# The mode, then its goal or round after a dot when it fits before the
+	# first column; otherwise the goal goes under the board.
+	var parts := title.to_upper().split("  ·  ", true, 1)
+	var lead: String = parts[0]
+	var goal := "  ·  " + parts[1] if parts.size() > 1 else ""
+	var dim := _a(UiTheme.TEXT_DIM)
+	x += Paint.text(self, Paint.LABEL, lead, Vector2(x, baseline - 1.0), 18, dim, 2.0)
+	_goal_below = ""
+	if goal != "":
+		var first: Array = columns[0] if not columns.is_empty() else [_left + _width, 0.0]
+		var room := float(first[0]) - float(first[1]) - 24.0 - x
+		if Paint.text_width(Paint.LABEL, goal, 18, 2.0) <= room:
+			Paint.text(self, Paint.LABEL, goal, Vector2(x, baseline - 1.0), 18, dim, 2.0)
+		else:
+			_goal_below = parts[1]
 	for i in range(1, headings.size()):
 		var heading := String(headings[i])
 		var column: Array = columns[i - 1]
@@ -179,17 +216,18 @@ func _draw_header(headings: Array, columns: Array) -> void:
 
 func _draw_team_block(section: Dictionary, rect: Rect2) -> void:
 	var colour: Color = section.colour
-	draw_rect(rect, _a(Color(0, 0, 0, 0.5)))
+	# The team's colour pressed nearly black, close to solid so the scene
+	# cannot print shapes through it.
+	draw_rect(rect, _a(Color(colour.darkened(0.87), 0.82)))
 	draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)), _a(Color(colour, 0.85)))
-	# The team's mark, faint, behind the score on the right.
-	# The team's mark, a faint watermark behind and right of the score.
+	# The team's mark, a faint watermark the score overlaps.
 	var mark := minf(rect.size.y - 6.0, 130.0)
 	MatchPaint.team_mark(
 		self,
-		Vector2(rect.position.x + 150.0, rect.get_center().y + 6.0),
+		Vector2(rect.position.x + 104.0, rect.get_center().y + 8.0),
 		mark,
 		int(section.get("team", 0)),
-		_a(Color(colour, 0.35))
+		_a(Color(colour, 0.3))
 	)
 	MatchPaint.label_plate(
 		self, rect.position + Vector2(10, 8), String(section.name).to_upper(), 28.0
@@ -228,9 +266,9 @@ func _draw_row(
 	var me: bool = row.get("me", false)
 	var out: bool = row.get("faint", false)
 	# Team rows: the team colour pressed dark, see-through.
-	var fill := Color(colour.darkened(0.8), 0.85)
+	var fill := Color(colour.darkened(0.8), 0.9)
 	if ffa:
-		fill = Color(0.09, 0.1, 0.11, 0.85)
+		fill = Color(0.09, 0.1, 0.11, 0.9)
 	if out:
 		fill = Color(fill.darkened(0.3), 0.7)
 	draw_rect(rect, _a(fill))
@@ -258,8 +296,8 @@ func _draw_row(
 	# Round modes keep room on the left for the skull.
 	var name_x := rect.position.x + (40.0 if _round_mode() else 16.0)
 	if ffa:
-		# Place: the top three brighter.
-		var place_colour := UiTheme.TEXT if index < 3 else UiTheme.TEXT_DIM
+		# Place: the top three in gold, silver, and bronze.
+		var place_colour: Color = PODIUM[index] if index < 3 else UiTheme.TEXT_DIM
 		Paint.text_right(
 			self,
 			Paint.DISPLAY,
@@ -283,8 +321,8 @@ func _draw_row(
 			Paint.LABEL,
 			tag,
 			Vector2(name_x + name_w + 10.0, baseline - 1.0),
-			12,
-			_a(UiTheme.TEXT_FAINT),
+			13,
+			_a(Color(UiTheme.TEXT_DIM, 0.7)),
 			1.5
 		)
 	var headings: Array = section.headings
@@ -297,7 +335,8 @@ func _draw_row(
 				self,
 				Vector2(float(column[0]) - float(column[1]) / 2.0 - 10.0, baseline - 1.0),
 				ping,
-				_alpha * (0.5 if out else 1.0)
+				_alpha * (0.5 if out else 1.0),
+				0.25 if me else 0.16
 			)
 			continue
 		var centre := float(column[0]) - float(column[1]) / 2.0
