@@ -402,7 +402,21 @@ func _build() -> void:
 		)
 	if _has_custom():
 		_build_custom_line(layout)
+		_point_up_to_chosen(_custom_button, _rounds if _snd() else _time_limit)
 	_build_actions(layout)
+
+
+## Up from `button` lands on `row`'s chosen chip, not the chip nearest on
+## screen, so a controller starts from the current choice.
+func _point_up_to_chosen(button: Button, row: ChipRow) -> void:
+	if button == null or row == null:
+		return
+	button.focus_entered.connect(
+		func() -> void:
+			var chip := row.chosen_chip()
+			if chip != null:
+				button.focus_neighbor_top = button.get_path_to(chip)
+	)
 
 
 ## The custom rules in one line, and the button that opens Game Settings.
