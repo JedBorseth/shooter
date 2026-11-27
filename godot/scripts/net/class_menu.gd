@@ -30,6 +30,12 @@ const WeaponStats := preload("res://scripts/net/weapon_stats.gd")
 const ClassRules := preload("res://scripts/net/class_rules.gd")
 ## Each perk's icon, by key.
 const PERK_ICON := "res://assets/ui/perks/%s.svg"
+## Line icons for attachments, wildcards, and scorestreaks, by key.
+const LOADOUT_ICON := "res://assets/ui/loadout/%s.svg"
+## The hero silhouette, a little below white so the title stays brightest.
+const HERO_TINT := Color("c8ccd2")
+## Seconds to dim or light a region as focus moves between grid and items.
+const DIM_SECONDS := 0.12
 ## Every slot the editor's picker shows, in the grid's order.
 const SLOTS := [
 	"primary",
@@ -45,6 +51,29 @@ const SLOTS := [
 ]
 ## Slots that hold one item: picking one goes back to the grid.
 const SINGLE := ["primary", "secondary", "lethal", "tactical"]
+## What each attachment does (from `Attachment` in rust/sim/src/weapon/def.rs).
+const ATTACHMENT_TEXT := {
+	"reddot": "A reflex sight in place of the iron sights. Quick to aim.",
+	"acog": "A 2.5x combat scope for longer lanes.",
+	"suppressor": "No muzzle flash or tracers, and off the enemy minimap. Shorter range.",
+	"grip": "A vertical foregrip: a quarter less recoil.",
+	"extmag": "Half again as many rounds, a slightly slower reload.",
+}
+## What each tactical does.
+const TACTICAL_TEXT := {
+	"flash": "Blinds and deafens anyone facing the blast.",
+	"smoke": "A thick screen of smoke to cross open ground behind.",
+}
+## A greyed-out item's short note, from the rule it would break.
+const SHORT_REASONS := {
+	"Too many attachments": "SLOTS FULL",
+	"One optic at a time": "ONE OPTIC",
+	"A second lethal needs Extra Lethal": "NEEDS WILDCARD",
+	"A second perk of a tier needs its Extra Perk wildcard": "NEEDS WILDCARD",
+	"A primary as secondary needs Two Primaries": "NEEDS WILDCARD",
+	"That combination of attachments is not available": "NOT WITH THESE",
+	"Carry at least one weapon": "NEEDS A WEAPON",
+}
 
 ## A line for each primary weapon; others show only their name.
 const WEAPON_ROLES := {
@@ -122,6 +151,27 @@ func _ready() -> void:
 		client.set_streaks(_usable_streaks())
 
 
+## The region focus is not in dims to 60%, so the eye follows focus between
+## the loadout (and class list) and the items.
+func _process(delta: float) -> void:
+	if not is_visible_in_tree() or not _picker.visible:
+		_fade(_grid, 1.0, 1.0)
+		_fade(_list_column, 1.0, 1.0)
+		_fade(_picker, 1.0, 1.0)
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	var in_items := focused != null and _picker.is_ancestor_of(focused)
+	var step := delta / DIM_SECONDS * 0.4
+	_fade(_grid, 0.6 if in_items else 1.0, step)
+	_fade(_list_column, 0.6 if in_items else 1.0, step)
+	_fade(_picker, 1.0 if in_items else 0.6, step)
+
+
+func _fade(node: CanvasItem, target: float, step: float) -> void:
+	var value := move_toward(node.modulate.r, target, step)
+	node.modulate = Color(value, value, value, 1.0)
+
+
 func _weapon_before(a: Dictionary, b: Dictionary) -> bool:
 	var ca := int(a.get("class_order", 0))
 	var cb := int(b.get("class_order", 0))
@@ -168,6 +218,12 @@ func editing_name() -> String:
 
 
 ## Whether the right side shows items (the lobby's team list steps aside).
+## The header title while editing: the name in caps, or a blank while the
+## name field (which shows it as typed) has focus.
+func title_text() -> String:
+	return " " if _name_edit.has_focus() else _name_edit.text
+
+
 func picker_open() -> bool:
 	return _picker.visible
 
@@ -204,7 +260,8 @@ func _build_list() -> void:
 	_hero.draw.connect(_draw_hero)
 	_place(_hero, Vector2(800, 136), Vector2(380, 560))
 	_edit_button = Button.new()
-	_edit_button.text = "Edit class"
+	_edit_button.text = "EDIT CLASS"
+	_edit_button.theme_type_variation = &"FrontAction"
 	_edit_button.custom_minimum_size = Vector2(240, 44)
 	_edit_button.pressed.connect(func() -> void: _open_editor(_shown_id))
 	_place(_edit_button, Vector2(800, 652), Vector2(240, 44))
@@ -268,6 +325,7 @@ func _rebuild_streaks() -> void:
 			var item := _streak(chosen[i])
 			tile.title = String(item.get("name", chosen[i]))
 			tile.caption = str(int(item.get("cost", 0)))
+			tile.art = _icon(chosen[i])
 		else:
 			tile.empty = true
 		tile.text = "Scorestreak %d: %s" % [i + 1, tile.title if tile.title != "" else "empty"]
@@ -302,6 +360,8 @@ func _streak_entries() -> Array:
 			"title": String(item.name),
 			"text": "%s  ·  %d" % [String(item.name), int(item.cost)],
 			"caption": "%d" % int(item.cost),
+			"cost": int(item.cost),
+			"art": _icon(key),
 			"chosen": on,
 			"summary": String(item.summary),
 			"change": _toggle_streak.bind(key),
@@ -397,12 +457,16 @@ func _draw_hero() -> void:
 			icon,
 			Rect2(Vector2((box.x - drawn.x) / 2.0, y + (box.y - drawn.y) / 2.0), drawn),
 			false,
-			Color(1, 1, 1, 0.94)
+			Color(HERO_TINT, 0.9)
 		)
 	y += 170.0
 	Paint.text(_hero, Paint.LABEL, "PRIMARY", Vector2(0, y), 14, UiTheme.TEXT_DIM, 1.2)
 	MatchPaint.label_plate(
-		_hero, Vector2(0, y + 10.0), _rules.weapon_name(key) if key != "" else "None", 40.0
+		_hero,
+		Vector2(0, y + 10.0),
+		(_rules.weapon_name(key) if key != "" else "None").to_upper(),
+		40.0,
+		Paint.LABEL
 	)
 	y += 82.0
 	var role := String(WEAPON_ROLES.get(key, ""))
@@ -435,24 +499,29 @@ func _draw_hero() -> void:
 	elif not _shown_id.begins_with("custom"):
 		note = "Default classes cannot be changed."
 	if note != "":
-		Paint.text(_hero, Paint.BODY, note, Vector2(0, 540), 16, UiTheme.TEXT_DIM)
+		Paint.text(_hero, Paint.BODY, note, Vector2(0, y + 18.0), 16, UiTheme.TEXT_DIM)
 
 
-## Pick 10's points, top right: ten pips (spent ones solid) and "N / 10".
+## Pick 10's points, top right: ten pips (spent ones solid) and "N / 10",
+## its right edge on the screens' 1536 px margin.
 func _draw_pips() -> void:
 	var entry := _draft if _editing >= 0 else _shown
 	var spent := int(NetClient.check_class(entry).cost) if not entry.is_empty() else 0
+	var right := 1536.0 - _pips.position.x
+	var of_ten := " / 10"
+	var x := right - Paint.text_width(Paint.DISPLAY, of_ten, 32)
+	Paint.text(_pips, Paint.DISPLAY, of_ten, Vector2(x, 44), 32, UiTheme.TEXT_DIM)
+	x -= Paint.text_width(Paint.DISPLAY, str(spent), 32)
+	Paint.text(_pips, Paint.DISPLAY, str(spent), Vector2(x, 44), 32, UiTheme.TEXT)
+	var left := x - 26.0 - 10 * 15.0 + 6.0
 	for i in 10:
-		var rect := Rect2(i * 15.0, 18, 9, 26)
+		var rect := Rect2(left + i * 15.0, 18, 9, 26)
 		if i < spent:
 			_pips.draw_rect(rect, Color(UiTheme.TEXT, 0.95))
 		else:
 			_pips.draw_rect(rect, Color(1, 1, 1, 0.12))
 			_pips.draw_rect(rect.grow(-0.5), UiTheme.TEXT_DIM, false, 1.0)
-	var x := 10 * 15.0 + 26.0
-	x += Paint.text(_pips, Paint.DISPLAY, str(spent), Vector2(x, 44), 32, UiTheme.TEXT)
-	Paint.text(_pips, Paint.DISPLAY, " / 10", Vector2(x, 44), 32, UiTheme.TEXT_DIM)
-	Paint.text_right(_pips, Paint.LABEL, "POINTS", Vector2(148, 12), 13, UiTheme.TEXT_DIM, 2.0)
+	Paint.text(_pips, Paint.LABEL, "POINTS", Vector2(left, 12), 13, UiTheme.TEXT_DIM, 2.0)
 
 
 # --- Editor ----------------------------------------------------------------------
@@ -466,40 +535,46 @@ func _build_editor() -> void:
 	_name_edit = LineEdit.new()
 	_name_edit.max_length = ClassStore.NAME_CHARS
 	_name_edit.placeholder_text = "Class name"
+	# Unfocused, the frame draws the name as the title, in caps; focused for
+	# typing, the field shows it as typed over an orange underline.
 	_name_edit.add_theme_font_override("font", UiTheme.tracked(UiTheme.DISPLAY, 1))
-	_name_edit.add_theme_font_size_override("font_size", 40)
-	var line := StyleBoxFlat.new()
-	line.bg_color = Color(0, 0, 0, 0)
-	line.border_color = UiTheme.LINE_HI
-	line.border_width_bottom = 1
+	_name_edit.add_theme_font_size_override("font_size", 46)
+	_name_edit.add_theme_color_override("font_color", Color.TRANSPARENT)
+	_name_edit.add_theme_color_override("caret_color", UiTheme.ACCENT)
+	var line := StyleBoxEmpty.new()
 	line.content_margin_left = 0
 	_name_edit.add_theme_stylebox_override("normal", line)
-	var lit := line.duplicate() as StyleBoxFlat
+	var lit := StyleBoxFlat.new()
+	lit.bg_color = Color(0, 0, 0, 0.55)
 	lit.border_color = UiTheme.ACCENT
 	lit.border_width_bottom = 2
+	lit.content_margin_left = 0
 	_name_edit.add_theme_stylebox_override("focus", lit)
-	_name_edit.text_changed.connect(func(_text: String) -> void: _pips.queue_redraw())
-	_place(_name_edit, Vector2(62, 46), Vector2(560, 58))
+	_name_edit.focus_entered.connect(
+		func() -> void: _name_edit.add_theme_color_override("font_color", UiTheme.TEXT)
+	)
+	_name_edit.focus_exited.connect(
+		func() -> void: _name_edit.add_theme_color_override("font_color", Color.TRANSPARENT)
+	)
+	_place(_name_edit, Vector2(62, 44), Vector2(560, 60))
 	_edit_status = Label.new()
 	_edit_status.add_theme_font_override("font", UiTheme.font(UiTheme.LABEL_LIGHT))
 	_edit_status.add_theme_font_size_override("font_size", 18)
 	_edit_status.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
-	_place(_edit_status, Vector2(520, 800), Vector2(640, 28))
+	_place(_edit_status, Vector2(520, 796), Vector2(640, 28))
+	# Quiet until focused, as DONE on the game settings: only focus is orange.
 	_edit_actions = HBoxContainer.new()
 	_edit_actions.add_theme_constant_override("separation", 10)
-	_place(_edit_actions, Vector2(1196, 788), Vector2(364, 44))
-	var cancel := Button.new()
-	cancel.text = "Cancel"
-	cancel.theme_type_variation = &"QuietButton"
-	cancel.custom_minimum_size = Vector2(130, 44)
-	cancel.pressed.connect(show_list)
-	_edit_actions.add_child(cancel)
-	var save := Button.new()
-	save.text = "Save class"
-	save.theme_type_variation = &"PrimaryButton"
-	save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	save.pressed.connect(_save_draft)
-	_edit_actions.add_child(save)
+	_edit_actions.alignment = BoxContainer.ALIGNMENT_END
+	_place(_edit_actions, Vector2(1172, 788), Vector2(364, 44))
+	for action: Array in [["Cancel", show_list, 130.0], ["Save class", _save_draft, 200.0]]:
+		var button := Button.new()
+		button.text = String(action[0]).to_upper()
+		button.theme_type_variation = &"FrontAction"
+		button.custom_minimum_size = Vector2(float(action[2]), 44)
+		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.pressed.connect(action[1])
+		_edit_actions.add_child(button)
 
 
 func _open_editor(id: String) -> void:
@@ -562,14 +637,9 @@ func _save_draft() -> void:
 
 func _rebuild_editor() -> void:
 	var check := NetClient.check_class(_draft)
-	_edit_status.text = (
-		String(check.error)
-		if String(check.error) != ""
-		else "%d of 10 points spent." % int(check.cost)
-	)
-	_edit_status.add_theme_color_override(
-		"font_color", UiTheme.HARM if String(check.error) != "" else UiTheme.TEXT_DIM
-	)
+	# Only a problem shows here; the points counter already says the cost.
+	_edit_status.text = String(check.error)
+	_edit_status.add_theme_color_override("font_color", UiTheme.HARM)
 	_grid.show_class(_draft, _items, true)
 	_pips.queue_redraw()
 	_show_picker()
@@ -685,7 +755,18 @@ func _entry(title: String, change: Callable, chosen: bool, lock := "", extra := 
 	var entry := {"title": title, "text": title, "change": change, "chosen": chosen}
 	entry.merge(extra)
 	var after: Dictionary = change.call(_draft.duplicate(true))
-	entry.disabled = not chosen and String(NetClient.check_class(after).error) != ""
+	var check := NetClient.check_class(after)
+	var error := String(check.error)
+	entry.disabled = not chosen and error != ""
+	if entry.disabled:
+		# Why it is greyed out: a short note on the card, the sentence below.
+		entry.reason = error
+		var over := int(check.cost) - 10
+		entry.note = (
+			("NEEDS %d POINT%s" % [over, "" if over == 1 else "S"])
+			if error == "Over 10 points"
+			else String(SHORT_REASONS.get(error, "NOT ALLOWED"))
+		)
 	if lock != "" and not chosen:
 		entry.text = title + "  ·  " + lock
 		entry.lock = lock
@@ -726,10 +807,11 @@ func _attachment_entries(weapon: String, field: String) -> Array:
 	var fitted: Array = Array(_draft.get(field, []))
 	for item: Dictionary in _rules.weapon(weapon).get("attachments", []):
 		var key := String(item.key)
-		var kind := (
-			"Optic. One at a time."
+		var kind := String(ATTACHMENT_TEXT.get(key, ""))
+		kind += (
+			" Optic: one at a time."
 			if bool(item.optic)
-			else "Attachment. Two, or three with Third Attachment."
+			else " Two per weapon, three with Third Attachment."
 		)
 		out.append(
 			_entry(
@@ -737,7 +819,7 @@ func _attachment_entries(weapon: String, field: String) -> Array:
 				_rules.toggle_attachment.bind(field, key),
 				key in fitted,
 				ProgressStore.attachment_lock(weapon, key),
-				{"caption": "OPTIC" if bool(item.optic) else "", "summary": kind}
+				{"summary": kind.strip_edges(), "art": _icon(key)}
 			)
 		)
 	return out
@@ -752,13 +834,20 @@ func _tactical_entries() -> Array:
 	for item: Dictionary in _items.tacticals:
 		var key := String(item.key)
 		for count in [1, 2]:
-			out.append(
-				_entry(
-					"%s ×%d" % [String(item.name), count],
-					_rules.with_tactical.bind(key, count),
-					tactical == key and tacticals == count,
-					ProgressStore.lock_reason("tactical", key),
-					{"grenade": key, "count": count}
+			(
+				out
+				. append(
+					_entry(
+						"%s ×%d" % [String(item.name), count],
+						_rules.with_tactical.bind(key, count),
+						tactical == key and tacticals == count,
+						ProgressStore.lock_reason("tactical", key),
+						{
+							"grenade": key,
+							"count": count,
+							"summary": String(TACTICAL_TEXT.get(key, item.get("summary", ""))),
+						}
+					)
 				)
 			)
 	return out
@@ -795,10 +884,16 @@ func _wildcard_entries() -> Array:
 				_rules.toggle_wildcard.bind(key),
 				_has_wildcard(key),
 				ProgressStore.lock_reason("wildcard", key),
-				{"summary": String(item.summary), "caption": "WILDCARD"}
+				{"summary": String(item.summary), "art": _icon(key)}
 			)
 		)
 	return out
+
+
+## The line icon for an attachment, wildcard, or scorestreak key, or null.
+static func _icon(key: String) -> Texture2D:
+	var path := LOADOUT_ICON % key
+	return load(path) as Texture2D if ResourceLoader.exists(path) else null
 
 
 ## Focuses `button` after this frame's rebuilds, if it is still shown.

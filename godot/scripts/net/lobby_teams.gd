@@ -12,7 +12,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 ## The list's width.
-const WIDTH := 340.0
+const WIDTH := 316.0
 const ROW_H := 30.0
 const ROW_PITCH := 32.0
 
@@ -32,7 +32,8 @@ func _ready() -> void:
 	size = Vector2(WIDTH, 600)
 	_switch = Button.new()
 	_switch.name = "SwitchTeam"
-	_switch.text = "Switch team"
+	_switch.text = "SWITCH TEAM"
+	_switch.theme_type_variation = &"FrontAction"
 	_switch.size = Vector2(WIDTH, 40)
 	_switch.pressed.connect(func() -> void: client.switch_team())
 	add_child(_switch)

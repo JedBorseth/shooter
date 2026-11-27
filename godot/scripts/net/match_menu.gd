@@ -75,17 +75,18 @@ func _ready() -> void:
 	_status_label.add_theme_font_size_override("font_size", 18)
 	_status_label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_label.position = Vector2(1060, 748)
+	_status_label.position = Vector2(1036, 748)
 	_status_label.size = Vector2(500, 28)
 	_stage.add_child(_status_label)
 	ready_button = Button.new()
 	ready_button.name = "Ready"
 	ready_button.text = "READY"
 	ready_button.theme_type_variation = &"PrimaryButton"
-	ready_button.position = Vector2(1300, 782)
+	ready_button.position = Vector2(1276, 782)
 	ready_button.size = Vector2(260, 48)
 	_stage.add_child(ready_button)
 	_build_footer()
+
 
 ## Close was pressed: connect to it as to a Button's `pressed`.
 func close_pressed() -> Signal:
@@ -99,7 +100,9 @@ func _process(_delta: float) -> void:
 	_frame.context = mode_name
 	# While editing, the class name is the title, typed in place over the
 	# frame's (which keeps its bracket and context).
-	_frame.title = " " if editing else ("Weapon ladder" if ladder else "Choose class")
+	_frame.title = (
+		class_menu.title_text() if editing else ("Weapon ladder" if ladder else "Choose class")
+	)
 	if editing:
 		_frame.context = "Create a class  ·  " + mode_name
 	class_menu.visible = not ladder
@@ -119,9 +122,9 @@ func _process(_delta: float) -> void:
 ## does. Close comes first; the others follow what is open.
 func _build_footer() -> void:
 	_footer = HBoxContainer.new()
-	_footer.position = Vector2(ScreenFrame.MARGIN_X, 900.0 - ScreenFrame.FOOTER_HEIGHT)
+	_footer.position = Vector2(36, 900.0 - ScreenFrame.FOOTER_HEIGHT)
 	_footer.size = Vector2(1000, ScreenFrame.FOOTER_HEIGHT)
-	_footer.add_theme_constant_override("separation", 6)
+	_footer.add_theme_constant_override("separation", 26)
 	_stage.add_child(_footer)
 	var keys := FooterKeys.new()
 	add_child(keys)
@@ -152,10 +155,6 @@ func _build_footer() -> void:
 func _prompt_group(keys: Node, action: StringName) -> HBoxContainer:
 	var group := HBoxContainer.new()
 	group.add_theme_constant_override("separation", 10)
-	if _footer.get_child_count() > 0:
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(16, 0)
-		group.add_child(gap)
 	_footer.add_child(group)
 	var cap := Label.new()
 	cap.custom_minimum_size = Vector2(24, 24)

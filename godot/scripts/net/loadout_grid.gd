@@ -15,6 +15,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const LoadoutTile := preload("res://scripts/net/loadout_tile.gd")
 const PERK_ICON := "res://assets/ui/perks/%s.svg"
+const LOADOUT_ICON := "res://assets/ui/loadout/%s.svg"
 
 const BIG := 156.0
 const SMALL := 76.0
@@ -102,14 +103,15 @@ func show_class(entry: Dictionary, items: Dictionary, editable: bool) -> void:
 		frag.text = "Lethal: Frag x%d" % lethals
 		frag.grenade = "frag" if lethals > row else ""
 		frag.empty = lethals <= row and row == 0
-		frag.closed = row == 1 and lethals < 2
+		# A second lethal needs Extra Lethal: locked until it is taken.
+		frag.closed = row == 1 and lethals < 2 and not "danger_close" in wildcards
+		frag.empty = frag.empty or (row == 1 and lethals < 2 and not frag.closed)
 		var tac := _add(
 			"tactical", Rect2(STEP, y, SMALL, SMALL), LoadoutTile.Kind.SLOT, editable, row
 		)
 		tac.text = "Tactical: %s x%d" % [_name(items.tacticals, tactical), tacticals]
 		tac.grenade = tactical if tacticals > row else ""
-		tac.empty = tacticals <= row and row == 0
-		tac.closed = row == 1 and tacticals < 2
+		tac.empty = tacticals <= row
 	for tier in [1, 2, 3]:
 		var chosen := []
 		for key: String in entry.get("perks", []):
@@ -161,8 +163,10 @@ func _attachment_tiles(
 		"%s optic: %s" % [field.capitalize(), optics[0].name if not optics.is_empty() else "none"]
 	)
 	optic.title = String(optics[0].name) if not optics.is_empty() else ""
+	if not optics.is_empty():
+		optic.art = _icon(String(optics[0].key))
 	optic.empty = optics.is_empty() and has_optics
-	optic.closed = not has_optics
+	optic.blocked = not has_optics
 	for i in 3:
 		var at := Vector2(COL_OPTIC + STEP * (1 + i % 2), top + STEP * (i / 2))
 		var other := _add(
@@ -171,9 +175,13 @@ func _attachment_tiles(
 		other.text = "%s attachment %d" % [field.capitalize(), i + 1]
 		if i < others.size():
 			other.title = String(others[i].name)
+			other.art = _icon(String(others[i].key))
 		else:
-			other.empty = has_others
-			other.closed = not has_others or (i == 2 and not third)
+			# A weapon that takes none shows blank slots; the third needs
+			# the Third Attachment wildcard, so it is locked until then.
+			other.blocked = not has_others
+			other.closed = has_others and i == 2 and not third
+			other.empty = has_others and not other.closed
 
 
 func _add(slot: String, rect: Rect2, kind: int, editable: bool, index := 0) -> Button:
@@ -192,6 +200,11 @@ func _add(slot: String, rect: Rect2, kind: int, editable: bool, index := 0) -> B
 	if index == 0 or not _tiles.has(slot):
 		_tiles[slot] = tile
 	return tile
+
+
+static func _icon(key: String) -> Texture2D:
+	var path := LOADOUT_ICON % key
+	return load(path) as Texture2D if ResourceLoader.exists(path) else null
 
 
 func _weapon(items: Dictionary, key: String) -> Dictionary:

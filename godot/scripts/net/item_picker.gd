@@ -1,10 +1,12 @@
 extends Control
 ## The items for one Create-a-Class slot, as Black Ops 3's item select shows
 ## them: the slot's name in small caps, a grid of cards (`loadout_tile.gd`:
-## the item's art, its name, a green tick on the chosen ones, a lock and its
-## level in the level yellow while locked), and under it the focused item's
-## detail: its name on a light label plate, what it does, and for a weapon
-## its stat bars. `class_menu.gd` fills it with `show_entries`.
+## the item's art, its name, a green tick on the chosen ones, a grey lock and
+## what unlocks it while locked), and under it the focused item's detail: its
+## name in caps on a light label plate, what it does, why it is greyed out,
+## a scorestreak's cost, and for a weapon its stat bars, with the difference
+## from the equipped weapon in green or red. `class_menu.gd` fills it with
+## `show_entries`.
 
 signal picked(index: int)
 
@@ -14,10 +16,13 @@ const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 const LoadoutTile := preload("res://scripts/net/loadout_tile.gd")
 
 const WIDTH := 760.0
-const CARD := Vector2(185, 92)
+const CARD := Vector2(200, 96)
 const GAP := 4.0
 const COLUMNS := 5
 const BAR_W := 220.0
+const BAR_BASE := Color("3a3e44")
+const BETTER := Color("6cc070")
+const WORSE := Color("e83a2c")
 
 var _heading := ""
 var _entries: Array = []
@@ -33,7 +38,8 @@ func _ready() -> void:
 
 ## Shows `entries` under `heading`. Each entry: {"text" (the button's text),
 ## "title", "chosen", "lock", "disabled", and optionally "weapon", "art",
-## "grenade", "count", "caption", "summary", "stats" ([[label, 0..1]])}.
+## "grenade", "count", "caption", "summary", "stats" ([[label, 0..1]]),
+## "note" and "reason" (why it is disabled), "cost"}.
 func show_entries(heading: String, entries: Array) -> void:
 	_heading = heading
 	_entries = entries
@@ -63,6 +69,7 @@ func show_entries(heading: String, entries: Array) -> void:
 		card.count = int(entry.get("count", 0))
 		card.caption = String(entry.get("caption", ""))
 		card.empty = bool(entry.get("empty", false))
+		card.note = String(entry.get("note", ""))
 		card.tooltip_text = String(entry.get("summary", ""))
 		card.focus_entered.connect(_show.bind(i))
 		card.mouse_entered.connect(_show.bind(i))
@@ -99,57 +106,88 @@ func _show(index: int) -> void:
 
 
 func _draw() -> void:
-	Paint.text(self, Paint.LABEL, _heading.to_upper(), Vector2(0, 18), 16, UiTheme.ACCENT, 1.5)
+	Paint.text(self, Paint.LABEL, _heading.to_upper(), Vector2(0, 22), 14, UiTheme.TEXT_DIM, 1.2)
 	if _shown < 0 or _shown >= _entries.size():
 		return
 	var entry: Dictionary = _entries[_shown]
 	var y := _detail_top
-	var name := String(entry.get("title", entry.text))
-	MatchPaint.label_plate(self, Vector2(0, y), name, 40.0)
-	y += 52.0
+	var name := String(entry.get("title", entry.text)).to_upper()
+	var plate_w := MatchPaint.label_plate(self, Vector2(0, y), name, 36.0, Paint.LABEL)
+	var cost := int(entry.get("cost", 0))
+	if cost > 0:
+		_cost_box(Vector2(plate_w + 10.0, y), cost)
+	y += 48.0
 	var summary := String(entry.get("summary", ""))
 	if summary != "":
-		y = _paragraph(summary, y + 20.0, 480.0)
+		y = _paragraph(summary, y + 20.0, 480.0, UiTheme.TEXT)
 	var lock := String(entry.get("lock", ""))
+	var reason := String(entry.get("reason", ""))
 	if lock != "":
-		y += 6.0
-		Paint.text(
-			self,
-			Paint.LABEL,
-			"LOCKED  ·  %s" % lock.to_upper(),
-			Vector2(0, y + 16.0),
-			16,
-			UiTheme.LEVEL,
-			1.5
+		reason = (
+			"Locked. Unlocks at %s." % lock.to_lower()
+			if lock.begins_with("Level")
+			else ("Locked. Unlocks after %s with this weapon." % lock.to_lower())
 		)
-		y += 26.0
+	if reason != "":
+		y = _paragraph(reason, y + 6.0, 480.0, UiTheme.TEXT_DIM)
 	var stats: Array = entry.get("stats", [])
 	if not stats.is_empty():
+		var base := _chosen_stats()
 		y += 16.0
-		for stat: Array in stats:
+		for i in stats.size():
+			var stat: Array = stats[i]
 			Paint.text(
 				self, Paint.LABEL, String(stat[0]), Vector2(0, y + 11.0), 14, UiTheme.TEXT_DIM, 1.2
 			)
 			var bar := Rect2(110, y + 2.0, BAR_W, 6.0)
-			draw_rect(bar, Color("3a3e44"))
-			draw_rect(
-				Rect2(bar.position, Vector2(BAR_W * float(stat[1]), bar.size.y)), UiTheme.TEXT
-			)
+			draw_rect(bar, BAR_BASE)
+			var value := float(stat[1])
+			var was := float(base[i][1]) if i < base.size() else value
+			draw_rect(Rect2(bar.position, Vector2(BAR_W * minf(value, was), 6.0)), UiTheme.TEXT)
+			if not is_equal_approx(value, was):
+				# The change from the equipped weapon: green gained, red lost.
+				var lo := BAR_W * minf(value, was)
+				var hi := BAR_W * maxf(value, was)
+				draw_rect(
+					Rect2(bar.position + Vector2(lo, 0), Vector2(hi - lo, 6.0)),
+					BETTER if value > was else WORSE
+				)
 			y += 22.0
 
 
+## The chosen entry's stat bars (the equipped weapon), or [].
+func _chosen_stats() -> Array:
+	for entry: Dictionary in _entries:
+		if bool(entry.get("chosen", false)):
+			return entry.get("stats", [])
+	return []
+
+
+## A scorestreak's cost, in a ruled box beside the name, its top left at `at`.
+func _cost_box(at: Vector2, cost: int) -> void:
+	var value := str(cost)
+	var w := 34.0 + Paint.text_width(Paint.LABEL, "COST", 14, 1.2)
+	w += Paint.text_width(Paint.DISPLAY, value, 22)
+	var rect := Rect2(at, Vector2(w, 36.0))
+	draw_rect(rect, Color(UiTheme.BG, 0.85))
+	draw_rect(rect.grow(-0.5), UiTheme.LINE_HI, false, 1.0)
+	var x := rect.position.x + 12.0
+	x += Paint.text(self, Paint.LABEL, "COST", Vector2(x, at.y + 23.0), 14, UiTheme.TEXT_DIM, 1.2)
+	Paint.text(self, Paint.DISPLAY, value, Vector2(x + 10.0, at.y + 26.0), 22, UiTheme.TEXT)
+
+
 ## Wraps `text` to `width`, drawing lines from `y`; returns the y after.
-func _paragraph(text: String, y: float, width: float) -> float:
+func _paragraph(text: String, y: float, width: float, colour: Color) -> float:
 	var line := ""
 	for word in text.split(" "):
 		var next := word if line == "" else line + " " + word
 		if Paint.text_width(Paint.BODY, next, 17) > width and line != "":
-			Paint.text(self, Paint.BODY, line, Vector2(0, y), 17, UiTheme.TEXT)
+			Paint.text(self, Paint.BODY, line, Vector2(0, y), 17, colour)
 			y += 24.0
 			line = word
 		else:
 			line = next
 	if line != "":
-		Paint.text(self, Paint.BODY, line, Vector2(0, y), 17, UiTheme.TEXT)
+		Paint.text(self, Paint.BODY, line, Vector2(0, y), 17, colour)
 		y += 24.0
 	return y
