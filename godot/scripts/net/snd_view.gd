@@ -22,7 +22,7 @@ extends Node3D
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 ## Built in Blender (tools/gear_models.py `charge`), origin at its underside.
 const CHARGE_MODEL := preload("res://assets/models/charge/charge.gltf")

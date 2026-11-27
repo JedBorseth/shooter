@@ -90,8 +90,8 @@ MPFB 2 (MakeHuman for Blender, GPL-3.0) is used only as a build tool by `tools/b
 
 | Asset | Files | Source | License |
 | --- | --- | --- | --- |
-| Barlow Condensed (Bold, ExtraBold) and Barlow (Medium, SemiBold) by The Barlow Project Authors: sentences, the score feed, medals, and the M4A1's engraved markings | `fonts/Barlow*.ttf` (licence in `fonts/OFL.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl) | OFL-1.1 |
-| Chakra Petch (Medium, SemiBold, Bold) by The Chakra Petch Project Authors: titles, buttons, labels, and HUD numerals | `fonts/ChakraPetch-*.ttf` (licence in `fonts/OFL-ChakraPetch.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/chakrapetch) | OFL-1.1 |
+| Barlow Condensed (Medium, SemiBold, Bold, ExtraBold) and Barlow (Medium, SemiBold) by The Barlow Project Authors: menu items, labels, rows, HUD text, sentences, the score feed, medals, and the M4A1's engraved markings | `fonts/Barlow*.ttf` (licence in `fonts/OFL.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl) | OFL-1.1 |
+| Chakra Petch (Medium, SemiBold, Bold) by The Chakra Petch Project Authors: screen titles, banners, and big HUD numerals | `fonts/ChakraPetch-*.ttf` (licence in `fonts/OFL-ChakraPetch.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/chakrapetch) | OFL-1.1 |
 
 ## Add-ons
 

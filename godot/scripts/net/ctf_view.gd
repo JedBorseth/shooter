@@ -20,7 +20,7 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const LABEL_FONT := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const POLE_HEIGHT := 2.7
 ## Models built in Blender (tools/gear_models.py), POLE_HEIGHT tall.
 const POLE_MODEL := preload("res://assets/models/flag_pole/flag_pole.gltf")

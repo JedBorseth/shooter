@@ -3,29 +3,35 @@ extends RefCounted
 ## `_draw` rather than stacking Controls: shadowed text, key caps, flat plates,
 ## segmented bars, and weapon silhouettes.
 ##
-## The HUD look, modelled on modern shooter HUDs but our own: small clusters in
-## the corners, square-cornered translucent graphite plates, big Chakra Petch
-## numerals with a soft drop shadow so they hold over a bright sky, colour only
-## on text and thin bars, and a white keyline for whatever is ours.
+## The HUD look follows Treyarch's Black Ops 2 and 3 HUDs, in our own art:
+## compact clusters in the corners on square, translucent black plates with
+## thin light edges; big squared Chakra Petch numerals and Barlow Condensed
+## labels with a 1 px drop shadow so they hold over a bright sky; cyan and red
+## only for teams, yellow for you and for "ready". `hud_shapes.gd` has the
+## hexagons, banners, and focus rules.
 ##
 ## Load it with `preload`; everything here is static.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
-const DISPLAY: Font = preload("res://assets/fonts/ChakraPetch-Bold.ttf")
-const LABEL: Font = preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
-const LABEL_LIGHT: Font = preload("res://assets/fonts/ChakraPetch-Medium.ttf")
+## Big numerals and banner words.
+const DISPLAY: Font = preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+## Labels, names, and prompts.
+const LABEL: Font = preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
+const LABEL_LIGHT: Font = preload("res://assets/fonts/BarlowCondensed-Medium.ttf")
 const BODY: Font = preload("res://assets/fonts/Barlow-SemiBold.ttf")
 
 ## White weapon silhouettes by base weapon key.
 const WEAPON_ICONS := "res://assets/ui/weapons/%s.png"
 
 ## Plate behind HUD clusters and rows.
-const PLATE := Color(0.05, 0.06, 0.07, 0.5)
-const PLATE_LIGHT := Color(0.16, 0.18, 0.2, 0.62)
+const PLATE := Color(0, 0, 0, 0.48)
+const PLATE_LIGHT := Color(0.14, 0.15, 0.17, 0.62)
+## The light edge on a plate's top and outer side (a bracket, not a box).
+const EDGE := Color(1, 1, 1, 0.32)
 const TRACK := Color(1, 1, 1, 0.16)
-const SHADOW := Color(0, 0, 0, 0.55)
+const SHADOW := Color(0, 0, 0, 0.6)
 
 ## Glyph images are drawn this much taller than a key cap, and their button
 ## fills this share of the image (Kenney's prompts keep a margin round it).
@@ -179,12 +185,12 @@ static func _text_raw(
 static func cap_width(key: String, height: float) -> float:
 	if Glyphs.is_glyph(key) and Glyphs.texture(key) != null:
 		return height * GLYPH_SCALE * GLYPH_INK
-	return maxf(height, text_width(DISPLAY, key, int(height * 0.62)) + height * 0.55)
+	return maxf(height, text_width(LABEL, key, int(height * 0.68)) + height * 0.55)
 
 
-## A key cap: a light square with a keyboard key in dark type, or a
-## controller or mouse button's glyph (see `Glyphs`). Returns its width. `at`
-## is the top left.
+## A key cap: a keyboard key in white type in a 1 px white box on a dark
+## fill, or a controller or mouse button's glyph (see `Glyphs`). Returns its
+## width. `at` is the top left.
 static func key_cap(
 	item: CanvasItem, key: String, at: Vector2, height: float, alpha := 1.0
 ) -> float:
@@ -193,20 +199,20 @@ static func key_cap(
 		if glyph != null:
 			return _glyph(item, glyph, at, height, alpha)
 		key = Glyphs.plain(key)
-	var size := int(height * 0.62)
-	var label_w := text_width(DISPLAY, key, size)
+	var size := int(height * 0.68)
+	var label_w := text_width(LABEL, key, size)
 	var width := maxf(height, label_w + height * 0.55)
 	var rect := Rect2(at, Vector2(width, height))
-	item.draw_rect(Rect2(rect.position + Vector2(0, 1.5), rect.size), Color(SHADOW, 0.4 * alpha))
-	item.draw_rect(rect, Color(UiTheme.TEXT, 0.94 * alpha))
-	var baseline := at.y + height / 2.0 + DISPLAY.get_ascent(size) * 0.36
+	item.draw_rect(rect, Color(0, 0, 0, 0.55 * alpha))
+	item.draw_rect(rect.grow(-0.5), Color(UiTheme.TEXT, 0.9 * alpha), false, 1.0)
+	var baseline := at.y + height / 2.0 + LABEL.get_ascent(size) * 0.38
 	_text_raw(
 		item,
-		DISPLAY,
+		LABEL,
 		key,
 		Vector2(at.x + (width - label_w) / 2.0, baseline),
 		size,
-		Color(UiTheme.INK, alpha),
+		Color(UiTheme.TEXT, alpha),
 		0.0
 	)
 	return width
