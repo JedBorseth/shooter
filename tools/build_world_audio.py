@@ -24,7 +24,6 @@ a rebuild writes the same files). Each is built in the frequency domain or
 from events placed modulo the loop length, so it repeats without a seam:
 
 - ``day``: wind in two bands under sparse, distant bird phrases (stereo).
-- ``night``: several crickets at their own rates and places, and low wind.
 - ``interior``: quiet room tone with a trace of mains hum.
 - ``hum``: an air conditioner (fan blade tone, airflow, compressor), mono.
 - ``buzz``: a lamp or transformer's 120 Hz buzz with a faint crackle, mono.
@@ -284,41 +283,6 @@ def day(rng: np.random.Generator, seconds: float) -> np.ndarray:
     return out
 
 
-def cricket(rng: np.random.Generator, n: int) -> np.ndarray:
-    """One cricket: bursts of three to five pulses at its own pitch, on a
-    period that divides the loop exactly."""
-    carrier = rng.uniform(4_200, 5_000)
-    pulses = int(rng.integers(3, 6))
-    pulse = int(0.012 * RATE)
-    gap = int(rng.uniform(0.018, 0.028) * RATE)
-    t = np.arange(pulse) / RATE
-    one = np.sin(2 * np.pi * carrier * t) * np.sin(np.pi * np.arange(pulse) / pulse) ** 2
-    chirp = np.zeros(pulses * (pulse + gap))
-    for k in range(pulses):
-        chirp[k * (pulse + gap) : k * (pulse + gap) + pulse] = one
-    period = rng.uniform(0.45, 0.95)
-    repeats = max(1, int(round(n / RATE / period)))
-    out = np.zeros(n)
-    rest = lfo(rng, n, [1, 3], 0.6)
-    for k in range(repeats):
-        at = int(k * n / repeats + rng.uniform(0, 0.02) * RATE)
-        # Crickets pause now and then.
-        if rest[at % n] > 0.5:
-            place(out, chirp * rest[at % n], at)
-    return out
-
-
-def night(rng: np.random.Generator, seconds: float) -> np.ndarray:
-    n = int(seconds * RATE)
-    out = wind(rng, n, 0.012)
-    for _ in range(6):
-        x = cricket(rng, n)
-        # The reverb tail wraps round to the start, so the loop has no seam.
-        x = distant(x, rng, rng.uniform(6_000, 9_000), 0.25) * rng.uniform(0.015, 0.035)
-        place(out, x, 0, rng.uniform(-0.95, 0.95))
-    return out
-
-
 def interior(rng: np.random.Generator, seconds: float) -> np.ndarray:
     n = int(seconds * RATE)
     t = np.arange(n) / RATE
@@ -374,7 +338,6 @@ def ambience() -> None:
     # Each loop keeps its own seed, so a rebuild writes the same files.
     builds = (
         ("day", day, 32.0, 1000),
-        ("night", night, 32.0, 1002),
         ("interior", interior, 12.0, 1003),
         ("hum", hum, 8.0, 1004),
         ("buzz", buzz, 6.0, 1005),
