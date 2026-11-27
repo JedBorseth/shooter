@@ -12,7 +12,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 ## Palette names, by the setting's index.
 const NAMES: Array[String] = ["Default", "Protanopia", "Deuteranopia", "Tritanopia"]
-## [ally, enemy] for each palette. Default is the theme's blue against red.
+## [ally, enemy] for each palette. Default is the theme's cyan against red.
 ## Protanopia and deuteranopia keep blue and move the enemy to an orange that
 ## stays apart from it (from Okabe and Ito's palette for colour-blind
 ## readers); protanopia's orange is lighter, because red-blind eyes see red

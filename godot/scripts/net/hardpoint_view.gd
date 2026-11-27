@@ -22,7 +22,7 @@ const WALL_HEIGHT := 1.4
 ## Seconds each call stays up.
 const CALL_SECONDS := 2.6
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
-const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 

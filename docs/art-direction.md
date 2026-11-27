@@ -488,9 +488,20 @@ The zones are a pure function of snapshot fields, not of the animated skeleton. 
 
 To add another character, add a kit to `KITS` (its MakeHuman body, clothes, and gear), and either a scene that instances its model under a `SoldierRig` or an entry in a rig's `variants`.
 
-## HUD
+## Menus and HUD
 
-The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on, and Black Ops 6) in our own calm style: small clusters in the corners, square-cornered translucent graphite plates, Chakra Petch numerals with a soft drop shadow, colour on text and thin bars only, and a white keyline for whatever is ours. The pieces draw themselves (`_draw`) with the helpers in `godot/scripts/ui/hud_paint.gd`, and the HUD size setting scales the corner clusters (`Settings.fit_hud`; see [settings.md](settings.md)).
+The menus and HUD follow Treyarch's Black Ops 2 and Black Ops 3 (the owner's pick, 2026-11-27), in our own art, names, and icons. The theme is code: `godot/scripts/ui/ui_theme.gd` (colour tokens, type, and a style for every Control), merged into the default theme by the `UiThemeLoader` autoload.
+
+- **Colour.** Near-black, square-cornered translucent plates with 1 px cool-grey borders. One hot orange (`ACCENT`, #F85A08) means focus or the open tab and nothing else: a focused row or tile gets 3 px orange rules along its top and bottom edges, and the focused menu item, the open tab, and the primary action are solid orange plates with a soft glow. Yellow means ready, reward, or you (`READY`, `LEVEL`, `SELF`). Cyan and red are only for teams (`team_colours.gd`). Light label plates with dark type (`LabelPlate`) carry team names and description titles.
+- **Type.** Chakra Petch SemiBold (wide, squared) for screen titles, banners, and big numerals; Barlow Condensed for menu items, tabs, labels, rows, and HUD text; Barlow for sentences. Titles, tabs, HUD labels, and banners are caps; rows and descriptions are mixed case.
+- **Shapes** (`godot/scripts/ui/hud_shapes.gd`): hexagon objective markers and badges; long banners with pointed ends and gapped leader lines; big words with a thin cyan and red colour split at their edges; a light edge along the top and outer side of HUD plates; a thin cross on an empty slot.
+- **Frame** (`godot/scripts/ui/screen_frame.gd`): full-screen menus darken the scene from the left, add faint scan lines, and draw a header (title bracket, a small context line, the title in caps, one cool underline) and a black footer band for button prompts.
+
+The research notes, sampled colours, and private reference screenshots this follows are kept out of the repository; nothing in it is traced or copied from Call of Duty.
+
+### HUD
+
+The HUD pieces draw themselves (`_draw`) with the helpers in `godot/scripts/ui/hud_paint.gd` and `hud_shapes.gd`, and the HUD size setting scales the corner clusters (`Settings.fit_hud`; see [settings.md](settings.md)).
 
 | Where | What | Script |
 | --- | --- | --- |
@@ -508,7 +519,7 @@ Team colours (blue for your side, red for the enemy) come from `godot/scripts/ui
 
 Weapon silhouettes (`assets/ui/weapons/`) are rendered from the weapon models by `godot/tools/weapon_icons.gd`; run it again after a model changes.
 
-### Button prompts
+#### Button prompts
 
 ![The controls legend with keyboard and mouse, an Xbox controller, and a PlayStation controller](media/button-prompts.jpg)
 
@@ -516,7 +527,7 @@ Prompts show the button to press as Call of Duty's do: a keyboard key in a light
 
 Prompt strings name their key in square brackets ("[F] Take M870", "Hold [pad:x] to plant the charge"). `Settings.key_label` and `prompt_key` write a keyboard key by name and a controller or mouse button as a token (`pad:a`, `pad:rt`, `mouse:left`; pad tokens use the Xbox position names on any controller), and `hud_paint.gd` draws each bracketed key, anywhere in the line, as a cap or image (`godot/scripts/ui/glyphs.gd`). Labels that cannot draw images write the button in words (`Glyphs.plain_text`). In play, prompts follow the input device that plays; menu footers follow the device used last and switch the moment the other is touched, as Call of Duty's menus do (`ui/footer_keys.gd`).
 
-### Minimap
+#### Minimap
 
 ![The minimap on Warehouse (a map since cut) in Domination, with the score block under it](media/minimap.jpg)
 

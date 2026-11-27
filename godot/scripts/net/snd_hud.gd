@@ -13,7 +13,7 @@ extends CanvasLayer
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const LABEL_FONT := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 
 const DEAD := Color(0.35, 0.38, 0.4, 0.55)
 ## Seconds after dying before the camera moves to a teammate.

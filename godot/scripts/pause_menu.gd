@@ -742,6 +742,8 @@ func sensitivity_text(level: float) -> String:
 
 func _add_toggle(section: VBoxContainer, key: StringName, label: String) -> void:
 	var toggle := CheckButton.new()
+	# As wide as a slider, so moving down a column of settings lands on it.
+	toggle.custom_minimum_size.x = 300
 	toggle.toggled.connect(func(on: bool) -> void: Settings.set_setting(key, on))
 	_add_row(section, label, toggle, null, key)
 	_toggles[key] = toggle
