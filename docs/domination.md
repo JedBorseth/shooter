@@ -87,8 +87,8 @@ between events (`NetClient::domination_info`).
 
 | Piece | Where | What |
 | --- | --- | --- |
-| Flag row | Under the minimap | A, B, C as lettered hexagons in the owner's colour (sand while neutral, flashing between the two sides twice a second while contested), with a ring filling round each in the capturing side's colour |
-| Markers | Over each flag | The same hexagon with CAPTURE or DEFEND over it and the distance under it, held at the screen's edge when off screen; none for the flag you stand in |
+| Flag row | Under the minimap, on its slope (hidden with it) | A, B, C as lettered hexagons in the owner's colour (sand while neutral, flashing between the two sides twice a second while contested), with a ring filling round each in the capturing side's colour |
+| Markers | Over each flag | The same hexagon with CAPTURE or DEFEND over it and the distance under it; off screen, held to an ellipse inside the screen with an arrow toward the flag; close together, spread apart with the nearer flag's words kept (`ui/objective_marks.gd`); none for the flag you stand in |
 | Capture bar | Below the crosshair, in a circle | CAPTURING B, CONTESTED, LOSING B (the enemy's capture of your flag; standing on it alone stops it), or B SECURED, over a 260 px bar filling with the capture |
 | World | Each flag | A ring decal at the circle's edge and a low wall of light around it, in the owner's colour (a pulse when it changes) |
 | Calls | Upper third | WE'VE TAKEN B, WE'VE LOST B, and ENEMY TOOK B, each with a short chime (there is no announcer); the match HUD calls HALFTIME ("Switching sides") for the second half ([modes.md](modes.md)) |
