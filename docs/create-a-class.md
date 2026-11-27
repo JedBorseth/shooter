@@ -143,12 +143,12 @@ slot here, since there is no Fast Mag.
 
 Bots take a random perk of each tier every life.
 
-In the class menu, Perk 1, Perk 2, and Perk 3 are rows of chips with their
-icons (`godot/assets/ui/perks/`, white line icons drawn for this game). The
-row's note says what the chosen perks do; a chip's tooltip says what it would
-do. Picking another perk in a full slot swaps it in, as Black Ops 2's menu
-does. Taking an Extra Perk wildcard off keeps the tier's first perk. The
-class card lists each tier's perks with their icons.
+In the editor, Perk 1, Perk 2, and Perk 3 are columns of two slots with
+their icons (`godot/assets/ui/perks/`, white line icons drawn for this game);
+the second slot of a tier is locked until its Extra Perk wildcard is taken.
+Focusing a tier shows its perks as cards with what each does. Picking another
+perk in a full slot swaps it in, as Black Ops 2's menu does. Taking an Extra
+Perk wildcard off keeps the tier's first perk.
 
 ![The editor's perk tiers](media/perks-editor.jpg)
 
@@ -176,20 +176,42 @@ secondary; one bot in four carries the RL-4 instead (`class::bot_class`).
 
 ## The class menu
 
-The match menu (L, or D-pad up) opens on the class list
-(`godot/scripts/net/class_menu.gd`): five custom classes, then the defaults,
-as in Black Ops 2, with the player's level and the XP to the next above them.
-Choosing one equips it from the next spawn; hovering or focusing one shows
-what it carries and its points. The death screen's hint opens the same menu.
+The match menu (L, or D-pad up; `godot/scripts/net/match_menu.gd`) fills the
+screen in Black Ops 3's frame: the game blurred and darkened behind it, as
+behind the pause menu, a header with the mode as its context and CHOOSE CLASS
+as its title, ten pips and "9 / 10" for the points top right, and the black
+footer band with key-cap prompts (`[L] Close`, `[ENTER] Equip`). The class
+list sits on the left (`godot/scripts/net/class_menu.gd`): five custom
+classes, then the defaults, as in Black Ops 2, and under them the three
+scorestreak slots. Choosing one equips it from the next spawn (a yellow tick
+and an EQUIPPED tag mark it); focusing one shows its loadout in the middle
+(`loadout_grid.gd`) and its primary large on the right. The death screen's
+hint opens the same menu. In a team mode's lobby the two teams sit on the
+right with Switch Team, and Ready below (`lobby_teams.gd`).
 
-A custom class opens in the editor: a name (up to 20 characters), then every
-item as a chip, grouped by slot, with ten pips for the points spent. A chip
-that would break a rule is greyed out: the menu asks `NetClient.check_class`
-about the class the chip would make, which runs the server's own rules. A
-locked item says what it needs ("Level 12", "8 kills"). Changing weapon keeps
-the attachments the new one takes; taking a wildcard off drops what only it
-allowed. Back leaves the editor without saving. Under the list sit the
-scorestreaks, up to three, shared by every class ([scorestreaks.md](scorestreaks.md)).
+A custom class opens in the editor. The header title becomes the class's
+name in caps; selecting it types a new name (up to 20 characters). The
+loadout is Black Ops 3's Pick 10 grid in our own tiles (`loadout_tile.gd`):
+the primary and secondary as big tiles with their optic and attachment slots
+beside them, then lethal, tactical, and the three perk tiers, each with a
+second slot under it, and the three wildcards as parallelograms. An empty slot
+shows a faint plus; one that needs a wildcard is darker with a grey lock; one
+the weapon has no use for is darker and blank. Focusing a slot shows its items
+beside the grid (`item_picker.gd`): cards with their art (weapon silhouettes,
+and white line icons drawn for this game in `godot/assets/ui/perks/` and
+`godot/assets/ui/loadout/`), a green tick on the chosen ones, and under them
+the focused item's name on a light plate, what it does, and for a weapon its
+stat bars (`weapon_stats.gd`), with the change from the equipped weapon in
+green or red. A card that would break a rule is greyed out with a short note
+("SLOTS FULL", "NEEDS 1 POINT", "NEEDS WILDCARD") and the rule as a sentence
+below: the menu asks `NetClient.check_class` about the class the card would
+make, which runs the server's own rules. A locked item shows a grey lock and
+what it needs ("LEVEL 12", "8 KILLS"). Orange marks only focus; the side focus
+is not on dims to 60%. Changing weapon keeps the attachments the new one
+takes; taking a wildcard off drops what only it allowed. Save Class and
+Cancel sit bottom right, quiet until focused; Back leaves the editor without
+saving. The scorestreaks, up to three, are shared by every class
+([scorestreaks.md](scorestreaks.md)).
 
 Classes are saved in `user://classes.cfg` (`godot/scripts/class_store.gd`),
 with which one is equipped. A custom slot starts as a copy of the default in
@@ -284,3 +306,9 @@ gains nothing.
 - Default classes before Create-a-Class unlocks: Black Ops 2 and Black Ops 3
   unlock Create-a-Class at level 4.
 - Attachments unlocked by kills with the weapon: Black Ops 2's weapon levels.
+- The menu's layout: Black Ops 3's Create-a-Class and Pick 10 screens (the
+  loadout grid of big weapon tiles and square slots, the item select with its
+  detail and stat bars, the points counter top right, footer button prompts).
+  Deliberate differences: our own icons and tiles; wildcards as
+  parallelograms rather than Black Ops 3's fan; the detail heading grey, not
+  orange; no unlock tokens, paint shop, gunsmith, or calling cards.

@@ -1,54 +1,43 @@
-extends PanelContainer
-## The lobby's two teams beside the match menu, for the team swap:
-## each player by team, ours first, marked once ready, and the bots, with
-## Switch team and Ready buttons. Shown only in a team mode's lobby; refreshed twice a
-## second while shown. (The match HUD hides its score block in hardcore.)
-
-## Ready (or not) pressed: the match HUD sends it, as its own Ready does.
-signal ready_pressed
+extends Control
+## The lobby's two teams, right of Create-a-Class in the match menu
+## (`match_menu.gd`), for the team swap, in Black Ops 3's lobby grammar: each
+## team under its mark and its name on a light label plate with the head
+## count, then a row per player on a see-through plate tinted with the team's
+## colour (ours first; our own name in yellow), bots tagged, and a yellow
+## READY tag once a player is ready; Switch team under them. Shown only in a
+## team mode's lobby; refreshed twice a second while shown.
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
-## The panel's width, and its gap from the screen's right edge.
-const WIDTH := 300.0
-const MARGIN := 32.0
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
+## The list's width.
+const WIDTH := 316.0
+const ROW_PITCH := 32.0
+## The height a team's rows may take, at most, before they tighten.
+const ROWS_HEIGHT := 200.0
 
 var client: NetClient
+## Set by the menu while the right side shows items instead.
+var hidden_by_menu := false
 
-var _teams: VBoxContainer
-var _ready_button: Button
+var _switch: Button
 var _wait := 0.0
+## Each team: {"team", "ours", "rows": [{"name", "bot", "ready", "me"}]}.
+var _teams: Array = []
 
 
 func _ready() -> void:
 	name = "LobbyTeams"
-	add_theme_stylebox_override("panel", MenuStyle.panel())
-	set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	offset_left = -WIDTH - MARGIN
-	offset_right = -MARGIN
-	grow_vertical = Control.GROW_DIRECTION_BOTH
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	add_child(box)
-	_teams = VBoxContainer.new()
-	_teams.add_theme_constant_override("separation", 14)
-	box.add_child(_teams)
-	var switch := Button.new()
-	switch.name = "SwitchTeam"
-	switch.text = "SWITCH TEAM"
-	switch.custom_minimum_size = Vector2(WIDTH - 40.0, 44)
-	switch.add_theme_font_size_override("font_size", 18)
-	MenuStyle.style_button(switch)
-	switch.pressed.connect(func() -> void: client.switch_team())
-	box.add_child(switch)
-	_ready_button = Button.new()
-	_ready_button.name = "Ready"
-	_ready_button.text = "READY"
-	_ready_button.custom_minimum_size = Vector2(WIDTH - 40.0, 44)
-	_ready_button.add_theme_font_size_override("font_size", 18)
-	MenuStyle.style_button(_ready_button)
-	_ready_button.pressed.connect(ready_pressed.emit)
-	box.add_child(_ready_button)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	size = Vector2(WIDTH, 600)
+	_switch = Button.new()
+	_switch.name = "SwitchTeam"
+	_switch.text = "SWITCH TEAM"
+	_switch.theme_type_variation = &"FrontAction"
+	_switch.size = Vector2(WIDTH, 40)
+	_switch.pressed.connect(func() -> void: client.switch_team())
+	add_child(_switch)
 
 
 func _process(delta: float) -> void:
@@ -60,6 +49,7 @@ func _process(delta: float) -> void:
 		String(info.get("phase", "")) == "lobby"
 		and not bool(info.get("free_for_all", false))
 		and String(info.get("mode", "")) != "gungame"
+		and not hidden_by_menu
 	)
 	if not is_visible_in_tree():
 		return
@@ -70,34 +60,98 @@ func _process(delta: float) -> void:
 	refresh()
 
 
-## Rebuilds both columns from the roster.
+## Rebuilds both teams from the roster.
 func refresh() -> void:
-	for child in _teams.get_children():
-		_teams.remove_child(child)
-		child.queue_free()
+	_teams.clear()
 	var mine := int(client.match_info().get("my_team", 0))
 	for team in [mine, 1 - mine]:
-		var column := VBoxContainer.new()
-		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		column.add_theme_constant_override("separation", 2)
-		_teams.add_child(column)
-		var heading := Label.new()
-		heading.text = "YOUR TEAM" if team == mine else "ENEMY TEAM"
-		heading.add_theme_color_override("font_color", TeamColours.of(team == mine))
-		heading.add_theme_font_size_override("font_size", 14)
-		column.add_child(heading)
+		var rows := []
 		for entry: Dictionary in client.roster():
-			if int(entry.team) != team:
-				continue
-			var line := Label.new()
-			var tag := (
-				"BOT" if bool(entry.bot) else ("READY" if bool(entry.get("ready", false)) else "")
+			if int(entry.team) == team:
+				(
+					rows
+					. append(
+						{
+							"name": String(entry.name),
+							"bot": bool(entry.bot),
+							"ready": bool(entry.get("ready", false)),
+							"me": bool(entry.me),
+						}
+					)
+				)
+		_teams.append({"team": team, "ours": team == mine, "rows": rows})
+	queue_redraw()
+
+
+func _draw() -> void:
+	var y := 0.0
+	Paint.text(self, Paint.LABEL, "LOBBY", Vector2(0, 15), 14, UiTheme.TEXT_DIM, 1.2)
+	y = 26.0
+	# Big teams tighten their rows so Switch Team stays clear of the ready
+	# line under the list.
+	var most := 1
+	for team: Dictionary in _teams:
+		most = maxi(most, (team.rows as Array).size())
+	var pitch := clampf(ROWS_HEIGHT / most, 22.0, ROW_PITCH)
+	for team: Dictionary in _teams:
+		y = _draw_team(team, y, pitch) + 18.0
+	_switch.position = Vector2(0, y)
+
+
+func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
+	var ours: bool = team.ours
+	var colour := TeamColours.of(ours)
+	var rows: Array = team.rows
+	MatchPaint.team_mark(self, Vector2(20, y + 18.0), 36.0, int(team.team), colour)
+	var plate_w := MatchPaint.label_plate(
+		self, Vector2(46, y + 4.0), "YOUR TEAM" if ours else "ENEMY", 28.0
+	)
+	Paint.text(
+		self,
+		Paint.LABEL_LIGHT,
+		"%d players" % rows.size(),
+		Vector2(46 + plate_w + 12.0, y + 25.0),
+		17,
+		UiTheme.TEXT_DIM
+	)
+	y += 44.0
+	for row: Dictionary in rows:
+		var row_h := pitch - 2.0
+		var rect := Rect2(0, y, WIDTH, row_h)
+		draw_rect(rect, Color(colour.darkened(0.8), 0.85))
+		draw_rect(Rect2(0, y, 3, row_h), Color(colour, 0.8))
+		var me: bool = row.me
+		var font_size := 19 if row_h >= 26.0 else 17
+		var baseline := y + row_h / 2.0 + font_size * 0.36
+		var ink := MatchPaint.SELF_ROW if me else UiTheme.TEXT
+		var name: String = row.name
+		var name_w := Paint.text(
+			self, Paint.LABEL_LIGHT, name, Vector2(14, baseline), font_size, ink
+		)
+		# A bot named "Bot 3" needs no tag saying so.
+		if row.bot and not name.begins_with("Bot"):
+			Paint.text(
+				self,
+				Paint.LABEL,
+				"BOT",
+				Vector2(14 + name_w + 10.0, baseline - 1.0),
+				13,
+				UiTheme.TEXT_DIM,
+				1.2
 			)
-			line.text = String(entry.name) + ("    " + tag if tag != "" else "")
-			line.add_theme_font_size_override("font_size", 16)
-			line.add_theme_color_override(
-				"font_color", MenuStyle.TEXT if bool(entry.me) else MenuStyle.TEXT_DIM
+		elif row.ready:
+			var tag_w := Paint.text_width(Paint.LABEL, "READY", 13, 1.5) + 12.0
+			var tag := Rect2(WIDTH - tag_w - 8.0, y + (row_h - 19.0) / 2.0, tag_w, 19.0)
+			draw_rect(tag, UiTheme.READY)
+			Paint.text(
+				self,
+				Paint.LABEL,
+				"READY",
+				Vector2(tag.position.x + 6.0, tag.position.y + 15.0),
+				13,
+				UiTheme.READY_INK,
+				1.5,
+				false
 			)
-			column.add_child(line)
-			if bool(entry.me):
-				_ready_button.text = "NOT READY" if bool(entry.get("ready", false)) else "READY"
+		y += pitch
+	return y
