@@ -5,7 +5,7 @@ extends SceneTree
 ## Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_weapons.gd
-## Optional: MAP (main or zombies_arena, default main), WEAPONS (for example
+## Optional: MAP (main, the default), WEAPONS (for example
 ## `m4,ak47+reddot`), PARTS (`first,third,racks`, default all three), and
 ## CAMO (a camo key, `gold`: every weapon wears it).
 
@@ -32,7 +32,6 @@ const WEAPONS := [
 ]
 const MAPS := {
 	"main": "res://scenes/main.tscn",
-	"zombies_arena": "res://scenes/zombies_arena.tscn",
 }
 
 var _out := OS.get_environment("CAPTURE_DIR")
@@ -53,9 +52,9 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(_out)
 	var level: Node = (load(MAPS[_map]) as PackedScene).instantiate()
 	root.add_child(level)
-	# No sentry fire or zombie waves while capturing.
+	# No sentry fire while capturing.
 	for node: Node in level.find_children("*", "", true, false):
-		if node.name == "Sentry" or node.get_class() == "ZombieDirector":
+		if node.name == "Sentry":
 			node.process_mode = Node.PROCESS_MODE_DISABLED
 	var player := level.get_node("Player") as FpsPlayer
 	player.set_look(0.0, -0.04)

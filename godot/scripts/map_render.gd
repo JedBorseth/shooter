@@ -10,10 +10,7 @@ extends Node
 ##
 ## On the Low preset the set dressing's small
 ## detail (`map_*_detail` meshes: litter, brass, weeds) is hidden, so the
-## dressing costs Low nothing over the bare map. A sky shader with a `detailed`
-## switch (shaders/night_sky.gdshader) drops its cloud, stars, and skyline on
-## Low, and one with a `fine_clouds` switch reads its cloud's finer noise on
-## High only.
+## dressing costs Low nothing over the bare map.
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 
@@ -24,7 +21,6 @@ const GraphicsQuality := preload("res://scripts/graphics.gd")
 
 var _details: Array[MeshInstance3D] = []
 var _settings: Node
-var _sky: ShaderMaterial
 
 
 func _ready() -> void:
@@ -37,12 +33,6 @@ func _ready() -> void:
 			_details.append(mesh)
 		elif not mesh.name.ends_with("_ground") and _has_twin(mesh):
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	for env_node in scene.find_children("*", "WorldEnvironment", true, false):
-		var env := (env_node as WorldEnvironment).environment
-		if env != null and env.sky != null and env.sky.sky_material is ShaderMaterial:
-			var material := env.sky.sky_material as ShaderMaterial
-			if material.shader != null and material.shader.code.contains("uniform bool detailed"):
-				_sky = material
 	_settings = get_node_or_null(^"/root/Settings")
 	if _settings != null:
 		_settings.connect(&"changed", _apply_preset)
@@ -53,10 +43,6 @@ func _apply_preset() -> void:
 	var low: bool = int(_settings.get(&"graphics_quality")) == GraphicsQuality.Preset.LOW
 	for mesh in _details:
 		mesh.visible = not low
-	if _sky != null:
-		_sky.set_shader_parameter(&"detailed", not low)
-		var high: bool = int(_settings.get(&"graphics_quality")) == GraphicsQuality.Preset.HIGH
-		_sky.set_shader_parameter(&"fine_clouds", high)
 
 
 ## Whether the mesh's model has a shadow twin beside it.

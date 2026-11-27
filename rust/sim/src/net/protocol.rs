@@ -45,7 +45,6 @@ use crate::stats::{self, Stats};
 use crate::streak::{self, Streak};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
-use crate::zombies::drinks::Drinks;
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
@@ -499,8 +498,6 @@ pub enum GameEvent {
     /// contest, or capture speed: every flag as of server tick `tick`.
     /// Clients run each capture on at its rate between events.
     Domination(DominationView),
-    /// Zombies: rounds, hits on zombies, points, and windows' boards.
-    Zombies(ZombiesEvent),
     /// To everyone: Scavenger's packs dropped, taken, and gone
     /// (`crate::scavenger`). Clients draw them only for a Scavenger player.
     Scavenger(ScavengerEvent),
@@ -834,9 +831,6 @@ pub struct ScoreRow {
     /// in `captures`).
     pub defends: u32,
     pub alive: bool,
-    /// Zombies: teammates revived, and headshot kills.
-    pub revives: u32,
-    pub headshots: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -855,10 +849,6 @@ pub struct Snapshot {
     /// Every smoke cloud still hanging, in full each time, so a player who
     /// joins after one popped still sees it.
     pub smokes: Vec<SmokeView>,
-    /// Zombies: the horde, in full, in every other snapshot
-    /// ([`ZOMBIE_SEND_TICKS`]); `None` in the snapshots between, and outside
-    /// Zombies.
-    pub zombies: Option<Vec<ZombieView>>,
     /// The enemies the receiving player's minimap shows, and whether an
     /// enemy Counter-UAV jams it ([`crate::radar`]).
     pub radar: RadarView,
@@ -912,285 +902,6 @@ impl BlipView {
 pub struct Baseline<'a> {
     pub players: &'a [PlayerView],
     pub own: Option<&'a Predicted>,
-    /// Zombies: the horde of the newest snapshot carrying it that the client
-    /// acknowledged, and that snapshot's tick, so the horde goes as changes.
-    pub zombies: Option<(Tick, &'a [ZombieView])>,
-}
-
-/// Most zombies a snapshot carries.
-pub const MAX_ZOMBIES: usize = 64;
-/// Zombies are sent at most this often, in ticks (30 Hz at the 120 Hz tick):
-/// a horde is many bodies, and they shamble.
-pub const ZOMBIE_SEND_TICKS: Tick = 4;
-/// Zombie positions travel in centimetres.
-const ZOMBIE_POSITION_SCALE: f32 = 100.0;
-
-/// How far behind the other players clients draw zombies, in ticks: one
-/// zombie send interval, so a sent pair always brackets the drawn moment.
-/// The server rewinds zombies by the same amount behind a shot's view tick.
-pub fn zombie_lag(snapshot_interval: u8) -> f64 {
-    f64::from(ZOMBIE_SEND_TICKS.max(u32::from(snapshot_interval)))
-}
-
-/// One zombie as clients see it ([`crate::zombies`]): quantized, and only
-/// what drawing it needs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ZombieView {
-    /// Unique among the zombies in play (ids wrap, but never onto a zombie
-    /// still shown).
-    pub id: u8,
-    /// Feet position in centimetres.
-    pub position: IVec3,
-    /// Facing in 1/256 turns ([`heading_to_u8`] of the way it faces).
-    pub yaw: u8,
-    pub alive: bool,
-    /// Swings started so far, wrapping at 8: an increase plays the attack
-    /// (a swing at a player or at a window's boards).
-    pub swings: u8,
-    /// Hits taken so far, wrapping at 8: an increase plays the flinch, and
-    /// the death falls from the latest one.
-    pub hits: u8,
-    /// A hound ([`crate::zombies::hounds`]), not a zombie.
-    pub hound: bool,
-    /// The horizontal direction the latest hit travelled (1/256 turns), and
-    /// where it landed and how hard ([`HitPart`]).
-    pub hit_heading: u8,
-    pub hit_part: u8,
-}
-
-/// Counters in [`ZombieView`] wrap at this many.
-pub const ZOMBIE_COUNTER_BITS: u32 = 3;
-
-impl ZombieView {
-    pub fn new(id: u8, position: Vec3, yaw: f32, alive: bool) -> Self {
-        Self {
-            id,
-            position: (position * ZOMBIE_POSITION_SCALE).round().as_ivec3(),
-            yaw: yaw_to_u8(yaw),
-            alive,
-            ..Self::default()
-        }
-    }
-
-    /// Feet position in metres.
-    pub fn position(&self) -> Vec3 {
-        self.position.as_vec3() / ZOMBIE_POSITION_SCALE
-    }
-
-    /// Facing in radians (0 faces -Z).
-    pub fn yaw(&self) -> f32 {
-        f32::from(self.yaw) / 256.0 * std::f32::consts::TAU
-    }
-}
-
-/// A yaw (radians) as 1/256 turns.
-pub fn yaw_to_u8(yaw: f32) -> u8 {
-    (yaw / std::f32::consts::TAU * 256.0)
-        .round()
-        .rem_euclid(256.0) as u8
-}
-
-/// What happens in a Zombies game ([`GameEvent::Zombies`]).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ZombiesEvent {
-    /// To everyone, whenever it changes and on joining: round `round` is
-    /// counting down (`Break`, until server tick `starts_at`), being fought
-    /// with `remaining` zombies still to kill, or was the last (`Over`).
-    /// `hounds`: it is a hound round ([`crate::zombies::hounds`]).
-    Round {
-        round: u32,
-        phase: ZombiesPhase,
-        starts_at: Option<Tick>,
-        remaining: u32,
-        hounds: bool,
-    },
-    /// To everyone: a strike lands at `at`, and a hound stands there
-    /// [`crate::zombies::hounds::STRIKE_SECONDS`] later.
-    HoundStrike { at: Vec3 },
-    /// To everyone, when it changes: player `player`'s `weapon` (an
-    /// upgraded one) has alternate ammo `kind` (none: no longer).
-    AltAmmo {
-        player: u8,
-        weapon: WeaponId,
-        kind: Option<crate::zombies::alt_ammo::AltAmmo>,
-    },
-    /// To everyone, when it changes and on joining: trap `trap` (the map's
-    /// `Traps` in order) is in `phase` until server tick `until`.
-    Trap {
-        trap: u8,
-        phase: TrapPhase,
-        until: Option<Tick>,
-    },
-    /// To everyone: alternate ammo `kind` went off at `at`: the Arc struck
-    /// the first `count` of `struck` in turn (zombie ids), Cinder burst
-    /// there.
-    AltAmmoFired {
-        kind: crate::zombies::alt_ammo::AltAmmo,
-        at: Vec3,
-        struck: [u8; crate::zombies::alt_ammo::ARC_KILLS],
-        count: u8,
-    },
-    /// To a shooter: their shot (or knife, or grenade) number `shot` hit
-    /// zombie `zombie`.
-    Hit {
-        zombie: u8,
-        shot: u32,
-        headshot: bool,
-        killed: bool,
-    },
-    /// To one player: their points changed by `change`, to `total`.
-    Points { total: u32, change: i32 },
-    /// To everyone, whenever it changes and on joining: window `window`
-    /// (the map's barriers in order) has `boards` boards up.
-    Boards { window: u8, boards: u8 },
-    /// To everyone, when it changes and on joining: door `door` (the map's
-    /// `Doors` in order) is open, or closed again for a new game.
-    Door { door: u8, open: bool },
-    /// To everyone: a kill dropped power-up `id` of `kind` at `at`. It lies
-    /// there until picked up or [`crate::zombies::POWER_UP_LIFETIME`] runs out.
-    PowerUpDropped {
-        id: u8,
-        kind: crate::zombies::PowerUp,
-        at: Vec3,
-    },
-    /// To everyone: power-up `id` is gone, taken by player `by` (none when
-    /// it ran out).
-    PowerUpGone { id: u8, by: Option<u8> },
-    /// To everyone, when it changes and on joining: player `player` went
-    /// down and bleeds out at server tick `bleeds_out_at`, or (none) is no
-    /// longer down: revived, or bled out.
-    Downed {
-        player: u8,
-        bleeds_out_at: Option<Tick>,
-    },
-    /// To everyone: player `by` started reviving downed player `player`, done
-    /// at server tick `done_at` if they keep holding; `by` none when the
-    /// revive stopped short.
-    Revive {
-        player: u8,
-        by: Option<u8>,
-        done_at: Tick,
-    },
-    /// To everyone, whenever they change: the server ticks Insta-Kill,
-    /// Double Points, and the Fire Sale run out (none when off).
-    PowerUpTimers {
-        insta_kill_until: Option<Tick>,
-        double_points_until: Option<Tick>,
-        fire_sale_until: Option<Tick>,
-    },
-    /// To everyone, when it changes and on joining: the power is on (or off
-    /// again for a new game). Drink machines and the upgrade machine need it.
-    Power { on: bool },
-    /// To everyone, when it changes, on joining, and when players come or
-    /// go: drink machine `machine` (the map's `DrinkMachines` in order)
-    /// sells for `price`, needs the power on (`needs_power`), and can be
-    /// used, or has left (`available` false: Second Wind's, once a lone
-    /// player has bought it three times).
-    Machine {
-        machine: u8,
-        available: bool,
-        price: u32,
-        needs_power: bool,
-    },
-    /// To everyone: player `player` bought and drank `drink`.
-    Drank {
-        player: u8,
-        drink: crate::zombies::drinks::Drink,
-    },
-    /// To everyone, when it changes and on joining, one per spot: the
-    /// mystery crate ([`crate::zombies::mystery`]) at spot `spot` (the
-    /// map's `MysteryCrates` in order) is in `phase`, for player `by` (the
-    /// buyer), landing on or offering `weapon` (none for the duck), until
-    /// server tick `until`. `sale`: a Fire Sale is on (a spin costs
-    /// [`crate::zombies::mystery::SALE_PRICE`]).
-    Crate {
-        spot: u8,
-        phase: CratePhase,
-        by: u8,
-        weapon: Option<WeaponId>,
-        until: Option<Tick>,
-        sale: bool,
-    },
-    /// To everyone, when it changes and on joining: the forge
-    /// ([`crate::zombies::forge`]) is idle, working `weapon` (the upgrade)
-    /// for player `by`, or holding it out to them, until server tick
-    /// `until`.
-    Forge {
-        phase: ForgePhase,
-        by: u8,
-        weapon: Option<WeaponId>,
-        until: Option<Tick>,
-    },
-}
-
-/// What a trap is doing ([`ZombiesEvent::Trap`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TrapPhase {
-    Idle,
-    Active,
-    Cooling,
-}
-
-impl TrapPhase {
-    pub fn name(self) -> &'static str {
-        match self {
-            TrapPhase::Idle => "idle",
-            TrapPhase::Active => "active",
-            TrapPhase::Cooling => "cooling",
-        }
-    }
-}
-
-/// What the forge is doing ([`ZombiesEvent::Forge`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ForgePhase {
-    Idle,
-    Working,
-    Offering,
-}
-
-/// What the mystery crate is doing ([`ZombiesEvent::Crate`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CratePhase {
-    /// Closed, waiting for a buyer.
-    Idle,
-    /// Open, weapons cycling; it lands on `weapon` (or the duck).
-    Cycling,
-    /// Holding `weapon` out for the buyer to take.
-    Offering,
-    /// The duck: the crate is about to leave.
-    Duck,
-    /// Gone from this spot; it shows up at another at `until`.
-    Away,
-    /// No crate at this spot.
-    Hidden,
-}
-
-impl CratePhase {
-    const ALL: [CratePhase; 6] = [
-        CratePhase::Idle,
-        CratePhase::Cycling,
-        CratePhase::Offering,
-        CratePhase::Duck,
-        CratePhase::Away,
-        CratePhase::Hidden,
-    ];
-
-    pub fn code(self) -> u32 {
-        Self::ALL.iter().position(|p| *p == self).unwrap_or(0) as u32
-    }
-
-    pub fn from_code(code: u32) -> Option<Self> {
-        Self::ALL.get(code as usize).copied()
-    }
-}
-
-/// Where a Zombies round is ([`crate::zombies::Phase`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ZombiesPhase {
-    Break,
-    Fighting,
-    Over,
 }
 
 /// A smoke cloud still hanging, as clients see it.
@@ -1361,8 +1072,6 @@ pub struct PlayerView {
     /// as 1 to 255 ([`throw_to_u8`]); `defusing` says which.
     pub charge_use: u8,
     pub defusing: bool,
-    /// Zombies: down in last stand, waiting for a revive.
-    pub downed: bool,
     /// Lying prone: how far along the ground the body lies, in half
     /// degrees, positive with the legs higher than the chest
     /// ([`PlayerView::prone_slope`]). Sent only while the body is down past
@@ -1455,7 +1164,6 @@ impl PlayerView {
             reloading: combat.is_reloading(),
             reload_empty: combat.is_empty_reload(),
             alive: p.state.alive(),
-            downed: p.state.downed,
             quiet: p.state.perks.has(crate::perk::Perk::DeadSilence),
             unmarked: p.state.perks.has(crate::perk::Perk::ColdBlooded),
             shots_fired: combat.shots_fired,
@@ -2106,7 +1814,7 @@ impl ServerMessage {
         baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
     ) -> DecodeResult<Self> {
         // Only the players' baseline is looked up: this form never carries
-        // own state or horde changes.
+        // own state.
         let baseline = std::cell::Cell::new(Some(baseline));
         Self::decode_with(bytes, |tick| {
             let players = baseline.take()?(tick)?;
@@ -2313,8 +2021,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(row.hill_seconds);
                 w.varint(row.defends);
                 w.bool(row.alive);
-                w.varint(row.revives);
-                w.varint(row.headshots);
             }
         }
         GameEvent::Spawned { yaw } => {
@@ -2542,10 +2248,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(*count);
             }
         }
-        GameEvent::Zombies(event) => {
-            w.bits(ZOMBIES_EVENT_TAG, EVENT_TAG_BITS);
-            write_zombies_event(w, event);
-        }
         GameEvent::Scavenger(event) => {
             w.bits(23, EVENT_TAG_BITS);
             match *event {
@@ -2581,364 +2283,6 @@ fn read_option_team(r: &mut BitReader) -> DecodeResult<Option<Team>> {
         Some(r.bits(1)? as Team)
     } else {
         None
-    })
-}
-
-/// The event tag of [`GameEvent::Zombies`], kept at the top of the range so
-/// new modes' events fill in below it.
-const ZOMBIES_EVENT_TAG: u32 = 31;
-/// Bits for a [`ZombiesEvent`]'s own tag.
-const ZOMBIES_TAG_BITS: u32 = 5;
-/// Bits for a power-up's kind.
-const POWER_UP_BITS: u32 = 3;
-const _: () = assert!(crate::zombies::PowerUp::ALL.len() <= 1 << POWER_UP_BITS);
-
-fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
-    match *event {
-        ZombiesEvent::Round {
-            round,
-            phase,
-            starts_at,
-            remaining,
-            hounds,
-        } => {
-            w.bits(0, ZOMBIES_TAG_BITS);
-            w.varint(round);
-            w.bits(
-                match phase {
-                    ZombiesPhase::Break => 0,
-                    ZombiesPhase::Fighting => 1,
-                    ZombiesPhase::Over => 2,
-                },
-                2,
-            );
-            write_option_tick(w, starts_at);
-            w.varint(remaining);
-            w.bool(hounds);
-        }
-        ZombiesEvent::HoundStrike { at } => {
-            w.bits(15, ZOMBIES_TAG_BITS);
-            write_vec3(w, at);
-        }
-        ZombiesEvent::AltAmmo {
-            player,
-            weapon,
-            kind,
-        } => {
-            w.bits(16, ZOMBIES_TAG_BITS);
-            w.u8(player);
-            write_weapon(w, weapon);
-            w.bool(kind.is_some());
-            if let Some(kind) = kind {
-                w.bits(u32::from(kind.code()), 2);
-            }
-        }
-        ZombiesEvent::Trap { trap, phase, until } => {
-            w.bits(18, ZOMBIES_TAG_BITS);
-            w.u8(trap);
-            w.bits(
-                match phase {
-                    TrapPhase::Idle => 0,
-                    TrapPhase::Active => 1,
-                    TrapPhase::Cooling => 2,
-                },
-                2,
-            );
-            write_option_tick(w, until);
-        }
-        ZombiesEvent::AltAmmoFired {
-            kind,
-            at,
-            struck,
-            count,
-        } => {
-            w.bits(17, ZOMBIES_TAG_BITS);
-            w.bits(u32::from(kind.code()), 2);
-            write_vec3(w, at);
-            let count = count.min(struck.len() as u8);
-            w.bits(u32::from(count), 4);
-            for id in &struck[..usize::from(count)] {
-                w.u8(*id);
-            }
-        }
-        ZombiesEvent::Hit {
-            zombie,
-            shot,
-            headshot,
-            killed,
-        } => {
-            w.bits(1, ZOMBIES_TAG_BITS);
-            w.u8(zombie);
-            w.varint(shot);
-            w.bool(headshot);
-            w.bool(killed);
-        }
-        ZombiesEvent::Points { total, change } => {
-            w.bits(2, ZOMBIES_TAG_BITS);
-            w.varint(total);
-            w.varint_signed(change);
-        }
-        ZombiesEvent::Boards { window, boards } => {
-            w.bits(3, ZOMBIES_TAG_BITS);
-            w.u8(window);
-            w.u8(boards);
-        }
-        ZombiesEvent::Door { door, open } => {
-            w.bits(4, ZOMBIES_TAG_BITS);
-            w.u8(door);
-            w.bool(open);
-        }
-        ZombiesEvent::PowerUpDropped { id, kind, at } => {
-            w.bits(5, ZOMBIES_TAG_BITS);
-            w.u8(id);
-            w.bits(kind.code(), POWER_UP_BITS);
-            write_vec3(w, at);
-        }
-        ZombiesEvent::PowerUpGone { id, by } => {
-            w.bits(6, ZOMBIES_TAG_BITS);
-            w.u8(id);
-            w.bool(by.is_some());
-            if let Some(by) = by {
-                w.u8(by);
-            }
-        }
-        ZombiesEvent::Downed {
-            player,
-            bleeds_out_at,
-        } => {
-            w.bits(8, ZOMBIES_TAG_BITS);
-            w.u8(player);
-            write_option_tick(w, bleeds_out_at);
-        }
-        ZombiesEvent::Revive {
-            player,
-            by,
-            done_at,
-        } => {
-            w.bits(9, ZOMBIES_TAG_BITS);
-            w.u8(player);
-            w.bool(by.is_some());
-            if let Some(by) = by {
-                w.u8(by);
-            }
-            w.u32(done_at);
-        }
-        ZombiesEvent::PowerUpTimers {
-            insta_kill_until,
-            double_points_until,
-            fire_sale_until,
-        } => {
-            w.bits(7, ZOMBIES_TAG_BITS);
-            write_option_tick(w, insta_kill_until);
-            write_option_tick(w, double_points_until);
-            write_option_tick(w, fire_sale_until);
-        }
-        ZombiesEvent::Power { on } => {
-            w.bits(10, ZOMBIES_TAG_BITS);
-            w.bool(on);
-        }
-        ZombiesEvent::Machine {
-            machine,
-            available,
-            price,
-            needs_power,
-        } => {
-            w.bits(11, ZOMBIES_TAG_BITS);
-            w.u8(machine);
-            w.bool(available);
-            w.varint(price);
-            w.bool(needs_power);
-        }
-        ZombiesEvent::Drank { player, drink } => {
-            w.bits(12, ZOMBIES_TAG_BITS);
-            w.u8(player);
-            w.bits(u32::from(drink.code()), 3);
-        }
-        ZombiesEvent::Crate {
-            spot,
-            phase,
-            by,
-            weapon,
-            until,
-            sale,
-        } => {
-            w.bits(13, ZOMBIES_TAG_BITS);
-            w.u8(spot);
-            w.bits(phase.code(), 3);
-            w.u8(by);
-            w.bool(weapon.is_some());
-            if let Some(weapon) = weapon {
-                write_weapon(w, weapon);
-            }
-            write_option_tick(w, until);
-            w.bool(sale);
-        }
-        ZombiesEvent::Forge {
-            phase,
-            by,
-            weapon,
-            until,
-        } => {
-            w.bits(14, ZOMBIES_TAG_BITS);
-            w.bits(
-                match phase {
-                    ForgePhase::Idle => 0,
-                    ForgePhase::Working => 1,
-                    ForgePhase::Offering => 2,
-                },
-                2,
-            );
-            w.u8(by);
-            w.bool(weapon.is_some());
-            if let Some(weapon) = weapon {
-                write_weapon(w, weapon);
-            }
-            write_option_tick(w, until);
-        }
-    }
-}
-
-fn read_alt_ammo(r: &mut BitReader) -> DecodeResult<crate::zombies::alt_ammo::AltAmmo> {
-    crate::zombies::alt_ammo::AltAmmo::from_code(r.bits(2)? as u8)
-        .ok_or(DecodeError::Invalid("alt ammo"))
-}
-
-fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
-    Ok(match r.bits(ZOMBIES_TAG_BITS)? {
-        0 => ZombiesEvent::Round {
-            round: r.varint()?,
-            phase: match r.bits(2)? {
-                0 => ZombiesPhase::Break,
-                1 => ZombiesPhase::Fighting,
-                2 => ZombiesPhase::Over,
-                _ => return Err(DecodeError::Invalid("zombies phase")),
-            },
-            starts_at: read_option_tick(r)?,
-            remaining: r.varint()?,
-            hounds: r.bool()?,
-        },
-        15 => ZombiesEvent::HoundStrike {
-            at: read_finite_vec3(r)?,
-        },
-        16 => ZombiesEvent::AltAmmo {
-            player: r.u8()?,
-            weapon: read_weapon(r)?,
-            kind: if r.bool()? {
-                Some(read_alt_ammo(r)?)
-            } else {
-                None
-            },
-        },
-        18 => ZombiesEvent::Trap {
-            trap: r.u8()?,
-            phase: match r.bits(2)? {
-                0 => TrapPhase::Idle,
-                1 => TrapPhase::Active,
-                2 => TrapPhase::Cooling,
-                _ => return Err(DecodeError::Invalid("trap phase")),
-            },
-            until: read_option_tick(r)?,
-        },
-        17 => {
-            let kind = read_alt_ammo(r)?;
-            let at = read_finite_vec3(r)?;
-            let count = r.bits(4)? as u8;
-            let mut struck = [0u8; crate::zombies::alt_ammo::ARC_KILLS];
-            if usize::from(count) > struck.len() {
-                return Err(DecodeError::Invalid("arc count"));
-            }
-            for id in struck.iter_mut().take(usize::from(count)) {
-                *id = r.u8()?;
-            }
-            ZombiesEvent::AltAmmoFired {
-                kind,
-                at,
-                struck,
-                count,
-            }
-        }
-        1 => ZombiesEvent::Hit {
-            zombie: r.u8()?,
-            shot: r.varint()?,
-            headshot: r.bool()?,
-            killed: r.bool()?,
-        },
-        2 => ZombiesEvent::Points {
-            total: r.varint()?,
-            change: r.varint_signed()?,
-        },
-        3 => ZombiesEvent::Boards {
-            window: r.u8()?,
-            boards: r.u8()?,
-        },
-        4 => ZombiesEvent::Door {
-            door: r.u8()?,
-            open: r.bool()?,
-        },
-        5 => ZombiesEvent::PowerUpDropped {
-            id: r.u8()?,
-            kind: crate::zombies::PowerUp::from_code(r.bits(POWER_UP_BITS)?)
-                .ok_or(DecodeError::Invalid("power-up"))?,
-            at: read_finite_vec3(r)?,
-        },
-        6 => ZombiesEvent::PowerUpGone {
-            id: r.u8()?,
-            by: if r.bool()? { Some(r.u8()?) } else { None },
-        },
-        7 => ZombiesEvent::PowerUpTimers {
-            insta_kill_until: read_option_tick(r)?,
-            double_points_until: read_option_tick(r)?,
-            fire_sale_until: read_option_tick(r)?,
-        },
-        8 => ZombiesEvent::Downed {
-            player: r.u8()?,
-            bleeds_out_at: read_option_tick(r)?,
-        },
-        9 => ZombiesEvent::Revive {
-            player: r.u8()?,
-            by: if r.bool()? { Some(r.u8()?) } else { None },
-            done_at: r.u32()?,
-        },
-        10 => ZombiesEvent::Power { on: r.bool()? },
-        11 => ZombiesEvent::Machine {
-            machine: r.u8()?,
-            available: r.bool()?,
-            price: r.varint()?,
-            needs_power: r.bool()?,
-        },
-        13 => ZombiesEvent::Crate {
-            spot: r.u8()?,
-            phase: CratePhase::from_code(r.bits(3)?).ok_or(DecodeError::Invalid("crate phase"))?,
-            by: r.u8()?,
-            weapon: if r.bool()? {
-                Some(read_weapon(r)?)
-            } else {
-                None
-            },
-            until: read_option_tick(r)?,
-            sale: r.bool()?,
-        },
-        14 => ZombiesEvent::Forge {
-            phase: match r.bits(2)? {
-                0 => ForgePhase::Idle,
-                1 => ForgePhase::Working,
-                2 => ForgePhase::Offering,
-                _ => return Err(DecodeError::Invalid("forge phase")),
-            },
-            by: r.u8()?,
-            weapon: if r.bool()? {
-                Some(read_weapon(r)?)
-            } else {
-                None
-            },
-            until: read_option_tick(r)?,
-        },
-        12 => ZombiesEvent::Drank {
-            player: r.u8()?,
-            drink: crate::zombies::drinks::Drink::from_code(r.bits(3)? as u8)
-                .ok_or(DecodeError::Invalid("drink"))?,
-        },
-        _ => return Err(DecodeError::Invalid("zombies event")),
     })
 }
 
@@ -3169,8 +2513,6 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     hill_seconds: r.varint()?,
                     defends: r.varint()?,
                     alive: r.bool()?,
-                    revives: r.varint()?,
-                    headshots: r.varint()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -3380,7 +2722,6 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             2 => ScavengerEvent::Gone { id: r.u16()? },
             _ => return Err(DecodeError::Invalid("scavenger event")),
         })),
-        ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
         STREAK_EVENT_TAG => Ok(GameEvent::Streak(read_streak_event(r)?)),
         COSMETICS_EVENT_TAG => Ok(GameEvent::Cosmetics {
             id: r.u8()?,
@@ -3858,8 +3199,6 @@ fn write_mode(w: &mut BitWriter, mode: &Mode) {
         Mode::SearchAndDestroy => w.bits(4, MODE_TAG_BITS),
         Mode::FreeForAll => w.bits(5, MODE_TAG_BITS),
         Mode::Domination => w.bits(6, MODE_TAG_BITS),
-        // At the top of the range, so new modes fill in below it.
-        Mode::Zombies => w.bits(7, MODE_TAG_BITS),
     }
 }
 
@@ -3874,7 +3213,6 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
         4 => Ok(Mode::SearchAndDestroy),
         5 => Ok(Mode::FreeForAll),
         6 => Ok(Mode::Domination),
-        7 => Ok(Mode::Zombies),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
@@ -3974,7 +3312,6 @@ fn read_finite_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
 }
 
 fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: Baseline) {
-    let zombie_base = baseline.zombies;
     w.u32(s.tick);
     match s.baseline {
         // Baselines are recent, so send the distance back instead of the tick.
@@ -4046,39 +3383,6 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: Baseline) {
         w.varint_signed(smoke.position.z);
         w.varint(smoke.age);
     }
-    match &s.zombies {
-        Some(zombies) => {
-            w.bool(true);
-            // As changes from the horde the client last acknowledged.
-            w.bool(zombie_base.is_some());
-            let base: &[ZombieView] = match zombie_base {
-                Some((tick, base)) => {
-                    w.varint(s.tick.wrapping_sub(tick));
-                    base
-                }
-                None => &[],
-            };
-            let count = zombies.len().min(MAX_ZOMBIES);
-            w.varint(count as u32);
-            let mut next = 0u8;
-            for z in &zombies[..count] {
-                // Ids mostly run in order: a bit for the next one.
-                w.bool(z.id == next);
-                if z.id != next {
-                    w.u8(z.id);
-                }
-                next = z.id.wrapping_add(1);
-                let b = zombie_or_new(base, z.id);
-                let changed = *z != b;
-                w.bool(changed);
-                if changed {
-                    let fields = delta::record(|r| write_zombie(r, &b));
-                    write_zombie(&mut DeltaWriter::new(w, &fields), z);
-                }
-            }
-        }
-        None => w.bool(false),
-    }
     w.bool(s.radar.jammed);
     let count = s.radar.blips.len().min(radar::MAX_BLIPS);
     w.varint(count as u32);
@@ -4121,70 +3425,6 @@ fn read_radar(r: &mut BitReader) -> DecodeResult<RadarView> {
         });
     }
     Ok(RadarView { jammed, blips })
-}
-
-/// Zombie `id` in `base`, or a zombie never seen, to encode against.
-fn zombie_or_new(base: &[ZombieView], id: u8) -> ZombieView {
-    base.iter()
-        .find(|b| b.id == id)
-        .copied()
-        .unwrap_or(ZombieView {
-            id,
-            ..ZombieView::default()
-        })
-}
-
-/// Every field of a zombie but its id, written against [`BitSink`] so a
-/// horde goes as changes.
-fn write_zombie(w: &mut impl BitSink, z: &ZombieView) {
-    let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
-    for axis in 0..3 {
-        w.number(z.position[axis] as u32, 32);
-    }
-    w.u8(z.yaw);
-    // A zombie never hit has no latest hit to describe.
-    let hit = z.hits != 0 || z.hit_heading != 0 || z.hit_part != 0;
-    // Whether it is alive or was hit, and both counters, as one field.
-    let flags = u32::from(z.alive)
-        | u32::from(hit) << 1
-        | u32::from(z.swings & counter) << 2
-        | u32::from(z.hits & counter) << (2 + ZOMBIE_COUNTER_BITS)
-        | u32::from(z.hound) << (2 + 2 * ZOMBIE_COUNTER_BITS);
-    w.bits(flags, 3 + 2 * ZOMBIE_COUNTER_BITS);
-    if hit {
-        w.u8(z.hit_heading);
-        w.u8(z.hit_part);
-    }
-}
-
-fn read_zombie(r: &mut impl BitSource, id: u8) -> DecodeResult<ZombieView> {
-    let mut position = IVec3::ZERO;
-    for axis in 0..3 {
-        position[axis] = r.number(32)? as i32;
-    }
-    let yaw = r.u8()?;
-    let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
-    let flags = r.bits(3 + 2 * ZOMBIE_COUNTER_BITS)?;
-    let alive = flags & 1 != 0;
-    let hound = flags >> (2 + 2 * ZOMBIE_COUNTER_BITS) & 1 != 0;
-    let swings = ((flags >> 2) & counter) as u8;
-    let hits = ((flags >> (2 + ZOMBIE_COUNTER_BITS)) & counter) as u8;
-    let (hit_heading, hit_part) = if flags & 2 != 0 {
-        (r.u8()?, r.u8()?)
-    } else {
-        (0, 0)
-    };
-    Ok(ZombieView {
-        id,
-        position,
-        yaw,
-        alive,
-        swings,
-        hits,
-        hit_heading,
-        hit_part,
-        hound,
-    })
 }
 
 fn read_snapshot<'a>(
@@ -4264,38 +3504,6 @@ fn read_snapshot<'a>(
             age: r.varint()?,
         });
     }
-    let zombies = if r.bool()? {
-        let base: &[ZombieView] = if r.bool()? {
-            let at = tick.wrapping_sub(r.varint()?);
-            lookup(at)
-                .and_then(|b| b.zombies)
-                .ok_or(DecodeError::Invalid("unknown zombie baseline"))?
-                .1
-        } else {
-            &[]
-        };
-        let count = r.varint()? as usize;
-        if count > MAX_ZOMBIES {
-            return Err(DecodeError::Invalid("zombie count"));
-        }
-        let mut zombies = Vec::with_capacity(count);
-        let mut next = 0u8;
-        for _ in 0..count {
-            let id = if r.bool()? { next } else { r.u8()? };
-            next = id.wrapping_add(1);
-            let b = zombie_or_new(base, id);
-            let z = if r.bool()? {
-                let fields = delta::record(|w| write_zombie(w, &b));
-                read_zombie(&mut DeltaReader::new(r, &fields), id)?
-            } else {
-                b
-            };
-            zombies.push(z);
-        }
-        Some(zombies)
-    } else {
-        None
-    };
     let radar = read_radar(r)?;
     Ok(Snapshot {
         tick,
@@ -4304,7 +3512,6 @@ fn read_snapshot<'a>(
         players,
         grenades,
         smokes,
-        zombies,
         radar,
     })
 }
@@ -4337,7 +3544,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
 }
 
 /// Bits of a player view's flag mask.
-const VIEW_FLAG_BITS: u32 = 13;
+const VIEW_FLAG_BITS: u32 = 12;
 
 /// Every field of a [`PlayerView`] but its id. Positions, angles, and
 /// counters are numbers, so they change by their difference; the flags are
@@ -4359,7 +3566,6 @@ fn write_view(w: &mut impl BitSink, v: &PlayerView) {
         v.vaulting,
         v.meleeing,
         v.defusing,
-        v.downed,
         v.quiet,
         v.ladder.is_some(),
         v.unmarked,
@@ -4414,7 +3620,7 @@ fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
     let crouch = r.u8()?;
     let ads = r.u8()?;
     let weapon = read_weapon(r)?;
-    let ladder = if flag(11) { Some(r.u8()?) } else { None };
+    let ladder = if flag(10) { Some(r.u8()?) } else { None };
     Ok(PlayerView {
         id: 0,
         position,
@@ -4433,9 +3639,8 @@ fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
         vaulting: flag(6),
         meleeing: flag(7),
         defusing: flag(8),
-        downed: flag(9),
-        quiet: flag(10),
-        unmarked: flag(12),
+        quiet: flag(9),
+        unmarked: flag(11),
         ladder,
         mount: r.u8()?,
         throw: r.u8()?,
@@ -4465,8 +3670,6 @@ fn write_predicted(w: &mut impl BitSink, p: &Predicted) {
     w.bool(s.melee_held);
     w.bool(s.lethal_held);
     w.bool(s.tactical_held);
-    w.bool(s.downed);
-    w.bits(u32::from(s.drinks.bits()), Drinks::BITS);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -4483,9 +3686,6 @@ fn read_predicted(r: &mut impl BitSource) -> DecodeResult<Predicted> {
     let melee_held = r.bool()?;
     let lethal_held = r.bool()?;
     let tactical_held = r.bool()?;
-    let downed = r.bool()?;
-    let drinks =
-        Drinks::from_bits(r.bits(Drinks::BITS)? as u8).ok_or(DecodeError::Invalid("drinks"))?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -4505,9 +3705,7 @@ fn read_predicted(r: &mut impl BitSource) -> DecodeResult<Predicted> {
             melee_held,
             lethal_held,
             tactical_held,
-            downed,
             perks,
-            drinks,
         },
         position,
         on_floor,
@@ -4633,10 +3831,6 @@ fn write_combat_state(w: &mut impl BitSink, c: &CombatState) {
             match kind {
                 Raise::Draw => w.bits(0, 2),
                 Raise::First => w.bits(1, 2),
-                Raise::Drink(drink) => {
-                    w.bits(2, 2);
-                    w.bits(u32::from(drink.code()), 3);
-                }
             }
         }
         Action::Meleeing {
@@ -4734,10 +3928,6 @@ fn read_combat_state(r: &mut impl BitSource) -> DecodeResult<CombatState> {
             kind: match r.bits(2)? {
                 0 => Raise::Draw,
                 1 => Raise::First,
-                2 => Raise::Drink(
-                    crate::zombies::drinks::Drink::from_code(r.bits(3)? as u8)
-                        .ok_or(DecodeError::Invalid("drink"))?,
-                ),
                 _ => return Err(DecodeError::Invalid("raise")),
             },
         },
@@ -4936,8 +4126,6 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
         } else {
             None
         },
-        hunch: 0.0,
-        hound: false,
         throw: if r.bool()? {
             Some(clock::from_u8(r.u8()?))
         } else {
@@ -5022,9 +4210,6 @@ mod tests {
         let params = PlayerParams::default();
         let mut state = PlayerState {
             perks: Perks::of(&[crate::perk::Perk::Lightweight, crate::perk::Perk::Dexterity]),
-            drinks: Drinks::NONE
-                .with(crate::zombies::drinks::Drink::Quickload)
-                .with(crate::zombies::drinks::Drink::LongStride),
             ..PlayerState::default()
         };
         let mut events = Vec::new();
@@ -5067,14 +4252,12 @@ mod tests {
                 players: Vec::new(),
                 grenades: Vec::new(),
                 smokes: Vec::new(),
-                zombies: None,
                 radar: RadarView::default(),
             })
         };
         let base = Baseline {
             players: &[],
             own: Some(&before),
-            zombies: None,
         };
         let full = snapshot(after, None).encode_with(base);
         let delta_msg = snapshot(after, Some(100));
@@ -5099,65 +4282,6 @@ mod tests {
         assert_eq!(
             ServerMessage::decode_with(&delta, |_| Some(missing)),
             Err(DecodeError::Invalid("unknown own baseline"))
-        );
-    }
-
-    #[test]
-    fn the_horde_rides_as_changes_from_the_acknowledged_one() {
-        let horde = |t: f32| -> Vec<ZombieView> {
-            (0..24u8)
-                .map(|id| {
-                    let f = f32::from(id);
-                    ZombieView::new(
-                        id,
-                        Vec3::new(f * 1.3 + t * 1.5, 0.0, -f + t * 0.9),
-                        f * 0.2,
-                        true,
-                    )
-                })
-                .collect()
-        };
-        let before = horde(0.0);
-        // 80 ms on, two zombies hit and one killed.
-        let mut now = horde(0.08);
-        now[3].hits = 1;
-        now[3].hit_part = 9;
-        now[7].alive = false;
-        let snapshot = |zombies: Vec<ZombieView>| {
-            ServerMessage::Snapshot(Snapshot {
-                tick: 120,
-                baseline: None,
-                own: None,
-                players: Vec::new(),
-                grenades: Vec::new(),
-                smokes: Vec::new(),
-                zombies: Some(zombies),
-                radar: RadarView::default(),
-            })
-        };
-        let full = snapshot(now.clone()).encode(&[]);
-        let base = Baseline {
-            zombies: Some((112, &before)),
-            ..Baseline::default()
-        };
-        let msg = snapshot(now);
-        let delta = msg.encode_with(base);
-        // About 4 bytes a walking zombie, against 7 or 8 in full.
-        assert!(
-            delta.len() <= 24 * 4 + 4 && delta.len() * 3 < full.len() * 2,
-            "{} bytes as changes, {} in full",
-            delta.len(),
-            full.len()
-        );
-        let decoded = ServerMessage::decode_with(&delta, |tick| {
-            assert_eq!(tick, 112);
-            Some(base)
-        })
-        .unwrap();
-        assert_eq!(decoded, msg);
-        assert_eq!(
-            ServerMessage::decode_with(&delta, |_| Some(Baseline::default())),
-            Err(DecodeError::Invalid("unknown zombie baseline"))
         );
     }
 
@@ -5220,23 +4344,6 @@ mod tests {
             bytes.len()
         );
         assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
-    }
-
-    #[test]
-    fn a_drink_round_trips_with_its_bottle() {
-        let mut state = PlayerState::default();
-        state.combat = state
-            .combat
-            .drinking(crate::zombies::drinks::Drink::HairTrigger);
-        let p = Predicted {
-            state,
-            position: Vec3::ZERO,
-            on_floor: true,
-        };
-        let mut w = BitWriter::new();
-        write_predicted(&mut w, &p);
-        let bytes = w.finish();
-        assert_eq!(read_predicted(&mut BitReader::new(&bytes)).unwrap(), p);
     }
 
     #[test]
@@ -5750,7 +4857,6 @@ mod tests {
         let snapshot = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 500,
             baseline: None,
@@ -5793,7 +4899,6 @@ mod tests {
                 ),
             ],
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 900,
             baseline: None,
@@ -5821,7 +4926,6 @@ mod tests {
         let snapshot = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: smokes.clone(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 1200,
             baseline: None,
@@ -5843,7 +4947,6 @@ mod tests {
         let snapshot = Snapshot {
             grenades: Vec::new(),
             smokes: vec![SmokeView::new(Some(1), 1, Vec3::ZERO, 5); MAX_SMOKES + 4],
-            zombies: None,
             radar: RadarView::default(),
             tick: 10,
             baseline: None,
@@ -5874,7 +4977,6 @@ mod tests {
         let snapshot = Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: radar_view.clone(),
             tick: 100,
             baseline: None,
@@ -5969,7 +5071,6 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
@@ -5991,7 +5092,6 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
@@ -6018,7 +5118,6 @@ mod tests {
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 100,
             baseline: None,
@@ -6036,7 +5135,6 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
@@ -6069,7 +5167,6 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
@@ -6137,7 +5234,6 @@ mod tests {
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 100,
             baseline: None,
@@ -6153,7 +5249,6 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
@@ -6171,7 +5266,6 @@ mod tests {
         let unchanged = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 102,
             baseline: Some(100),
@@ -6192,7 +5286,6 @@ mod tests {
         let msg = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
-            zombies: None,
             radar: RadarView::default(),
             tick: 10,
             baseline: Some(5),
@@ -6589,8 +5682,6 @@ mod tests {
                             velocity: Vec3::new(1.5, -0.25, -4.0),
                             weapon: Some(WeaponId(3)),
                             crouch: Some(clock::from_u8(clock::to_u8(0.5))),
-                            hunch: 0.0,
-                            hound: false,
                             throw: Some(clock::from_u8(clock::to_u8(0.62))),
                             kneel: Some(clock::from_u8(clock::to_u8(0.4))),
                             slope: f32::from(PlayerView::slope_to_i8(-0.2)) * 0.5_f32.to_radians(),
@@ -6712,8 +5803,6 @@ mod tests {
                         hill_seconds: 74,
                         defends: 3,
                         alive: true,
-                        revives: 2,
-                        headshots: 9,
                     },
                     ScoreRow {
                         id: 203,
@@ -7077,178 +6166,12 @@ mod tests {
     }
 
     #[test]
-    fn zombies_round_trip_in_snapshots_and_events() {
-        let mut hit = ZombieView::new(9, Vec3::new(-12.345, 0.02, 30.5), 1.5, false);
-        hit.swings = 5;
-        hit.hits = 3;
-        hit.hit_heading = 200;
-        hit.hit_part = 0x83;
-        hit.hound = true;
-        let zombies = vec![ZombieView::new(1, Vec3::ZERO, 0.0, true), hit];
-        let msg = ServerMessage::Snapshot(Snapshot {
-            tick: 400,
-            baseline: None,
-            own: None,
-            players: Vec::new(),
-            grenades: Vec::new(),
-            smokes: Vec::new(),
-            zombies: Some(zombies.clone()),
-            radar: RadarView::default(),
-        });
-        let bytes = msg.encode(&[]);
-        // A big horde stays small: about ten bytes a zombie.
-        assert!(bytes.len() < 40, "{} bytes", bytes.len());
-        let ServerMessage::Snapshot(decoded) = ServerMessage::decode(&bytes, |_| None).unwrap()
-        else {
-            panic!("not a snapshot");
-        };
-        assert_eq!(decoded.zombies, Some(zombies));
-        let horde =
-            vec![ZombieView::new(1, Vec3::new(20.0, 0.0, -25.0), 3.0, true); MAX_ZOMBIES + 3];
-        let msg = ServerMessage::Snapshot(Snapshot {
-            tick: 404,
-            baseline: None,
-            own: None,
-            players: Vec::new(),
-            grenades: Vec::new(),
-            smokes: Vec::new(),
-            zombies: Some(horde),
-            radar: RadarView::default(),
-        });
-        let bytes = msg.encode(&[]);
-        assert!(bytes.len() < MAX_ZOMBIES * 11, "{} bytes", bytes.len());
-        let ServerMessage::Snapshot(decoded) = ServerMessage::decode(&bytes, |_| None).unwrap()
-        else {
-            panic!("not a snapshot");
-        };
-        assert_eq!(decoded.zombies.map(|z| z.len()), Some(MAX_ZOMBIES));
-
-        let msg = ServerMessage::Events(vec![
-            GameEvent::Zombies(ZombiesEvent::Round {
-                round: 12,
-                phase: ZombiesPhase::Break,
-                starts_at: Some(9000),
-                remaining: 0,
-                hounds: false,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Round {
-                round: 3,
-                phase: ZombiesPhase::Over,
-                starts_at: None,
-                remaining: 7,
-                hounds: true,
-            }),
-            GameEvent::Zombies(ZombiesEvent::HoundStrike {
-                at: Vec3::new(-4.0, 0.25, 12.5),
-            }),
-            GameEvent::Zombies(ZombiesEvent::AltAmmo {
-                player: 2,
-                weapon: WeaponId::expect("m4").upgraded().unwrap(),
-                kind: Some(crate::zombies::alt_ammo::AltAmmo::Cinder),
-            }),
-            GameEvent::Zombies(ZombiesEvent::Trap {
-                trap: 0,
-                phase: TrapPhase::Cooling,
-                until: Some(12_000),
-            }),
-            GameEvent::Zombies(ZombiesEvent::AltAmmoFired {
-                kind: crate::zombies::alt_ammo::AltAmmo::Arc,
-                at: Vec3::new(3.0, 0.0, -2.0),
-                struck: [4, 9, 200, 0, 0, 0, 0, 0, 0],
-                count: 3,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Hit {
-                zombie: 250,
-                shot: 1234,
-                headshot: true,
-                killed: true,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Points {
-                total: 1490,
-                change: -1250,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Boards {
-                window: 7,
-                boards: 2,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Door {
-                door: 1,
-                open: true,
-            }),
-            GameEvent::Zombies(ZombiesEvent::PowerUpDropped {
-                id: 4,
-                kind: crate::zombies::PowerUp::Carpenter,
-                at: Vec3::new(1.0, 0.0, -3.5),
-            }),
-            GameEvent::Zombies(ZombiesEvent::PowerUpGone { id: 4, by: Some(2) }),
-            GameEvent::Zombies(ZombiesEvent::PowerUpGone { id: 5, by: None }),
-            GameEvent::Zombies(ZombiesEvent::PowerUpTimers {
-                insta_kill_until: Some(5000),
-                double_points_until: None,
-                fire_sale_until: Some(6200),
-            }),
-            GameEvent::Zombies(ZombiesEvent::Downed {
-                player: 3,
-                bleeds_out_at: Some(77_000),
-            }),
-            GameEvent::Zombies(ZombiesEvent::Downed {
-                player: 3,
-                bleeds_out_at: None,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Revive {
-                player: 3,
-                by: Some(1),
-                done_at: 77_360,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Power { on: true }),
-            GameEvent::Zombies(ZombiesEvent::Machine {
-                machine: 2,
-                available: false,
-                price: 500,
-                needs_power: false,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Drank {
-                player: 1,
-                drink: crate::zombies::drinks::Drink::LongStride,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Crate {
-                spot: 1,
-                phase: CratePhase::Offering,
-                by: 2,
-                weapon: Some(WeaponId::expect("ak47")),
-                until: Some(9000),
-                sale: true,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Forge {
-                phase: ForgePhase::Working,
-                by: 3,
-                weapon: WeaponId::expect("m4").upgraded(),
-                until: Some(800),
-            }),
-            GameEvent::Zombies(ZombiesEvent::Forge {
-                phase: ForgePhase::Idle,
-                by: 0,
-                weapon: None,
-                until: None,
-            }),
-            GameEvent::Zombies(ZombiesEvent::Crate {
-                spot: 0,
-                phase: CratePhase::Hidden,
-                by: 0,
-                weapon: None,
-                until: None,
-                sale: false,
-            }),
-        ]);
-        assert_eq!(
-            ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
-            msg
-        );
+    fn welcome_and_denied_round_trip() {
         let welcome = ServerMessage::Welcome {
             player_id: 0,
             tick: 1,
             snapshot_interval: 2,
-            mode: Mode::Zombies,
+            mode: Mode::Domination,
             server_build: "dev".into(),
             ranked: false,
             custom: custom::Settings::default(),
@@ -7265,6 +6188,5 @@ mod tests {
             ServerMessage::decode(&denied.encode(&[]), |_| None).unwrap(),
             denied
         );
-        assert_eq!(zombie_lag(2), 4.0);
     }
 }

@@ -32,9 +32,6 @@ From `docs/perf/baseline.json`: GPU milliseconds averaged over each map's viewpo
 | Slamcity close-ups | GTX 1060 | 3.65 (3.67) | 7.53 (7.54) | 10.95 (11.03) |
 | Breakwater | GTX 1060 | 3.23 (3.42) | 6.90 (7.30) | 9.78 (10.24) |
 | Warehouse | GTX 1660 Ti | 1.90 (1.96) | 3.94 (4.13) | 6.70 (6.89) |
-| Zombies, 24 zombies | GTX 1060 | 3.20 (3.70) | 5.58 (6.17) | 8.15 (8.81) |
-
-With eight hounds galloping ahead of the horde (`BENCH_HOUNDS=8`, a four-player hound round's most at once, which a real game never has together with a full horde), Zombies' worst views are 3.80, 6.32, and 9.09 ms. The gate runs without hounds, as the baseline was measured.
 
 Slamcity and Breakwater are over the Medium gate because of Medium's own full-screen passes, measured at their worst views: ambient occlusion 1.35 to 1.43 ms (nearly all of it the normal and roughness prepass it makes every opaque surface render; its cheapest quality saves nothing), glow 0.72 to 0.78, SMAA 0.65 to 0.79 (FXAA would save 0.45), sun shadows 0.73 to 1.0 (no shorter reach, smaller atlas, or fewer splits moves it), and fog 0.17 to 0.37. Nothing left in the maps themselves is worth more than 0.2 ms. Getting them under 6.5 ms means turning one of those passes down on Medium, which changes the default look; that waits for the owner.
 
@@ -58,7 +55,6 @@ Measured on the reference card with the tools below.
 - A negative mipmap bias sharpens distant textures for almost nothing, as long as anisotropic filtering is on.
 - Lights and luminance passes cost every pixel. A shadowless second directional light that lit only the first-person weapon (by cull mask) cost 0.16 to 0.28 ms on Medium, because every lit pixel of the world loops over it; the first-person key light lives in the viewmodel shader instead. The renderer's auto-exposure cost 0.24 to 0.35 ms on Medium; eye adaptation is estimated with rays on the CPU instead.
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
-- Ambient occlusion is the wrong tool for grounding a crowd: SSAO in the Zombies arena cost 0.7 ms on Medium and 1.9 ms on High (where it runs at full resolution), for a horde that needs a dark patch under each pair of feet. Contact shadows do that instead.
 - A short SSAO radius (0.5 m) with a strong detail pass costs the same as a wide one and gives a crisp contact line where walls, blocks, and boots meet the ground.
 
 **Lighting**
@@ -84,7 +80,7 @@ Measured on the reference card with the tools below.
 
 **Characters**
 
-- Characters cost through their triangles at range more than through skinning or shading. Freezing every character's animation saved nothing measurable on Slamcity, a plain material 0.03 ms, and drawing them at their coarsest LOD 0.06 ms. Keep each character to one surface, and give it a decimated far mesh: `SoldierRig` draws `BodyFar` (about a fifth of the triangles) in place of `Body` past 15 m, because Godot's automatic LODs simplify a kit of many small parts poorly. Zombies drop to coarser LODs sooner (LOD bias 0.2), and so do other players' weapons (`WORLD_LOD_BIAS`, 0.35).
+- Characters cost through their triangles at range more than through skinning or shading. Freezing every character's animation saved nothing measurable on Slamcity, a plain material 0.03 ms, and drawing them at their coarsest LOD 0.06 ms. Keep each character to one surface, and give it a decimated far mesh: `SoldierRig` draws `BodyFar` (about a fifth of the triangles) in place of `Body` past 15 m, because Godot's automatic LODs simplify a kit of many small parts poorly. Other players' weapons drop to coarser LODs sooner (`WORLD_LOD_BIAS`, 0.35).
 
 **Effects**
 
@@ -116,18 +112,17 @@ tools/benchmark.sh --out after.json --compare docs/perf/baseline.json # and comp
 just bench                                                            # the same comparison
 ```
 
-`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, Slamcity's close-ups (the plume filling the screen and the lit inside of the derailed car, kept apart so the main views compare with their baseline), Breakwater, Warehouse, and the Zombies arena with a 24-zombie horde walking at the player. It visits every map once first, so shader compiles do not land in the first number, then holds each fixed viewpoint for 30 warm-up frames and 120 measured frames at each preset. It prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many went into shadow maps), and writes CPU render time, primitives, and video memory to the JSON. The sentry and the Zombies director are switched off, so nothing fires.
+`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, Slamcity's close-ups (the plume filling the screen and the lit inside of the derailed car, kept apart so the main views compare with their baseline), Breakwater, and Warehouse. It visits every map once first, so shader compiles do not land in the first number, then holds each fixed viewpoint for 30 warm-up frames and 120 measured frames at each preset. It prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many went into shadow maps), and writes CPU render time, primitives, and video memory to the JSON. The sentry is switched off, so nothing fires.
 
 `tools/bench_compare.py before.json after.json` prints a Markdown table of the two runs to paste into the PR, and exits non-zero if a map and preset got more than 5% slower in GPU or frame time (`--max-regression`), so a loop can stop on a regression. Comparisons use only rows measured on the same card: a row with an `adapter` overrides the file's default.
 
 | Variable | Effect |
 | --- | --- |
-| `BENCH_MAPS` | comma list of `testing`, `slamcity`, `slamcity_closeups`, `breakwater`, `warehouse`, `zombies` (default all) |
+| `BENCH_MAPS` | comma list of `testing`, `slamcity`, `slamcity_closeups`, `breakwater`, `warehouse` (default all) |
 | `BENCH_PRESETS` | comma list of `low`, `medium`, `high` (default all) |
 | `BENCH_FRAMES` | frames measured per viewpoint (default 120, at least 10) |
 | `BENCH_CAPTURE` | a directory for a screenshot of every viewpoint, for before-and-after comparisons |
 | `BENCH_MOTION_BLUR` | `1` to measure with motion blur on |
-| `BENCH_HOUNDS` | hounds galloping in front of the Zombies horde (default 0) |
 | `BENCH_OUT` | the JSON file (`--out` sets it) |
 
 The viewpoints are in `MAPS` in `benchmark.gd`. Change them only together with the baseline, or the comparison stops being fair.
@@ -235,7 +230,6 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Soft gun smoke (`SOFT_SMOKE`) | off | off | on |
 | Wet surfaces and puddles (`WORLD_WET`, wet maps only) | dry | on | on |
 | Set dressing's small detail (`map_*_detail`) | hidden | shown | shown |
-| Zombies' night sky (`scripts/map_render.gd`) | gradient and moon only | cloud, stars, and skyline | the same, with finer cloud noise |
 | Combat effect pools | smallest | middle | largest (table above) |
 
 Contact shadows under characters, the colour grade and health colour drain, eye adaptation (`scripts/eye_adaptation.gd`, rays on the CPU), and the first-person key light (`scripts/viewmodel_light.gd`) run on every preset; none costs measurable GPU time. Lens dirt rides the bloom, so Low, with no glow, has none.

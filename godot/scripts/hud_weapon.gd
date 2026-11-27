@@ -112,10 +112,6 @@ func _draw() -> void:
 	var parts := Paint.split_weapon_name(_key, player.weapon_name())
 	var name := parts[0].to_upper()
 	var attachment := parts[1].to_upper()
-	# Zombies: a re-packed weapon's alternate ammo, where an attachment goes.
-	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
-	if attachment == "" and wallet != null and wallet.has_method("alt_ammo_label"):
-		attachment = String(wallet.call("alt_ammo_label", _key))
 	var name_line := bottom - 72.0
 	var name_size := 18
 	var tag_size := 13

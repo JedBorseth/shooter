@@ -1,8 +1,7 @@
-"""Set dressing for the Testing Area and the Zombies arena, and the surface
-breakup of their floors and walls, for tools/build_models.py.
+"""Set dressing for the Testing Area, and the surface breakup of its floors
+and walls, for tools/build_models.py.
 
-The maps' architecture is `map_testing_area` and `map_zombies_arena` in
-tools/gear_models.py. This module adds:
+The map's architecture is `map_testing_area` in tools/gear_models.py. This module adds:
 
 - Surfaces shaded per vertex (`shaded_grid`): each floor slab and wall panel
   is its own small grid whose vertex colours carry a per-slab tint and
@@ -846,7 +845,6 @@ def dressing(fn):
 NO_ANTI_TILE.add("range_slab")
 # The architecture: its floor goes in a mesh of its own that casts no shadow.
 SPLIT["map_testing_area"] = _ground_only
-SPLIT["map_zombies_arena"] = _ground_only
 
 
 @dressing
@@ -1045,30 +1043,11 @@ def map_testing_dressing(b: Model):
                       size=rng.uniform(0.2, 0.4))
 
 
-# --- The Zombies arena -----------------------------------------------------------------
+# --- A burnt-out car (Warehouse's field, tools/build_warehouse_field.py) ---------------
 LOOKS.update({
     "burnt_body": {"color": (0.12, 0.105, 0.095), "rough": 1.0, "metal": 0},
     "burnt_rust": {"color": (0.2, 0.11, 0.07), "rough": 1.0, "metal": 0},
-    "blood_dry": {"color": (0.22, 0.04, 0.03), "rough": 0.6, "metal": 0},
-    "medkit": {"color": (0.82, 0.8, 0.74), "rough": 0.6, "metal": 0},
-    "mil_canvas": _t("canvas", 0.6, (0.42, 0.42, 0.3), grime=0.0),
 })
-
-# Windows (centre on the wall's inner face, the axis the wall runs along) and
-# their keep-clear boxes: zombies climb in and walk straight at the player.
-ZA_WINDOWS = [(-14.0, -24.0, "x", 1), (14.0, -24.0, "x", 1), (-14.0, 24.0, "x", -1), (14.0, 24.0, "x", -1),
-              (-24.0, -17.0, "z", 1), (-24.0, 22.0, "z", 1), (24.0, -17.0, "z", -1), (24.0, 22.0, "z", -1)]
-
-
-def _za_clear(x, z, margin=0.0):
-    """Whether (x, z) is outside every window's and gate's keep-clear box."""
-    for wx, wz, along, inward in ZA_WINDOWS:
-        if along == "x":
-            if abs(x - wx) < 3.0 + margin and abs(z - wz) < 7.0 + margin:
-                return False
-        elif abs(z - wz) < 3.0 + margin and abs(x - wx) < 7.0 + margin:
-            return False
-    return not (abs(x) > 17.0 - margin and -1.5 - margin < z < 9.5 + margin)
 
 
 def burnt_car(b: Model, seed=0):
@@ -1092,182 +1071,6 @@ def burnt_car(b: Model, seed=0):
         x = s * 0.925
         b.hull([(x + dx, y, z) for dx in (-0.006, 0.006) for y, z in ((0.42, -1.5), (0.82, -0.9), (0.8, 1.2),
                                                                       (0.42, 1.6))], "burnt_rust")
-
-
-def barricade(b: Model, length=4.0, seed=0):
-    """An improvised barricade along x, its front toward +z: two courses of
-    sandbags, a run of nailed boards over them on timber posts, and props
-    behind."""
-    from gear_models import _plank  # noqa: PLC0415
-
-    rng = random.Random(seed)
-    sandbag_wall(b, length=length, layers=2, seed=seed)
-    for x in (-length / 2 + 0.25, 0.0, length / 2 - 0.25):
-        b.box(x - 0.045, x + 0.045, 0.0, 1.45, -0.32, -0.23, "board_dark")
-        b.tube([(x, 1.2, -0.3), (x + rng.uniform(-0.2, 0.2), 0.0, -1.0)], 0.035, "board_dark", sides=5,
-               detail=False)
-    for k in range(3):
-        _plank(b, length * rng.uniform(0.8, 1.0), 0.2, 0.03, rng.choice(["board_wood", "board_grey", "board_dark"]),
-               rng, at=(rng.uniform(-0.15, 0.15), 0.62 + k * 0.27, -0.2), roll=rng.uniform(-0.07, 0.07))
-
-
-def ammo_can(b: Model, x, z, yaw, look="mil_olive"):
-    c, s = math.cos(yaw), math.sin(yaw)
-
-    def box(x0, x1, y0, y1, z0, z1, lk=look):
-        b.hull([(x + px * c + pz * s, py, z - px * s + pz * c) for px in (x0, x1) for py in (y0, y1)
-                for pz in (z0, z1)], lk)
-    box(-0.15, 0.15, 0.0, 0.18, -0.06, 0.06)
-    box(-0.155, 0.155, 0.17, 0.2, -0.065, 0.065)
-    box(-0.04, 0.04, 0.2, 0.22, -0.01, 0.01, "steel_dark")
-
-
-def backpack(b: Model, x, z, yaw, rng):
-    c, s = math.cos(yaw), math.sin(yaw)
-    pts = [(px * rng.uniform(0.9, 1.1), py, pz * rng.uniform(0.9, 1.1)) for px in (-0.2, 0.2) for py in (0.0, 0.22)
-           for pz in (-0.3, 0.3)] + [(0.0, 0.28, 0.0)]
-    b.smooth_hull([(x + px * c + pz * s, py, z - px * s + pz * c) for px, py, pz in pts], "mil_canvas", levels=1)
-
-
-def helmet(b: Model, x, z, yaw):
-    pts = [(x + math.cos(a) * 0.14 * r, h, z + math.sin(a) * 0.12 * r) for a in (k * PI / 4 + yaw for k in range(8))
-           for r, h in ((1.0, 0.02), (0.8, 0.12), (0.4, 0.17))]
-    b.smooth_hull(pts, "mil_olive", levels=1)
-
-
-def light_head(b: Model, x, y, z, yaw, tip=0.5):
-    """A floodlight head clamped to a bracket, aimed along yaw and tipped
-    down: a steel housing, a glowing lens."""
-    c, s = math.cos(yaw), math.sin(yaw)
-
-    def pt(px, py, pz):
-        yy = py * math.cos(tip) - pz * math.sin(tip)
-        zz = py * math.sin(tip) + pz * math.cos(tip)
-        return (x + px * c + zz * s, y + yy, z - px * s + zz * c)
-    b.hull([pt(px, py, pz) for px in (-0.2, 0.2) for py in (-0.15, 0.15) for pz in (-0.08, 0.08)], "steel_dark")
-    b.hull([pt(px, py, pz) for px in (-0.17, 0.17) for py in (-0.12, 0.12) for pz in (0.08, 0.09)], "lamp_flood")
-
-
-def _za_wall_streaks(b: Model, rng):
-    """Rain streaks down the compound wall's inner faces from the coping: dark,
-    glossy strips in the wall's own material (the yard is just after rain)."""
-    H = 5.0
-    for axis, face, sign in (("x", -24.0, -1), ("x", 24.0, 1), ("z", -24.0, -1), ("z", 24.0, 1)):
-        t = -23.5
-        while t < 23.0:
-            t += rng.uniform(0.6, 2.4)
-            # Not across a window or gate opening, nor over a pier (every 4 m).
-            if abs((t % 4.0) - 0.0) < 0.6 or abs((t % 4.0) - 4.0) < 0.6:
-                continue
-            x, z = (t, face) if axis == "x" else (face, t)
-            if not _za_clear(x - sign * 0.5 * (axis == "z"), z - sign * 0.5 * (axis == "x"), margin=-2.0):
-                continue
-            w, length, d = rng.uniform(0.12, 0.35), rng.uniform(1.2, 4.0), rng.uniform(0.15, 0.35)
-            def streak(p, t=t, w=w, length=length, d=d, axis=axis):
-                u = (p[0] if axis == "x" else p[2]) - t
-                across = max(0.0, 1.0 - abs(u) / w)
-                down = max(0.0, 1.0 - (H - p[1]) / length) ** 0.7
-                k = across * down
-                return (1.0 - d * k, 1.0 - d * k, 1.0 - d * k, 1.0 - 0.6 * k)
-            f = face - sign * 0.003
-            y0 = max(0.0, H - length)
-            if axis == "x":
-                shaded_grid(b, "arena_block", (t - w, y0, f), (2 * w, 0.0, 0.0), (0.0, H - y0, 0.0), 2, 2, streak,
-                            (0, 0, -sign))
-            else:
-                shaded_grid(b, "arena_block", (f, y0, t - w), (0.0, 0.0, 2 * w), (0.0, H - y0, 0.0), 2, 2, streak,
-                            (-sign, 0, 0))
-
-
-@dressing
-def map_zombies_dressing(b: Model):
-    """The Zombies arena as a compound under siege at night
-    (scenes/zombies_arena.tscn): barricades of sandbags and boards along the
-    walls, burnt-out cars, rubble and torn boards, abandoned kit, blood
-    dragged in from the windows, floodlights clamped to the big columns, and
-    emergency beacons over the gates. The windows, the gates, and the paths
-    from them stay clear."""
-    rng = random.Random(55)
-    # Barricades along the walls between the windows.
-    place(b, barricade, (-5.0, 0.0, 23.35), PI, length=4.4, seed=1)
-    place(b, barricade, (5.2, 0.0, 23.35), PI, length=4.0, seed=2)
-    place(b, barricade, (-23.35, 0.0, -10.0), PI / 2, length=4.0, seed=3)
-    place(b, barricade, (23.35, 0.0, 13.5), -PI / 2, length=4.0, seed=4)
-    # Burnt-out cars: one against the west wall, one in each side yard.
-    place(b, burnt_car, (-22.75, 0.0, -4.0), 0.06, seed=1)
-    place(b, burnt_car, (-30.0, 0.0, 13.0), 0.0, seed=2)
-    place(b, burnt_car, (30.0, 0.0, 13.0), PI, seed=3)
-    # Rubble at the walls' feet and round the columns.
-    for _ in range(14):
-        while True:
-            side = rng.randint(0, 3)
-            t = rng.uniform(-22.5, 22.5)
-            x, z = [(t, -23.5), (t, 23.5), (-23.5, t), (23.5, t)][side]
-            if _za_clear(x, z, margin=0.5):
-                break
-        for _ in range(rng.randint(5, 10)):
-            px, pz = x + rng.gauss(0, 0.35), z + rng.gauss(0, 0.35)
-            px, pz = max(-23.9, min(23.9, px)), max(-23.9, min(23.9, pz))
-            s = rng.uniform(0.05, 0.14)
-            b.hull([(px + rng.uniform(-s, s), rng.uniform(0.0, s * 0.8), pz + rng.uniform(-s, s)) for _ in range(7)],
-                   rng.choice(["arena_pier", "arena_block", "arena_coping"]), detail=True)
-    # Torn boards near each window, flat on the ground beside the path in.
-    from gear_models import _plank  # noqa: PLC0415
-    for wx, wz, along, inward in ZA_WINDOWS:
-        for k in range(2):
-            off = rng.choice((-1, 1)) * rng.uniform(1.6, 2.6)
-            depth = rng.uniform(1.0, 3.5)
-            x, z = (wx + off, wz + inward * depth) if along == "x" else (wx + inward * depth, wz + off)
-            sub = Model(b._part_geo)
-            _plank(sub, rng.uniform(0.7, 1.1), 0.2, 0.03, rng.choice(["board_wood", "board_grey"]), rng,
-                   at=(0.0, 0.1, 0.0), nails=False)
-            from build_slamcity_city import yaw_matrix  # noqa: PLC0415
-            m = yaw_matrix((x, 0.015, z), rng.uniform(0, PI), 1.0, PI / 2)
-            b.main.extend(sub.main, m)
-            b.detail.extend(sub.detail, m)
-    # Blood: dragged in from every window toward the middle, and smeared on
-    # the sills.
-    for wx, wz, along, inward in ZA_WINDOWS:
-        for k in range(rng.randint(3, 6)):
-            d = 0.8 + k * rng.uniform(0.7, 1.3)
-            lat = rng.gauss(0, 0.4)
-            x, z = (wx + lat, wz + inward * d) if along == "x" else (wx + inward * d, wz + lat)
-            stain(b, "arena_dirt", x, 0.004, z, rng.uniform(0.25, 0.6) / (1 + k * 0.25), 0.35, rng, gloss=0.6,
-                  tint=(0.75, 0.3, 0.26))
-    # Kit dropped by the defenders round the middle.
-    for x, z in ((-6.5, -2.0), (7.0, 2.6), (-2.0, 8.5), (2.5, -9.0)):
-        ammo_can(b, x, z, rng.uniform(0, PI))
-        ammo_can(b, x + 0.35, z + 0.1, rng.uniform(0, PI))
-    for x, z in ((-7.0, -2.6), (6.4, 3.4), (-1.0, 9.2)):
-        backpack(b, x, z, rng.uniform(0, PI), rng)
-    for x, z in ((-5.8, -2.9), (2.0, -8.3)):
-        helmet(b, x, z, rng.uniform(0, PI))
-    for _ in range(120):
-        r, a = rng.uniform(1.0, 7.0), rng.uniform(0, 2 * PI)
-        casing(b, math.cos(a) * r, 0.0, math.sin(a) * r, rng.uniform(0, 2 * PI))
-    # Floodlights clamped to the tops of the four big columns, aimed out at
-    # the walls the zombies come over, with their cables down the brick.
-    for x, z in ((0.0, -15.0), (0.0, 15.0), (-15.0, 0.0), (15.0, 0.0)):
-        yaw = math.atan2(x, z)
-        c, s = math.cos(yaw), math.sin(yaw)
-        b.box(x - 0.08, x + 0.08, 4.0, 4.45, z - 0.08, z + 0.08, "steel_dark")
-        for side in (-0.35, 0.35):
-            light_head(b, x + side * c + 0.4 * s, 4.5, z - side * s + 0.4 * c, yaw, tip=0.6)
-        b.tube([(x + 1.42 * s, 4.0, z + 1.42 * c), (x + 1.42 * s, 0.05, z + 1.42 * c),
-                (x + 2.2 * s, 0.0, z + 2.2 * c)], 0.014, "cable", sides=4)
-    # Emergency beacons over the gates, in the yard.
-    for x in (-23.85, 23.85):
-        b.box(x - 0.12, x + 0.12, 4.25, 4.33, 3.85, 4.15, "steel_dark")
-        b.cyl("y", 4.33, 4.5, (x, 4.0), 0.07, "beacon", sides=10)
-    _za_wall_streaks(b, rng)
-    # Weeds along the walls.
-    for side in range(4):
-        t = -23.5
-        while t < 23.0:
-            t += rng.uniform(1.0, 3.5)
-            x, z = [(t, -23.8), (t, 23.8), (-23.8, t), (23.8, t)][side]
-            if _za_clear(x, z, margin=-1.0):
-                weed_tuft(b, x, z, rng, blades=rng.randint(5, 9), size=rng.uniform(0.2, 0.4))
 
 
 assert "map_testing_dressing" in MODELS

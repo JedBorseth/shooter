@@ -42,7 +42,6 @@ pub mod streak;
 pub mod tdm;
 pub mod turret;
 pub mod weapon;
-pub mod zombies;
 
 pub use glam::{Mat3, Vec2, Vec3};
 

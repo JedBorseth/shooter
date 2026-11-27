@@ -5,8 +5,8 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|breakwater|zombies]
-##            [--mode tdm|ctf|hardpoint|dom|gungame|snd|zombies] [--kills-per-weapon N]
+##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|breakwater]
+##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##            [--accounts URL] [--custom SETTINGS]
@@ -24,10 +24,8 @@ extends Node
 ##                                    (250), Domination to N points (200), or
 ##                                    MINUTES (10), or Gun Game with N
 ##                                    kills per weapon (2), or Search and Destroy to
-##                                    N rounds (6), or co-op Zombies for up to
-##                                    four players (on the zombies map; it has
-##                                    no bots, so --bots is ignored there);
-##                                    --auto-start skips the lobby's ready-up.
+##                                    N rounds (6); --auto-start skips the
+##                                    lobby's ready-up.
 ##                                    --accounts URL admits only players signed
 ##                                    in to that account server, checks their
 ##                                    unlocks, and reports their match XP; the
@@ -69,7 +67,6 @@ const MAP_SCENES := {
 	"slamcity": "res://scenes/slamcity.tscn",
 	"warehouse": "res://scenes/warehouse.tscn",
 	"breakwater": "res://scenes/breakwater.tscn",
-	"zombies": "res://scenes/zombies_arena.tscn",
 }
 ## Names server browsers show for each map.
 const MAP_NAMES := {
@@ -78,7 +75,6 @@ const MAP_NAMES := {
 	"slamcity": "Slamcity",
 	"warehouse": "Warehouse",
 	"breakwater": "Breakwater",
-	"zombies": "Zombies Arena",
 }
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
@@ -107,9 +103,6 @@ const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
 const LOCAL_PORT := 27035
-## Port of a local server shared with friends: inside the range a LAN search
-## asks (`LAN_QUERY_PORTS`), so they find it under Multiplayer, LAN.
-const SHARED_PORT := 27027
 const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
 
 ## Set by `leave`: the title screen opens the server browser and shows
@@ -121,9 +114,6 @@ var _client: NetClient
 ## Process id of the server `start_local_match` started, or -1.
 var _local_server_pid := -1
 var _local_pause_file := ""
-## The local server is open to friends: it does not pause, and answers
-## server browsers.
-var _local_shared := false
 
 
 func _ready() -> void:
@@ -187,22 +177,18 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
-## "tdm", "ctf", "hardpoint", "dom", "gungame", "snd", or "zombies"; `map`,
+## "tdm", "ctf", "hardpoint", "dom", "gungame", or "snd"; `map`,
 ## `bots`, `bot_skill`, `score_limit` (0 for the mode's usual limit),
 ## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`, `name`,
 ## `auto_start` to skip the ready-up, `custom` for a custom game's settings in
 ## their text form, `spectate` to join as a spectator) and joins it. The server pauses with
-## the pause menu and does not answer server browsers, unless `shared`: then
-## friends on the network find it under Multiplayer, LAN (or join it
-## directly), and it never pauses. A shared one with a `master` also lists
-## itself on that server directory (Multiplayer, Internet).
+## the pause menu and does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
-	_local_shared = bool(options.get("shared", false))
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
 	DirAccess.remove_absolute(_local_pause_file)
 	var map := String(options.get("map", "slamcity"))
-	var port := SHARED_PORT if _local_shared else LOCAL_PORT
+	var port := LOCAL_PORT
 	var server_name := String(options.get("name", "Local match"))
 	var args := local_server_args(options, port, _local_pause_file)
 	_local_server_pid = OS.create_process(OS.get_executable_path(), args)
@@ -216,11 +202,8 @@ func start_local_match(options: Dictionary) -> void:
 
 
 ## The command line for the server process `start_local_match` starts on
-## `port` (`pause_file`: the private server's pause flag). A shared server
-## with a `master` (a directory address) also lists itself there, so it
-## shows under Multiplayer, Internet as well as LAN.
+## `port` (`pause_file`: the server's pause flag).
 func local_server_args(options: Dictionary, port: int, pause_file: String) -> PackedStringArray:
-	var shared := bool(options.get("shared", false))
 	var map := String(options.get("map", "slamcity"))
 	var server_name := String(options.get("name", "Local match"))
 	var server_log := OS.get_user_data_dir().path_join("logs/local-server.log")
@@ -256,12 +239,8 @@ func local_server_args(options: Dictionary, port: int, pause_file: String) -> Pa
 			]
 		)
 	)
-	# Only a server nobody else can join pauses, and only it hides from
-	# server browsers.
-	if not shared:
-		args.append_array(["--query-port", "-1", "--pause-file", pause_file])
-	elif String(options.get("master", "")) != "":
-		args.append_array(["--master", String(options.get("master"))])
+	# Nobody else can join it: it pauses, and hides from server browsers.
+	args.append_array(["--query-port", "-1", "--pause-file", pause_file])
 	if bool(options.get("auto_start", false)):
 		args.append("--auto-start")
 	var custom := String(options.get("custom", ""))
@@ -283,10 +262,9 @@ func stop_local_server() -> void:
 	_local_pause_file = ""
 
 
-## Only matches launched by this client, and not shared with friends, may
-## pause their dedicated process.
+## Only matches launched by this client may pause their dedicated process.
 func is_local_match() -> bool:
-	return _local_server_pid > 0 and not _local_shared
+	return _local_server_pid > 0
 
 
 func set_local_paused(value: bool) -> void:
@@ -322,7 +300,7 @@ func leave(message := "") -> void:
 
 
 ## Only known local map scenes can be selected by a server listing.
-## Takes a map id ("zombies") or the name browsers show ("Zombies Arena").
+## Takes a map id ("breakwater") or the name browsers show ("Breakwater").
 static func map_path(map_name: String) -> String:
 	var key := map_name.to_lower()
 	for id: String in MAP_NAMES:
@@ -343,7 +321,7 @@ func _start_server(options: Dictionary) -> void:
 	server.map_scene = load(scene_path) as PackedScene
 	server.map_name = MAP_NAMES[selected_map.to_lower()]
 	server.port = int(options.get("port", DEFAULT_PORT))
-	server.bots = server_bots(options)
+	server.bots = int(options.get("bots", 0))
 	server.bots_deal_damage = options.has("bot-damage")
 	server.bot_skill = String(options.get("bot-skill", ""))
 	if String(options.get("name", "")) != "":
@@ -362,7 +340,7 @@ func _start_server(options: Dictionary) -> void:
 		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
 	server.custom_settings = String(options.get("custom", ""))
-	server.team_bots = "" if is_zombies(options) else String(options.get("team-bots", ""))
+	server.team_bots = String(options.get("team-bots", ""))
 	server.team_bot_skill = String(options.get("team-bot-skill", ""))
 	var accounts := String(options.get("accounts", ""))
 	if not accounts.is_empty():
@@ -383,24 +361,6 @@ func _start_server(options: Dictionary) -> void:
 	tree.current_scene = server
 	if previous != null:
 		previous.queue_free()
-
-
-## Whether a dedicated server's `options` run co-op Zombies.
-static func is_zombies(options: Dictionary) -> bool:
-	return String(options.get("mode", "tdm")).strip_edges().to_lower() in ["zombies", "zm"]
-
-
-## Bots a dedicated server started with `options` spawns: `--bots`, except
-## in Zombies. Black Ops has no Zombies bots, and ours would join the co-op
-## team and all go down in round 1, so `--bots` and `--team-bots` are ignored
-## there with a log line.
-static func server_bots(options: Dictionary) -> int:
-	var bots := int(options.get("bots", 0))
-	if not is_zombies(options):
-		return bots
-	if bots > 0 or String(options.get("team-bots", "")) != "":
-		print("server: Zombies has no bots; --bots and --team-bots ignored")
-	return 0
 
 
 ## Quits once `server` has had no connections for `seconds`: a server the

@@ -93,7 +93,6 @@ Standard rules, from Call of Duty's core playlists. Built ones are in
 | Gun Game | free-for-all up a weapon ladder; a kill advances, a melee kill sets the victim back a weapon | `gun_game.rs`, built without the melee setback |
 | Domination | three flags (A, B, C), a point per flag held every few seconds, to about 200, halftime swap | TODO.md |
 | Kill Confirmed | a kill scores only when a teammate collects the dropped tag; collecting your team's denies it | not built |
-| Zombies | rounds of growing hordes, points for hits and kills spent on doors, weapons, and perks, barriers to repair | `zombies.rs`; straight-line chase and the two-hit rule are the user's choices |
 
 Match flow: a pre-match lobby or warm-up, a countdown, the match with a clock
 and score limit, a banner (VICTORY, DEFEAT, DRAW), the final killcam, then the

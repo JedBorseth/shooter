@@ -617,7 +617,7 @@ func _check_bindings(settings: Node) -> void:
 	_check(Glyphs.plain("pad:x") == "Square", "a PlayStation pad calls it Square")
 	_check(Glyphs.texture("pad:rt") != null, "the PlayStation set has R2")
 	_check(
-		Glyphs.plain_text("Hold [pad:x] to revive") == "Hold [Square] to revive",
+		Glyphs.plain_text("Hold [pad:x] to defuse") == "Hold [Square] to defuse",
 		"labels get the button in words"
 	)
 	Glyphs.family = Glyphs.Family.XBOX

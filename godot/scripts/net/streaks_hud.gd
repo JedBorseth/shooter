@@ -102,7 +102,7 @@ func _process(delta: float) -> void:
 		or bool(client.match_info().get("spectator", false))
 	)
 	visible = (
-		mode not in ["zombies", "gungame"]
+		mode != "gungame"
 		and not off
 		and not client.in_killcam()
 		and client.piloting() < 0

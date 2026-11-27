@@ -19,7 +19,6 @@ pub mod bits;
 pub mod conditioner;
 pub mod delta;
 pub mod discovery;
-pub mod horde;
 pub mod input_queue;
 pub mod integrity;
 pub mod interpolation;

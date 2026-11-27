@@ -1,9 +1,8 @@
 """Render the country beyond a map's walls into a horizon strip.
 
-    blender -b --factory-startup --python tools/build_horizon.py [-- --night | --warehouse] [--preview]
+    blender -b --factory-startup --python tools/build_horizon.py [-- --warehouse] [--preview]
 
-By day (the default) it renders the Testing Area's country; with --night, the
-Zombies arena's surroundings at night (see `night_main`); with --warehouse,
+By day (the default) it renders the Testing Area's country; with --warehouse,
 Warehouse's industrial outskirts by day (see `warehouse_main`).
 
 Writes two images that shaders/day_sky.gdshader lays round the horizon:
@@ -67,7 +66,6 @@ MIST_DEPTH = 3000.0
 SAMPLES = 96
 
 PREVIEW = "--preview" in sys.argv
-NIGHT = "--night" in sys.argv
 WAREHOUSE = "--warehouse" in sys.argv
 # A full-resolution preview of the 60 degrees toward the sun and away.
 SECTOR = "--sector" in sys.argv
@@ -693,23 +691,10 @@ def write_png(path: Path, pixels: np.ndarray) -> None:
     path.write_bytes(png)
 
 
-# --- Night: the Zombies arena's surroundings ---------------------------------
+# --- Shared: bearings and box-built parts -----------------------------------
 #
-# The arena stands at the edge of a town, under a moon at the Moon light's
-# elevation (scenes/zombies_arena.tscn), with the strip's middle column toward
-# its bearing. Its 5 m walls hide everything below about 8 degrees from the
-# middle of the yard, so what shows over them must be tall: belts of trees on
-# rising ground, apartment blocks and a factory with chimneys in the town,
-# a water tower, a church spire, and a line of electricity pylons. A few
-# windows are lit, sodium street lamps glow along the town's streets, and red
-# lights mark the tall things. The sky shader adds the town's glow.
-
-NIGHT_MOON_ELEVATION = 60.7
-NIGHT_CLEAR = 90.0
-NIGHT_FAR = 2600.0
-# Bearings in degrees from the strip's middle column (toward the moon),
-# clockwise seen from above: Blender's +Y turning toward +X.
-NIGHT_TOWN = (95.0, 215.0)
+# Bearings in degrees from the strip's middle column, clockwise seen from
+# above: Blender's +Y turning toward +X.
 
 
 def bearing_xy(bearing: float, r: float) -> tuple[float, float]:
@@ -719,134 +704,6 @@ def bearing_xy(bearing: float, r: float) -> tuple[float, float]:
 
 def bearing_of(x: float, y: float) -> float:
     return math.degrees(math.atan2(x, y)) % 360.0
-
-
-def in_town(x: float, y: float) -> float:
-    """How far into the town's sector a point is: 1 inside, 0 outside."""
-    b = bearing_of(x, y)
-    lo, hi = NIGHT_TOWN
-    return smoothstep(lo - 10.0, lo + 5.0, b) * (1.0 - smoothstep(hi - 5.0, hi + 10.0, b))
-
-
-def night_height(x: float, y: float) -> float:
-    r = math.hypot(x, y)
-    rise = 0.07 * max(r - 70.0, 0.0) * smoothstep(70.0, 220.0, r)
-    rise -= 0.04 * max(r - 1200.0, 0.0)
-    hills = noise.fractal(Vector((x / 500.0, y / 500.0, 5.3)), 1.0, 2.0, 4, noise_basis="PERLIN_NEW")
-    amp = 22.0 * smoothstep(150.0, 500.0, r) * (1.0 - 0.7 * in_town(x, y))
-    return rise + amp * hills
-
-
-def night_woods(x: float, y: float) -> float:
-    wood = noise.fractal(Vector((x / 380.0, y / 380.0, 7.7)), 1.0, 2.0, 3, noise_basis="PERLIN_NEW")
-    return wood - 0.35 * in_town(x, y)
-
-
-def night_lighting() -> None:
-    scene = bpy.context.scene
-    world = bpy.data.worlds.new("Night")
-    world.use_nodes = True
-    bg = world.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.05, 0.065, 0.1, 1.0)
-    bg.inputs["Strength"].default_value = 1.0
-    world.mist_settings.start = 0.0
-    world.mist_settings.depth = MIST_DEPTH
-    world.mist_settings.falloff = "LINEAR"
-    scene.world = world
-    moon_data = bpy.data.lights.new("Moon", "SUN")
-    moon_data.energy = 0.35
-    moon_data.color = (0.62, 0.72, 1.0)
-    moon_data.angle = math.radians(0.6)
-    moon = bpy.data.objects.new("Moon", moon_data)
-    moon.rotation_euler = (-math.radians(90.0 - NIGHT_MOON_ELEVATION), 0.0, 0.0)
-    scene.collection.objects.link(moon)
-
-
-def night_ground() -> None:
-    rings = [2.0, 10.0, 25.0, 45.0]
-    r = 70.0
-    while r < NIGHT_FAR:
-        rings.append(r)
-        r *= 1.012
-    rings.append(NIGHT_FAR)
-    segments = 2048 if not PREVIEW else 768
-    verts, colours, faces = [], [], []
-    for r in rings:
-        for s in range(segments):
-            a = 2.0 * math.pi * s / segments
-            x, y = r * math.cos(a), r * math.sin(a)
-            verts.append((x, y, night_height(x, y)))
-            _, cell = fields(x, y)
-            m = 0.6 + 0.08 * (cell % 5)
-            base = Vector((0.1, 0.11, 0.07)) * m
-            base = base.lerp(Vector((0.12, 0.12, 0.12)), in_town(x, y))
-            colours.append((base.x, base.y, base.z, 1.0))
-    for i in range(len(rings) - 1):
-        for s in range(segments):
-            a = i * segments + s
-            b = i * segments + (s + 1) % segments
-            faces.append((a, b, b + segments, a + segments))
-    mesh = bpy.data.meshes.new("Land")
-    mesh.from_pydata(verts, [], faces)
-    mesh.shade_smooth()
-    attr = mesh.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
-    attr.data.foreach_set("color", [c for col in colours for c in col])
-    obj = bpy.data.objects.new("Land", mesh)
-    bpy.context.scene.collection.objects.link(obj)
-    obj.data.materials.append(land_material())
-
-
-def night_scatter(first_conifer: int, first_bush: int) -> list:
-    rng = random.Random(23)
-    out = []
-    step = 7.0
-    n = int(NIGHT_FAR / step)
-    for i in range(-n, n + 1):
-        for j in range(-n, n + 1):
-            x = (i + rng.random()) * step
-            y = (j + rng.random()) * step
-            r = math.hypot(x, y)
-            if r < NIGHT_CLEAR or r > NIGHT_FAR - 50.0:
-                continue
-            town = in_town(x, y)
-            edge, _ = fields(x, y)
-            wood = night_woods(x, y)
-            p = 0.004 + 0.05 * town
-            if edge < 3.0:
-                p = 0.4 * (1.0 - town)
-            if wood > 0.12:
-                p = 0.9
-            elif wood > 0.06:
-                p = max(p, 0.3)
-            if r > 1200.0:
-                p *= 0.5
-            if rng.random() > p:
-                continue
-            conif = noise.noise(Vector((x / 260.0, y / 260.0, 2.0))) > 0.1
-            if conif and rng.random() < 0.8:
-                kind = first_conifer + rng.randrange(4)
-                size = rng.uniform(14.0, 22.0)
-            else:
-                kind = rng.randrange(first_conifer)
-                size = rng.uniform(11.0, 19.0)
-            # Nothing may reach over the strip's top edge.
-            size = min(size, 0.25 * r)
-            tint = rng.uniform(0.0, 0.5)
-            out.append((Vector((x, y, night_height(x, y) - 0.3)), kind, size, rng.uniform(0, 2 * math.pi), tint))
-    return out
-
-
-def emissive(name: str, colour: tuple, strength: float) -> bpy.types.Material:
-    mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    nodes.clear()
-    em = nodes.new("ShaderNodeEmission")
-    em.inputs["Color"].default_value = (*colour, 1.0)
-    em.inputs["Strength"].default_value = strength
-    out = nodes.new("ShaderNodeOutputMaterial")
-    mat.node_tree.links.new(em.outputs[0], out.inputs["Surface"])
-    return mat
 
 
 class Parts:
@@ -879,140 +736,6 @@ class Parts:
             mesh.from_pydata(verts, [], faces)
             mesh.materials.append(materials[name])
             bpy.context.scene.collection.objects.link(bpy.data.objects.new(name, mesh))
-
-
-def facade_windows(parts: Parts, rng: random.Random, centre: Vector, size, turn: float, lit: float,
-                   floor_h: float = 3.0, bay: float = 3.2) -> None:
-    """Lit windows on a block's four faces: a few of its grid of bays."""
-    rot = Matrix.Rotation(turn, 3, "Z")
-    w, d, h = size
-    for face in range(4):
-        along = w if face % 2 == 0 else d
-        out = (d if face % 2 == 0 else w) / 2 + 0.05
-        normal = [Vector((0, -1, 0)), Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((-1, 0, 0))][face]
-        tangent = Vector((normal.y, -normal.x, 0.0))
-        cols = max(1, int(along / bay))
-        rows = max(1, int((h - 1.0) / floor_h))
-        for c in range(cols):
-            for row in range(rows):
-                if rng.random() > lit:
-                    continue
-                u = (c + 0.5) * along / cols - along / 2
-                z = 1.0 + row * floor_h + floor_h * 0.3
-                p = normal * out + tangent * u
-                corners = []
-                for du, dz in ((-0.7, 0.0), (0.7, 0.0), (0.7, 1.4), (-0.7, 1.4)):
-                    q = rot @ (p + tangent * du)
-                    corners.append(Vector(centre) + q + Vector((0, 0, z + dz)))
-                warm = "window_warm" if rng.random() < 0.75 else "window_cool"
-                parts.quad(warm, corners)
-
-
-def night_town() -> None:
-    rng = random.Random(41)
-    parts = Parts()
-    # Apartment blocks and terraces in the town's sector.
-    for _ in range(70):
-        b = rng.uniform(*NIGHT_TOWN)
-        r = rng.uniform(200.0, 900.0)
-        x, y = bearing_xy(b, r)
-        z = night_height(x, y) - 0.5
-        tall = rng.choice((9.0, 12.0, 15.0, 21.0, 27.0, 33.0, 42.0)) if rng.random() < 0.6 else rng.uniform(6.0, 9.0)
-        size = (rng.uniform(14.0, 40.0), rng.uniform(10.0, 16.0), tall)
-        turn = math.radians(b) + rng.choice((0.0, math.pi / 2)) + rng.uniform(-0.2, 0.2)
-        parts.box("concrete", (x, y, z), size, turn)
-        # A roof plant room on the tall ones.
-        if tall > 20.0:
-            parts.box("concrete", (x, y, z + tall), (size[0] * 0.3, size[1] * 0.4, 3.0), turn)
-        facade_windows(parts, rng, Vector((x, y, z)), size, turn, 0.14 if tall > 12 else 0.25)
-    # Houses on the town's edge.
-    for _ in range(120):
-        b = rng.uniform(NIGHT_TOWN[0] - 8.0, NIGHT_TOWN[1] + 8.0)
-        r = rng.uniform(140.0, 450.0)
-        x, y = bearing_xy(b, r)
-        z = night_height(x, y) - 0.3
-        turn = rng.uniform(0.0, math.pi)
-        parts.box("brick", (x, y, z), (11.0, 8.0, 6.0), turn)
-        parts.box("roof", (x, y, z + 6.0), (11.5, 5.0, 2.8), turn)
-        facade_windows(parts, rng, Vector((x, y, z)), (11.0, 8.0, 6.0), turn, 0.2, floor_h=3.0, bay=3.6)
-    # Street lamps along three streets running out through the town.
-    for k, b0 in enumerate((115.0, 150.0, 190.0)):
-        for n in range(30):
-            r = 160.0 + n * 26.0
-            b = b0 + 6.0 * math.sin(r / 140.0 + k)
-            x, y = bearing_xy(b, r)
-            z = night_height(x, y)
-            parts.box("steel", (x, y, z), (0.25, 0.25, 7.5))
-            parts.box("sodium", (x, y, z + 7.5), (0.9, 0.9, 0.45))
-    # A factory with two chimneys, and a water tower.
-    fx, fy = bearing_xy(250.0, 650.0)
-    fz = night_height(fx, fy) - 0.5
-    parts.box("concrete", (fx, fy, fz), (90.0, 45.0, 16.0), 0.3)
-    parts.box("concrete", (fx + 20, fy - 5, fz), (40.0, 30.0, 24.0), 0.3)
-    for dx in (-15.0, 5.0):
-        cx, cy = fx + dx, fy + 30.0
-        parts.box("brick", (cx, cy, fz), (5.0, 5.0, 62.0))
-        parts.box("aviation", (cx, cy, fz + 62.0), (1.6, 1.6, 1.0))
-    facade_windows(parts, rng, Vector((fx, fy, fz)), (90.0, 45.0, 16.0), 0.3, 0.1, floor_h=5.0, bay=6.0)
-    wx, wy = bearing_xy(35.0, 260.0)
-    wz = night_height(wx, wy)
-    for a in range(4):
-        lx, ly = wx + 4.0 * math.cos(a * math.pi / 2 + 0.4), wy + 4.0 * math.sin(a * math.pi / 2 + 0.4)
-        parts.box("steel", (lx, ly, wz), (0.5, 0.5, 26.0))
-    parts.box("steel", (wx, wy, wz + 26.0), (11.0, 11.0, 7.0), 0.4)
-    parts.box("steel", (wx, wy, wz + 33.0), (6.0, 6.0, 2.0), 0.4)
-    parts.box("aviation", (wx, wy, wz + 35.0), (1.2, 1.2, 0.8))
-    # A church spire among the houses.
-    sx, sy = bearing_xy(165.0, 380.0)
-    sz = night_height(sx, sy)
-    parts.box("brick", (sx, sy, sz), (20.0, 9.0, 13.0), 0.2)
-    parts.box("brick", (sx + 9, sy, sz), (6.0, 6.0, 26.0), 0.2)
-    for k in range(6):
-        w = 5.0 * (1.0 - k / 6.0)
-        parts.box("roof", (sx + 9, sy, sz + 26.0 + k * 3.0), (w, w, 3.0), 0.2)
-    # Electricity pylons on a line that passes 320 m from the arena.
-    for n in range(-9, 10):
-        t = n * 260.0
-        nx, ny = bearing_xy(300.0, 320.0)
-        dx, dy = bearing_xy(30.0, 1.0)
-        px, py = nx + dx * t, ny + dy * t
-        if math.hypot(px, py) > NIGHT_FAR - 100.0:
-            continue
-        pz = night_height(px, py) - 0.3
-        turn = math.radians(30.0)
-        for sx_ in (-3.0, 3.0):
-            for sy_ in (-3.0, 3.0):
-                q = Matrix.Rotation(turn, 3, "Z") @ Vector((sx_, sy_, 0.0))
-                parts.box("steel", (px + q.x * 0.5, py + q.y * 0.5, pz), (0.5, 0.5, 34.0))
-        parts.box("steel", (px, py, pz), (2.0, 2.0, 40.0), turn)
-        for h_ in (26.0, 33.0):
-            parts.box("steel", (px, py, pz + h_), (0.6, 16.0, 0.6), turn)
-        if n % 3 == 0:
-            parts.box("aviation", (px, py, pz + 40.0), (1.0, 1.0, 0.6))
-    mats = {
-        "concrete": solid_material("NightConcrete", (0.16, 0.16, 0.16)),
-        "brick": solid_material("NightBrick", (0.14, 0.09, 0.07)),
-        "roof": solid_material("NightRoof", (0.07, 0.07, 0.08)),
-        "steel": solid_material("NightSteel", (0.12, 0.12, 0.13), 0.6, 0.4),
-        "window_warm": emissive("WindowWarm", (1.0, 0.72, 0.42), 2.0),
-        "window_cool": emissive("WindowCool", (0.65, 0.78, 1.0), 1.6),
-        "sodium": emissive("Sodium", (1.0, 0.55, 0.18), 6.0),
-        "aviation": emissive("Aviation", (1.0, 0.08, 0.04), 6.0),
-    }
-    parts.build(mats)
-
-
-def night_main() -> None:
-    reset()
-    night_lighting()
-    camera()
-    night_ground()
-    coll, first_conifer, first_bush = tree_kinds()
-    trees = night_scatter(first_conifer, first_bush)
-    print(f"horizon: {len(trees)} trees")
-    plant(coll, trees)
-    night_town()
-    pack("zombies")
 
 
 def pack(name: str) -> None:
@@ -2255,9 +1978,7 @@ def warehouse_main() -> None:
     pack("warehouse")
 
 
-if NIGHT:
-    night_main()
-elif WAREHOUSE:
+if WAREHOUSE:
     warehouse_main()
 else:
     main()

@@ -13,9 +13,9 @@
 //! - **Rotational**: while the player is moving or looking, the view follows
 //!   part of the enemy's motion relative to the camera, so strafing past an
 //!   enemy, or an enemy strafing, keeps the crosshair with them.
-//! - **Target aim assist**: starting to aim down sights with a zombie near the
-//!   crosshair eases the view onto it. Like CoD, this is for Zombies only;
-//!   players and bots never get a snap.
+//!
+//! Like Call of Duty's multiplayer, there is no target aim assist: aiming
+//! down sights never snaps onto a player or bot.
 //!
 //! There is one tuning, [`AimAssistParams::default`]; the setting only turns
 //! aim assist on or off. Every part fades out toward the end of the assist
@@ -176,13 +176,6 @@ pub struct AimAssistParams {
     pub rotation_hip: f32,
     /// Fraction of the enemy's relative motion the view follows, aimed.
     pub rotation_ads: f32,
-    /// Target aim assist (zombies only): the angle from the crosshair to the
-    /// upper body within which starting to aim snaps on, in radians.
-    pub snap_cone: f32,
-    /// How fast the snap closes on the zombie, per second.
-    pub snap_rate: f32,
-    /// How long one snap lasts, in seconds.
-    pub snap_time: f32,
     /// How much nearer the crosshair another enemy must be before the assist
     /// moves to them: 0.4 means 40% more weight.
     pub stickiness: f32,
@@ -199,15 +192,12 @@ impl Default for AimAssistParams {
             slowdown_ads: 0.5,
             rotation_hip: 0.45,
             rotation_ads: 0.45,
-            snap_cone: 7_f32.to_radians(),
-            snap_rate: 7.0,
-            snap_time: 0.18,
             stickiness: 0.4,
         }
     }
 }
 
-/// Where on the body the snap and rotational aim, as a fraction from the
+/// Where on the body rotational aims, as a fraction from the
 /// bottom of the capsule's core to its top: the upper chest.
 const UPPER_BODY: f32 = 0.75;
 
@@ -220,8 +210,6 @@ pub struct AssistTarget {
     pub bottom: Vec3,
     pub top: Vec3,
     pub radius: f32,
-    /// Target aim assist snaps onto this body when aiming starts (zombies).
-    pub snap: bool,
 }
 
 impl AssistTarget {
@@ -229,7 +217,7 @@ impl AssistTarget {
         (self.bottom + self.top) * 0.5
     }
 
-    /// The upper chest, where the snap lands.
+    /// The upper chest, which rotational follows.
     pub fn upper_body(&self) -> Vec3 {
         self.bottom.lerp(self.top, UPPER_BODY)
     }
@@ -267,23 +255,14 @@ impl AssistOutput {
     };
 }
 
-/// A snap in progress.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Snap {
-    id: u64,
-    left: f32,
-}
-
-/// Aim assist state: the enemy being followed, its last bearing, and the snap.
+/// Aim assist state: the enemy being followed and its last bearing.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AimAssist {
     tracked: Option<(u64, Vec2)>,
-    snap: Option<Snap>,
-    was_aiming: bool,
 }
 
 impl AimAssist {
-    /// Forgets the followed enemy and any snap, for example when switching to
+    /// Forgets the followed enemy, for example when switching to
     /// the mouse.
     pub fn reset(&mut self) {
         *self = Self::default();
@@ -291,21 +270,14 @@ impl AimAssist {
 
     /// Picks the enemy to assist on and returns the slowdown and rotation to
     /// apply this frame. `targets` should already be filtered for line of
-    /// sight; `dt` is the frame time in seconds.
+    /// sight.
     pub fn update(
         &mut self,
         view: &AssistView,
         targets: &[AssistTarget],
         params: &AimAssistParams,
-        dt: f32,
     ) -> AssistOutput {
         let forward = view_direction(view.yaw, view.pitch);
-        let aiming = view.ads > 0.001;
-        let started_aiming = aiming && !self.was_aiming;
-        self.was_aiming = aiming;
-
-        let mut rotation = self.snap_step(view, forward, targets, params, started_aiming, dt);
-
         let current = self.tracked.map(|(id, _)| id);
         let best = targets
             .iter()
@@ -322,11 +294,7 @@ impl AimAssist {
 
         let Some((target, weight, _)) = best else {
             self.tracked = None;
-            return AssistOutput {
-                rotation,
-                target: self.snap.map(|s| s.id),
-                ..AssistOutput::NONE
-            };
+            return AssistOutput::NONE;
         };
 
         let slowdown = lerp(
@@ -338,6 +306,7 @@ impl AimAssist {
         // Rotational: the bearing of a fixed point on the body changes only
         // when the player or the enemy moves, never when the player turns, so
         // following its change cannot feed back into the player's own look.
+        let mut rotation = Vec2::ZERO;
         let bearing_now = bearing(view.eye, target.upper_body());
         if let Some((id, previous)) = self.tracked
             && id == target.id
@@ -357,75 +326,6 @@ impl AimAssist {
             target: Some(target.id),
         }
     }
-
-    /// Target aim assist: starts a snap when aiming begins near a zombie, and
-    /// returns this frame's share of a snap in progress.
-    fn snap_step(
-        &mut self,
-        view: &AssistView,
-        forward: Vec3,
-        targets: &[AssistTarget],
-        params: &AimAssistParams,
-        started_aiming: bool,
-        dt: f32,
-    ) -> Vec2 {
-        if started_aiming
-            && params.snap_cone > 0.0
-            && let Some(target) = snap_candidate(view.eye, forward, targets, params)
-        {
-            self.snap = Some(Snap {
-                id: target.id,
-                left: params.snap_time,
-            });
-        }
-        if view.ads <= 0.001 {
-            self.snap = None;
-        }
-        let Some(snap) = &mut self.snap else {
-            return Vec2::ZERO;
-        };
-        let Some(target) = targets.iter().find(|t| t.id == snap.id) else {
-            self.snap = None;
-            return Vec2::ZERO;
-        };
-        let offset = angle_offset(view, target.upper_body());
-        let step_time = dt.min(snap.left);
-        snap.left -= dt;
-        if snap.left <= 0.0 {
-            self.snap = None;
-        }
-        offset * (1.0 - fmath::exp(-params.snap_rate * step_time))
-    }
-}
-
-/// The snappable body whose upper chest is nearest the crosshair inside the
-/// snap cone.
-fn snap_candidate<'a>(
-    eye: Vec3,
-    forward: Vec3,
-    targets: &'a [AssistTarget],
-    params: &AimAssistParams,
-) -> Option<&'a AssistTarget> {
-    targets
-        .iter()
-        .filter(|target| target.snap)
-        .filter_map(|target| {
-            let to = target.upper_body() - eye;
-            let distance = to.length();
-            if distance > params.range || distance < 0.1 {
-                return None;
-            }
-            let angle = fmath::atan2(to.cross(forward).length(), to.dot(forward));
-            (angle <= params.snap_cone).then_some((target, angle))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(target, _)| target)
-}
-
-/// The yaw and pitch that would put the crosshair on `point`.
-fn angle_offset(view: &AssistView, point: Vec3) -> Vec2 {
-    let b = bearing(view.eye, point);
-    Vec2::new(wrap_angle(b.x - view.yaw), b.y - view.pitch)
 }
 
 /// Unit view direction for Godot yaw and pitch (yaw 0 looks down -Z).
@@ -520,14 +420,6 @@ mod tests {
             bottom: Vec3::new(x, 0.3, z),
             top: Vec3::new(x, 1.45, z),
             radius: 0.3,
-            snap: false,
-        }
-    }
-
-    fn zombie(id: u64, x: f32, z: f32) -> AssistTarget {
-        AssistTarget {
-            snap: true,
-            ..dummy(id, x, z)
         }
     }
 
@@ -544,11 +436,6 @@ mod tests {
 
     fn default_params() -> AimAssistParams {
         AimAssistParams::default()
-    }
-
-    /// Angle from the crosshair to a point.
-    fn miss_angle(view: &AssistView, point: Vec3) -> f32 {
-        angle_offset(view, point).length()
     }
 
     #[test]
@@ -614,7 +501,7 @@ mod tests {
         let eye = Vec3::new(0.0, 1.6, 0.0);
         let mut assist = AimAssist::default();
 
-        let on = assist.update(&view_at(eye, target.center()), &[target], &params, DT);
+        let on = assist.update(&view_at(eye, target.center()), &[target], &params);
         assert_eq!(on.target, Some(1));
         assert!((on.slowdown - params.slowdown_hip).abs() < 1e-5);
 
@@ -622,7 +509,6 @@ mod tests {
             &view_at(eye, Vec3::new(0.8, 1.0, -10.0)),
             &[target],
             &params,
-            DT,
         );
         assert!(near.slowdown > on.slowdown && near.slowdown < 1.0);
 
@@ -630,7 +516,6 @@ mod tests {
             &view_at(eye, Vec3::new(4.0, 1.0, -10.0)),
             &[target],
             &params,
-            DT,
         );
         assert_eq!(off, AssistOutput::NONE);
     }
@@ -644,7 +529,7 @@ mod tests {
             let edge = (target.radius / distance).atan() + 1.5_f32.to_radians();
             let mut view = view_at(eye, target.center());
             view.yaw -= edge;
-            let out = AimAssist::default().update(&view, &[target], &params, DT);
+            let out = AimAssist::default().update(&view, &[target], &params);
             assert_eq!(out.target, Some(1), "at {distance} m");
         }
     }
@@ -655,7 +540,7 @@ mod tests {
         let target = dummy(1, 0.0, -10.0);
         let mut view = view_at(Vec3::new(0.0, 1.6, 0.0), target.center());
         view.ads = 1.0;
-        let out = AimAssist::default().update(&view, &[target], &params, DT);
+        let out = AimAssist::default().update(&view, &[target], &params);
         assert!((out.slowdown - params.slowdown_ads).abs() < 1e-5);
     }
 
@@ -667,7 +552,7 @@ mod tests {
         let behind = dummy(2, 0.0, 10.0);
         let mut view = view_at(eye, far.center());
         view.active = true;
-        let out = AimAssist::default().update(&view, &[far, behind], &params, DT);
+        let out = AimAssist::default().update(&view, &[far, behind], &params);
         assert_eq!(out, AssistOutput::NONE);
     }
 
@@ -679,7 +564,7 @@ mod tests {
             let target = dummy(1, 0.0, -distance);
             let view = view_at(eye, target.center());
             AimAssist::default()
-                .update(&view, &[target], &params, DT)
+                .update(&view, &[target], &params)
                 .slowdown
         };
         assert!((slowdown(30.0) - params.slowdown_hip).abs() < 1e-4);
@@ -693,7 +578,7 @@ mod tests {
         let a = dummy(1, 1.2, -10.0);
         let b = dummy(2, -0.1, -10.0);
         let view = view_at(eye, Vec3::new(0.0, 1.0, -10.0));
-        let out = AimAssist::default().update(&view, &[a, b], &params, DT);
+        let out = AimAssist::default().update(&view, &[a, b], &params);
         assert_eq!(out.target, Some(2));
     }
 
@@ -707,18 +592,9 @@ mod tests {
         let b = dummy(2, 1.0, -10.0);
         let mut assist = AimAssist::default();
         let look = |x: f32| view_at(eye, Vec3::new(x, 1.0, -10.0));
-        assert_eq!(
-            assist.update(&look(-0.6), &[a, b], &params, DT).target,
-            Some(1)
-        );
-        assert_eq!(
-            assist.update(&look(0.0), &[a, b], &params, DT).target,
-            Some(1)
-        );
-        assert_eq!(
-            assist.update(&look(0.9), &[a, b], &params, DT).target,
-            Some(2)
-        );
+        assert_eq!(assist.update(&look(-0.6), &[a, b], &params).target, Some(1));
+        assert_eq!(assist.update(&look(0.0), &[a, b], &params).target, Some(1));
+        assert_eq!(assist.update(&look(0.9), &[a, b], &params).target, Some(2));
     }
 
     /// Strafing past an enemy: the view follows the rotational share of their
@@ -734,12 +610,12 @@ mod tests {
             let mut view = view_at(eye, target.upper_body());
             view.active = active;
             // The first frame finds the target; following starts after it.
-            assist.update(&view, &[target], &params, DT);
+            assist.update(&view, &[target], &params);
             // Short enough that the motion left behind stays on the body.
             for _ in 0..6 {
                 eye.x += 4.0 * DT;
                 view.eye = eye;
-                let out = assist.update(&view, &[target], &params, DT);
+                let out = assist.update(&view, &[target], &params);
                 view.yaw += out.rotation.x;
                 view.pitch += out.rotation.y;
             }
@@ -768,7 +644,7 @@ mod tests {
         view.active = true;
         for _ in 0..10 {
             view.yaw += 0.002;
-            let out = assist.update(&view, &[target], &params, DT);
+            let out = assist.update(&view, &[target], &params);
             assert_eq!(out.rotation, Vec2::ZERO);
         }
     }
@@ -782,51 +658,10 @@ mod tests {
         let mut assist = AimAssist::default();
         let mut view = view_at(eye, a.upper_body());
         view.active = true;
-        assist.update(&view, &[a], &params, DT);
-        let out = assist.update(&view, &[b], &params, DT);
+        assist.update(&view, &[a], &params);
+        let out = assist.update(&view, &[b], &params);
         assert_eq!(out.target, Some(2));
         assert_eq!(out.rotation, Vec2::ZERO);
-    }
-
-    /// Runs one aim down sights from `start` and returns how far the crosshair
-    /// ends from the target's upper body.
-    fn aim_in(start: AssistView, target: AssistTarget, assist: &mut AimAssist) -> f32 {
-        let params = default_params();
-        let mut view = start;
-        for frame in 0..15 {
-            view.ads = (frame as f32 + 1.0) / 15.0;
-            let out = assist.update(&view, &[target], &params, DT);
-            view.yaw += out.rotation.x;
-            view.pitch += out.rotation.y;
-        }
-        miss_angle(&view, target.upper_body())
-    }
-
-    /// Target aim assist: aiming down sights near a zombie lands on its upper
-    /// body. Players and bots never get a snap.
-    #[test]
-    fn aiming_snaps_onto_zombies_only() {
-        let eye = Vec3::new(0.0, 1.6, 0.0);
-        let start = view_at(eye, Vec3::new(1.1, 1.0, -15.0));
-        let walker = zombie(1, 0.0, -15.0);
-        let before = miss_angle(&start, walker.upper_body());
-        assert!(before < default_params().snap_cone);
-        let after = aim_in(start, walker, &mut AimAssist::default());
-        assert!(after < before * 0.4, "{after} vs {before}");
-
-        let player = dummy(1, 0.0, -15.0);
-        let unsnapped = aim_in(start, player, &mut AimAssist::default());
-        assert!((unsnapped - before).abs() < 1e-6, "{unsnapped} vs {before}");
-    }
-
-    #[test]
-    fn snap_ignores_zombies_outside_the_cone() {
-        let eye = Vec3::new(0.0, 1.6, 0.0);
-        let walker = zombie(1, 0.0, -10.0);
-        let start = view_at(eye, Vec3::new(3.0, 1.0, -10.0));
-        let before = miss_angle(&start, walker.upper_body());
-        let after = aim_in(start, walker, &mut AimAssist::default());
-        assert!((after - before).abs() < 1e-6);
     }
 
     /// A simulated thumb tracks an enemy who strafes back and forth: it sees
@@ -896,7 +731,7 @@ mod tests {
 
             let mut slowdown = 1.0;
             if let Some(params) = &params {
-                let out = assist.update(&view, &[target], params, DT);
+                let out = assist.update(&view, &[target], params);
                 slowdown = out.slowdown;
                 view.yaw += out.rotation.x;
                 view.pitch += out.rotation.y;

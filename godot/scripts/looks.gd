@@ -138,36 +138,6 @@ const MAPS := {
 		# collision, so the flare's cover test (rays against the world) cannot
 		# see it.
 	},
-	"res://scenes/zombies_arena.tscn":
-	{
-		"env":
-		# The old bloom veil lifted the whole night; exposure does it now,
-		{
-			# so the horde stays readable without the haze.
-			"tonemap_exposure": 1.3,
-			# Lamps and muzzle flashes carry the night: a stronger, lower bloom.
-			"glow_intensity": 0.8,
-			"glow_hdr_threshold": 0.85,
-			# A little more sky light, so the walls separate from the night.
-			"ambient_light_energy": 0.75,
-			"adjustment_contrast": 1.0,
-			"adjustment_saturation": 1.0,
-		},
-		"exposure": {"reference": 1.0, "darker": 0.0, "brighter": 0.5},
-		"grade":
-		{
-			"contrast": 1.12,
-			"pivot": 0.12,
-			"saturation": 0.85,
-			"shadows": Color(0.92, 1.0, 1.08),
-			"highlights": Color(1.05, 1.0, 0.92),
-			"balance": 0.3,
-			"toe": 0.0,
-		},
-		# Rain has just stopped: damp walls, glossy ground, puddles that catch
-		# the lamps.
-		"wetness": 0.75,
-	},
 	# Nuketown keeps its scene and assets as imported; its look is set here.
 	# A hard desert noon, using only settings that cost nothing (the map has
 	# no benchmark views to price anything else against): firmer contrast and

@@ -1,17 +1,15 @@
 extends SceneTree
 ## Captures every UI screen for design review: the title screen, Team
-## Deathmatch setup, server browser, Zombies menus, the pause and settings
-## menu, the testing-arena HUD states, the Zombies HUD and game-over screen,
-## and a local Team Deathmatch match (connecting, the lobby's class menu and
-## editor, countdown, in-match HUD, scoreboard, kill feed, results).
+## Deathmatch setup, server browser, the pause and settings menu, the
+## testing-arena HUD states, and a local Team Deathmatch match (connecting,
+## the lobby's class menu and editor, countdown, in-match HUD, scoreboard,
+## kill feed, results).
 ## Needs a GPU and a display (or Xvfb). CAPTURE_PHASE picks one group
-## (menus, arena, zombies, tdm, clean, art); without it every group runs.
+## (menus, arena, tdm, clean, art); without it every group runs.
 ## CAPTURE_PHASE=stills shoots each map from its spawn instead, to pick the
 ## title backdrop and match card pictures in `assets/ui/`.
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_ui.gd
-
-const Puppets := preload("res://tests/zombie_puppets.gd")
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _phase := OS.get_environment("CAPTURE_PHASE")
@@ -31,8 +29,6 @@ func _run() -> void:
 		await _menus()
 	if _wants("arena"):
 		await _arena()
-	if _wants("zombies"):
-		await _zombies()
 	if _wants("tdm"):
 		await _tdm()
 	if _wants("clean"):
@@ -92,13 +88,6 @@ func _menus() -> void:
 	await _shot("menu_05_server_browser_error")
 	browser.emit_signal("back_requested")
 	await _frames(5)
-	title.call("_open_zombies")
-	await _seconds(1.0)
-	await _shot("menu_06_zombies_landing")
-	var zombies := title.get_node("ZombiesMenu")
-	zombies.call("open_solo")
-	await _seconds(1.5)
-	await _shot("menu_07_zombies_maps")
 
 
 func _arena() -> void:
@@ -191,29 +180,6 @@ func _arena() -> void:
 	await _shot("arena_12_dead")
 
 
-func _zombies() -> void:
-	var arena := await _open("res://scenes/zombies_arena.tscn")
-	await _seconds(1.0)
-	await _shot("zombies_01_get_ready")
-	var director := arena.get_node("Director") as ZombieDirector
-	var hud := arena.get_node("HUD/Zombies")
-	director.net_round(1, 0, 4.0, 0, false)
-	director.add_points(1450)
-	hud.call("_on_points", 50, director.points())
-	hud.call("_on_points", 100, director.points())
-	await _frames(12)
-	await _shot("zombies_02_points")
-	director.net_round(1, 1, 0.0, 6, false)
-	await _seconds(4.0)
-	await _shot("zombies_03_round")
-	hud.call("_on_power_up", "double_points", "DOUBLE POINTS")
-	await _frames(20)
-	await _shot("zombies_04_power_up")
-	hud.call("_on_game_over", 7)
-	await _frames(20)
-	await _shot("zombies_05_game_over")
-
-
 func _tdm() -> void:
 	# A player some way in (just short of level 8, 20 kills with the M4A1),
 	# on scratch files, so the class menu shows open and locked items alike
@@ -304,7 +270,6 @@ func _clean() -> void:
 	for entry in [
 		["res://scenes/slamcity.tscn", "clean_slamcity"],
 		["res://scenes/main.tscn", "clean_arena"],
-		["res://scenes/zombies_arena.tscn", "clean_zombies"],
 	]:
 		var scene := await _open(entry[0])
 		await _seconds(1.5)
@@ -315,7 +280,7 @@ func _clean() -> void:
 
 
 ## Art for design mockups: weapon side profiles and soldiers on a transparent
-## background, and cinematic backdrops of Slamcity and a Zombies round.
+## background, and cinematic backdrops of Slamcity.
 func _art() -> void:
 	var stage := Node3D.new()
 	stage.name = "Stage"
@@ -401,24 +366,6 @@ func _art() -> void:
 		eye.look_at_from_position(from, from + Vector3(-sin(yaw), -0.18, -cos(yaw)))
 		await _frames(6)
 		await _shot("art_city_%d" % i)
-
-	# A Zombies round with the horde closing in.
-	var arena := await _open("res://scenes/zombies_arena.tscn")
-	var director := arena.get_node("Director") as ZombieDirector
-	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
-		layer.visible = false
-	var zp := arena.get_node("Player") as FpsPlayer
-	var spots := []
-	for i in 6:
-		spots.append(zp.global_position + Vector3(-5.0 + i * 2.0, 0, -8.0 - (i % 3) * 2.0))
-	var zombies := Puppets.spawn(director, spots, zp.global_position)
-	for f in 60:
-		Puppets.walk(zombies, zp.global_position, 1.0 / 60.0)
-		await physics_frame
-	for i in mini(zombies.size(), 3):
-		_look_at(zp, (zombies[i] as Node3D).global_position + Vector3(0, 1.2, 0))
-		await _frames(6)
-		await _shot("art_zombies_%d" % i)
 
 
 ## Map stills for the title backdrop and the match card: each map from above

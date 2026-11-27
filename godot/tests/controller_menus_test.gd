@@ -22,7 +22,6 @@ func _run() -> void:
 	await _match_setup()
 	await _options()
 	await _server_browser()
-	await _zombies()
 	await _pause_menu()
 	await _captured_mouse()
 	_finish()
@@ -201,31 +200,6 @@ func _server_browser() -> void:
 	await _frames(2)
 	_check(_title.get_node_or_null("ServerBrowser") == null, "B leaves the browser")
 	_check(_focused() == _route("Multiplayer"), "focus returns to Server Browser")
-
-
-func _zombies() -> void:
-	_route("Zombies").grab_focus()
-	await _press(JOY_BUTTON_A)
-	await _frames(2)
-	var zombies := _title.get_node_or_null("ZombiesMenu")
-	_check(zombies != null, "A opens Zombies")
-	if zombies == null:
-		return
-	_check(_name(_focused()) == "Solo", "Zombies starts on Solo")
-	await _press(JOY_BUTTON_A)
-	_check(zombies.screen == "maps", "A on Solo opens the maps")
-	await _press(JOY_BUTTON_DPAD_DOWN)
-	_check(zombies.selected_map == 1, "down picks the next map")
-	for i in 30:
-		zombies._process(1.0 / 30.0)
-		await _press(JOY_BUTTON_DPAD_DOWN if i % 2 == 0 else JOY_BUTTON_DPAD_UP)
-	_check(_focused() != null, "focus survives the globe turning")
-	await _press(JOY_BUTTON_B)
-	_check(zombies.screen == "zombies", "B goes back to the landing")
-	await _press(JOY_BUTTON_B)
-	await _frames(2)
-	_check(_title.get_node_or_null("ZombiesMenu") == null, "B leaves Zombies")
-	_check(_focused() == _route("Zombies"), "focus returns to Zombies")
 
 
 ## The in-match pause menu, on its own: Menu opens it, B backs out of Settings

@@ -12,14 +12,13 @@ objectives is under "Map markers" there.
 | Breakwater | `scenes/breakwater.tscn` | `breakwater` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Search and Destroy, Free Roam | `tools/breakwater_layout.py` |
 | Nuketown | `scenes/nuketown.tscn` | `nuketown` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Free Roam | `tools/import_nuketown.py` (Black Ops 2's Nuketown 2025) |
 | Testing Area | `scenes/main.tscn` | `arena` | Its own title-screen route; TDM, FFA, Gun Game, CTF, Domination, Hardpoint as "Testing Arena" | `map_testing_area` in `tools/gear_models.py` |
-| Zombies Arena | `scenes/zombies_arena.tscn` | `zombies` | Zombies only | `map_zombies_arena` in `tools/gear_models.py` |
 
 The menu lists come from `godot/scripts/tdm_setup.gd` (`MAPS`, `SND_MAPS`,
-`ZOMBIES_MAPS`, `FREE_ROAM_MAPS`); a dedicated server takes
-`--map arena|nuketown|slamcity|warehouse|breakwater|zombies`
+`FREE_ROAM_MAPS`); a dedicated server takes
+`--map arena|nuketown|slamcity|warehouse|breakwater`
 (`godot/scripts/net/bootstrap.gd`). Search and Destroy is offered only on maps
-that mark their sites. The five multiplayer maps have a minimap
-(`godot/assets/minimaps/`); Zombies has none.
+that mark their sites. Every map has a minimap
+(`godot/assets/minimaps/`).
 
 ## Slamcity
 
@@ -322,19 +321,3 @@ offline, `T` refills all ammo here.
 container, targets, sandbags, floodlights), built by
 `blender -b --python tools/build_models.py`. Hidden CSG in the scene keeps the
 collision. The dressing is described in [art-direction.md](art-direction.md).
-
-## Zombies Arena
-
-A walled compound 48 m square at night under a moon and a far skyline:
-eight boarded window bays with alcoves behind them where zombies gather, a
-gate east and west into side yards, each blocked by debris players clear
-for points, wall weapons, five
-drink machines, three mystery crate spots, a power switch, an electric fence
-trap across the west gate, and spawn points for hounds. Zombies only, solo or
-co-op (`--map zombies`). The mode and the arena's machines are in
-[zombies.md](zombies.md).
-
-**Built with:** `map_zombies_arena` in `tools/gear_models.py` and
-`tools/map_dressing.py`, like the Testing Area, with its floodlights baked
-into the lightmap (`tools/bake_lightmaps.sh res://scenes/zombies_arena.tscn`)
-and its skyline from `tools/build_horizon.py --night`.

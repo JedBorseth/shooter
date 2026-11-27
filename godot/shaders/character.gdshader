@@ -1,5 +1,5 @@
-// One material for a whole character kit (soldier, first-person arms, or
-// zombies), so every character of a team draws in one call per mesh.
+// One material for a whole character kit (soldier or first-person arms), so
+// every character of a team draws in one call per mesh.
 //
 // tools/build_character_assets.py bakes each kit into one texture atlas:
 // albedo, a tangent-space normal map, and ORM (occlusion, roughness,
@@ -9,12 +9,9 @@
 // - Tinted roles (cloth, gear, gloves, boots) store only shading detail in the
 //   albedo, centred on 0.5; the team's palette colour gives the hue and value.
 //   Other roles (skin, eyes, lenses, hardware) use the albedo as it is.
-// - Roles in `hidden_roles` and part groups in the per-character `hidden_parts`
-//   collapse to a point, shadows included: a zombie's lost helmet, or the
-//   heads and kit a soldier is not wearing.
-// - Per character (`variant`): skin tone, wear, and for zombies how filthy
-//   their clothes are (zombie clothes are darkened and dirtied, mud up the
-//   legs, and their skin drained to a lifted, sallow pallor).
+// - Part groups in the per-character `hidden_parts` collapse to a point,
+//   shadows included: the heads and kit a soldier is not wearing.
+// - Per character (`variant`): skin tone and wear.
 // - The first-person arms draw with a copy compiled with VIEWMODEL_KEY
 //   (rust/game/src/viewmodel.rs: `first_person_shader`), which adds the
 //   first-person key light the weapon gets; every other character compiles
@@ -31,15 +28,10 @@ const int ROLE_COUNT = 16;
 const int SKIN = 0;
 const int VISOR = 7;
 const int EYES = 11;
-const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
-// Ground-in dirt on zombies' clothes (linear albedo).
-const vec3 DIRT = vec3(0.13, 0.105, 0.075);
 
 uniform vec4 palette[16] : source_color;
 // Bit i set: role i is coloured by the palette (its albedo is detail only).
 uniform int tinted_roles = 0;
-// Bit i set: role i is not drawn.
-uniform int hidden_roles = 0;
 // Bit i set: role i glows a little in its own colour (team accents).
 uniform int emissive_roles = 0;
 uniform float emission_energy = 0.35;
@@ -56,8 +48,6 @@ uniform float skin_variation = 0.18;
 // A faint rim in the team colour so silhouettes hold in the dark.
 uniform vec3 rim_colour : source_color = vec3(0.0);
 uniform float rim_energy = 0.0;
-// 1 for zombies: sickly skin, grime, and blood.
-uniform float zombie = 0.0;
 
 // Per character, so a crowd does not look cloned.
 instance uniform float variant = 0.0;
@@ -77,8 +67,6 @@ const float WOUND_RADIUS = 0.08;
 
 varying flat int role;
 varying float wounded;
-// Height above the feet in the mesh's space (zombies' mud).
-varying float height;
 
 float wound_at(vec3 p, vec4 w) {
 	return w.w * (1.0 - smoothstep(WOUND_RADIUS * 0.3, WOUND_RADIUS, distance(p, w.xyz)));
@@ -87,10 +75,9 @@ float wound_at(vec3 p, vec4 w) {
 void vertex() {
 	role = clamp(int(UV2.x * 16.0), 0, ROLE_COUNT - 1);
 	int group = clamp(int(UV2.y * 16.0), 0, 15);
-	if (((hidden_roles >> role) & 1) != 0 || ((hidden_parts >> group) & 1) != 0) {
+	if (((hidden_parts >> group) & 1) != 0) {
 		VERTEX = vec3(0.0);
 	}
-	height = VERTEX.y;
 	wounded = max(max(wound_at(VERTEX, wound_0), wound_at(VERTEX, wound_1)),
 		max(wound_at(VERTEX, wound_2), wound_at(VERTEX, wound_3)));
 	// Writing POSITION anywhere makes Godot use it everywhere, so both branches set it.
@@ -132,39 +119,9 @@ void fragment() {
 		float warm = fract(variant * 0.377) * 2.0 - 1.0;
 		base *= skin_tone * (1.0 + tone * skin_variation);
 		base *= vec3(1.0 + warm * 0.04, 1.0, 1.0 - warm * 0.05);
-		if (zombie > 0.0) {
-			// Undead pallor: the skin's values are pressed together (dark
-			// skin lifted out of black, light skin dimmed) while painted
-			// hair, stubble, and wounds stay darker than the skin round
-			// them; the colour is drained a little, then tinted sickly and
-			// mottled.
-			float rot = noise(UV * 40.0 + variant * 2.1);
-			vec3 sick = mix(vec3(0.62, 0.7, 0.55), vec3(0.75, 0.66, 0.6), fract(variant * 0.813));
-			float l = max(dot(base, LUMA), 1e-4);
-			float pale = min(0.3 * pow(l / 0.4, 0.6), 0.3);
-			vec3 drained = mix(base, vec3(l), 0.2) * (pale / l);
-			base = drained * sick / dot(sick, LUMA) * (1.0 - rot * 0.25);
-		}
-	} else if (zombie > 0.0 && role != EYES) {
-		// Filthy clothes: bright fabric is pressed down toward a worn
-		// value (a white shirt reads soiled grey, not lit), then dirt is
-		// worked in, heaviest as mud up the legs. How filthy varies per
-		// zombie.
-		float l = max(dot(base, LUMA), 1e-3);
-		base *= 1.0 / (1.0 + 3.0 * l);
-		float filthy = 0.6 + 0.6 * fract(variant * 0.531);
-		float dirt = (0.25 + 0.35 * noise(UV * 7.0 + variant * 3.7)) * filthy;
-		dirt += (1.0 - smoothstep(0.08, 0.6, height)) * 0.5 * filthy;
-		base = mix(base, DIRT * (0.6 + 0.8 * l), clamp(dirt, 0.0, 0.85));
 	}
 	float rough = orm.g;
 	float metal = orm.b;
-	if (zombie > 0.0) {
-		// Wounds, blood, rips, and grime are painted into each zombie body's
-		// atlas (add_decay in tools/blender_characters.py); this only makes
-		// two zombies in the same body a little more or less filthy.
-		base *= 0.9 + 0.1 * noise(UV * 9.0 + variant);
-	}
 	if (wounded > 0.0) {
 		// A wound: dark blood soaked into cloth or welling on skin, ragged at
 		// the edge, wet near the middle.

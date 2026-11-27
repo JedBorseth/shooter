@@ -2,7 +2,7 @@
 
 A host can change a match's rules before it starts, as in Black Ops 2's Custom Games. The rules live in `rust/sim/src/custom.rs` (`custom::Settings`). The server takes them on the command line, applies them, and sends them to every player in the welcome. Prediction (health and its regeneration) and the HUD follow the same rules.
 
-Ranked servers (`--accounts`) ignore custom settings: ranked play always uses the default rules. Zombies keeps its own rules.
+Ranked servers (`--accounts`) ignore custom settings: ranked play always uses the default rules.
 
 ## Settings
 
@@ -25,7 +25,7 @@ Each setting follows a Black Ops 2 game type setting (the `getgametypesetting` k
 
 ## Setting them up
 
-The local match setup (the title screen's mode routes) shows the custom rules in one line above Start, with a **Game settings** button. It opens a page in the same card: a preset list, one chip row per rule, and a name to save the rules under as a preset (`godot/scripts/ui/custom_settings_page.gd`). The built-in presets are Standard, Hardcore, Pistols only, Snipers only, and No streaks; saved presets follow them, up to twelve, in `user://custom_games.cfg` with the rules used last (`godot/scripts/custom_presets.gd`). Turning Hardcore on sets health to 30% and friendly fire to On; either can be changed after. Zombies and Free Roam have no custom rules.
+The local match setup (the title screen's mode routes) shows the custom rules in one line above Start, with a **Game settings** button. It opens a page in the same card: a preset list, one chip row per rule, and a name to save the rules under as a preset (`godot/scripts/ui/custom_settings_page.gd`). The built-in presets are Standard, Hardcore, Pistols only, Snipers only, and No streaks; saved presets follow them, up to twelve, in `user://custom_games.cfg` with the rules used last (`godot/scripts/custom_presets.gd`). Turning Hardcore on sets health to 30% and friendly fire to On; either can be changed after. Free Roam has no custom rules.
 
 ![Game settings in the match setup, on the Hardcore preset](media/custom-game-settings.jpg)
 

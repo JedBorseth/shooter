@@ -20,7 +20,7 @@ extends Control
 ## - landed Care Packages, ours blue and anyone else's white;
 ## - tags along its foot for every UAV and Counter-UAV up, ours blue and
 ##   the enemy's red.
-## It hides during killcams, in Zombies, and on maps without a plan. `Net`
+## It hides during killcams and on maps without a plan. `Net`
 ## adds it to the match HUD.
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
@@ -86,8 +86,6 @@ func _process(delta: float) -> void:
 		visible = false
 		return
 	_find_plan()
-	# Zombies has no minimap, as in Call of Duty.
-	var zombies: bool = client.match_info().mode == "zombies"
 	var ended: bool = client.match_info().phase == "ended"
 	# A custom game's radar off, or hardcore's bare HUD, takes it away.
 	var info := client.match_info()
@@ -96,15 +94,10 @@ func _process(delta: float) -> void:
 		info.get("radar_off", false) or info.get("hardcore", false) or info.get("spectator", false)
 	)
 	visible = (
-		has_plan()
-		and not zombies
-		and not off
-		and not client.in_killcam()
-		and client.piloting() < 0
-		and not ended
+		has_plan() and not off and not client.in_killcam() and client.piloting() < 0 and not ended
 	)
 	if score_block != null:
-		var shown := has_plan() and not zombies and not off
+		var shown := has_plan() and not off
 		score_block.set(&"top", CORNER.y + SIZE + 10.0 if shown else CORNER.y)
 	if not visible:
 		return

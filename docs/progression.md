@@ -47,7 +47,6 @@ How the stats move:
 The server does not count:
 
 - bots;
-- Zombies (Call of Duty keeps Zombies' stats apart);
 - time outside play: the lobby, the countdown, and the results.
 
 A player who leaves mid-match keeps their stats. A ranked server reports what they had; elsewhere the game keeps the stats it was last sent, at most two seconds old.

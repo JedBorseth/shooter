@@ -17,7 +17,7 @@ the overlay in `godot/scripts/net/killcam_hud.gd`.
 
 No killcam plays for a suicide or a fall, in the lobby's warm-up, for bots,
 or on a death in Search and Destroy, where the dead watch a teammate
-instead. Zombies has none. An ending killcam needs a kill at most 8 s
+instead. An ending killcam needs a kill at most 8 s
 before the end; otherwise none plays. Custom games can turn every killcam
 off (`killcam=off`, [custom-games.md](custom-games.md)).
 

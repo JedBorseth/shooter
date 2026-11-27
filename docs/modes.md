@@ -5,8 +5,7 @@ Domination ([domination.md](domination.md)) and Search and Destroy
 ([search-and-destroy.md](search-and-destroy.md)) have their own pages, as do
 spawns ([spawns.md](spawns.md)), scorestreaks
 ([scorestreaks.md](scorestreaks.md)), killcams ([killcam.md](killcam.md)),
-custom games ([custom-games.md](custom-games.md)), and Zombies
-([zombies.md](zombies.md)).
+and custom games ([custom-games.md](custom-games.md)).
 
 The rules live in `rust/sim` (`tdm.rs` for the modes, match clock, periods,
 and spawns; `score.rs`, `hardpoint.rs`, `ctf.rs`, `gun_game.rs`,
@@ -24,7 +23,6 @@ and spawns; `score.rs`, `hardpoint.rs`, `ctf.rs`, `gun_game.rs`,
 | Domination | `dom` | Points | 200 | 10 min, two halves | 3 s |
 | Gun Game | `gungame` | Last weapon on the ladder | 8 weapons, 2 kills each | 10 min | 3 s |
 | Search and Destroy | `snd` | Rounds | 6 | none (1:45 rounds) | none in a round |
-| Zombies | `zombies` | Survive the rounds | none | none | see [zombies.md](zombies.md) |
 
 Servers take `--score-limit N` (0 keeps the mode's), `--time-limit MINUTES`,
 `--rounds N` (Search and Destroy), and `--kills-per-weapon N` (Gun Game, 1

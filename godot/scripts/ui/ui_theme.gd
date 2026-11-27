@@ -34,8 +34,6 @@ const ENEMY := Color("ff6a5c")
 ## Damage, warnings, and errors.
 const HARM := Color("e5484d")
 const GOOD := Color("7bd389")
-## Zombies replaces the yellow accent with this.
-const ZOMBIES := Color("ff8a2a")
 ## Shade behind HUD clusters, so text holds over a bright sky.
 const SHADE := Color(0, 0, 0, 0.62)
 

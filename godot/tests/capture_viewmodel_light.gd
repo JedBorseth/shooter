@@ -1,6 +1,6 @@
 extends SceneTree
 ## Captures the first-person weapon in each kind of light the maps have (sun
-## behind and ahead, shade, indoors, night under a floodlight and in the dark),
+## behind and ahead, shade, and indoors),
 ## at the hip and aimed, for checking that the weapon sits in the scene's light.
 ## Each spot is also drawn once with the weapon hidden: the pixels that differ
 ## are the weapon, and `light.csv` lists how bright the weapon is beside the
@@ -12,7 +12,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of maps: testing, slamcity, zombies (default all).
+##   CAPTURE_ONLY    comma list of maps: testing, slamcity (default all).
 ##   WEAPON          weapon key to hold (default m4).
 
 const Benchmark := preload("res://tests/benchmark.gd")
@@ -44,15 +44,6 @@ const MAPS := {
 			["pawn_shop", Vector3(0.0, 0.2, -29.3), -PI / 2, -0.05],
 			["record_store", Vector3(-16.3, 0.2, 5.0), PI, -0.05],
 			["diner", Vector3(-34.5, 0.05, 9.8), -PI / 2, -0.05],
-		],
-	],
-	"zombies":
-	[
-		"res://scenes/zombies_arena.tscn",
-		[
-			["middle", Vector3(0, 0.1, 0), 0.0, -0.05],
-			["lamp", Vector3(0, 0.1, 0), PI / 2, 0.0],
-			["back", Vector3(0, 0.1, 0), PI, -0.05],
 		],
 	],
 }
@@ -103,9 +94,6 @@ func _load(path: String, at: Vector3) -> void:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	var hud := scene.get_node_or_null("HUD")
 	if hud != null:
 		hud.set("visible", false)

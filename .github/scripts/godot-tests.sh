@@ -27,11 +27,11 @@ set -uo pipefail
 # Tests that start another Godot or master server process, directly or through
 # the game's local match (Net.start_local_match), or talk to the account server.
 # Put a new one here unless it qualifies for REALTIME_OWN_PORT.
-REALTIME=(server_browser_test local_pause_test zombies_local_test online_test ranked_test matchmaking_test)
+REALTIME=(server_browser_test local_pause_test online_test ranked_test matchmaking_test)
 # Real-time tests whose server takes a port from the test's process id
 # (30000 + pid % 20000) with no query port (--query-port -1), and that use
 # no fixed port, LAN discovery, or account server.
-REALTIME_OWN_PORT=(net_test killcam_test zombies_net_test custom_games_test spectator_test lobby_switch_test)
+REALTIME_OWN_PORT=(net_test killcam_test custom_games_test spectator_test lobby_switch_test)
 # Extra argument sets: a test listed here runs once per entry instead of once
 # with no arguments.
 declare -A RUNS=(

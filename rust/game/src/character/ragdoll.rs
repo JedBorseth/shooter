@@ -38,9 +38,8 @@ pub const RAGDOLL_LAYER: u32 = 1 << 7;
 /// Collision layer 1 ("world").
 const WORLD_LAYER: u32 = 1;
 /// At most this many ragdolls move at once; starting another freezes the
-/// oldest. Zombies die in crowds, so they keep fewer.
+/// oldest.
 pub const MAX_SIMULATING: usize = 6;
-pub const MAX_SIMULATING_ZOMBIES: usize = 4;
 /// A ragdoll still moving after this long freezes where it is (seconds).
 pub const MAX_SECONDS: f32 = 5.0;
 /// How fast a body that has stopped falling loses its speed along the
@@ -92,7 +91,7 @@ const HEAD_PUSH_SCALE: f32 = 0.85;
 /// The hips' cone (degrees). While the body topples, the cones are centred
 /// on the pose it died in; once loosened, each is rebuilt with explicit
 /// frames centred on the limb's natural rest (see [`RestFrame`]), so a
-/// hunched zombie no longer comes to rest with a leg or an arm raised.
+/// hunched body no longer comes to rest with a leg or an arm raised.
 const HIP_SWING: f32 = 60.0;
 /// The shoulders' cone (degrees), about the arm hanging down and a little
 /// out.

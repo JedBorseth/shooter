@@ -22,12 +22,6 @@ const RELOAD_REACH: Vector3 = Vector3::new(-0.06, -0.3, 0.08);
 
 /// Search and Destroy's charge, the model the world draws (`snd_view.gd`).
 const CHARGE_MODEL: &str = "res://assets/models/charge/charge.gltf";
-/// A Zombies drink's bottle (`drink_bottle_<key>`) and its cap
-/// (`drink_cap`), built in tools/gear_models.py.
-const BOTTLE_MODEL: &str = "res://assets/models/drink_bottle_{key}/drink_bottle_{key}.gltf";
-const CAP_MODEL: &str = "res://assets/models/drink_cap/drink_cap.gltf";
-/// The syrette a Zombies revive is given with (`revive_syrette`).
-const SYRETTE_MODEL: &str = "res://assets/models/revive_syrette/revive_syrette.gltf";
 /// The wire cutters a Search and Destroy defuse works with (`wire_cutters`).
 const CUTTERS_MODEL: &str = "res://assets/models/wire_cutters/wire_cutters.gltf";
 
@@ -79,12 +73,6 @@ pub struct FpArms {
     /// Search and Destroy's charge, drawn like the arms while the hands
     /// plant or defuse it ([`FpArms::show_charge`]).
     charge: Option<Gd<Node3D>>,
-    /// Each drink's bottle (in `Drink::code` order) and the cap, drawn like
-    /// the arms while a drink is drunk ([`FpArms::show_bottle`]).
-    bottles: Vec<Option<Gd<Node3D>>>,
-    cap: Option<Gd<Node3D>>,
-    /// The revive's syrette ([`FpArms::show_syrette`]).
-    syrette: Option<Gd<Node3D>>,
     /// The defuse's wire cutters ([`FpArms::show_cutters`]).
     cutters: Option<Gd<Node3D>>,
     /// The scale the body is drawn at now.
@@ -196,29 +184,17 @@ impl INode3D for FpArms {
             self.base_mut().add_child(&charge);
             self.charge = Some(charge);
         }
-        let mut base = self.base().clone();
-        let mut viewmodel_model = |path: &str, name: &str| -> Option<Gd<Node3D>> {
-            let mut node = try_load::<PackedScene>(path)
-                .ok()
-                .and_then(|scene| scene.instantiate())
-                .and_then(|node| node.try_cast::<Node3D>().ok())?;
-            node.set_name(name);
+        let cutters = try_load::<PackedScene>(CUTTERS_MODEL)
+            .ok()
+            .and_then(|scene| scene.instantiate())
+            .and_then(|node| node.try_cast::<Node3D>().ok());
+        if let Some(mut node) = cutters.clone() {
+            node.set_name("Cutters");
             crate::viewmodel::convert_to_viewmodel_materials(&node.clone().upcast(), &shader, 1.0);
             node.set_visible(false);
-            base.add_child(&node);
-            Some(node)
-        };
-        let bottles = shooter_sim::zombies::drinks::Drink::ALL
-            .iter()
-            .map(|drink| viewmodel_model(&BOTTLE_MODEL.replace("{key}", drink.key()), "Bottle"))
-            .collect();
-        let cap = viewmodel_model(CAP_MODEL, "Cap");
-        let syrette = viewmodel_model(SYRETTE_MODEL, "Syrette");
-        let cutters = viewmodel_model(CUTTERS_MODEL, "Cutters");
+            self.base_mut().add_child(&node);
+        }
         self.cutters = cutters;
-        self.bottles = bottles;
-        self.cap = cap;
-        self.syrette = syrette;
         self.poser = Some(poser);
         crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
@@ -556,53 +532,6 @@ impl FpArms {
             None if charge.is_visible() => charge.set_visible(false),
             None => {}
         }
-    }
-
-    /// Shows the bottle of the drink being drunk and its cap at their
-    /// transforms (world, as the viewmodel draws; the cap's `None` once it
-    /// has flown), or hides them.
-    pub fn show_bottle(
-        &mut self,
-        bottle: Option<(
-            Transform3D,
-            Option<Transform3D>,
-            shooter_sim::zombies::drinks::Drink,
-        )>,
-    ) {
-        let shown = bottle.map(|(_, _, drink)| usize::from(drink.code()));
-        for (i, node) in self.bottles.iter_mut().enumerate() {
-            let Some(node) = node else {
-                continue;
-            };
-            match bottle {
-                Some((at, _, _)) if Some(i) == shown => {
-                    node.set_global_transform(at);
-                    if !node.is_visible() {
-                        node.set_visible(true);
-                    }
-                }
-                _ if node.is_visible() => node.set_visible(false),
-                _ => {}
-            }
-        }
-        if let Some(cap) = &mut self.cap {
-            match bottle.and_then(|(_, cap, _)| cap) {
-                Some(at) => {
-                    cap.set_global_transform(at);
-                    if !cap.is_visible() {
-                        cap.set_visible(true);
-                    }
-                }
-                None if cap.is_visible() => cap.set_visible(false),
-                None => {}
-            }
-        }
-    }
-
-    /// Shows the revive's syrette at `at` (world, as the viewmodel draws), or
-    /// hides it.
-    pub fn show_syrette(&mut self, at: Option<Transform3D>) {
-        show_at(self.syrette.as_mut(), at);
     }
 
     /// Shows the defuse's wire cutters at `at` (world, as the viewmodel

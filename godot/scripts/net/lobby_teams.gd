@@ -60,7 +60,7 @@ func _process(delta: float) -> void:
 	visible = (
 		String(info.get("phase", "")) == "lobby"
 		and not bool(info.get("free_for_all", false))
-		and String(info.get("mode", "")) not in ["zombies", "gungame"]
+		and String(info.get("mode", "")) != "gungame"
 		and not client.is_spectator()
 	)
 	if not is_visible_in_tree():

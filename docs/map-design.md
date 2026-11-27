@@ -202,7 +202,7 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
 - **Look at a map.** With a display, `just capture <map> <dir>` saves
   eye-level PNGs with the game's lighting (`godot/tests/capture_view.gd`).
   `<map>` is a server key (`arena`, `nuketown`, `slamcity`, `warehouse`,
-  `breakwater`, `zombies`), `testing`, or a `res://` scene path. It picks up
+  `breakwater`), `testing`, or a `res://` scene path. It picks up
   to 12 viewpoints from the map's spawn, lane, and objective markers, at
   standing eye height on the floor below. Environment variables:
   `CAPTURE_AUTO` (number of views), `CAPTURE_TOP=1` (adds an overhead
@@ -226,11 +226,11 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
 - **Decals.** `python3 tools/decal_catalog.py --find <tags>` searches
   `godot/assets/textures/decals/catalog.json`.
 - **Dressing the generated maps.** `tools/map_dressing.py` dresses the Testing
-  Area and the Zombies arena and shades their slabs and panels per vertex;
+  Area and shades its slabs and panels per vertex;
   Slamcity and Breakwater place props from their layout files; Warehouse from
   its layout scripts in `tools/map_blockout/`.
 - **Lightmaps.** `tools/bake_lightmaps.sh [res://scenes/<map>.tscn ...]` bakes
-  (with no argument: the Testing Area, Slamcity, Zombies, and Warehouse).
+  (with no argument: the Testing Area, Slamcity, and Warehouse).
   Lights that exist only for the bake go under a `BakedLights` node
   (`scripts/baked_lights.gd`), which frees them in the game. A LightmapGI bakes
   only what is under its parent, so it sits at the scene's root; keep lamp

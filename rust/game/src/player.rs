@@ -7,7 +7,7 @@
 //! waits for a physics tick on high-refresh displays.
 //!
 //! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
-//! aim assist (slowdown, rotational, and target aim assist on zombies) from
+//! aim assist (slowdown and rotational) from
 //! `shooter_sim::look`.
 //!
 //! The player picks one input device in Settings (`controller_input`), and the
@@ -52,9 +52,8 @@ use shooter_sim::net::subtick;
 use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::weapon::{
-    self, Action, CombatEvent, FireMode, LoadStage, Raise, Reload, Slot, WeaponId,
+    self, Action, CombatEvent, FireMode, LoadStage, Raise, Reload, WeaponId,
 };
-use shooter_sim::zombies;
 use shooter_sim::{Vec2, Vec3, rng};
 
 use crate::acoustics::AudioEnvironment;
@@ -272,19 +271,15 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
-    /// Respawn after `respawn_delay`. Off in Zombies, where death ends the match.
+    /// Respawn after `respawn_delay`. Off in Search and Destroy, one life a
+    /// round.
     #[export]
     #[init(val = true)]
     auto_respawn: bool,
-    /// The T key refills every carried weapon (the demo arena). Off in Zombies.
+    /// The T key refills every carried weapon (the demo arena). Off online.
     #[export]
     #[init(val = true)]
     allow_refill: bool,
-    /// Spawn with a primary weapon. Off in Zombies, which starts with only
-    /// the sidearm.
-    #[export]
-    #[init(val = true)]
-    start_with_primary: bool,
     /// Frag grenades at each spawn, offline. Online the server decides by
     /// mode (`equipment::spawn_lethals`).
     #[export]
@@ -389,16 +384,12 @@ pub struct FpsPlayer {
     /// Search and Destroy: holding interact here would plant or defuse the
     /// charge (`NetClient` works it out each tick as the server does).
     charge_spot: bool,
-    /// The charge spot is a downed teammate (`set_revive_spot`).
-    revive_spot: bool,
     /// The charge spot is a planted charge to defuse (`set_defuse_spot`).
     defuse_spot: bool,
     /// The last input planted or defused: held still, the weapon put away.
     using_charge: bool,
     /// Tests: draw the first-person hands on the charge as if planting.
     debug_keypad: bool,
-    /// Tests and captures: the revive's hands without a downed teammate.
-    debug_revive: bool,
     /// Tests and captures: the defuse's hands without a match.
     debug_defuse: bool,
     env: MoveEnv,
@@ -503,12 +494,7 @@ pub struct FpsPlayer {
     score: ScoreState,
     score_rules: ScoreRules,
     look_target: Option<WeaponId>,
-    /// Points the weapon under the crosshair costs (Zombies wall weapons).
-    look_price: i64,
-    /// Something else to use under the crosshair: a node with `interact`
-    /// and `interact_prompt` methods (Zombies doors).
-    look_device: Option<Gd<Node>>,
-    /// Max Ammo (Zombies) asked for a refill on the next tick.
+    /// A refill asked for (`refill_all_ammo`) on the next tick.
     refill_requested: bool,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// Breath, heart, being hit, and the body's moves (`player_sounds`).
@@ -650,8 +636,6 @@ impl ICharacterBody3D for FpsPlayer {
         let _profile = crate::profile::scope("player (physics)");
         let dt = delta as f32;
         self.look_target = None;
-        self.look_price = 0;
-        self.look_device = None;
         self.find_interactable();
         // Quantized exactly as the server will decode it, and the press aim
         // checked as the server will check it, so prediction matches.
@@ -1117,17 +1101,6 @@ impl FpsPlayer {
         self.state.alive()
     }
 
-    /// Zombies: down in last stand (the server's word, through prediction).
-    #[func]
-    pub(crate) fn is_downed(&self) -> bool {
-        self.state.downed
-    }
-
-    /// Feet position at the latest tick.
-    pub(crate) fn feet_position(&self) -> Vector3 {
-        self.current_position
-    }
-
     /// Seconds until respawn while dead.
     #[func]
     fn respawn_time_left(&self) -> f32 {
@@ -1163,43 +1136,10 @@ impl FpsPlayer {
         self.state.movement.mount_blend
     }
 
-    /// Zombies: the keys of the drinks this player holds
-    /// (`shooter_sim::zombies::drinks::Drink::key`), for machine prompts
-    /// and the HUD.
-    #[func]
-    fn zombie_drinks(&self) -> PackedStringArray {
-        self.state
-            .drinks
-            .iter()
-            .map(|d| GString::from(d.key()))
-            .collect()
-    }
-
-    /// The player's simulation state (the forge's prompt reads the weapon
-    /// in hand).
-    pub(crate) fn sim_state(&self) -> &PlayerState {
-        &self.state
-    }
-
-    /// Zombies: whether this player is down in last stand.
-    #[func]
-    fn zombie_downed(&self) -> bool {
-        self.state.downed
-    }
-
-    /// Prompt for the pickup or device in front of the player, or empty.
-    /// Devices write `{key}` where the interact key goes.
+    /// Prompt for the pickup in front of the player, or empty.
     #[func]
     fn interact_prompt(&self) -> GString {
         let key = self.key_label("interact");
-        if let Some(device) = &self.look_device {
-            let mut device = device.clone();
-            let prompt = device
-                .call("interact_prompt", &[])
-                .try_to::<GString>()
-                .unwrap_or_default();
-            return GString::from(&prompt.to_string().replace("{key}", &key));
-        }
         let Some(id) = self.look_target else {
             // Aimed at cover the weapon could rest on, as the reference
             // shows its mount cue.
@@ -1209,30 +1149,11 @@ impl FpsPlayer {
             }
             return GString::new();
         };
-        let upgraded = self.state.combat.carries_upgraded(id);
-        let name = &if upgraded {
-            id.upgraded().unwrap_or(id).def().name.clone()
+        let name = &id.def().name;
+        if self.state.combat.carries(id) {
+            GString::from(&format!("[{key}] Refill {name} ammo"))
         } else {
-            id.def().name.clone()
-        };
-        let owned = self.state.combat.carries(id) || upgraded;
-        let cost = self.pickup_cost(id);
-        if cost == 0 {
-            return if owned {
-                GString::from(&format!("[{key}] Refill {name} ammo"))
-            } else {
-                GString::from(&format!("[{key}] Take {name}"))
-            };
-        }
-        let what = if owned {
-            format!("{name} ammo")
-        } else {
-            name.clone()
-        };
-        if self.wallet_points() >= cost {
-            GString::from(&format!("[{key}] Buy {what}: {cost}"))
-        } else {
-            GString::from(&format!("{what}: {cost} points"))
+            GString::from(&format!("[{key}] Take {name}"))
         }
     }
 
@@ -1258,8 +1179,8 @@ impl FpsPlayer {
             .unwrap_or_else(|| "F".to_owned())
     }
 
-    /// Fills every carried weapon's ammo on the next tick (Zombies' Max Ammo).
-    /// Offline only, like the T refill.
+    /// Fills every carried weapon's ammo on the next tick (tests and
+    /// captures). Offline only, like the T refill.
     #[func]
     pub fn refill_all_ammo(&mut self) {
         self.refill_requested = true;
@@ -1313,11 +1234,11 @@ impl FpsPlayer {
             .map_or(0.0, |node| node.clone().call("level", &[]).to::<f32>())
     }
 
-    /// Zombies: a new round's frags (`zombies::restock_frags`).
+    /// Tops up frag grenades, two more up to four (tests and captures).
     #[func]
     fn restock_lethals(&mut self) {
         let combat = &mut self.state.combat;
-        combat.lethals = zombies::restock_frags(combat.lethals);
+        combat.lethals = combat.lethals.saturating_add(2).min(4).max(combat.lethals);
     }
 
     /// Gives this weapon now, as if taken from a rack (tests and debugging).
@@ -1373,13 +1294,6 @@ impl FpsPlayer {
         self.charge_spot = spot;
     }
 
-    /// Zombies: the use spot is a downed teammate to revive (as opposed to
-    /// Search and Destroy's charge): holding use there shows the revive's
-    /// hands rather than the keypad's.
-    pub fn set_revive_spot(&mut self, revive: bool) {
-        self.revive_spot = revive;
-    }
-
     /// Search and Destroy: the charge spot is a planted charge to defuse:
     /// holding use there works its wires with cutters rather than typing
     /// on its keypad.
@@ -1398,13 +1312,6 @@ impl FpsPlayer {
     #[func]
     pub fn debug_keypad(&mut self, on: bool) {
         self.debug_keypad = on;
-    }
-
-    /// Tests and captures: draws the first-person hands reviving a downed
-    /// teammate, as while holding use over one, without one.
-    #[func]
-    pub fn debug_revive(&mut self, on: bool) {
-        self.debug_revive = on;
     }
 
     /// Tests and captures: draws the first-person hands defusing the charge
@@ -1441,16 +1348,6 @@ impl FpsPlayer {
     #[func]
     fn look_by(&mut self, yaw: f32, pitch: f32) {
         self.turn(yaw, pitch);
-    }
-
-    /// Drinks `key`'s Zombies drink as a machine's sale does (the bottle, then
-    /// the weapon drawn), without a machine or a server. For tests and
-    /// captures.
-    #[func]
-    fn debug_drink(&mut self, key: GString) {
-        if let Some(drink) = shooter_sim::zombies::drinks::Drink::from_key(&key.to_string()) {
-            self.state.combat = self.state.combat.drinking(drink);
-        }
     }
 
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
@@ -1788,31 +1685,14 @@ impl FpsPlayer {
         let slot_2 = held("weapon_2");
         let mut interact_down = held("interact");
         // On a gamepad the reload button uses whatever is in front of the
-        // player (a rack, a door, the charge), and reloads otherwise.
-        if self.controller_input
-            && reload
-            && (self.look_device.is_some() || self.look_target.is_some() || self.charge_spot)
-        {
+        // player (a rack, the charge), and reloads otherwise.
+        if self.controller_input && reload && (self.look_target.is_some() || self.charge_spot) {
             interact_down = true;
             reload = false;
         }
         let interact_held = interact_down;
-        let mut interact = interact_down && !self.interact_held;
+        let interact = interact_down && !self.interact_held;
         self.interact_held = interact_down;
-        if interact && let Some(device) = &self.look_device {
-            let mut device = device.clone();
-            let me = self.to_gd().to_variant();
-            device.call("interact", &[me]);
-            interact = false;
-        }
-        // A wall weapon with a price is paid for before it is taken.
-        if interact
-            && let Some(id) = self.look_target
-            && self.pickup_cost(id) > 0
-            && !self.spend(self.pickup_cost(id))
-        {
-            interact = false;
-        }
 
         let current = match self.state.combat.action {
             Action::Lowering { to, .. } => to,
@@ -1914,7 +1794,7 @@ impl FpsPlayer {
             .ok()
     }
 
-    /// The weapon pickup or device under the crosshair, within reach.
+    /// The weapon pickup under the crosshair, within reach.
     fn find_interactable(&mut self) {
         if !self.state.alive() {
             return;
@@ -1928,67 +1808,9 @@ impl FpsPlayer {
         ) else {
             return;
         };
-        match collider.try_cast::<WeaponPickup>() {
-            Ok(pickup) => {
-                let pickup = pickup.bind();
-                self.look_target = pickup.weapon_id();
-                self.look_price = pickup.price();
-            }
-            Err(mut node) => {
-                // The Zombies mystery crate holding a weapon out to this
-                // player gives it like a free rack.
-                if node.has_method("offered_weapon") {
-                    let key = node
-                        .call("offered_weapon", &[])
-                        .try_to::<GString>()
-                        .unwrap_or_default();
-                    if let Some(id) = WeaponId::by_key(&key.to_string()) {
-                        self.look_target = Some(id);
-                        self.look_price = 0;
-                        return;
-                    }
-                }
-                if node.has_method("interact") && node.has_method("interact_prompt") {
-                    self.look_device = Some(node);
-                }
-            }
+        if let Ok(pickup) = collider.try_cast::<WeaponPickup>() {
+            self.look_target = pickup.bind().weapon_id();
         }
-    }
-
-    /// What taking `id` from the pickup under the crosshair costs: its price,
-    /// or half for ammo of a weapon already carried.
-    fn pickup_cost(&self, id: WeaponId) -> i64 {
-        if self.look_price <= 0 {
-            return 0;
-        }
-        // Zombies: ammo for a weapon carried upgraded costs 4500.
-        i64::from(shooter_sim::zombies::forge::wall_cost(
-            self.look_price,
-            &self.state.combat,
-            id,
-        ))
-    }
-
-    /// The Zombies wallet (`ZombieDirector`), if this level has one.
-    fn wallet(&self) -> Option<Gd<Node>> {
-        self.base()
-            .get_tree()
-            .get_first_node_in_group("zombies_wallet")
-    }
-
-    fn wallet_points(&self) -> i64 {
-        self.wallet()
-            .map(|mut w| w.call("points", &[]).try_to::<i64>().unwrap_or(0))
-            .unwrap_or(0)
-    }
-
-    /// Pays `amount` from the wallet; false if there is none or too little.
-    fn spend(&self, amount: i64) -> bool {
-        self.wallet().is_some_and(|mut w| {
-            w.call("spend", &[amount.to_variant()])
-                .try_to::<bool>()
-                .unwrap_or(false)
-        })
     }
 
     /// Remembers which controller is in use, for vibration.
@@ -2063,7 +1885,7 @@ impl FpsPlayer {
                 active: moving || stick != Vec2::ZERO,
             };
             let targets = self.assist_targets(eye, assist.range);
-            let out = self.assist.update(&view, &targets, &assist, delta);
+            let out = self.assist.update(&view, &targets, &assist);
             self.assist_target = out.target;
             rates *= out.slowdown;
             self.turn(out.rotation.x, out.rotation.y);
@@ -2534,7 +2356,7 @@ impl FpsPlayer {
                 continue;
             };
             let feet = node.get_global_position();
-            // Solid parts of the target itself (a zombie's body) do not hide it.
+            // Solid parts of the target itself do not hide it.
             let chest = feet + Vector3::UP * melee::CHEST_HEIGHT;
             let blocked = self.ray(eye, chest, WORLD_LAYER).is_some_and(|hit| {
                 hit.instance_id() != target.instance_id() && !target.is_ancestor_of(&hit)
@@ -3319,13 +3141,6 @@ impl FpsPlayer {
                         length,
                     }
                 }
-                // The bottle first, then the draw.
-                Raise::Drink(drink) if remaining > def.raise_time => ViewAction::Drinking {
-                    elapsed: (shooter_sim::weapon::DRINK_SECONDS - (remaining - def.raise_time))
-                        .max(0.0),
-                    drink,
-                },
-                Raise::Drink(_) => ViewAction::Raising(progress(remaining, def.raise_time)),
             },
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
             Action::Throwing {
@@ -3363,11 +3178,7 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
-            put_away: self.using_charge
-                || self.debug_keypad
-                || self.debug_revive
-                || self.debug_defuse,
-            reviving: (self.using_charge && self.revive_spot) || self.debug_revive,
+            put_away: self.using_charge || self.debug_keypad || self.debug_defuse,
             defusing: (self.using_charge && self.defuse_spot) || self.debug_defuse,
             feet: self.base().get_global_position(),
             mount: self.state.movement.mount_blend,
@@ -3378,7 +3189,7 @@ impl FpsPlayer {
             // Getting down to or up from prone lowers the weapon as a sprint
             // does; crawling at the hip has its own pose.
             sprinting: self.state.movement.sprinting || self.state.movement.changing_prone(),
-            crawling: self.state.movement.crawling(ads > 0.0) && !self.state.downed,
+            crawling: self.state.movement.crawling(ads > 0.0),
             on_floor: self.env.on_floor,
             action,
             empty: combat.weapon().magazine == 0,
@@ -3388,9 +3199,6 @@ impl FpsPlayer {
     /// A fresh player state: full health and the starting weapons.
     fn spawned_state(&self) -> PlayerState {
         let mut state = PlayerState::spawned(&self.params);
-        if !self.start_with_primary {
-            state.combat = state.combat.without(Slot::Primary);
-        }
         let tactical = Kind::by_key(&self.starting_tactical.to_string())
             .filter(|kind| !kind.lethal())
             .unwrap_or(Kind::Flash);

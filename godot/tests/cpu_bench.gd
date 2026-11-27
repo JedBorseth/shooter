@@ -11,7 +11,7 @@ extends SceneTree
 ##
 ## Options (after `--`):
 ##   --map      a map id as `Net` takes it (default slamcity).
-##   --mode     tdm, dom, ..., or zombies (default tdm; zombies on the zombies map).
+##   --mode     tdm, dom, ... (default tdm).
 ##   --bots     bots on the server (default 11: a 6v6 with this client).
 ##   --seconds  seconds measured once the match is playing (default 20).
 ##   --warmup   seconds played before measuring (default 5).
@@ -31,8 +31,6 @@ extends SceneTree
 const PHYSICS_SYSTEMS := [
 	"client/net",
 	"player (physics)",
-	"zombies (physics)",
-	"zombie director",
 	"ragdolls",
 	"sentry",
 ]

@@ -5,7 +5,7 @@ tools/build_models.py into godot/assets/models/), for CI:
 - no look is defined twice, in gear_models.py or over world_looks.py's: a
   redefinition recolours every earlier model that uses the look, so a rebuild
   changes models nobody touched;
-- props, Zombies pieces, and weapons are not built from Godot primitive
+- props and weapons are not built from Godot primitive
   meshes (BoxMesh, CylinderMesh, ...): visible geometry is modelled in Blender.
   Effects, contact shadows, debug shapes, and collision shapes may still use
   primitives.
@@ -28,8 +28,7 @@ HASH = GODOT / "assets/models/models.hash"
 PRIMITIVES = ("BoxMesh", "CylinderMesh", "SphereMesh", "CapsuleMesh", "PrismMesh", "TorusMesh", "CSGBox3D",
               "CSGCylinder3D", "CSGSphere3D")
 # Scenes and scripts that build things players look at.
-MODELLED = [*sorted((GODOT / "scenes/props").glob("*.tscn")), *sorted((GODOT / "scenes/zombies").glob("*.tscn")),
-            GODOT / "scenes/weapons/laser_model.tscn", GODOT / "scripts/zombies_power_up.gd",
+MODELLED = [*sorted((GODOT / "scenes/props").glob("*.tscn")), GODOT / "scenes/weapons/laser_model.tscn",
             GODOT / "scripts/secret_laser.gd"]
 
 

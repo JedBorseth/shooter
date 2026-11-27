@@ -104,8 +104,8 @@ Where each one acts:
   player's own steps too, as in Black Ops 2. Bots hear enemies within 7 m
   whichever way they face; Dead Silence shrinks that to a quarter, a bot's
   Awareness stretches it by half.
-- **Scavenger** (`rust/sim/src/scavenger.rs`): every player who dies, outside
-  Zombies, leaves an ammunition pouch at their feet (a Blender model,
+- **Scavenger** (`rust/sim/src/scavenger.rs`): every player who dies leaves an
+  ammunition pouch at their feet (a Blender model,
   `tools/gear_models.py` `scavenger_pack`). Only a player with Scavenger sees
   their enemies' pouches (anyone else's without teams), turning slowly on the
   ground, and walking over one (within 1 m) takes it: a magazine's worth of

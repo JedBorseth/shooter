@@ -36,7 +36,6 @@ for rules and numbers only; nothing is copied.
 | Local match setup | Team modes: **Ally bots** and **Enemy bots** difficulty chips; free-for-all modes: one **Bots** chip. Bots fill the empty places. |
 | `--bots N --bot-skill easy\|normal\|hard` | A dedicated server with N bots (at most 50). Each player who joins takes a bot's place, and a bot comes back when a player leaves; teams stay even. |
 | `--team-bots A,E --team-bot-skill easy,hard` | Custom games: each team keeps exactly that many bots (allies at most 11, enemies 12) at its own difficulty, and players do not take their places. Free-for-all modes add the two numbers. See [custom-games.md](custom-games.md). |
-| Zombies | No bots, as in Black Ops: `--bots` and `--team-bots` are ignored with a log line (`godot/scripts/net/bootstrap.gd`, `server_bots`). |
 
 Bots are named "Bot 1", "Bot 2", and so on. Without `--bot-skill` the bots
 are scripted test bots that strafe and fire bursts and hurt nobody unless

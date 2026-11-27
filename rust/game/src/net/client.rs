@@ -53,7 +53,7 @@ use shooter_sim::net::protocol::{
     self as protocol, AirView, Baseline, ChargeStatus, ChargeView, ClientMessage, DominationView,
     FlagPlay, FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause,
     MAX_BUILD_BYTES, PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage,
-    Snapshot, StreakEvent, ZombiesEvent, ZoneView,
+    Snapshot, StreakEvent, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -68,7 +68,6 @@ use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
-use super::horde_view::HordeView;
 use super::killcam::{KillcamView, Playing, ViewDriver, WeaponCue};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
@@ -292,9 +291,6 @@ pub struct NetClient {
     aimed: Option<u8>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
-    /// Zombies: the horde as drawn, and the map's director mirroring the
-    /// server's game.
-    horde: Option<HordeView>,
 }
 
 /// A Care Package as the client knows it.
@@ -477,24 +473,12 @@ impl INode for NetClient {
         }
 
         if self.status == Status::Joined && !paused {
-            let revive = self.revive_spot();
             let charge = self.charge_spot();
-            let spot = charge.is_some() || revive.is_some();
             if let Some(player) = &mut self.player {
-                player.bind_mut().set_charge_spot(spot);
-                player.bind_mut().set_revive_spot(revive.is_some());
+                player.bind_mut().set_charge_spot(charge.is_some());
                 player
                     .bind_mut()
                     .set_defuse_spot(charge == Some(UseKind::Defuse));
-            }
-            if self.horde.is_some() {
-                let name = revive.map(|id| self.name_of(i32::from(id)).to_string());
-                if let Some(horde) = &mut self.horde {
-                    horde
-                        .director()
-                        .bind_mut()
-                        .net_revive_prompt(name.as_deref().unwrap_or(""));
-                }
             }
             self.send_inputs(now);
             self.send_debug_request();
@@ -509,7 +493,7 @@ impl INode for NetClient {
     }
 
     fn process(&mut self, delta: f64) {
-        let _profile = crate::profile::scope("client/remotes and horde");
+        let _profile = crate::profile::scope("client/remotes");
         if self.base().get_tree().is_paused()
             || self.status != Status::Joined
             || self.newest.is_none()
@@ -539,9 +523,6 @@ impl INode for NetClient {
             if let Some(held) = held {
                 remote.node.bind_mut().hold_hitboxes(&held);
             }
-        }
-        if let Some(horde) = &mut self.horde {
-            horde.draw(render_tick);
         }
         // Shots fired before the next frame aim at what was just drawn.
         if let Some(player) = &mut self.player {
@@ -736,8 +717,6 @@ impl NetClient {
                 d.set("captures", e.row.captures);
                 d.set("returns", e.row.returns);
                 d.set("defends", e.row.defends);
-                d.set("revives", e.row.revives);
-                d.set("headshots", e.row.headshots);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
                 d.set("level", i32::from(e.row.level));
@@ -1996,12 +1975,6 @@ impl NetClient {
         self.player_id.map_or(-1, i32::from)
     }
 
-    /// Zombies: zombies drawn now (0 outside Zombies).
-    #[func]
-    fn drawn_zombies(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.drawn() as i32)
-    }
-
     /// Ids of the other players currently shown.
     #[func]
     fn remote_ids(&self) -> PackedInt32Array {
@@ -2075,7 +2048,6 @@ impl NetClient {
             Some(Baseline {
                 players: history.get(tick)?,
                 own: history.own(tick, id),
-                zombies: history.zombies(tick).map(|z| (tick, z)),
             })
         }) {
             Ok(message) => message,
@@ -2113,15 +2085,6 @@ impl NetClient {
                 crate::viewmodel::precache_weapon_scenes();
                 if let Some(clock) = &mut self.clock {
                     clock.set_interval(u32::from(snapshot_interval));
-                }
-                if mode == Mode::Zombies {
-                    let tree = self.base().get_tree();
-                    self.horde = HordeView::attach(&tree, snapshot_interval);
-                    if self.horde.is_none() {
-                        godot_error!(
-                            "net client: the server runs Zombies on a map without a director"
-                        );
-                    }
                 }
                 self.spectator = spectator;
                 if let Some(player) = &mut self.player {
@@ -2319,43 +2282,12 @@ impl NetClient {
                 self.signals().match_changed().emit();
             }
             GameEvent::Scoreboard { rows } => {
-                if let (Some(horde), Some(me)) = (&mut self.horde, self.player_id)
-                    && let Some(row) = rows.iter().find(|r| r.id == me)
-                {
-                    horde.set_tallies(row.kills, row.headshots);
-                }
                 for row in rows {
                     if let Some(entry) = self.roster.iter_mut().find(|e| e.id == row.id) {
                         entry.row = row;
                     }
                 }
                 self.signals().scoreboard_changed().emit();
-            }
-            GameEvent::Zombies(event) => {
-                if let ZombiesEvent::Hit {
-                    shot,
-                    headshot,
-                    killed,
-                    ..
-                } = event
-                {
-                    self.stats.hits_confirmed += 1;
-                    if killed {
-                        self.stats.kills_confirmed += 1;
-                    }
-                    if let Some(player) = &mut self.player {
-                        player.bind_mut().on_server_hit(shot, headshot, killed);
-                    }
-                }
-                let newest = self.newest;
-                let me = self.player_id;
-                if let Some(horde) = &mut self.horde {
-                    horde.on_event(&event, me, |end| match newest {
-                        Some(now) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
-                        None => 0.0,
-                    });
-                }
-                self.on_last_stand(&event);
             }
             GameEvent::Spawned { yaw } => {
                 if let Some(player) = &mut self.player {
@@ -2734,94 +2666,6 @@ impl NetClient {
         }
     }
 
-    /// What holding interact would do where the local player stands: plant
-    /// (carrying the charge, inside a site), defuse (a defender at the
-    /// planted charge), or nothing. The same rule the server holds players
-    /// still by (`Charge::spot`), from what it last told us.
-    /// Zombies: going down, getting up, and revives, for the HUD and the
-    /// markers over downed teammates.
-    fn on_last_stand(&mut self, event: &ZombiesEvent) {
-        let me = self.player_id;
-        match *event {
-            ZombiesEvent::Downed {
-                player,
-                bleeds_out_at,
-            } => {
-                let seconds = bleeds_out_at.map(|t| self.seconds_until(Some(t)));
-                if Some(player) == me {
-                    if let Some(horde) = &mut self.horde {
-                        horde.director().bind_mut().net_downed(seconds);
-                    }
-                } else if let Some(mut remote) = self.remote_player(i32::from(player)) {
-                    remote.bind_mut().set_downed_marker(seconds.is_some());
-                }
-                // A revive we were part of ends with them up (or gone).
-                if bleeds_out_at.is_none()
-                    && let Some(horde) = &mut self.horde
-                    && Some(player) != me
-                {
-                    horde.director().bind_mut().net_revive(None);
-                }
-            }
-            ZombiesEvent::Revive {
-                player,
-                by,
-                done_at,
-            } => {
-                // Everyone sees the reviver kneel over the downed player (or
-                // get up when the revive stops).
-                for remote in &mut self.remotes {
-                    let reviving = by == Some(remote.id) && by != Some(player);
-                    remote.node.bind_mut().set_reviving(player, reviving);
-                }
-                let involved = Some(player) == me || (by.is_some() && by == me);
-                if !involved {
-                    return;
-                }
-                let revive = by.map(|by| {
-                    let reviving = Some(by) == me;
-                    let other = if reviving { player } else { by };
-                    // Second Wind alone: getting back up by ourselves.
-                    let name = if by == player {
-                        String::new()
-                    } else {
-                        self.name_of(i32::from(other)).to_string()
-                    };
-                    (name, reviving, self.seconds_until(Some(done_at)))
-                });
-                if let Some(horde) = &mut self.horde {
-                    horde.director().bind_mut().net_revive(revive);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Zombies: the teammate down in last stand close enough for us to
-    /// revive, by the server's rule (`laststand::REVIVE_RADIUS` between
-    /// feet), so holding use there is predicted as the server runs it.
-    fn revive_spot(&self) -> Option<u8> {
-        let horde = self.horde.as_ref()?;
-        let player = self.player.as_ref()?;
-        let player = player.bind();
-        if !player.is_alive() || player.is_downed() {
-            return None;
-        }
-        let here = player.feet_position();
-        horde
-            .downed()
-            .iter()
-            .filter(|id| Some(**id) != self.player_id)
-            .filter_map(|id| {
-                let remote = self.remotes.iter().find(|r| r.id == *id)?;
-                let feet = remote.node.get_global_position();
-                Some((*id, feet.distance_to(here)))
-            })
-            .filter(|(_, d)| *d <= shooter_sim::zombies::laststand::REVIVE_RADIUS)
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(id, _)| id)
-    }
-
     /// The charge went off at `at`: its own big blast, a rattle by distance,
     /// and, close by, the controller's rumble and ringing ears.
     fn charge_blast(&mut self, at: Vector3) {
@@ -2834,6 +2678,10 @@ impl NetClient {
         }
     }
 
+    /// What holding interact would do where the local player stands: plant
+    /// (carrying the charge, inside a site), defuse (a defender at the
+    /// planted charge), or nothing. The same rule the server holds players
+    /// still by (`Charge::spot`), from what it last told us.
     fn charge_spot(&self) -> Option<UseKind> {
         let view = self.charge?;
         let round = self.round?;
@@ -3064,9 +2912,6 @@ impl NetClient {
             .map(|own| (self.player_id.unwrap_or(0), own.predicted));
         self.history
             .insert_with_own(tick, snapshot.players.clone(), owns.into_iter().collect());
-        if let Some(zombies) = &snapshot.zombies {
-            self.history.insert_zombies(tick, zombies.clone());
-        }
         let newest = self.newest.is_none_or(|n| tick > n);
         if newest {
             self.record_tape(&snapshot);
@@ -3077,9 +2922,6 @@ impl NetClient {
             self.radar_at = Time::singleton().get_ticks_usec() as f64 / 1e6;
             if let Some(clock) = &mut self.clock {
                 clock.on_snapshot(tick);
-            }
-            if let (Some(horde), Some(zombies)) = (&mut self.horde, &snapshot.zombies) {
-                horde.on_snapshot(tick, zombies.clone());
             }
         }
 
@@ -3605,9 +3447,6 @@ impl NetClient {
 fn gun_of(key: &str) -> Option<Gun> {
     let id = WeaponId::by_key(key)?;
     let def = id.def();
-    if def.upgraded {
-        return None;
-    }
     let base = WeaponId::by_key(if def.fitted.is_empty() {
         &def.key
     } else {

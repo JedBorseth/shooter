@@ -154,7 +154,6 @@ impl ViewDriver {
             vaulting: s.vaulting,
             on_ladder: s.ladder.is_some(),
             put_away: s.charge_use.is_some(),
-            reviving: false,
             defusing: s
                 .charge_use
                 .is_some_and(|(kind, _)| kind == shooter_sim::snd::UseKind::Defuse),

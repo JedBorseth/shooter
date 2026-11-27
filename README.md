@@ -2,7 +2,7 @@
 
 # Shooter
 
-A multiplayer first-person shooter in the style of Call of Duty, built on Godot 4.7 (Forward+, Jolt physics) with the gameplay written in Rust. Matches run on dedicated servers at a 120 Hz simulation, against bots or other players: Team Deathmatch, objective modes, Search and Destroy, and co-op Zombies, with Black Ops 2's Create-a-Class, scorestreaks, and progression. Each feature follows a named Call of Duty game, and its docs page records which.
+A multiplayer first-person shooter in the style of Call of Duty, built on Godot 4.7 (Forward+, Jolt physics) with the gameplay written in Rust. Matches run on dedicated servers at a 120 Hz simulation, against bots or other players: Team Deathmatch, objective modes, and Search and Destroy, with Black Ops 2's Create-a-Class, scorestreaks, and progression. Each feature follows a named Call of Duty game, and its docs page records which.
 
 The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
 
@@ -98,7 +98,7 @@ Cargo builds the extension for your Mac's architecture. The first build and impo
 The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 
 - **Vs bots:** Team Deathmatch, Gun Game, Free-for-all, Capture the Flag, Hardpoint, Domination, and Search and Destroy. Each opens a setup card (map, team size or player count, bot skill, limits, and custom game rules), then starts a dedicated server in the background and joins it.
-- **Online and co-op:** Quick Play (matchmaking, alone or with a party), Server Browser, and Zombies.
+- **Online:** Quick Play (matchmaking, alone or with a party) and Server Browser.
 - **Practice:** Testing Area (the training range) and Free Roam (walk any multiplayer map alone).
 - **Career** (challenges, camos, combat record), **Options**, and **Quit**.
 
@@ -113,7 +113,6 @@ The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 | Hardpoint | `hardpoint` | Hold the live zone, which moves every 60 seconds, for a point a second; to 250. | [modes.md](docs/modes.md) |
 | Domination | `dom` | Hold flags A, B, and C; each scores every 5 seconds; to 200, sides swap at halftime. | [domination.md](docs/domination.md) |
 | Search and Destroy | `snd` | One life a round; the attackers win by wiping out the defenders or by planting the charge at a site until it goes off; first to 6 rounds. | [search-and-destroy.md](docs/search-and-destroy.md) |
-| Zombies | `zombies` | Co-op against rounds of zombies, up to four players. | [zombies.md](docs/zombies.md) |
 
 Any mode can run as a custom game, with Black Ops 2's game settings (limits, health and regeneration, friendly fire, radar, killcams, streaks, loadout rules, hardcore) and a bot count and skill per team, and players can join as spectators with a caster's view ([docs/custom-games.md](docs/custom-games.md)). Bots play every multiplayer mode at Easy, Normal, or Hard ([docs/bots.md](docs/bots.md)).
 
@@ -126,13 +125,8 @@ Any mode can run as a custom game, with Black Ops 2's game settings (limits, hea
 | Warehouse | `warehouse` | A corrugated-box plant rebuilt from reference photos: an overgrown field on one side, a truck dock on the other. |
 | Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. |
 | Testing Area | `arena` | The training range: weapon racks, target dummies, steel plates, and a sentry that shoots back. |
-| Zombies arena | `zombies` | A walled yard at night with boarded windows, side yards behind debris, and a skyline. |
 
 Search and Destroy plays on Slamcity and Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
-
-### Zombies
-
-Survive rounds of zombies that climb in through boarded windows, alone or with up to three friends, on a dedicated server (a private local one for Solo). Spend points on wall weapons, debris, the power, drinks, the mystery crate, the forge and its alternate ammo, and an electric fence; every few rounds a pack of hounds strikes. A downed player can be revived. The title's Zombies menu picks a location on a globe; every location plays the Zombies arena. See [docs/zombies.md](docs/zombies.md).
 
 ### Classes, streaks, and progression
 
@@ -169,7 +163,7 @@ The server also ships as a Linux zip (with `shooter-master` and `shooter-query`)
 | Jump; mantle at a ledge; cancel a slide | Space |
 | Fire / aim down sights | Left / right mouse |
 | Reload | R |
-| Interact: take a weapon, buy, open, revive, plant or defuse | F |
+| Interact: take a weapon, plant or defuse | F |
 | Knife (lunges at an enemy within about 3 m); while aiming at cover, mount the weapon | V |
 | Frag grenade (hold to cook) / tactical (flashbang or smoke) | G / Q |
 | Primary / secondary weapon, or switch | 1 / 2, mouse wheel |
@@ -254,8 +248,8 @@ Each fitted combination is its own weapon variant (`m4+reddot+grip`), so predict
 ## Repository layout
 
 - `rust/`: the Cargo workspace.
-  - `sim/` (`shooter-sim`): the engine-free, deterministic simulation that client and server share: movement, weapons, health, equipment, hit zones, every mode's rules, Zombies, classes, streaks, progression, bots' decisions, and the netcode core in `src/net/`.
-  - `game/` (`shooter-game`): the GDExtension that puts the simulation in Godot: the player, characters, weapons' views, sound, the dedicated server and client (`src/net/`), and Zombies.
+  - `sim/` (`shooter-sim`): the engine-free, deterministic simulation that client and server share: movement, weapons, health, equipment, hit zones, every mode's rules, classes, streaks, progression, bots' decisions, and the netcode core in `src/net/`.
+  - `game/` (`shooter-game`): the GDExtension that puts the simulation in Godot: the player, characters, weapons' views, sound, and the dedicated server and client (`src/net/`).
   - `master/` (`shooter-master`, `shooter-query`): the master server behind the browser's Internet tab, and a query tool.
   - `launcher/` (`shooter-launcher`): installs, updates, and starts the game or a dedicated server.
   - `allocator/` (`shooter-allocator`): starts a dedicated server for each matchmade match.
@@ -284,7 +278,6 @@ Modes:
 - [search-and-destroy.md](docs/search-and-destroy.md): rounds, the charge, sites, and the spectating dead.
 - [spawns.md](docs/spawns.md): how the server chooses spawns in each mode, and each map's spawn points.
 - [custom-games.md](docs/custom-games.md): custom game settings, hardcore, spectators, and the caster's view.
-- [zombies.md](docs/zombies.md): Zombies rounds, the horde, last stand, power, drinks, the mystery crate, the forge, and hounds.
 - [bots.md](docs/bots.md): how bots see, aim, move, and play each mode.
 
 Online and servers:

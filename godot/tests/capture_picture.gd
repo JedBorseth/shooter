@@ -14,7 +14,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of groups: testing, slamcity, zombies, motion,
+##   CAPTURE_ONLY    comma list of groups: testing, slamcity, motion,
 ##                   feedback, adaptation (default: all).
 
 const Benchmark := preload("res://tests/benchmark.gd")
@@ -88,10 +88,6 @@ func _run() -> void:
 				[Vector3(-24, 3.85, -10), -PI / 2, -0.05]
 			)
 		_unload()
-	if _wants("zombies"):
-		await _load("res://scenes/zombies_arena.tscn", Vector3(0, 0.1, 0))
-		await _view("zombies_lamp", Vector3(0, 0.1, 0), PI / 2, 0.0)
-		_unload()
 	_settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_settings.path))
 	quit()
@@ -106,9 +102,6 @@ func _load(path: String, at: Vector3) -> void:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
 	_player = scene.get_node("Player") as FpsPlayer

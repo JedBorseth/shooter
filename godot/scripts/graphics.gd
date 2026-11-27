@@ -260,7 +260,7 @@ static func apply(
 	RenderingServer.positional_soft_shadow_filter_set_quality(p["shadow_filter"])
 	# World surfaces: close-up detail on High only.
 	set_world_detail(p["world_detail"])
-	# Wet surfaces cost about 0.3 ms on Low in the Zombies arena: Low stays dry.
+	# Wet surfaces cost about 0.3 ms on Low: Low stays dry.
 	_wet_allowed = p["wet"]
 	set_world_wet(_wet_allowed and _map_wetness > 0.001)
 	# Gun smoke fades where it meets the world on High (free in the measured

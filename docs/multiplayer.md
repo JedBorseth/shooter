@@ -16,7 +16,6 @@ image is in [server.md](server.md).
 | 27016 | Its query port, the game port + 1 (`--query-port`), which server browsers, `shooter-query`, and the launcher ask |
 | 27010 | The master server (`shooter-master --port`) |
 | 27035 | A local match the title screen starts, private, with no query port |
-| 27027, 27028 | A Zombies game the title screen hosts, which friends can join |
 | 27100 to 27199 | Servers the allocator starts for matchmade games, in even/odd pairs ([online.md](online.md)) |
 | TCP 7350 | The account server (Nakama) |
 
@@ -55,7 +54,7 @@ Options go after `--`. A repeated option takes its last value.
 | `--port N` | 27015 | UDP game port |
 | `--query-port N` | game port + 1 | Port that answers server browsers; `-1` turns queries off |
 | `--name NAME` | "Shooter server" | The name server browsers show (32 bytes at most) |
-| `--map MAP` | `arena` | `arena`, `nuketown`, `slamcity`, `warehouse`, `breakwater`, or `zombies` |
+| `--map MAP` | `arena` | `arena`, `nuketown`, `slamcity`, `warehouse`, or `breakwater` |
 | `--mode MODE` | `tdm` | See the table below; an unknown mode runs Team Deathmatch with a warning |
 | `--score-limit N` | the mode's | Points to win; 0 keeps the mode's own limit |
 | `--time-limit MINUTES` | 10 | Length of a match (0.1 at least) |
@@ -72,14 +71,12 @@ Options go after `--`. A repeated option takes its last value.
 | `--accounts URL` | none | Ranked: admit only players signed in to that account server, check their unlocks, and report their match XP; the HTTP key comes from the `SHOOTER_ACCOUNTS_KEY` environment variable ([online.md](online.md)) |
 | `--exit-when-empty SECONDS` | off | Quit once nobody has been connected that long (5 at least); the allocator's servers use 120 |
 
-Zombies has no bots: on a Zombies server `--bots` and `--team-bots` are
-ignored, with a log line. `--pause-file PATH` is internal: the title screen's
+`--pause-file PATH` is internal: the title screen's
 private local match uses it to pause its server with the pause menu.
 
-The modes, their `--mode` keys (`hardpoint` also takes `hp`, `zombies` takes
-`zm`), default limits, and rules are in [modes.md](modes.md). Search and
-Destroy needs a map with charge sites (`slamcity` or `breakwater`), and Zombies
-runs on the `zombies` map for up to four players.
+The modes, their `--mode` keys (`hardpoint` also takes `hp`), default limits,
+and rules are in [modes.md](modes.md). Search and Destroy needs a map with
+charge sites (`slamcity` or `breakwater`).
 
 Players warm up in a lobby until everyone has pressed Ready in the class
 menu (L), then a countdown starts the match; after the results, the next
@@ -163,7 +160,7 @@ Publish each port on the same number it has on the server. The server tells
 browsers and the master its own game port, so a server on 27015 forwarded
 from 27115 would send players to the wrong port.
 
-## Local matches and hosted Zombies
+## Local matches
 
 The title screen's match setups (Team Deathmatch, Free-for-all, Gun Game,
 Capture the Flag, Hardpoint, Domination, Search and Destroy) call
@@ -171,11 +168,6 @@ Capture the Flag, Hardpoint, Domination, Search and Destroy) call
 process on port 27035, with no query port, and joins it. That server pauses
 with the pause menu and stops when the player leaves. Its log is
 `user://logs/local-server.log`.
-
-Zombies from the title screen hosts a shared server instead, on port 27027,
-named "<name>'s Zombies". It never pauses, answers server browsers, and is
-listed on **LAN**, or with **Listed: Internet** on the directory too.
-Players outside your network need UDP 27027 and 27028 forwarded to you.
 
 A party leader signed in to an account starts a private match on a server of
 its own instead of a local one ([custom-games.md](custom-games.md)).

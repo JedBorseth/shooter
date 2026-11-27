@@ -15,7 +15,7 @@ The layout is `godot/default_bus_layout.tres`.
 | Master | | `MixCompressor` (off unless the audio mix turns it on), then a hard limiter at -0.5 dBFS. |
 | Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's and chopper's guns. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
 | WeaponsDistant | Weapons | Other players' `mid` and `far` layers. Ducked by close gunfire. |
-| Effects | Master | Impacts, near misses, case clinks, explosions, grenades, zombie voices, Zombies barriers and doors. Gets the room reverb indoors. |
+| Effects | Master | Impacts, near misses, case clinks, explosions, grenades. Gets the room reverb indoors. |
 | WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`), so a reload follows the Effects slider and never ducks anything. |
 | Footsteps | Master | Everyone's steps, ladder rungs, landings, slides, mantles. Gets the room reverb indoors. |
 | Ambience | Master | Beds, prop hums, one-shots. `GunfireDuck`, a compressor keyed from Weapons (threshold -30 dB, ratio 6, 600 ms release), pulls it down under gunfire. |
@@ -315,7 +315,6 @@ to 25 m away.
 | Breakwater | `day` | no |
 | Nuketown | `day` | no |
 | Warehouse | per area (below) | no |
-| Zombies arena | `night` | yes |
 
 `distant_battle` plays a fight far beyond the map on one voice, 250 to 400 m
 out: bursts of the game's own guns' `far` recordings and, about one time in
@@ -367,15 +366,6 @@ found.
 
 During a killcam the live players are muted; the replayed bodies make the
 sounds.
-
-### Zombies
-
-Each zombie groans every 3 to 9 s, snarls when it swings, and cries out when it
-dies (`zombie.rs`, from artisticdude's Zombies Sound Pack sorted by
-`tools/build_zombie_audio.py`). A round's start and end play a drone-and-bell
-sting synthesized by the same tool (`zombies_hud.gd`). Barriers and doors use
-the wood impact, the power switch the metal one. The Zombies menu plays its
-reference theme and hover sound (see CREDITS).
 
 ## Reviewing sound without listening
 

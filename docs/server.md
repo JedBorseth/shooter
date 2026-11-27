@@ -51,10 +51,10 @@ go that way. Every server option is in [multiplayer.md](multiplayer.md).
 | --- | --- | --- |
 | `SHOOTER_PORT` | 27015 | `--port`: the UDP game port |
 | `SHOOTER_QUERY_PORT` | the game port + 1 | `--query-port`: where server browsers and the health check ask |
-| `SHOOTER_MAP` | `slamcity` | `--map`: `arena`, `nuketown`, `slamcity`, `warehouse`, `breakwater`, `zombies` |
-| `SHOOTER_MODE` | `tdm` | `--mode`: `tdm`, `ffa`, `gungame`, `ctf`, `hardpoint`, `dom`, `snd`, or `zombies` (on the `zombies` map) |
+| `SHOOTER_MAP` | `slamcity` | `--map`: `arena`, `nuketown`, `slamcity`, `warehouse`, `breakwater` |
+| `SHOOTER_MODE` | `tdm` | `--mode`: `tdm`, `ffa`, `gungame`, `ctf`, `hardpoint`, `dom`, or `snd` |
 | `SHOOTER_NAME` | "Shooter server" | `--name`: the name server browsers show |
-| `SHOOTER_BOTS` | 0 | `--bots`: bots that fill the teams; each player who joins takes one's place; ignored in Zombies |
+| `SHOOTER_BOTS` | 0 | `--bots`: bots that fill the teams; each player who joins takes one's place |
 | `SHOOTER_BOT_SKILL` | none (scripted targets) | `--bot-skill`: `easy`, `normal`, `hard` |
 | `SHOOTER_MASTER` | none | `--master HOST[:PORT]`: stay listed on a master server's Internet tab |
 | `SHOOTER_SCORE_LIMIT` | the mode's | `--score-limit` |

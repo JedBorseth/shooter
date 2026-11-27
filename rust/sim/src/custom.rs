@@ -229,11 +229,8 @@ impl Settings {
     }
 
     /// The match rules for `mode` under these settings, from the server's
-    /// own `rules`. Zombies keeps its own (the horde ends it).
+    /// own `rules`.
     pub fn match_rules(&self, mode: &Mode, rules: MatchRules) -> MatchRules {
-        if *mode == Mode::Zombies {
-            return rules;
-        }
         let mut rules = rules;
         if let Some(limit) = self.score_limit.filter(|l| *l > 0)
             && *mode != Mode::SearchAndDestroy
@@ -690,8 +687,7 @@ mod tests {
         let tdm = s.match_rules(&Mode::TeamDeathmatch, rules);
         assert_eq!(tdm.score_limit, 30);
         assert_eq!(tdm.time_limit, None);
-        // Zombies keeps its own; Search and Destroy counts rounds instead.
-        assert_eq!(s.match_rules(&Mode::Zombies, rules), rules);
+        // Search and Destroy counts rounds instead.
         let snd = s.match_rules(&Mode::SearchAndDestroy, rules);
         assert_eq!(snd.score_limit, rules.score_limit);
     }

@@ -1,6 +1,6 @@
 extends MeshInstance3D
 ## Contact shadows for characters: a soft dark patch on the ground under every
-## soldier and zombie, so they stand on the ground instead of floating above it
+## soldier, so they stand on the ground instead of floating above it
 ## where the sun's shadow is soft, far away, or falls behind them, and in the
 ## shade, where there is no sun shadow at all.
 ##

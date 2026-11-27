@@ -27,8 +27,6 @@ use super::rig::SoldierRig;
 pub const MAX_CORPSES: usize = 10;
 /// Seconds a soldier's body lies before it sinks away.
 pub const SOLDIER_SECONDS: f32 = 30.0;
-/// Seconds a zombie's body lies: a horde leaves many.
-pub const ZOMBIE_SECONDS: f32 = 10.0;
 /// A body sinks this far over this long, then is freed.
 const SINK_DEPTH: f32 = 0.6;
 const SINK_SECONDS: f32 = 1.5;

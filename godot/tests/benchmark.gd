@@ -1,7 +1,7 @@
 extends SceneTree
 ## Rendering benchmark. Visits fixed viewpoints on every map at each graphics
 ## preset and records frame times, so visual changes can prove they did not make
-## the game slower. Zombies runs with a 24-zombie horde walking at the player.
+## the game slower.
 ## Needs a GPU and a display (or Xvfb). From the repo root:
 ##   tools/benchmark.sh                     # all maps and presets, 1920x1080
 ##   tools/benchmark.sh --compare base.json # and compare against a baseline
@@ -13,14 +13,10 @@ extends SceneTree
 ##   BENCH_OUT      JSON results file (optional; a table always prints).
 ##   BENCH_PRESETS  comma list of low, medium, high (default: all three).
 ##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, breakwater,
-##                  warehouse, zombies
-##                  (default: all).
+##                  warehouse (default: all).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
 ##   BENCH_MOTION_BLUR  1 to measure with motion blur on (off by default).
-##   BENCH_HOUNDS   hounds galloping in front of a horde (default 0, as the
-##                  baseline): 8, a four-player hound round's most at once,
-##                  checks a full horde plus hounds against the budget.
 ##
 ## GPU time comes from the renderer's own timestamps, so it is the most stable
 ## number under Xvfb. Frame time is wall clock and includes Xvfb's copy.
@@ -92,17 +88,6 @@ const MAPS := {
 			[Vector3(2.44, 0.3, -1.75), 2.19, 0.05],
 		],
 	},
-	"zombies":
-	{
-		"scene": "res://scenes/zombies_arena.tscn",
-		"horde": 24,
-		"views":
-		[
-			[Vector3(0, 0.1, 0), 0.0, -0.05],
-			[Vector3(0, 0.1, 0), PI, -0.05],
-			[Vector3(0, 0.1, 0), PI / 2, 0.0],
-		],
-	},
 }
 
 const PRESET_KEYS := {"low": 0, "medium": 1, "high": 2}
@@ -158,20 +143,13 @@ func _run() -> void:
 func _bench_map(map: String, preset: String) -> void:
 	var spec: Dictionary = MAPS[map]
 	var scene: Node = (load(spec["scene"]) as PackedScene).instantiate()
-	# Keep the scene still: no sentry fire, no zombie rounds.
+	# Keep the scene still: no sentry fire.
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
 	var player := scene.get_node("Player") as FpsPlayer
-	var horde := _spawn_horde(scene, spec.get("horde", 0))
-	var hounds: Array[Node3D] = []
-	if not horde.is_empty():
-		hounds = _spawn_hounds(scene, int(OS.get_environment("BENCH_HOUNDS")))
 	await _frames(90)
 
 	var view_index := 0
@@ -179,10 +157,7 @@ func _bench_map(map: String, preset: String) -> void:
 		player.global_position = view[0]
 		player.velocity = Vector3.ZERO
 		player.set_look(view[1], view[2])
-		_place_horde(horde, player)
-		_place_hounds(hounds, player)
 		for i in WARMUP_FRAMES:
-			_drive_horde(horde, player)
 			await process_frame
 		var cpu := 0.0
 		var gpu := 0.0
@@ -190,7 +165,6 @@ func _bench_map(map: String, preset: String) -> void:
 		var last := Time.get_ticks_usec()
 		for i in _frames_per_view:
 			player.set_look(view[1], view[2])
-			_drive_horde(horde, player)
 			await process_frame
 			var now := Time.get_ticks_usec()
 			times.append((now - last) / 1000.0)
@@ -250,66 +224,6 @@ func _bench_map(map: String, preset: String) -> void:
 		view_index += 1
 	scene.queue_free()
 	await _frames(10)
-
-
-## Hounds galloping on the spot in a row ahead of the player
-## (`scenes/zombies/hound.tscn`, drawn as clients draw the server's).
-func _spawn_hounds(scene: Node, count: int) -> Array[Node3D]:
-	var hounds: Array[Node3D] = []
-	var packed := load("res://scenes/zombies/hound.tscn") as PackedScene
-	for i in count:
-		var hound := packed.instantiate() as Node3D
-		scene.add_child(hound)
-		hounds.append(hound)
-	return hounds
-
-
-func _place_hounds(hounds: Array[Node3D], player: FpsPlayer) -> void:
-	var forward := -player.global_basis.z
-	forward.y = 0
-	forward = forward.normalized()
-	var right := forward.cross(Vector3.UP)
-	var yaw := atan2(forward.x, forward.z)
-	for i in hounds.size():
-		var at := player.global_position + forward * 4.0 + right * (i - hounds.size() / 2.0) * 1.1
-		hounds[i].call("net_apply", at, yaw, -forward * 6.2)
-
-
-## Soldiers in the zombie palette, driven like a horde: a walking crowd is what
-## costs the most, through skinning, draw calls, and shadows.
-func _spawn_horde(scene: Node, count: int) -> Array[SoldierRig]:
-	var horde: Array[SoldierRig] = []
-	if count == 0:
-		return horde
-	var packed := load("res://scenes/characters/soldier.tscn") as PackedScene
-	for i in count:
-		var zombie := packed.instantiate() as SoldierRig
-		zombie.zombie = true
-		scene.add_child(zombie)
-		zombie.set_team_index(2)
-		horde.append(zombie)
-	return horde
-
-
-func _place_horde(horde: Array[SoldierRig], player: FpsPlayer) -> void:
-	var forward := -player.global_basis.z
-	forward.y = 0
-	forward = forward.normalized()
-	var right := forward.cross(Vector3.UP)
-	for i in horde.size():
-		var row := i / 6
-		var column := i % 6 - 2.5
-		horde[i].global_position = (
-			player.global_position + forward * (6.0 + row * 2.2) + right * column * 1.4
-		)
-
-
-func _drive_horde(horde: Array[SoldierRig], player: FpsPlayer) -> void:
-	for zombie in horde:
-		var to_player := player.global_position - zombie.global_position
-		var yaw := atan2(-to_player.x, -to_player.z)
-		var velocity := Vector3(-sin(yaw), 0, -cos(yaw)) * 1.2
-		zombie.drive({"yaw": yaw, "velocity": velocity, "on_floor": true}, 1.0 / 60.0)
 
 
 func _report(size: Vector2) -> void:

@@ -1,7 +1,7 @@
 extends Control
 ## The title screen: a grouped list of routes on the left over a still of
 ## Slamcity. Local match modes open their setup as a card on the right; the
-## server browser, Zombies, and Options take the whole screen.
+## server browser and Options take the whole screen.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
@@ -11,7 +11,6 @@ const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 const WAREHOUSE_PATH := "res://scenes/warehouse.tscn"
 const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const BROWSER_PATH := "res://scenes/server_browser.tscn"
-const ZOMBIES_PATH := "res://scenes/zombies_arena.tscn"
 ## The menu button for each local match mode.
 const SETUP_BUTTONS := {
 	"tdm": "TeamDeathmatch",
@@ -42,7 +41,6 @@ const ROUTES := {
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
 	"QuickPlay": ["MATCHMAKING", "Find a match online, alone or with your party."],
 	"Multiplayer": ["SERVERS", "Join a dedicated server on the internet or your network."],
-	"Zombies": ["CO-OP", "Survive the rounds, alone or with up to three friends."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"FreeRoam": ["ANY MAP", "Walk Slamcity, Nuketown, Warehouse, or Breakwater on your own."],
 	"Career": ["", "Challenges, camos, and your combat record."],
@@ -53,7 +51,6 @@ const ROUTES := {
 var _loading := false
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
-var _zombies_menu: Node
 var _tdm_setup: Node
 var _account_card: Node
 var _quick_play_card: Node
@@ -82,7 +79,6 @@ func _ready() -> void:
 			if not _loading:
 				_status.text = "%s invited you to their party: open Quick Play." % from
 	)
-	_menu.get_node("Zombies").pressed.connect(_open_zombies)
 	for button: Button in _buttons():
 		_add_route_tag(button)
 		button.focus_entered.connect(_describe.bind(button))
@@ -286,7 +282,7 @@ func _open_multiplayer(message := "") -> void:
 
 
 ## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame",
-## "ffa", "snd", or "zombies") as a card beside the menu, closing any card already open.
+## "ffa", or "snd") as a card beside the menu, closing any card already open.
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
@@ -298,8 +294,7 @@ func _open_setup(mode: String) -> void:
 	setup.set("mode", mode)
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
-	# Zombies co-op opens from the Zombies menu.
-	_setup_button = SETUP_BUTTONS.get(mode, "Zombies")
+	_setup_button = SETUP_BUTTONS[mode]
 	_set_current(_setup_button)
 	add_child(setup)
 	setup.back_requested.connect(_close_tdm)
@@ -350,53 +345,6 @@ func _start_tdm(options: Dictionary) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Net.start_local_match(options)
-
-
-func _open_zombies() -> void:
-	if _loading:
-		return
-	# Zombies assets are loaded on entry, never by the launch scene.
-	var scene := load("res://scenes/zombies_menu.tscn") as PackedScene
-	if scene == null:
-		_status.text = "Unable to open Zombies menu."
-		return
-	_close_tdm(false)
-	_close_account(false)
-	_close_quick_play(false)
-	var zombies := scene.instantiate()
-	_zombies_menu = zombies
-	$Background.hide()
-	$Shade.hide()
-	$FloorShade.hide()
-	$Margin.hide()
-	add_child(zombies)
-	zombies.back_requested.connect(_close_zombies)
-	zombies.play_requested.connect(func(_map_name: String) -> void: _start_solo_zombies())
-	zombies.coop_requested.connect(_open_zombies_coop)
-
-
-## Solo Zombies: a local dedicated server, as every mode is, that starts at
-## once and pauses with the pause menu.
-func _start_solo_zombies() -> void:
-	_close_zombies()
-	_start_tdm({"mode": "zombies", "map": "zombies", "name": "Solo Zombies", "auto_start": true})
-
-
-## Zombies with friends: the local match card, set up for co-op.
-func _open_zombies_coop() -> void:
-	_close_zombies()
-	_open_setup("zombies")
-
-
-func _close_zombies() -> void:
-	if _zombies_menu != null:
-		_zombies_menu.queue_free()
-		_zombies_menu = null
-	$Background.show()
-	$Shade.show()
-	$FloorShade.show()
-	$Margin.show()
-	$Margin/Layout/Menu/Zombies.grab_focus()
 
 
 ## Loads a multiplayer map to walk alone ("slamcity", "nuketown", "warehouse",
@@ -463,7 +411,5 @@ func _loading_failed(reason: String) -> void:
 	_loading = false
 	_set_buttons_disabled(false)
 	_status.text = "Unable to open %s. Please try again." % _destination
-	if _zombies_menu != null:
-		_close_zombies()
 	_testing.grab_focus()
 	push_error("%s: %s" % [_destination, reason])

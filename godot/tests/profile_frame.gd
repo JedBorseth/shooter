@@ -9,7 +9,7 @@ extends SceneTree
 ##
 ## Environment:
 ##   PROFILE_MAP     a map of tests/benchmark.gd (testing, slamcity, breakwater,
-##                   warehouse, zombies, ...; default slamcity).
+##                   warehouse, ...; default slamcity).
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
 ##   PROFILE_FRAMES  frames measured per round (default 90).
@@ -68,9 +68,6 @@ func _run() -> void:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
 	_player = scene.get_node("Player") as FpsPlayer
@@ -509,7 +506,7 @@ func _no_shadows(scene: Node, part: String) -> Variant:
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
-## Hides every third-person character (soldiers, bots, dummies, zombies), or
+## Hides every third-person character (soldiers, bots, dummies), or
 ## with `shadows_only` stops them casting shadows.
 func _characters(scene: Node, shadows_only: bool) -> Variant:
 	var meshes: Array[MeshInstance3D] = []

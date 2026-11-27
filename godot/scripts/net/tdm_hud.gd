@@ -32,7 +32,6 @@ extends CanvasLayer
 ## adds its round HUD beside this one (`snd_hud.gd`).
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
-const ZombiesBoard := preload("res://scripts/net/zombies_board.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const LobbyTeams := preload("res://scripts/net/lobby_teams.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
@@ -152,10 +151,7 @@ func _process(delta: float) -> void:
 	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
 	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
-	# Zombies has its own HUD (rounds and points); this keeps the menus,
-	# the banners, and the scoreboard.
-	var zombies: bool = info.mode == "zombies"
-	_score.visible = not zombies and not bool(info.get("hardcore", false))
+	_score.visible = not bool(info.get("hardcore", false))
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
@@ -178,11 +174,10 @@ func _process(delta: float) -> void:
 		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
 	_update_banner(phase, info)
 	_age_callout(delta)
-	# Zombies starts everyone on the sidearm: the lobby only readies up.
-	_loadout_box.visible = not ladder and not zombies
+	_loadout_box.visible = not ladder
 	_ladder_box.visible = ladder
 	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
-	_menu_title.text = "Weapon ladder" if ladder else ("Ready up" if zombies else "Choose class")
+	_menu_title.text = "Weapon ladder" if ladder else "Choose class"
 	_menu_panel.custom_minimum_size.x = 560.0 if ladder else 900.0
 	_age_chat(delta)
 
@@ -198,9 +193,7 @@ func _process(delta: float) -> void:
 	if not results:
 		_xp_ready = false
 	_xp_card.visible = results and _xp_ready and not _menu.visible
-	_board.visible = (
-		(results and not zombies) or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
-	)
+	_board.visible = (results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible))
 	# The banner above says the result; the board keeps the mode, in its colour.
 	_board.title = String(info.get("mode_name", "")).to_upper()
 	_board.title_colour = _result_colour(info) if results else MenuStyle.TEXT
@@ -211,7 +204,7 @@ func _process(delta: float) -> void:
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
 	# Destroy's own HUD says what to do while dead in a match.
-	var dead_hint := not alive and not ladder and not snd and not zombies
+	var dead_hint := not alive and not ladder and not snd
 	var show_hint := not _menu.visible and not _board.visible and (phase == "lobby" or dead_hint)
 	var key := Settings.prompt_key(&"loadout")
 	_overlay.hint = ""
@@ -221,11 +214,7 @@ func _process(delta: float) -> void:
 				"[%s] %s  ·  %s"
 				% [
 					key,
-					(
-						"Weapon ladder and ready"
-						if ladder
-						else ("Ready up" if zombies else "Choose class and ready")
-					),
+					"Weapon ladder and ready" if ladder else "Choose class and ready",
 					Scoreboard.ready_count(client.roster())
 				]
 			)
@@ -388,16 +377,9 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 				_overlay.detail = "Domination  ·  first to %d points" % info.score_limit
 			elif info.mode == "snd":
 				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
-			elif info.mode == "zombies":
-				_overlay.title = "GAME STARTS IN %d" % int(ceil(info.seconds_left))
-				_overlay.detail = "Zombies  ·  survive as many rounds as you can"
-
 			else:
 				_overlay.detail = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
-			# Zombies' own HUD shows its game over.
-			if info.mode == "zombies":
-				return
 			_overlay.title = _results_title(info)
 			_overlay.detail = "Next match in %d" % int(ceil(info.seconds_left))
 			_overlay.colour = _result_colour(info)
@@ -586,9 +568,6 @@ func _refresh_board() -> void:
 	_check_levels(info)
 	if info.get("free_for_all", false):
 		_refresh_ladder_board()
-		return
-	if info.mode == "zombies":
-		_board.sections = ZombiesBoard.sections(client.roster(), TeamColours.ally)
 		return
 	var my_team: int = info.my_team
 	var ctf: bool = info.mode == "ctf"

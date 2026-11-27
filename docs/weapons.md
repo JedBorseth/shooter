@@ -277,8 +277,8 @@ press mounts the weapon instead ([movement.md](movement.md)).
   as for shots) stands within 1 m of, so it cannot be used as a dash. The
   strike itself is checked like a shot: against rewound players, with 0.5 m of
   extra reach, and never through a wall.
-- In Zombies a knife kill pays 130 points. In Gun Game a knife kill sets the
-  victim back a weapon and does not move the killer up.
+- In Gun Game a knife kill sets the victim back a weapon and does not move
+  the killer up.
 - The swing (`rust/game/src/knife.rs`): the support hand leaves the weapon,
   which drops down and right out of the way, and slashes a blackened knife
   (`tools/build_knife.py`) across the centre as the strike lands, following
@@ -311,7 +311,7 @@ the predicted weapon state (`Action::Throwing`).
   about 10 m out, a high one about 30 m. It bounces off walls and floors (32%
   of the speed into a surface back, 70% along it), rolls when it meets the
   ground slower than 1.4 m/s (slowing at 3.5 m/s²), and settles. It passes
-  through players and zombies.
+  through players.
 - **Frag blast.** 150 damage within 3 m, falling to 20 at 8 m: a kill on a
   full-health player out to about 4.9 m. A body is hit only if the blast can
   see its shins, chest, or head. No friendly fire, but a thrower's own grenade
@@ -338,8 +338,6 @@ the predicted weapon state (`Action::Throwing`).
 - **Counts.** The class decides: one frag a life (two with the Extra Lethal
   wildcard, none with the slot empty) and one or two tacticals, refilled at
   each spawn (per round in Search and Destroy). Gun Game hands out guns only.
-  Zombies starts with two frags and gives two more each later round, up to
-  four, and no tacticals.
 - **The throw drawn.** The support hand throws while the firing hand keeps the
   weapon, dipped (`rust/game/src/grenade_hold.rs`): the grenade comes up, the
   pin comes out, the arm cocks back and waits while it cooks, then comes over

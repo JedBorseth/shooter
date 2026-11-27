@@ -12,7 +12,6 @@ const MAPS: Array[String] = [
 	"res://scenes/nuketown.tscn",
 	"res://scenes/warehouse.tscn",
 	"res://scenes/breakwater.tscn",
-	"res://scenes/zombies_arena.tscn",
 ]
 
 var _failures := 0

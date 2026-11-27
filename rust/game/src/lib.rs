@@ -14,16 +14,13 @@ mod character;
 mod convert;
 mod effects;
 mod footsteps;
-mod forge;
 mod grenade_hold;
 mod grenade_view;
 mod grenades;
 mod gunfire;
 mod hitbox_rig;
-mod hound;
 mod knife;
 mod ladder;
-mod mystery_crate;
 mod net;
 mod penetration;
 mod pickup;
@@ -40,8 +37,6 @@ mod viewmodel;
 mod weapon_clips;
 mod weapon_data;
 mod weapon_foley;
-mod zombie;
-mod zombie_director;
 
 /// The only unsafe code in the crate: godot-rust requires the entry point to be
 /// an `unsafe impl`, since Godot calls into it through the C ABI.

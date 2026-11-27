@@ -1,6 +1,6 @@
 ---
 name: cod-design
-description: Design every feature the way Call of Duty does it. Use before building or changing any player-facing feature or the system behind it (movement, gunplay, weapons, equipment, health, modes, spawns, scoring, medals, streaks, bots, HUD, menus, settings, controls, audio, graphics and visual quality, netcode feel, progression, Zombies), without being asked. Finds the Call of Duty precedent, pins down its rules, numbers, inputs, and edge cases, follows it unless the user or a recorded project decision says otherwise, and records the reference in docs and the PR.
+description: Design every feature the way Call of Duty does it. Use before building or changing any player-facing feature or the system behind it (movement, gunplay, weapons, equipment, health, modes, spawns, scoring, medals, streaks, bots, HUD, menus, settings, controls, audio, graphics and visual quality, netcode feel, progression), without being asked. Finds the Call of Duty precedent, pins down its rules, numbers, inputs, and edge cases, follows it unless the user or a recorded project decision says otherwise, and records the reference in docs and the PR.
 ---
 
 # Design it like Call of Duty
@@ -71,7 +71,7 @@ before coding:
   both.
 - **Interactions and edge cases:** what cancels it, what it cancels, what
   happens during a sprint, a reload, a switch, a mantle, ADS, in the air, while
-  downed or dead, at round end, and when the player disconnects.
+  dead, at round end, and when the player disconnects.
 - **Feedback:** what the player sees (HUD element and where it sits, screen
   effect, viewmodel motion), hears (cue, its mix priority, whether enemies hear
   it too), and feels (rumble).

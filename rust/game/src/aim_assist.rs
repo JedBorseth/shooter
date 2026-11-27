@@ -27,10 +27,6 @@ pub struct AimAssistTarget {
     #[export]
     #[init(val = true)]
     enabled: bool,
-    /// Target aim assist snaps onto this body when the player starts aiming
-    /// down sights. Zombies only, as in CoD.
-    #[export]
-    snap: bool,
 }
 
 #[godot_api]
@@ -65,7 +61,6 @@ impl AimAssistTarget {
             bottom: to_sim(origin + up * radius),
             top: to_sim(origin + up * (self.height - radius)),
             radius,
-            snap: self.snap,
         }
     }
 }

@@ -184,17 +184,10 @@ pub struct PlayerState {
     pub lethal_held: bool,
     /// The tactical button was down last tick.
     pub tactical_held: bool,
-    /// Zombies: down in last stand ([`crate::zombies::laststand`]): crawling,
-    /// sidearm only, no regeneration, and no harm. The server downs and
-    /// revives; prediction only follows the rules here.
-    pub downed: bool,
     /// The perks this life carries ([`crate::perk`]), from the class it
     /// spawned with. Part of the predicted state, so the client steps its
     /// movement and weapon with the same perks the server does.
     pub perks: Perks,
-    /// Zombies: the drinks held ([`crate::zombies::drinks`]). The server
-    /// sells and takes them; prediction follows their handling.
-    pub drinks: crate::zombies::drinks::Drinks,
 }
 
 impl PlayerState {
@@ -210,9 +203,7 @@ impl PlayerState {
             melee_held: false,
             lethal_held: false,
             tactical_held: false,
-            downed: false,
             perks: Perks::NONE,
-            drinks: crate::zombies::drinks::Drinks::NONE,
         }
     }
 
@@ -245,7 +236,6 @@ impl PlayerState {
             move_ratio: speed / params.walk_speed,
             mount: self.movement.mount_blend,
             handling: self.perks.handling(),
-            drinks: self.drinks,
         }
     }
 }
@@ -290,8 +280,7 @@ pub fn apply_damage(
     fall: bool,
     events: &mut Vec<PlayerEvent>,
 ) -> bool {
-    // Nothing hurts a player down in last stand.
-    if !state.alive() || amount <= 0.0 || state.downed {
+    if !state.alive() || amount <= 0.0 {
         return false;
     }
     let amount = amount.min(state.health);
@@ -353,28 +342,8 @@ pub fn step(
         }
     };
 
-    // Down in last stand: a crawl with the sidearm. No jumping, sprinting,
-    // standing up, mounting, or grenades (the server takes them away).
-    let input = if state.downed {
-        PlayerInput {
-            jump: false,
-            sprint: false,
-            crouch: false,
-            prone: false,
-            melee: false,
-            lunge: None,
-            lethal: false,
-            tactical: false,
-            pickup: None,
-            switch_to: None,
-            ..input
-        }
-    } else {
-        input
-    };
-
     state.since_damage += dt;
-    if state.alive() && !state.downed && state.since_damage >= params.health.regen_delay {
+    if state.alive() && state.since_damage >= params.health.regen_delay {
         state.health = (state.health + params.health.regen_rate * dt).min(params.health.max_health);
     }
 
@@ -475,16 +444,10 @@ pub fn step(
             || scoped
             || melee
             || state.combat.meleeing(),
-        // Lightweight moves faster in every stance; last stand crawls.
+        // Lightweight moves faster in every stance.
         speed_multiplier: def.move_scale
             * (1.0 + (def.ads_move_scale - 1.0) * ads)
-            * perks.speed_scale()
-            * if state.downed {
-                crate::zombies::laststand::CRAWL_SPEED_SCALE
-            } else {
-                1.0
-            }
-            * state.drinks.speed_scale(),
+            * perks.speed_scale(),
         // Dexterity's sprint-out is shorter; the legs follow the gun.
         sprint_out_time: def.sprint_out_time / perks.handling().sprint_out,
         lunge,
@@ -509,8 +472,7 @@ pub fn step(
         throw_held,
     };
     let mut ctx = state.combat_context(env, &params.movement);
-    // Down in last stand the pistol stays up through the crawl.
-    ctx.sprinting |= state.movement.crawling(input.aim) && !state.downed;
+    ctx.sprinting |= state.movement.crawling(input.aim);
     let mut combat = Vec::new();
     weapon::step(&mut state.combat, &combat_input, &ctx, dt, &mut combat);
     events.extend(combat.into_iter().map(PlayerEvent::Combat));
@@ -547,44 +509,6 @@ mod tests {
             step(s, &input, env, &params, DT, &mut events);
         }
         events
-    }
-
-    #[test]
-    fn a_downed_player_crawls_cannot_be_hurt_and_does_not_heal() {
-        let ground = MoveEnv {
-            on_floor: true,
-            ..AIRBORNE
-        };
-        let mut s = ready_state();
-        s.downed = true;
-        s.health = crate::zombies::laststand::DOWNED_HEALTH;
-        s.movement.stance = crate::movement::Stance::Prone;
-        s.movement.crouch = 2.0;
-        let crawl = PlayerInput {
-            wish: Vec2::new(0.0, 1.0),
-            sprint: true,
-            jump: true,
-            crouch: true,
-            ..Default::default()
-        };
-        run(&mut s, crawl, ground, 120);
-        let speed = Vec2::new(s.movement.velocity.x, s.movement.velocity.z).length();
-        assert!(
-            speed > 0.6 && speed < 1.0,
-            "crawls at about 0.8 m/s, got {speed}"
-        );
-        assert!(!s.movement.sprinting);
-        assert_eq!(s.movement.stance, crate::movement::Stance::Prone);
-        // The pistol stays up through the crawl.
-        let ctx = s.combat_context(ground, &PlayerParams::default().movement);
-        assert!(!ctx.sprinting);
-        assert_eq!(
-            s.health,
-            crate::zombies::laststand::DOWNED_HEALTH,
-            "no regeneration"
-        );
-        assert!(!apply_damage(&mut s, 500.0, false, &mut Vec::new()));
-        assert!(s.alive());
     }
 
     fn fired(events: &[PlayerEvent]) -> bool {
