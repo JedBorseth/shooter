@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://b54srkyl84fkq"]
+
+[ext_resource type="Shader" uid="uid://l3st5jtf84ve" path="res://shaders/sea_shore.gdshader" id="1_shader"]
+
+[sub_resource type="FastNoiseLite" id="Noise1"]
+frequency = 0.03
+fractal_octaves = 4
+
+[sub_resource type="NoiseTexture2D" id="Wave1"]
+width = 256
+height = 256
+noise = SubResource("Noise1")
+seamless = true
+as_normal_map = true
+bump_strength = 6.0
+
+[resource]
+render_priority = 1
+shader = ExtResource("1_shader")
+shader_parameter/murk_color = Color(0.07, 0.09, 0.07, 1)
+shader_parameter/foam_color = Color(0.78, 0.8, 0.78, 1)
+shader_parameter/chop = SubResource("Wave1")
+shader_parameter/chop_size = 7.0
+shader_parameter/foam_reach = 0.22

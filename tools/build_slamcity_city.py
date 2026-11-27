@@ -70,9 +70,10 @@ class Acc:
         self.uvs: list[list] = []  # per face: one (u, v) per corner, or None
 
     def add(self, verts, faces, smooth=False, uvs=None, color=(1, 1, 1, 1)):
+        """`color` is one RGBA for every vertex, or a list with one per vertex."""
         base = len(self.verts)
         self.verts.extend(verts)
-        self.colors.extend([color] * len(verts))
+        self.colors.extend(color if isinstance(color, list) else [color] * len(verts))
         for i, face in enumerate(faces):
             self.faces.append(tuple(base + k for k in face))
             self.smooth.append(smooth if isinstance(smooth, bool) else smooth[i])
@@ -420,6 +421,12 @@ def part_geo(part) -> Geo:
     elif kind == "tube":
         v, f, s = tube_geo(part["points"], part["r"], part["sides"], part.get("sag", 0.0))
         g.add(look, v, f, s)
+    elif kind == "shaded":
+        # Explicit faces whose vertices blend the look's own tint toward a
+        # colour (stains, streaks, tide lines): `mix` holds (r, g, b, weight,
+        # roughness scale) per vertex, resolved by the map builder.
+        g.add(look, [tuple(v) for v in part["verts"]], [tuple(f) for f in part["faces"]], uvs=part.get("uvs"),
+              color=("mix", [tuple(c) for c in part["mix"]]))
     elif kind == "pane":
         v, f, uv = quad_geo(part["corners"], part["normal"])
         c = part["corners"]

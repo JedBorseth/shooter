@@ -1,13 +1,16 @@
 shader_type spatial;
 // Breakwater's harbour water (tools/breakwater_layout.py `basin`): a flat
 // plane in the map mesh, given swell by two noise normal maps that scroll
-// across each other in world space, a deep green-blue that lightens at
-// grazing angles, and a glossy surface that mirrors the sky. Cheap: two
-// texture reads, no depth or screen reads.
+// across each other in world space, a dark harbour green-grey (silted, not
+// tropical) that lightens a little at grazing angles, and a glossy surface
+// that mirrors the sky, more strongly toward the horizon (the Fresnel term
+// of the engine's specular, helped by a darker body colour there). The foam
+// and churned water along the walls are strips over it (sea_shore.gdshader).
+// Cheap: two texture reads, no depth or screen reads.
 render_mode cull_back, specular_schlick_ggx;
 
-uniform vec3 deep_color : source_color = vec3(0.035, 0.13, 0.16);
-uniform vec3 grazing_color : source_color = vec3(0.12, 0.3, 0.32);
+uniform vec3 deep_color : source_color = vec3(0.03, 0.065, 0.06);
+uniform vec3 grazing_color : source_color = vec3(0.07, 0.11, 0.1);
 uniform sampler2D swell : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D chop : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float swell_size = 34.0;
