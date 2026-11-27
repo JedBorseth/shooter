@@ -3,7 +3,7 @@ extends Control
 ## the header's top right, as Black Ops 3's in-match menu shows the match and
 ## your card over the game: the mode in squared caps, the map on a light
 ## label plate, and in a match the two sides' scores (cyan yours, red
-## theirs, each beside a hexagon), the clock, and whether you lead; offline,
+## theirs, each on a plate in its side's colour), the clock, and whether you lead; offline,
 ## what the testing area is. Fills the menu; draws only, takes no input.
 ## `pause_menu.gd` calls `refresh` when the menu opens; while it is open the
 ## clock and scores update each frame.
@@ -123,7 +123,7 @@ func _draw() -> void:
 	_draw_tag()
 	var team := info.has("scores")
 	var ffa := info.has("score")
-	var height := 196.0 + (184.0 if team or ffa else 0.0)
+	var height := 196.0 + (176.0 if team or ffa else 0.0)
 	var card := Rect2(CARD.position, Vector2(CARD.size.x, height))
 	draw_rect(card, Color(UiTheme.BG, 0.88))
 	draw_rect(card.grow(-0.5), UiTheme.LINE, false, 1.0)
@@ -138,8 +138,8 @@ func _draw() -> void:
 		HudPaint.text_right(
 			self, HudPaint.DISPLAY, info.clock, Vector2(right, y + 38), 26, UiTheme.TEXT, 1.0
 		)
-	HudShapes.split_text(
-		self, HudPaint.DISPLAY, String(info.mode), Vector2(left, y + 84), 34, UiTheme.TEXT, 1.0, 1.0
+	HudPaint.text(
+		self, HudPaint.DISPLAY, String(info.mode), Vector2(left, y + 84), 34, UiTheme.TEXT, 1.0
 	)
 	_plate(String(info.map), Vector2(left, y + 102))
 	if info.get("phase", "") != "":
@@ -155,10 +155,10 @@ func _draw() -> void:
 	y += 152.0
 	if team:
 		_draw_scores(Rect2(left, y, right - left, 170))
-		y += 184.0
+		y += 176.0
 	elif ffa:
 		_draw_own_score(Rect2(left, y, right - left, 170))
-		y += 184.0
+		y += 176.0
 	draw_rect(Rect2(left, y - 8, right - left, 1), Color(1, 1, 1, 0.1))
 	HudPaint.text(
 		self,
@@ -175,7 +175,7 @@ func _draw() -> void:
 ## Your name in the header's top right, on a dark plate with a light edge,
 ## beside your level.
 func _draw_tag() -> void:
-	var name := Settings.player_name.to_upper()
+	var name := Settings.player_name
 	var level := "LV %d" % ProgressStore.level()
 	var name_w := HudPaint.text_width(HudPaint.LABEL, name, 22, 1.0)
 	var level_w := HudPaint.text_width(HudPaint.LABEL, level, 16, 1.0) + 16.0
@@ -216,35 +216,16 @@ func _plate(value: String, at: Vector2) -> void:
 	)
 
 
-## Both sides: a hexagon in the side's colour, the big score, and the side's
-## name; then whether you lead and the goal.
+## Both sides: a plate tinted in the side's colour with a solid edge, the
+## side's name, and its score in big squared numerals; then whether you lead
+## and the goal.
 func _draw_scores(rect: Rect2) -> void:
 	var scores: Array = info.scores
-	var half := rect.size.x / 2.0
+	var width := (rect.size.x - 12.0) / 2.0
 	for i in 2:
 		var ours := i == 0
-		var colour := TeamColours.of(ours)
-		var centre := Vector2(rect.position.x + half * i + half / 2.0, rect.position.y + 52)
-		HudShapes.hexagon(self, centre, 46, Color(colour, 0.16), Color(colour, 0.9), 2.0)
-		HudShapes.split_text_centred(
-			self,
-			HudPaint.DISPLAY,
-			str(scores[i]),
-			centre + Vector2(0, 17),
-			46,
-			UiTheme.TEXT,
-			1.0 if ours else 0.0
-		)
-		HudPaint.text_centred(
-			self,
-			HudPaint.LABEL,
-			"YOUR TEAM" if ours else "ENEMY",
-			Vector2(centre.x, rect.position.y + 128),
-			16,
-			colour,
-			2.0
-		)
-	draw_rect(Rect2(rect.position.x + half, rect.position.y + 14, 1, 120), Color(1, 1, 1, 0.12))
+		var plate := Rect2(rect.position.x + (width + 12.0) * i, rect.position.y + 8, width, 112)
+		_score_plate(plate, "YOUR TEAM" if ours else "ENEMY", str(scores[i]), TeamColours.of(ours))
 	var state := "TIED"
 	var state_colour := UiTheme.TEXT
 	if scores[0] > scores[1]:
@@ -256,36 +237,38 @@ func _draw_scores(rect: Rect2) -> void:
 	_draw_footer(rect, state, state_colour)
 
 
-## Free-for-all: your score and your place.
+## Free-for-all: your score, on a plate in your colour, and your place.
 func _draw_own_score(rect: Rect2) -> void:
-	var centre := Vector2(rect.position.x + 60, rect.position.y + 52)
-	HudShapes.hexagon(self, centre, 46, Color(UiTheme.SELF, 0.14), Color(UiTheme.SELF, 0.9), 2.0)
-	HudShapes.split_text_centred(
-		self, HudPaint.DISPLAY, str(info.score), centre + Vector2(0, 17), 46, UiTheme.TEXT, 1.0
-	)
+	var plate := Rect2(rect.position + Vector2(0, 8), Vector2((rect.size.x - 12.0) / 2.0, 112))
+	_score_plate(plate, "YOUR SCORE", str(info.score), UiTheme.SELF)
+	var x := plate.end.x + 24.0
 	HudPaint.text(
-		self,
-		HudPaint.LABEL,
-		"YOUR SCORE",
-		Vector2(rect.position.x + 128, rect.position.y + 44),
-		16,
-		UiTheme.TEXT_DIM,
-		2.0
+		self, HudPaint.LABEL, "PLACE", Vector2(x, plate.position.y + 28), 15, UiTheme.TEXT_DIM, 2.0
 	)
 	HudPaint.text(
 		self,
 		HudPaint.DISPLAY,
 		String(info.get("place", "")),
-		Vector2(rect.position.x + 128, rect.position.y + 76),
-		26,
+		Vector2(x, plate.position.y + 84),
+		34,
 		UiTheme.TEXT,
 		1.0
 	)
 	_draw_footer(rect, "", UiTheme.TEXT)
 
 
+func _score_plate(plate: Rect2, title: String, score: String, colour: Color) -> void:
+	draw_rect(plate, Color(colour, 0.12))
+	draw_rect(Rect2(plate.position, Vector2(4, plate.size.y)), colour)
+	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1)), Color(colour, 0.5))
+	HudPaint.text(self, HudPaint.LABEL, title, plate.position + Vector2(18, 28), 15, colour, 2.0)
+	HudPaint.text(
+		self, HudPaint.DISPLAY, score, plate.position + Vector2(16, 92), 54, UiTheme.TEXT, 1.0
+	)
+
+
 func _draw_footer(rect: Rect2, state: String, colour: Color) -> void:
-	var baseline := rect.position.y + 162
+	var baseline := rect.position.y + 154
 	if state != "":
 		HudPaint.text(
 			self, HudPaint.LABEL, state, Vector2(rect.position.x, baseline), 18, colour, 2.0

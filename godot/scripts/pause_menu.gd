@@ -16,12 +16,11 @@ extends CanvasLayer
 signal closed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
-const UiTheme := preload("res://scripts/ui/ui_theme.gd")
-const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const OptionRow := preload("res://scripts/ui/option_row.gd")
 const OptionText := preload("res://scripts/ui/option_text.gd")
+const BindCells := preload("res://scripts/ui/bind_cells.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
@@ -97,7 +96,7 @@ func _ready() -> void:
 	var footer_keys := FooterKeys.new()
 	footer_keys.name = "FooterKeys"
 	add_child(footer_keys)
-	footer_keys.bind($Root/Footer/SelectKey, &"ui_accept")
+	footer_keys.bind($Root/Footer/SelectGroup/SelectKey, &"ui_accept")
 	footer_keys.bind($Root/Footer/BackKey, &"ui_cancel")
 	footer_keys.bind(%ResetKey, &"ui_menu_reset")
 	footer_keys.bind($Root/SettingsPage/TabRow/PrevTab/Cap/PrevKey, &"ui_tab_prev")
@@ -322,9 +321,7 @@ func _show_main() -> void:
 	_main_page.show()
 	_frame.title = "MENU" if _match_runs_on() else "PAUSED"
 	_frame.context = "ONLINE  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else ""
-	_back_button.text = "Resume"
-	_show_reset_prompt(false)
-	_hint.text = ""
+	_show_footer()
 	_card.call(&"refresh")
 	Settings.flush()
 	if from_settings:
@@ -336,17 +333,22 @@ func _show_settings() -> void:
 	_settings_page.show()
 	_frame.title = "OPTIONS"
 	_frame.context = "MAIN MENU" if title_menu else _pause_context()
-	_back_button.text = "Back"
-	_show_reset_prompt(true)
-	_hint.text = "Changes apply right away"
+	_show_footer()
 	_scroll.scroll_vertical = 0
 	_describe(TAB_NAMES[_tabs.current_tab], OptionText.TAB_INTROS[_tabs.current_tab], "")
 	_focus(_tabs)
 
 
-## The Reset to Default prompt shows on the options page only.
-func _show_reset_prompt(on: bool) -> void:
-	%ResetGroup.visible = on
+## The footer's prompts for what is on screen: Select and Resume on the
+## pause list; Select, Back, and Reset to Default on the options; only
+## Cancel while a binding waits for a key.
+func _show_footer() -> void:
+	var options := _settings_page.visible
+	var waiting := not _capturing.is_empty()
+	%SelectGroup.visible = not waiting
+	%ResetGroup.visible = options and not waiting
+	_back_button.text = "Cancel" if waiting else "Back" if options else "Resume"
+	_hint.text = "Changes apply right away" if options and not waiting else ""
 
 
 func _pause_context() -> String:
@@ -369,7 +371,7 @@ func _describe(title: String, text: String, default: String) -> void:
 func _ask_reset() -> void:
 	if _settings_page.visible and not _confirm.visible:
 		_cancel_capture()
-		_confirm.call(&"ask", RESET_QUESTION)
+		_confirm.call(&"ask", "Reset options", RESET_QUESTION)
 
 
 ## The line under the pause list: what the focused item does.
@@ -439,6 +441,7 @@ func _build_settings() -> void:
 	var controls := _add_section("Controls")
 	_add_heading(controls, "Input", false)
 	_add_input_option(controls)
+	_collect.clear()
 	_mouse_heading = _add_heading(controls, "Mouse")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, decimal)
 	_add_slider(
@@ -671,70 +674,21 @@ func _add_input_option(section: VBoxContainer) -> void:
 ## Keybinds: the action's name, its key in the middle column, and the
 ## controller button (not rebindable here) on the right.
 func _build_bindings(section: VBoxContainer) -> void:
-	var columns := Control.new()
-	columns.custom_minimum_size = Vector2(OptionRow.WIDTH, 24)
-	columns.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	var pad_x := OptionRow.VALUE_X + OptionRow.BIND_W
-	for column: Array in [
-		["Action", OptionRow.LABEL_X, 200.0, HORIZONTAL_ALIGNMENT_LEFT],
-		["Keyboard / Mouse", OptionRow.VALUE_X, OptionRow.BIND_W, HORIZONTAL_ALIGNMENT_CENTER],
-		["Controller", pad_x, OptionRow.WIDTH - pad_x - 8.0, HORIZONTAL_ALIGNMENT_CENTER],
-	]:
-		var label := Label.new()
-		label.text = String(column[0]).to_upper()
-		label.theme_type_variation = &"SectionHeader"
-		label.horizontal_alignment = column[3]
-		label.position = Vector2(column[1], 0)
-		label.size = Vector2(column[2], 24)
-		columns.add_child(label)
-	section.add_child(columns)
+	section.add_child(BindCells.columns())
 	for action: StringName in Settings.REBINDABLE:
 		var button := Button.new()
 		button.pressed.connect(_start_capture.bind(action))
 		_bind_buttons[action] = button
-		var pad := TextureRect.new()
-		pad.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pad.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var words := Label.new()
-		words.theme_type_variation = &"OptionNote"
-		words.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		words.set_anchors_preset(Control.PRESET_FULL_RECT)
-		pad.add_child(words)
-		_pad_cells[action] = pad
+		_pad_cells[action] = BindCells.pad_cell()
 		_bind_rows[action] = _add_row(
 			section,
 			OptionRow.Kind.BIND,
 			Settings.REBINDABLE[action],
 			button,
 			null,
-			pad,
-			&"bindings"
+			_pad_cells[action],
+			action
 		)
-
-
-## The controller button for `action` in its cell: the glyph, or its name
-## in words when there is no glyph for it.
-func _show_pad(action: StringName) -> void:
-	var cell := _pad_cells[action]
-	var token := Settings.key_label(action, true)
-	var glyph := Glyphs.texture(token) if Glyphs.is_pad(token) else null
-	cell.texture = glyph
-	(cell.get_child(0) as Label).text = "" if glyph != null else _gamepad_label(action).to_upper()
-
-
-func _gamepad_label(action: StringName) -> String:
-	for event: InputEvent in Settings.action_events(action):
-		if event is InputEventJoypadMotion:
-			match event.axis:
-				JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
-					return "Left stick"
-				JOY_AXIS_TRIGGER_LEFT:
-					return "LT"
-				JOY_AXIS_TRIGGER_RIGHT:
-					return "RT"
-	var label := Settings.key_label(action, true)
-	return "—" if label == "?" else Glyphs.plain(label)
 
 
 func _start_capture(action: StringName) -> void:
@@ -743,6 +697,15 @@ func _start_capture(action: StringName) -> void:
 	_bind_buttons[action].text = "Press a key…"
 	_bind_rows[action].waiting = true
 	_binding_hint.text = "Press a key or mouse button. Esc / B cancels. Conflicts swap bindings."
+	_describe(
+		Settings.REBINDABLE[action],
+		(
+			"Press the key or mouse button for this action. Esc or B cancels; after ten seconds"
+			+ " the old binding stays."
+		),
+		""
+	)
+	_show_footer()
 
 
 func _cancel_capture(message := "") -> void:
@@ -752,6 +715,7 @@ func _cancel_capture(message := "") -> void:
 	_capturing = &""
 	_bind_rows[action].waiting = false
 	_sync_controls()
+	_show_footer()
 	_binding_hint.text = message if not message.is_empty() else "Binding cancelled."
 	_focus(_bind_buttons[action])
 
@@ -772,6 +736,7 @@ func _capture_input(event: InputEvent) -> void:
 	_bind_rows[action].waiting = false
 	Settings.rebind(action, event)
 	_sync_controls()
+	_show_footer()
 	_binding_hint.text = "Binding saved. Any conflicting key was swapped with the previous binding."
 	_focus(_bind_buttons[action])
 
@@ -794,7 +759,6 @@ func _add_slider(
 	slider.value_changed.connect(func(v: float) -> void: Settings.set_setting(key, v))
 	var value := Label.new()
 	value.theme_type_variation = &"ValueLabel"
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_add_row(section, OptionRow.Kind.SLIDER, label, slider, value, null, key)
 	_sliders[key] = slider
 	_value_labels[key] = value
@@ -902,7 +866,11 @@ func _add_row(
 	_collect.append(row)
 	control.focus_entered.connect(
 		func() -> void:
-			_describe(label, OptionText.DESCRIPTIONS.get(key, ""), _defaults.get(key, ""))
+			_describe(
+				label,
+				OptionText.DESCRIPTIONS.get(key, OptionText.BIND_DESCRIPTIONS.get(key, "")),
+				_defaults.get(key, "")
+			)
 	)
 	row.hovered.connect(_hover_focus.bind(control))
 	return row
@@ -921,7 +889,7 @@ func _sync_controls() -> void:
 	for action: StringName in _bind_buttons:
 		var bound := Settings.binding(action)
 		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
-		_show_pad(action)
+		BindCells.show_pad(_pad_cells[action], action)
 	_input_option.select(_input_option.get_item_index(Settings.input_device))
 	var controller := Settings.uses_controller()
 	_show_lock(_mouse_heading, _mouse_rows, controller)

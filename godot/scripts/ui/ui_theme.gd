@@ -630,15 +630,12 @@ static func _options_types(theme: Theme) -> void:
 	theme.set_stylebox(&"tab_unselected", &"OptionTabs", outlined(tab_fill, LINE, 1, 26.0, 8.0))
 	theme.set_stylebox(&"tab_hovered", &"OptionTabs", outlined(Color("2a2e37"), LINE, 1, 26.0, 8.0))
 	theme.set_stylebox(&"tab_selected", &"OptionTabs", lit(26.0, 8.0))
-	var tab_focus := StyleBoxFlat.new()
-	tab_focus.draw_center = false
-	tab_focus.border_color = Color(ACCENT_INK, 0.9)
-	tab_focus.border_width_bottom = 3
-	theme.set_stylebox(&"tab_focus", &"OptionTabs", tab_focus)
+	theme.set_stylebox(&"tab_focus", &"OptionTabs", _empty())
 	theme.set_color(&"font_unselected_color", &"OptionTabs", TEXT_DIM)
 	theme.set_color(&"font_hovered_color", &"OptionTabs", TEXT)
 	theme.set_color(&"font_selected_color", &"OptionTabs", ACCENT_INK)
 	theme.set_constant(&"h_separation", &"OptionTabs", 4)
+	theme.set_constant(&"tab_separation", &"OptionTabs", 4)
 	# The blank end tabs that hold the previous and next tab keys.
 	_variation(theme, &"OptionTabStub", &"Button")
 	var stub := outlined(tab_fill, LINE, 1, 10.0, 0.0)
@@ -666,7 +663,7 @@ static func _options_types(theme: Theme) -> void:
 	theme.set_font_size(&"font_size", &"OptionHeading", 24)
 	_variation(theme, &"OptionLock", &"Label")
 	theme.set_font(&"font", &"OptionLock", tracked(LABEL, 2))
-	theme.set_font_size(&"font_size", &"OptionLock", 14)
+	theme.set_font_size(&"font_size", &"OptionLock", 15)
 	theme.set_color(&"font_color", &"OptionLock", TEXT_DIM)
 	theme.set_stylebox(
 		&"normal", &"OptionLock", outlined(Color(0, 0, 0, 0.4), TEXT_FAINT, 1, 6.0, 0.0)
@@ -692,7 +689,7 @@ static func _options_types(theme: Theme) -> void:
 	# A footer prompt you can click: the words after a key cap.
 	_variation(theme, &"PromptButton", &"Button")
 	theme.set_font(&"font", &"PromptButton", font(LABEL_LIGHT))
-	theme.set_font_size(&"font_size", &"PromptButton", 19)
+	theme.set_font_size(&"font_size", &"PromptButton", 18)
 	var quiet := plate(Color(0, 0, 0, 0), 4.0, 2.0)
 	_button_styles(theme, &"PromptButton", quiet, plate(PLATE_HOVER, 4.0, 2.0), quiet)
 	theme.set_stylebox(&"focus", &"PromptButton", _empty())

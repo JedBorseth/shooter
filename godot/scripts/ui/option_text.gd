@@ -8,7 +8,7 @@ extends RefCounted
 const TAB_INTROS: Array[String] = [
 	(
 		"What you play with, and how it aims. The device you don't pick is locked out"
-		+ " of play. Pick a setting to see what it does."
+		+ " of play until you pick it here."
 	),
 	"Choose a binding, then press a key or mouse button. A key used by another action swaps with it.",
 	"Display and quality. Every change applies right away.",
@@ -106,4 +106,34 @@ const DESCRIPTIONS := {
 		"Choose a binding, then press a key or mouse button. A key used by another action"
 		+ " swaps with it."
 	),
+}
+
+## What each rebindable action does, for the pane beside the Keybinds list.
+const BIND_DESCRIPTIONS := {
+	&"move_forward": "Walk forward.",
+	&"move_back": "Walk backward.",
+	&"move_left": "Step to the left.",
+	&"move_right": "Step to the right.",
+	&"jump": "Jump. At a ledge or a low wall, jump to climb over it.",
+	&"sprint": "Sprint. Crouch while sprinting to slide.",
+	&"crouch": "Crouch, or slide while sprinting. Hold it to drop to prone.",
+	&"prone": "Drop flat to the ground, or get back up.",
+	&"fire": "Fire your weapon.",
+	&"aim": "Aim down your weapon's sights.",
+	&"reload": "Reload your weapon.",
+	&"melee": "A quick melee strike.",
+	&"lethal": "Throw your lethal grenade.",
+	&"tactical": "Throw your tactical grenade: a flashbang or a smoke.",
+	&"weapon_1": "Switch to your primary weapon.",
+	&"weapon_2": "Switch to your secondary weapon.",
+	&"streak_use": "Call in the scorestreak you have ready.",
+	&"streak_next": "Pick which earned scorestreak comes next.",
+	&"interact": "Pick up weapons and use objectives, such as planting or defusing the bomb.",
+	&"inspect": "Look over the weapon in your hands.",
+	&"loadout": "Open the class menu to change your loadout.",
+	&"scoreboard": "Hold to show the scoreboard.",
+	&"chat": "Send a message to everyone in the match.",
+	&"team_chat": "Send a message to your team.",
+	&"toggle_controls": "Show or hide the list of controls on screen.",
+	&"refill_ammo": "Refill your ammo. Testing Area only.",
 }

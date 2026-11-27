@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/menu_blur.gdshader" id="2_blur"]
 [ext_resource type="Script" path="res://scripts/ui/screen_frame.gd" id="3_frame"]
 [ext_resource type="Script" path="res://scripts/ui/pause_card.gd" id="4_card"]
 [ext_resource type="Script" path="res://scripts/ui/confirm_band.gd" id="5_confirm"]
+[ext_resource type="Script" path="res://scripts/ui/option_scroll.gd" id="6_scroll"]
 
 [sub_resource type="ShaderMaterial" id="Blur"]
 shader = ExtResource("2_blur")
@@ -74,43 +75,47 @@ offset_left = 64.0
 offset_top = 150.0
 offset_right = 424.0
 offset_bottom = 400.0
-theme_override_constants/separation = 6
+theme_override_constants/separation = 4
 
 [node name="ResumeButton" type="Button" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
+size_flags_horizontal = 0
 theme_type_variation = &"RouteButton"
 text = "RESUME"
 alignment = 0
 
 [node name="SettingsButton" type="Button" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
+size_flags_horizontal = 0
 theme_type_variation = &"RouteButton"
 text = "OPTIONS"
 alignment = 0
 
 [node name="LeaveButton" type="Button" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
+size_flags_horizontal = 0
 theme_type_variation = &"RouteButton"
 text = "MAIN MENU"
 alignment = 0
 
 [node name="QuitButton" type="Button" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
+size_flags_horizontal = 0
 theme_type_variation = &"RouteButton"
 text = "QUIT TO DESKTOP"
 alignment = 0
 
 [node name="RouteNote" type="Label" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 44)
+custom_minimum_size = Vector2(360, 52)
 layout_mode = 2
 theme_type_variation = &"OptionNote"
 vertical_alignment = 2
@@ -200,9 +205,9 @@ layout_mode = 0
 offset_left = 60.0
 offset_top = 172.0
 offset_right = 712.0
-offset_bottom = 834.0
-follow_focus = true
+offset_bottom = 838.0
 horizontal_scroll_mode = 0
+script = ExtResource("6_scroll")
 
 [node name="Gutter" type="MarginContainer" parent="Root/SettingsPage/Scroll"]
 layout_mode = 2
@@ -262,28 +267,41 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_constants/separation = 8
 
-[node name="SelectKey" type="Label" parent="Root/Footer"]
+[node name="SelectGroup" type="HBoxContainer" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectKey" type="Label" parent="Root/Footer/SelectGroup"]
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
 text = "ENTER"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="SelectHint" type="Label" parent="Root/Footer"]
+[node name="SelectHint" type="Label" parent="Root/Footer/SelectGroup"]
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"OptionNote"
 theme_override_colors/font_color = Color(0.956863, 0.964706, 0.972549, 0.9)
 text = "Select"
 
-[node name="SelectGap" type="Control" parent="Root/Footer"]
-custom_minimum_size = Vector2(16, 0)
+[node name="SelectGap" type="Control" parent="Root/Footer/SelectGroup"]
+custom_minimum_size = Vector2(20, 0)
 layout_mode = 2
 
 [node name="BackKey" type="Label" parent="Root/Footer"]
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
 text = "ESC"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="BackButton" type="Button" parent="Root/Footer"]
 unique_name_in_owner = true
@@ -299,15 +317,19 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="ResetGap" type="Control" parent="Root/Footer/ResetGroup"]
-custom_minimum_size = Vector2(8, 0)
+custom_minimum_size = Vector2(12, 0)
 layout_mode = 2
 
 [node name="ResetKey" type="Label" parent="Root/Footer/ResetGroup"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
 text = "R"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ResetPrompt" type="Button" parent="Root/Footer/ResetGroup"]
 unique_name_in_owner = true
@@ -340,7 +362,7 @@ theme_type_variation = &"FaintLabel"
 theme_override_font_sizes/font_size = 15
 text = "BUILD"
 
-[node name="Confirm" type="Control" parent="Root" node_paths=PackedStringArray("no_button", "yes_button", "question_label")]
+[node name="Confirm" type="Control" parent="Root" node_paths=PackedStringArray("no_button", "yes_button", "question_label", "heading_label")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -353,43 +375,59 @@ script = ExtResource("5_confirm")
 no_button = NodePath("Choices/NoButton")
 yes_button = NodePath("Choices/ResetButton")
 question_label = NodePath("Question")
+heading_label = NodePath("Heading")
+
+[node name="Heading" type="Label" parent="Root/Confirm"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -100.0
+offset_top = 344.0
+offset_right = 100.0
+offset_bottom = 374.0
+grow_horizontal = 2
+theme_type_variation = &"LabelPlate"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="Question" type="Label" parent="Root/Confirm"]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
-offset_top = 330.0
-offset_bottom = 372.0
+offset_top = 382.0
+offset_bottom = 418.0
 grow_horizontal = 2
 theme_type_variation = &"OptionHeading"
+theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Choices" type="VBoxContainer" parent="Root/Confirm"]
+[node name="Choices" type="HBoxContainer" parent="Root/Confirm"]
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -70.0
-offset_top = 384.0
-offset_right = 70.0
+offset_left = -134.0
+offset_top = 430.0
+offset_right = 134.0
 offset_bottom = 466.0
 grow_horizontal = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 8
 
 [node name="NoButton" type="Button" parent="Root/Confirm/Choices"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(130, 36)
 layout_mode = 2
 theme_type_variation = &"ConfirmButton"
-text = "No"
+text = "NO"
 
 [node name="ResetButton" type="Button" parent="Root/Confirm/Choices"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(130, 36)
 layout_mode = 2
 theme_type_variation = &"ConfirmButton"
-text = "Yes"
+text = "YES"
 
 [node name="BackPrompt" type="HBoxContainer" parent="Root/Confirm"]
 layout_mode = 1
@@ -399,13 +437,14 @@ anchor_right = 0.5
 offset_left = -60.0
 offset_top = 478.0
 offset_right = 60.0
-offset_bottom = 504.0
+offset_bottom = 502.0
 grow_horizontal = 2
 mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
 [node name="ConfirmKey" type="Label" parent="Root/Confirm/BackPrompt"]
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"KeyCap"

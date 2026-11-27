@@ -1,12 +1,13 @@
 extends Control
-## A yes-or-no question over the whole menu, drawn as Black Ops 3's confirm
-## dialogs are: the menu dims, a black band crosses the screen with an orange
-## rule along its top, the question sits centred in it, and two small
-## choices are stacked below, No first and focused, with the Back prompt
-## under them. Esc or B answers No.
+## A yes-or-no question over the whole menu, in the grammar of Black Ops 3's
+## confirm dialogs: the menu dims, a black band crosses the screen between
+## two thin light rules, a light label plate names the action over the
+## question, and two small choices sit side by side below, No first and
+## focused (solid orange), with the Back prompt under them. Esc or B
+## answers No.
 ##
-## The band's children (in `pause_menu.tscn`): `Question` (Label), `NoButton`
-## and `YesButton` (Buttons), and the Back prompt.
+## The band's children (in `pause_menu.tscn`): the heading and question
+## Labels, the No and Yes Buttons, and the Back prompt.
 
 signal answered(yes: bool)
 
@@ -17,6 +18,7 @@ const BAND_HEIGHT := 190.0
 @export var no_button: Button
 @export var yes_button: Button
 @export var question_label: Label
+@export var heading_label: Label
 
 var _return_focus: Control
 
@@ -38,7 +40,8 @@ func _ready() -> void:
 		button.focus_previous = other_path
 
 
-func ask(question: String) -> void:
+func ask(heading: String, question: String) -> void:
+	heading_label.text = heading.to_upper()
 	question_label.text = question
 	_return_focus = get_viewport().gui_get_focus_owner()
 	show()
@@ -60,14 +63,11 @@ func _answer(yes: bool) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.72))
 	var band := _band()
-	draw_rect(band, Color(0, 0, 0, 0.9))
-	draw_rect(Rect2(band.position, Vector2(band.size.x, 3)), UiTheme.ACCENT)
-	draw_rect(
-		Rect2(band.position.x, band.position.y + 3, band.size.x, 6), Color(UiTheme.ACCENT, 0.12)
-	)
-	draw_rect(Rect2(band.position.x, band.end.y - 1, band.size.x, 1), UiTheme.LINE_HI)
+	draw_rect(band, Color(0.01, 0.012, 0.016, 0.96))
+	for y: float in [band.position.y, band.end.y - 1.0]:
+		draw_rect(Rect2(band.position.x, y, band.size.x, 1), Color(1, 1, 1, 0.32))
 
 
 func _band() -> Rect2:

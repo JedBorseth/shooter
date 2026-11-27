@@ -37,6 +37,11 @@ const BORDER := Color("3a3d44")
 const RULE := 3.0
 ## How long the focus rules take to grow from the middle to full width.
 const GROW_TIME := 0.09
+## A locked row's name, and how faint its value and slider draw.
+const MUTED := Color("5a5c62")
+const MUTED_ALPHA := 0.4
+## Space left of the items in a drop-down's list.
+const LIST_INSET := 10.0
 const VALUE_FONT: Font = preload("res://assets/fonts/BarlowCondensed-Medium.ttf")
 
 var kind := Kind.SLIDER
@@ -115,11 +120,11 @@ func _notification(what: int) -> void:
 		Kind.SLIDER:
 			fit_child_in_rect(control, Rect2(VALUE_X, 0, SLIDER_W, h))
 		Kind.TEXT:
-			fit_child_in_rect(control, Rect2(VALUE_X - 10.0, 6, size.x - VALUE_X - 2.0, h - 12.0))
+			fit_child_in_rect(control, Rect2(VALUE_X, 0, size.x - VALUE_X - 12.0, h))
 		_:
 			fit_child_in_rect(control, Rect2(Vector2.ZERO, size))
 	if value_label != null:
-		var x := VALUE_X + SLIDER_W + 12.0
+		var x := VALUE_X + SLIDER_W + 18.0
 		fit_child_in_rect(value_label, Rect2(x, 0, size.x - x - 12.0, h))
 	if extra != null:
 		var x := VALUE_X + BIND_W
@@ -150,8 +155,8 @@ func _draw_box() -> void:
 	var box := Rect2(BOX_X, (size.y - BOX) / 2.0, BOX, BOX)
 	var on := (control as BaseButton).button_pressed
 	var ink := UiTheme.ACCENT if is_lit() else UiTheme.TEXT
-	if muted:
-		ink = Color(ink, 0.55)
+	if muted and not is_lit():
+		ink = Color(ink, MUTED_ALPHA)
 	draw_rect(box, Color(0, 0, 0, 0.6))
 	draw_rect(box.grow(-0.5), ink, false, 1.0)
 	if on:
@@ -196,11 +201,19 @@ func _grow(amount: float) -> void:
 	queue_redraw()
 
 
+## A muted row (its device locked out of play) reads dim, label, value, and
+## slider alike, until it takes focus.
 func _colour_name() -> void:
-	if name_label != null:
-		name_label.add_theme_color_override(
-			&"font_color", UiTheme.TEXT_DIM if muted and not is_lit() else UiTheme.TEXT
-		)
+	if name_label == null:
+		return
+	var dim := muted and not is_lit()
+	name_label.add_theme_color_override(&"font_color", MUTED if dim else UiTheme.TEXT)
+	var fade := Color(1, 1, 1, MUTED_ALPHA if dim else 1.0)
+	if kind == Kind.SLIDER or kind == Kind.CHOICE:
+		control.modulate = fade
+	if value_label != null:
+		value_label.modulate = fade
+	queue_redraw()
 
 
 ## The mouse moving over the row asks the menu to focus it, so hover and
@@ -248,16 +261,12 @@ func _quiet_control() -> void:
 		Kind.SLIDER:
 			control.add_theme_stylebox_override(&"focus", none)
 		Kind.TEXT:
-			# A name field: grey text over a faint well with a thin underline.
-			var well := StyleBoxFlat.new()
-			well.bg_color = Color(1, 1, 1, 0.04)
-			well.border_color = UiTheme.LINE_HI
-			well.border_width_bottom = 1
-			well.content_margin_left = 10.0
-			well.content_margin_right = 10.0
-			control.add_theme_stylebox_override(&"normal", well)
-			control.add_theme_stylebox_override(&"focus", well)
+			# A name field: the value in grey like any other, a caret while typing.
+			for state: StringName in [&"normal", &"focus", &"read_only"]:
+				control.add_theme_stylebox_override(state, none)
 			control.add_theme_color_override(&"font_color", UiTheme.TEXT_VALUE)
+			control.add_theme_font_override(&"font", VALUE_FONT)
+			control.add_theme_font_size_override(&"font_size", 20)
 
 
 func _no_styles(none: StyleBox) -> void:
@@ -273,6 +282,17 @@ func _quiet_list(popup: PopupMenu) -> void:
 	var blank := ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
 	for icon: StringName in [&"radio_checked", &"radio_unchecked", &"checked", &"unchecked"]:
 		popup.add_theme_icon_override(icon, blank)
+	popup.add_theme_constant_override(&"item_start_padding", 0)
+	popup.add_theme_constant_override(&"h_separation", 0)
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color(UiTheme.INK, 0.97)
+	panel.border_color = UiTheme.LINE
+	panel.set_border_width_all(1)
+	panel.content_margin_left = LIST_INSET
+	panel.content_margin_right = LIST_INSET
+	panel.content_margin_top = 4.0
+	panel.content_margin_bottom = 4.0
+	popup.add_theme_stylebox_override(&"panel", panel)
 	popup.visibility_changed.connect(_place_list.bind(popup))
 
 
@@ -280,6 +300,9 @@ func _place_list(popup: PopupMenu) -> void:
 	if not popup.visible:
 		return
 	var scale := get_global_transform_with_canvas().get_scale().x
-	var left := int(get_global_transform_with_canvas().origin.x + VALUE_X * scale)
+	# The items' text lines up with the value on the row.
+	var left := int(
+		get_global_transform_with_canvas().origin.x + (VALUE_X - LIST_INSET - 2) * scale
+	)
 	popup.position.x = left
-	popup.size.x = int((size.x - VALUE_X) * scale)
+	popup.size.x = int((size.x - VALUE_X + LIST_INSET + 2) * scale)
