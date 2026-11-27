@@ -30,6 +30,12 @@ const BORDER := Color("3a3e44")
 const TICK := Color("30d840")
 const SLOT_FILL := Color("24282c")
 const NAME_PLATE := Color("0e1216")
+## Line icons for the grenades, by key.
+const GRENADE_ICONS := {
+	"frag": preload("res://assets/ui/loadout/frag.svg"),
+	"flash": preload("res://assets/ui/loadout/flash.svg"),
+	"smoke": preload("res://assets/ui/loadout/smoke.svg"),
+}
 ## How far a wildcard's parallelogram leans.
 const SLANT := 12.0
 
@@ -53,6 +59,8 @@ var chosen := false
 var empty := false
 ## Why a disabled card cannot be taken ("SLOTS FULL"), top right.
 var note := ""
+## A slot of a class that cannot be changed: empty shows no add mark.
+var read_only := false
 ## A slot this class cannot fill without a wildcard: darker, with a lock.
 var closed := false
 ## A slot this weapon has no use for: darker and blank.
@@ -86,8 +94,8 @@ func _ready() -> void:
 	clip_text = true
 	focus_entered.connect(queue_redraw)
 	focus_exited.connect(queue_redraw)
-	mouse_entered.connect(queue_redraw)
-	mouse_exited.connect(queue_redraw)
+	# One focus, as in Black Ops 3: pointing at a tile focuses it.
+	mouse_entered.connect(_take_focus)
 
 
 func _process(delta: float) -> void:
@@ -99,7 +107,12 @@ func _process(delta: float) -> void:
 
 
 func _focused() -> bool:
-	return has_focus() or (is_hovered() and not disabled)
+	return has_focus()
+
+
+func _take_focus() -> void:
+	if focus_mode != Control.FOCUS_NONE and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+		grab_focus()
 
 
 func _draw() -> void:
@@ -222,6 +235,8 @@ func _draw_tile() -> void:
 
 ## An empty slot's mark: a faint plus; on a picker card ("None"), a dash.
 func _draw_empty(rect: Rect2, alpha: float) -> void:
+	if read_only:
+		return
 	var at := rect.get_center()
 	if kind == Kind.CARD:
 		at.y -= 6.0
@@ -249,9 +264,9 @@ func _draw_art(rect: Rect2, alpha: float) -> void:
 		rect.position + Vector2(8, 8), rect.size - Vector2(16, 30 if title != "" else 16)
 	)
 	if kind == Kind.CARD:
-		# A 24 px band along the top keeps the lock, the note and the tick
+		# A 22 px band along the top keeps the lock, the note and the tick
 		# off the art; the name plate takes the bottom.
-		space = Rect2(rect.position + Vector2(10, 26), rect.size - Vector2(20, 26 + 30))
+		space = Rect2(rect.position + Vector2(10, 22), rect.size - Vector2(20, 22 + 28))
 	elif kind == Kind.SLOT and title != "":
 		space = Rect2(rect.position + Vector2(10, 8), rect.size - Vector2(20, 30))
 	var tint := Color(1, 1, 1, 0.92 * alpha)
@@ -260,44 +275,15 @@ func _draw_art(rect: Rect2, alpha: float) -> void:
 		var scale := minf(space.size.x / icon.get_width(), space.size.y / icon.get_height())
 		var drawn := Vector2(icon.get_width(), icon.get_height()) * scale
 		draw_texture_rect(icon, Rect2(space.get_center() - drawn / 2.0, drawn), false, tint)
-	elif art != null:
-		var side := minf(space.size.x, space.size.y) * 0.86
+	elif art != null or _grenade_icon() != null:
+		var icon: Texture2D = art if art != null else _grenade_icon()
+		var side := minf(space.size.x, space.size.y) * (1.0 if kind == Kind.CARD else 0.86)
 		draw_texture_rect(
-			art,
+			icon,
 			Rect2(space.get_center() - Vector2(side, side) / 2.0, Vector2(side, side)),
 			false,
 			tint
 		)
-	elif grenade != "":
-		var side := minf(space.size.x, space.size.y) * 0.7
-		var at := space.get_center()
-		if grenade == "frag":
-			Paint.grenade(self, at, side, tint)
-			return
-		var smoke := grenade == "smoke"
-		at.x -= side * 0.18
-		Paint.canister(self, at, side, tint, smoke)
-		# Beside the canister, what it does: puffs of smoke, or a flash's rays.
-		var mark := at + Vector2(side * 0.62, -side * 0.18)
-		var width := maxf(side * 0.06, 1.5)
-		if smoke:
-			for puff: Vector3 in [
-				Vector3(0, 0, 0.16), Vector3(0.2, -0.12, 0.13), Vector3(0.16, 0.16, 0.1)
-			]:
-				draw_arc(
-					mark + Vector2(puff.x, puff.y) * side,
-					puff.z * side,
-					0,
-					TAU,
-					16,
-					tint,
-					width,
-					true
-				)
-		else:
-			for i in 6:
-				var dir := Vector2.from_angle(TAU * i / 6.0 - PI / 2.0)
-				draw_line(mark + dir * side * 0.1, mark + dir * side * 0.24, tint, width, true)
 
 
 func _draw_wildcard() -> void:
@@ -349,6 +335,11 @@ func _draw_wildcard() -> void:
 			),
 			lit
 		)
+
+
+## The line icon for `grenade` ("frag", "flash", "smoke"), or null.
+func _grenade_icon() -> Texture2D:
+	return GRENADE_ICONS.get(grenade) as Texture2D
 
 
 ## A tick mark, `width` wide, its box's top left at `at`.

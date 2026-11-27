@@ -23,9 +23,9 @@ const STEP := 80.0
 ## Columns: the big tile, then the optic and two attachment columns.
 const COL_OPTIC := 168.0
 ## Row tops: primary, secondary, equipment, wildcards.
-const ROWS := [22.0, 202.0, 382.0, 562.0]
+const ROWS := [22.0, 210.0, 398.0, 586.0]
 const WIDTH := 404.0
-const HEIGHT := 612.0
+const HEIGHT := 636.0
 
 var _tiles := {}
 
@@ -55,7 +55,7 @@ func _draw() -> void:
 			self,
 			Paint.LABEL,
 			label[0],
-			Vector2(label[1], float(ROWS[label[2]]) - 7.0),
+			Vector2(label[1], float(ROWS[label[2]]) - 8.0),
 			14,
 			UiTheme.TEXT_DIM,
 			1.2
@@ -131,7 +131,6 @@ func show_class(entry: Dictionary, items: Dictionary, editable: bool) -> void:
 			)
 			if row < chosen.size():
 				perk_tile.art = load(PERK_ICON % String(chosen[row].key)) as Texture2D
-				perk_tile.tooltip_text = String(chosen[row].name)
 			else:
 				perk_tile.closed = row == 1 and not ("perk%d_greed" % tier in wildcards)
 				perk_tile.empty = not perk_tile.closed
@@ -197,6 +196,7 @@ func _add(slot: String, rect: Rect2, kind: int, editable: bool, index := 0) -> B
 	else:
 		tile.focus_mode = Control.FOCUS_NONE
 		tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tile.read_only = true
 	if index == 0 or not _tiles.has(slot):
 		_tiles[slot] = tile
 	return tile

@@ -36,6 +36,8 @@ const LOADOUT_ICON := "res://assets/ui/loadout/%s.svg"
 const HERO_TINT := Color("c8ccd2")
 ## Seconds to dim or light a region as focus moves between grid and items.
 const DIM_SECONDS := 0.12
+## How bright the side without focus stays.
+const DIM := 0.7
 ## Every slot the editor's picker shows, in the grid's order.
 const SLOTS := [
 	"primary",
@@ -157,14 +159,16 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree() or not _picker.visible:
 		_fade(_grid, 1.0, 1.0)
 		_fade(_list_column, 1.0, 1.0)
+		_fade(_streak_box, 1.0, 1.0)
 		_fade(_picker, 1.0, 1.0)
 		return
 	var focused := get_viewport().gui_get_focus_owner()
 	var in_items := focused != null and _picker.is_ancestor_of(focused)
 	var step := delta / DIM_SECONDS * 0.4
-	_fade(_grid, 0.6 if in_items else 1.0, step)
-	_fade(_list_column, 0.6 if in_items else 1.0, step)
-	_fade(_picker, 1.0 if in_items else 0.6, step)
+	_fade(_grid, DIM if in_items else 1.0, step)
+	_fade(_list_column, DIM if in_items else 1.0, step)
+	_fade(_streak_box, DIM if in_items else 1.0, step)
+	_fade(_picker, 1.0 if in_items else DIM, step)
 
 
 func _fade(node: CanvasItem, target: float, step: float) -> void:
@@ -195,6 +199,7 @@ func show_list() -> void:
 	_editing = -1
 	_slot = ""
 	_list_column.visible = true
+	_streak_box.visible = true
 	_hero.visible = true
 	_picker.visible = false
 	_name_edit.visible = false
@@ -241,14 +246,15 @@ func _build_list() -> void:
 	_list_column = VBoxContainer.new()
 	_list_column.add_theme_constant_override("separation", 6)
 	_list_column.custom_minimum_size = Vector2(240, 0)
-	_place(_list_column, Vector2(64, 128))
+	_place(_list_column, Vector2(64, 135))
 	_class_list = VBoxContainer.new()
 	_class_list.add_theme_constant_override("separation", 6)
 	_list_column.add_child(_class_list)
+	# The scorestreaks under the list, their tiles ending level with the
+	# wildcards at the foot of the loadout.
 	_streak_box = Control.new()
-	_streak_box.custom_minimum_size = Vector2(240, 120)
 	_streak_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_list_column.add_child(_streak_box)
+	_place(_streak_box, Vector2(64, 658), Vector2(240, 112))
 
 	_grid = LoadoutGrid.new()
 	_place(_grid, Vector2(344, 136))
@@ -513,9 +519,10 @@ func _draw_pips() -> void:
 	Paint.text(_pips, Paint.DISPLAY, of_ten, Vector2(x, 44), 32, UiTheme.TEXT_DIM)
 	x -= Paint.text_width(Paint.DISPLAY, str(spent), 32)
 	Paint.text(_pips, Paint.DISPLAY, str(spent), Vector2(x, 44), 32, UiTheme.TEXT)
-	var left := x - 26.0 - 10 * 15.0 + 6.0
+	# Two groups of five, our own take on the points counter.
+	var left := x - 26.0 - 10 * 15.0 + 6.0 - 8.0
 	for i in 10:
-		var rect := Rect2(left + i * 15.0, 18, 9, 26)
+		var rect := Rect2(left + i * 15.0 + (8.0 if i >= 5 else 0.0), 18, 9, 26)
 		if i < spent:
 			_pips.draw_rect(rect, Color(UiTheme.TEXT, 0.95))
 		else:
@@ -584,6 +591,7 @@ func _open_editor(id: String) -> void:
 	_draft = ClassStore.usable(id)
 	_name_edit.text = String(_draft.get("name", ""))
 	_list_column.visible = false
+	_streak_box.visible = false
 	_hero.visible = false
 	_edit_button.visible = false
 	_name_edit.visible = true

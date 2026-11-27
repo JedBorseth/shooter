@@ -70,7 +70,6 @@ func show_entries(heading: String, entries: Array) -> void:
 		card.caption = String(entry.get("caption", ""))
 		card.empty = bool(entry.get("empty", false))
 		card.note = String(entry.get("note", ""))
-		card.tooltip_text = String(entry.get("summary", ""))
 		card.focus_entered.connect(_show.bind(i))
 		card.mouse_entered.connect(_show.bind(i))
 		card.pressed.connect(picked.emit.bind(i))

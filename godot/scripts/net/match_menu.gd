@@ -68,7 +68,7 @@ func _ready() -> void:
 	_build_ladder()
 	lobby_teams = LobbyTeams.new()
 	lobby_teams.client = client
-	lobby_teams.position = Vector2(1220, 128)
+	lobby_teams.position = Vector2(1220, 135)
 	_stage.add_child(lobby_teams)
 	_status_label = Label.new()
 	_status_label.add_theme_font_override("font", UiTheme.font(UiTheme.LABEL_LIGHT))
@@ -119,7 +119,7 @@ func _process(_delta: float) -> void:
 
 
 ## The footer band's prompts, as on the pause menu: a key cap, then what it
-## does. Close comes first; the others follow what is open.
+## does: Equip (Select while editing), Close, and Back while editing.
 func _build_footer() -> void:
 	_footer = HBoxContainer.new()
 	_footer.position = Vector2(36, 900.0 - ScreenFrame.FOOTER_HEIGHT)
@@ -128,6 +128,12 @@ func _build_footer() -> void:
 	_stage.add_child(_footer)
 	var keys := FooterKeys.new()
 	add_child(keys)
+	var select_group := _prompt_group(keys, &"ui_accept")
+	_select_hint = Label.new()
+	_select_hint.theme_type_variation = &"OptionNote"
+	_select_hint.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.9))
+	_select_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	select_group.add_child(_select_hint)
 	var close_group := _prompt_group(keys, &"loadout")
 	_close = Button.new()
 	_close.name = "Close"
@@ -136,12 +142,6 @@ func _build_footer() -> void:
 	_close.theme_type_variation = &"PromptButton"
 	_close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	close_group.add_child(_close)
-	var select_group := _prompt_group(keys, &"ui_accept")
-	_select_hint = Label.new()
-	_select_hint.theme_type_variation = &"OptionNote"
-	_select_hint.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.9))
-	_select_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	select_group.add_child(_select_hint)
 	_back_group = _prompt_group(keys, &"ui_cancel")
 	var back := Label.new()
 	back.text = "Back"

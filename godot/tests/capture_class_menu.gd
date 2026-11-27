@@ -28,6 +28,8 @@ func _run() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(file))
 	ClassStore.reload()
 	ProgressStore.reload()
+	# The pointer out of the way: pointing at a tile focuses it.
+	Input.warp_mouse(Vector2.ZERO)
 	# A new player first: custom classes locked.
 	var menu := await _open_menu()
 	await _shot("class_00_new_player")
@@ -52,11 +54,11 @@ func _run() -> void:
 	for slot: String in [
 		"primary_attachments", "lethal", "tactical", "perk1", "perk2", "wildcards"
 	]:
-		classes.call("_pick_slot", slot)
+		_focus_slot(classes, slot)
 		await _frames(4)
 		await _shot("class_05_edit_" + slot)
 	# A locked weapon in focus: its lock and level in the detail.
-	classes.call("_pick_slot", "primary")
+	_focus_slot(classes, "primary")
 	await _frames(2)
 	var picker: Control = classes.get("_picker")
 	for i in 16:
@@ -92,12 +94,19 @@ func _open_menu() -> Control:
 	return menu
 
 
+## Focuses `slot`'s tile in the editor's grid, which opens its items.
+func _focus_slot(classes: Control, slot: String) -> void:
+	((classes.get("_grid") as Control).call("tile", slot) as Button).grab_focus()
+
+
 func _frames(count: int) -> void:
 	for i in count:
 		await process_frame
 
 
 func _shot(name: String) -> void:
+	# Past every fade (focus dimming takes about 0.2 s).
+	await create_timer(0.35).timeout
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
 	image.save_png(_out.path_join(name + ".png"))

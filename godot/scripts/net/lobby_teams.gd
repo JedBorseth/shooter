@@ -13,8 +13,9 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 ## The list's width.
 const WIDTH := 316.0
-const ROW_H := 30.0
 const ROW_PITCH := 32.0
+## The height a team's rows may take, at most, before they tighten.
+const ROWS_HEIGHT := 200.0
 
 var client: NetClient
 ## Set by the menu while the right side shows items instead.
@@ -84,14 +85,20 @@ func refresh() -> void:
 
 func _draw() -> void:
 	var y := 0.0
-	Paint.text(self, Paint.LABEL, "LOBBY", Vector2(0, 14), 14, UiTheme.TEXT_DIM, 1.5)
+	Paint.text(self, Paint.LABEL, "LOBBY", Vector2(0, 15), 14, UiTheme.TEXT_DIM, 1.2)
 	y = 26.0
+	# Big teams tighten their rows so Switch Team stays clear of the ready
+	# line under the list.
+	var most := 1
 	for team: Dictionary in _teams:
-		y = _draw_team(team, y) + 18.0
+		most = maxi(most, (team.rows as Array).size())
+	var pitch := clampf(ROWS_HEIGHT / most, 22.0, ROW_PITCH)
+	for team: Dictionary in _teams:
+		y = _draw_team(team, y, pitch) + 18.0
 	_switch.position = Vector2(0, y)
 
 
-func _draw_team(team: Dictionary, y: float) -> float:
+func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
 	var ours: bool = team.ours
 	var colour := TeamColours.of(ours)
 	var rows: Array = team.rows
@@ -109,26 +116,32 @@ func _draw_team(team: Dictionary, y: float) -> float:
 	)
 	y += 44.0
 	for row: Dictionary in rows:
-		var rect := Rect2(0, y, WIDTH, ROW_H)
+		var row_h := pitch - 2.0
+		var rect := Rect2(0, y, WIDTH, row_h)
 		draw_rect(rect, Color(colour.darkened(0.8), 0.85))
-		draw_rect(Rect2(0, y, 3, ROW_H), Color(colour, 0.8))
+		draw_rect(Rect2(0, y, 3, row_h), Color(colour, 0.8))
 		var me: bool = row.me
-		var baseline := y + ROW_H / 2.0 + 7.0
+		var font_size := 19 if row_h >= 26.0 else 17
+		var baseline := y + row_h / 2.0 + font_size * 0.36
 		var ink := MatchPaint.SELF_ROW if me else UiTheme.TEXT
-		var name_w := Paint.text(self, Paint.LABEL_LIGHT, row.name, Vector2(14, baseline), 19, ink)
-		if row.bot:
+		var name: String = row.name
+		var name_w := Paint.text(
+			self, Paint.LABEL_LIGHT, name, Vector2(14, baseline), font_size, ink
+		)
+		# A bot named "Bot 3" needs no tag saying so.
+		if row.bot and not name.begins_with("Bot"):
 			Paint.text(
 				self,
 				Paint.LABEL,
 				"BOT",
 				Vector2(14 + name_w + 10.0, baseline - 1.0),
-				12,
-				UiTheme.TEXT_FAINT,
-				1.5
+				13,
+				UiTheme.TEXT_DIM,
+				1.2
 			)
 		elif row.ready:
 			var tag_w := Paint.text_width(Paint.LABEL, "READY", 13, 1.5) + 12.0
-			var tag := Rect2(WIDTH - tag_w - 8.0, y + 6.0, tag_w, 19.0)
+			var tag := Rect2(WIDTH - tag_w - 8.0, y + (row_h - 19.0) / 2.0, tag_w, 19.0)
 			draw_rect(tag, UiTheme.READY)
 			Paint.text(
 				self,
@@ -140,5 +153,5 @@ func _draw_team(team: Dictionary, y: float) -> float:
 				1.5,
 				false
 			)
-		y += ROW_PITCH
+		y += pitch
 	return y
