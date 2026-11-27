@@ -6,7 +6,7 @@ extends SceneTree
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/capture_grounding.gd
-## CAPTURE_ONLY picks maps (comma list of testing, slamcity, zombies).
+## CAPTURE_ONLY picks maps (comma list of testing, breakwater).
 ## CAPTURE_PATCHES=off hides the contact-shadow patches, to see what they add.
 ## CAPTURE_ENV sets Environment properties after the map loads, for trying
 ## values side by side: "ssao_radius=0.6,ssao_detail=1.5".
@@ -42,15 +42,10 @@ func _run() -> void:
 		await _group(scene, "testing_sun_side", Vector3(-6, 0, 4), Vector3(1, 0, 0))
 		await _props(scene, "testing_props")
 		await _close(scene)
-	if _wants("slamcity"):
-		var scene := await _open("res://scenes/slamcity.tscn")
-		await _group(scene, "slamcity_shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0))
-		await _group(scene, "slamcity_street", Vector3(-30, 0, 1), Vector3(-1, 0, 0.2))
-		await _close(scene)
-	if _wants("zombies"):
-		var scene := await _open("res://scenes/zombies_arena.tscn")
-		await _group(scene, "zombies_night", Vector3(0, 0, 8), Vector3(0, 0, -1))
-		await _walls(scene, "zombies_wall")
+	if _wants("breakwater"):
+		var scene := await _open("res://scenes/breakwater.tscn")
+		await _group(scene, "breakwater_quay", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0))
+		await _group(scene, "breakwater_road", Vector3(-30, 0, 1), Vector3(-1, 0, 0.2))
 		await _close(scene)
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_grounding.cfg"))
@@ -63,7 +58,7 @@ func _wants(map: String) -> bool:
 
 func _open(path: String) -> Node:
 	var scene: Node = (load(path) as PackedScene).instantiate()
-	for name: String in ["Sentry", "Director"]:
+	for name: String in ["Sentry"]:
 		var node := scene.get_node_or_null(name)
 		if node != null:
 			node.process_mode = Node.PROCESS_MODE_DISABLED
@@ -159,30 +154,6 @@ func _props(scene: Node, label: String) -> void:
 	for i in spots.size():
 		camera.look_at_from_position(spots[i][0], spots[i][1])
 		await _shot("%s_%d" % [label, i])
-	camera.queue_free()
-
-
-## Walls round the map's centre: each found by a ray, seen from 5 m off it
-## and from 2 m at a grazing angle (wet streaks, damp, and grime).
-func _walls(scene: Node, label: String) -> void:
-	var camera := Camera3D.new()
-	camera.fov = 60.0
-	scene.add_child(camera)
-	camera.make_current()
-	var space := root.get_world_3d().direct_space_state
-	for i in 4:
-		var dir := Vector3.FORWARD.rotated(Vector3.UP, i * PI / 2 + 0.3)
-		var eye := Vector3(0, _floor(Vector3.ZERO) + 1.6, 0)
-		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + dir * 80.0, 1))
-		if hit.is_empty():
-			continue
-		var wall: Vector3 = hit["position"]
-		var normal: Vector3 = hit["normal"]
-		camera.look_at_from_position(wall + normal * 5.0, wall + Vector3.UP * 0.6)
-		await _shot("%s_%d" % [label, i])
-		var along := normal.cross(Vector3.UP)
-		camera.look_at_from_position(wall + normal * 1.2 - along * 2.0, wall + along * 2.0)
-		await _shot("%s_%d_grazing" % [label, i])
 	camera.queue_free()
 
 

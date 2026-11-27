@@ -1,12 +1,11 @@
-//! Custom game settings: the rules a host sets before a private or local
-//! match, as in Black Ops 2's Custom Games (its `getgametypesetting` keys,
+//! Custom game settings: the rules a host sets before a match on their
+//! server or a local one, as in Black Ops 2's Custom Games (its `getgametypesetting` keys,
 //! named beside each field).
 //!
 //! The server owns them: it takes them on the command line (`--custom`, in
 //! the text form [`Settings::parse`] reads), applies them, and sends them to
 //! every player in the welcome, so prediction (health and its regeneration)
-//! and the HUD (hardcore, the minimap) follow the same rules. Ranked servers
-//! ignore them: ranked play is always the default rules.
+//! and the HUD (hardcore, the minimap) follow the same rules.
 //!
 //! Hardcore is a set of rules, as Treyarch put it ("not a game mode, a variant
 //! on the game rules"): 30% health, friendly fire on, and no HUD. Turning it
@@ -87,7 +86,7 @@ pub enum Radar {
 }
 
 /// Which classes players may use (Black Ops 2 `disableCAC`, and the
-/// restrictions party games use).
+/// restrictions its party games use).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Loadouts {
     /// Any class the player builds.
@@ -229,11 +228,8 @@ impl Settings {
     }
 
     /// The match rules for `mode` under these settings, from the server's
-    /// own `rules`. Zombies keeps its own (the horde ends it).
+    /// own `rules`.
     pub fn match_rules(&self, mode: &Mode, rules: MatchRules) -> MatchRules {
-        if *mode == Mode::Zombies {
-            return rules;
-        }
         let mut rules = rules;
         if let Some(limit) = self.score_limit.filter(|l| *l > 0)
             && *mode != Mode::SearchAndDestroy
@@ -690,8 +686,7 @@ mod tests {
         let tdm = s.match_rules(&Mode::TeamDeathmatch, rules);
         assert_eq!(tdm.score_limit, 30);
         assert_eq!(tdm.time_limit, None);
-        // Zombies keeps its own; Search and Destroy counts rounds instead.
-        assert_eq!(s.match_rules(&Mode::Zombies, rules), rules);
+        // Search and Destroy counts rounds instead.
         let snd = s.match_rules(&Mode::SearchAndDestroy, rules);
         assert_eq!(snd.score_limit, rules.score_limit);
     }

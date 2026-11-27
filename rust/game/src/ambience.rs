@@ -108,7 +108,7 @@ pub struct Soundscape {
     #[export]
     #[init(val = GString::new())]
     preset: GString,
-    /// Outdoor bed: a loop in `assets/audio/ambience` (`day`, `city`, `night`),
+    /// Outdoor bed: a loop in `assets/audio/ambience` (`day`),
     /// or empty for none. Ignored when `preset` defines per-area outdoor beds.
     #[export]
     #[init(val = GString::from("day"))]

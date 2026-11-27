@@ -5,7 +5,7 @@ of textures it never draws.
 Godot's dedicated server export swaps a resource marked "strip" for its
 placeholder (`create_placeholder`), and a directory's mode passes to the files
 in it. Only image files are stripped: meshes stay, because the server builds
-collision and trimesh shapes from some of them (Nuketown's props), and its
+collision and trimesh shapes from some of them, and its
 surfaces and hit tests read mesh data.
 
 The list is made from the files present, so new images need nothing by hand.

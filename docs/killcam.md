@@ -17,7 +17,7 @@ the overlay in `godot/scripts/net/killcam_hud.gd`.
 
 No killcam plays for a suicide or a fall, in the lobby's warm-up, for bots,
 or on a death in Search and Destroy, where the dead watch a teammate
-instead. Zombies has none. An ending killcam needs a kill at most 8 s
+instead. An ending killcam needs a kill at most 8 s
 before the end; otherwise none plays. Custom games can turn every killcam
 off (`killcam=off`, [custom-games.md](custom-games.md)).
 
@@ -51,17 +51,6 @@ as soon as the respawn delay allows. A client that never answers is
 respawned after the death delay, the replay, and a second's margin
 (`killcam::respawn_wait`).
 
-## Scorestreak kills
-
-A kill by a scorestreak plays from the streak, as Black Ops 2 plays a kill
-from its inflictor (`getkillcamentity`): from just behind the Sentry Gun's or
-Attack Chopper's gun, or for the Airstrike and the Guided Missile, from 20 m
-above the blast and 8 m to its side, looking down at the victim
-(`killcam::streak_eye`). The killer is drawn as any other player, and no
-first-person weapon shows.
-
-![A Sentry Gun's kill replayed from the gun](media/killcam-sentry.jpg)
-
 ## How it plays
 
 The replay costs no bandwidth. Snapshots already carry every player to every
@@ -75,10 +64,9 @@ where it did.
 The client draws the replay with its own copies of the players, so the live
 ones keep following the match underneath, hidden and silent. The killer is
 drawn from their eyes: their body hides, and the local first-person rig
-plays their weapon, camo, aim, reloads, switches, shots, and knife
+plays their weapon, aim, reloads, switches, shots, and knife
 (`ViewDriver`). Grenades fly and burst in the replay. Bodies that fall in it
 go when it ends, and bodies already lying in the world hide while it plays.
-The spectator view uses the same machinery ([custom-games.md](custom-games.md)).
 
 ## On screen
 
@@ -87,11 +75,9 @@ While a killcam plays, the rest of the HUD steps aside and
 
 - the title at the top centre, with a thin bar filling as the replay plays;
 - the killer's card at the bottom centre: their name in the colour we see
-  them in, their prestige emblem, their calling card, the weapon and
-  attachment, and a headshot mark; an ending killcam also names the victim;
+  them in, the weapon and attachment, and a headshot mark; an ending
+  killcam also names the victim;
 - "[F] Skip" under the card, on a respawn killcam only.
-
-![A killcam's killer card on the killer's calling card](media/calling-card-killcam.jpg)
 
 Call of Duty shows the same parts: a KILLCAM title, the killer's name card
 with the weapon and attachments, and the skip prompt.
@@ -108,5 +94,3 @@ project's choice, and the round's last kill is replayed for everyone.
   deaths earn a killcam.
 - `godot/tests/killcam_test.gd`: a bot's kill replayed and skipped on a
   server.
-- `godot/tests/streak_killcam_test.gd`: a scorestreak's kill watched from
-  the streak.

@@ -10,7 +10,7 @@ way Slamcity's do, written to godot/materials/models/, each projecting its
 textures in the model's own space (the world shader's `object_space`), so they
 stay on a model that moves. The import script, godot/tools/model_import.gd,
 swaps them in for the placeholder materials in the glTF. Models in STANDARD
-(the laser gun, drawn by the viewmodel shader) instead export plain glTF
+(the sentry's eye, whose glow code drives) instead export plain glTF
 materials from STANDARD_LOOKS and import without the script.
 
 A model in gear_models.SPLIT (a map and its set dressing) is written as

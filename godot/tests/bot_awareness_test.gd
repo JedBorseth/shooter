@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of what bots notice without seeing: runs a Team Deathmatch
-## server in this process on Slamcity with one bot a side. The enemy stands
+## server in this process on Breakwater with one bot a side. The enemy stands
 ## out of sight across the map and fires an unsuppressed weapon, which puts
 ## it on the minimap (`shooter_sim::radar`). A Normal bot patrols toward the
 ## dot, as Black Ops 2's bots do (`bot_update_patrol`); an Easy bot (Black
@@ -46,8 +46,8 @@ func _run() -> void:
 ## the two never saw each other (`blind`).
 func _patrol(skill: String, port_offset: int) -> Dictionary:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port + port_offset
 	server.query_port = -1
 	server.bots = 2

@@ -1,5 +1,5 @@
 extends SceneTree
-## Captures reference screenshots of Search and Destroy on Slamcity on a local
+## Captures reference screenshots of Search and Destroy on Breakwater on a local
 ## server with bots: the round banner and the site markers from the spawn,
 ## facing each site, each site's marker crate up close, and, once a bot plants
 ## the charge, the planted charge and its marker. Starts its own server
@@ -38,7 +38,7 @@ func _run() -> void:
 			"--query-port",
 			"-1",
 			"--map",
-			"slamcity",
+			"breakwater",
 			"--mode",
 			"snd",
 			"--bots",
@@ -48,7 +48,7 @@ func _run() -> void:
 		]
 	)
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
-	net.join("127.0.0.1:%d" % PORT, {"map": "slamcity", "name": "Local server"})
+	net.join("127.0.0.1:%d" % PORT, {"map": "breakwater", "name": "Local server"})
 	var client: NetClient = null
 	for i in 1200:
 		client = net.client()

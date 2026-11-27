@@ -66,23 +66,13 @@ point, starts only the team's own.
 
 | Map | Points |
 | --- | --- |
-| Slamcity | 40: 20 on each side, in the scene |
 | Breakwater | 40: 20 on each side, in the scene |
 | Warehouse | 40: six starts on the grass of the Field for team 0, six on the lowered concrete Docks for team 1, and 28 neutral points over both yards and the production and high-bay aisles, facing open aisles |
-| Nuketown | 29 grounded points from `godot/data/nuketown_spawns.json`; the six outermost ground-level points at each end of the X axis are the starts, the rest neutral (upstairs included) |
 | Testing Area | None: six per team in two rows 14 m apart through the player start (`fallback_spawns`) |
-
-Nuketown's points come from its imported `map.json`. `godot/scripts/nuketown.gd`
-builds the `SpawnPoints` node before the dedicated server reads the map, and
-it is safe to call more than once. After changing Nuketown's collision,
-rebuild the file with
-`godot --headless --path godot --script res://tools/configure_nuketown_spawns.gd`:
-it drops points with no walkable floor under them or no room for a standing
-body (three of the 32 in `map.json`).
 
 ## Tests
 
 - `rust/sim/src/tdm.rs`: safety tiers, side flips, own-side-only spawns,
   start spreading, and maps where every point is dangerous.
-- `godot/tests/nuketown_test.gd` and `godot/tests/warehouse_test.gd`: server
-  preparation, floor, and body clearance at every point.
+- `godot/tests/warehouse_test.gd`: server preparation, floor, and body
+  clearance at every point.

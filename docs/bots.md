@@ -36,7 +36,6 @@ for rules and numbers only; nothing is copied.
 | Local match setup | Team modes: **Ally bots** and **Enemy bots** difficulty chips; free-for-all modes: one **Bots** chip. Bots fill the empty places. |
 | `--bots N --bot-skill easy\|normal\|hard` | A dedicated server with N bots (at most 50). Each player who joins takes a bot's place, and a bot comes back when a player leaves; teams stay even. |
 | `--team-bots A,E --team-bot-skill easy,hard` | Custom games: each team keeps exactly that many bots (allies at most 11, enemies 12) at its own difficulty, and players do not take their places. Free-for-all modes add the two numbers. See [custom-games.md](custom-games.md). |
-| Zombies | No bots, as in Black Ops: `--bots` and `--team-bots` are ignored with a log line (`godot/scripts/net/bootstrap.gd`, `server_bots`). |
 
 Bots are named "Bot 1", "Bot 2", and so on. Without `--bot-skill` the bots
 are scripted test bots that strafe and fire bursts and hurt nobody unless
@@ -50,17 +49,10 @@ take marksman rifles as well as snipers), plus one perk from each tier
 sidearm, for enemy aircraft, as Black Ops 2's bots pick launchers among
 their secondaries.
 
-**Scorestreaks.** Each bot brings a UAV and two of the dearer streaks,
-varied by bot so every kind turns up (`bot_streaks`), and calls a streak as
-soon as it holds one it can use. A bot's Airstrike marks its nearest
-enemies, its Attack Chopper guards a random enemy's position (as Black Ops
-2's bots mark), and its Guided Missile dives at its nearest enemy within
-80 m, splitting 1.5 s in (`bot_update_killstreak`). Bots go for a landed
-Care Package, their own within 40 m and anyone's within 15 m, and hold use
-on it. See [scorestreaks.md](scorestreaks.md).
-
-**Cosmetics.** Each bot shows a low prestige (0 to 3) and a career calling
-card, fixed by its id (`bot_cosmetics`).
+**Scorestreaks.** Each bot brings all three streaks, the UAV, the
+Counter-UAV, and the Care Package (`BOT_STREAKS`), and calls a streak as
+soon as it holds one it can use. Bots go for a landed Care Package, their
+own within 40 m and anyone's within 15 m, and hold use on it. See [scorestreaks.md](scorestreaks.md).
 
 ## Difficulty
 
@@ -146,9 +138,6 @@ aims round corners, knifes, or throws smoke.
   within a rocket's flight, leads it, fires, and reloads; it switches back
   when the sky is clear or an enemy shows (`threat_requires_rocket` in
   `_bot_combat.gsc`).
-- **Sentry Guns**: with no enemy player in sight, a bot that sees an enemy
-  Sentry Gun within 45 m shoots it with what it holds (Black Ops 2's bots
-  count an active turret as a threat).
 
 ## Grenades
 
@@ -192,10 +181,10 @@ up), fine enough that a 1.4 m doorway stays open whatever the grid's
 alignment; agents are 1.8 m tall, climb 0.4 m, and walk slopes to 40°. The
 bake is limited to a box round every spawn, lane, and objective point, 40 m
 out sideways, 20 m below, and 40 m above (`bake_area`), so far-off scenery
-with collision (Nuketown's mountains) cannot make the grid too large to
+with collision (mountains round a map) cannot make the grid too large to
 bake.
 
-- **Lanes**: maps with a `BotLanes` node (Slamcity, Warehouse, Breakwater)
+- **Lanes**: maps with a `BotLanes` node (Breakwater, Warehouse)
   give lines of points from one side to the other. With no objective, a bot
   follows a lane three times in four, picking the one with the fewest
   teammates on it; otherwise it heads for an enemy spawn (45%) or anywhere
@@ -303,11 +292,11 @@ objective's numbers, and tactics.
 
 ```sh
 godot --headless --fixed-fps 120 --path godot --script res://tools/bot_bench.gd -- \
-  --modes tdm,dom,hardpoint,ctf,snd --maps slamcity,warehouse --skill normal \
+  --modes tdm,dom,hardpoint,ctf,snd --maps breakwater,warehouse --skill normal \
   --bots 12 --matches 2 --minutes 5 --out ../bench.json
 ```
 
-Maps: `slamcity`, `warehouse`, `arena`. Each match runs to its end or for
+Maps: `breakwater`, `warehouse`, `arena`. Each match runs to its end or for
 `--minutes` of play. `--seed` (default 1) changes the bots' random choices,
 and each match adds its index; use the same seed before and after a change
 to compare like for like.

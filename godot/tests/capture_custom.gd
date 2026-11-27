@@ -1,16 +1,13 @@
 extends SceneTree
 ## Captures a local match under custom game settings (docs/custom-games.md),
 ## for design review: the play HUD a few seconds in, and the scoreboard.
-## CAPTURE_CUSTOM is the text form (default "hardcore=on"); with
-## CAPTURE_SPECTATE=1 we join as a spectator and shoot the caster's view,
-## a player's eyes and then the free camera.
+## CAPTURE_CUSTOM is the text form (default "hardcore=on").
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_custom.gd
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _custom := OS.get_environment("CAPTURE_CUSTOM")
-var _spectate := OS.get_environment("CAPTURE_SPECTATE") == "1"
 
 
 func _initialize() -> void:
@@ -33,12 +30,11 @@ func _run() -> void:
 		. call(
 			"start_local_match",
 			{
-				"map": "slamcity",
+				"map": "breakwater",
 				"bots": 5,
 				"bot_skill": "normal",
 				"auto_start": true,
 				"custom": _custom,
-				"spectate": _spectate,
 			}
 		)
 	)
@@ -61,20 +57,7 @@ func _run() -> void:
 			break
 	await _seconds(3.0)
 	var tag := _custom.replace("=", "-").replace(",", "_")
-	if _spectate:
-		await _seconds(2.0)
-		await _shot("spectate_follow")
-		client.spectate_next(1)
-		await _seconds(1.5)
-		await _shot("spectate_follow_next")
-		client.spectate_follow(-1)
-		client.set_free_camera(
-			Transform3D(Basis.from_euler(Vector3(-0.6, 0.4, 0.0)), Vector3(0, 30, 30))
-		)
-		await _seconds(1.0)
-		await _shot("spectate_free")
-	else:
-		await _shot("custom_%s_hud" % tag)
+	await _shot("custom_%s_hud" % tag)
 	print("custom settings: ", client.custom_settings())
 	net.call("stop_local_server")
 	quit(0)

@@ -8,14 +8,6 @@ extends RefCounted
 ##
 ## The server checks every class it is sent; this only keeps what the
 ## player made between sessions.
-##
-## A class also names the camo on each of its weapons (`primary_camo`,
-## `secondary_camo`, camo keys), and the store keeps the calling card the
-## player shows (`card`). `cosmetics` gives both, with the prestige, as
-## `NetClient.set_cosmetics` takes them (docs/progression.md).
-##
-## Signed in (`Online`), the account keeps the classes too: the store reads
-## a cache of them, and `on_saved` sends each change to the account.
 
 const PATH := "user://classes.cfg"
 const HEADLESS_PATH := "user://headless_classes.cfg"
@@ -32,11 +24,7 @@ static var _custom: Array[Dictionary] = []
 static var _selected := "default:0"
 ## The scorestreaks to bring (keys), shared by every class as in Black Ops 2.
 static var _streaks := PackedStringArray()
-## The calling card shown (a key, `Progression.cards`).
-static var _card := "default"
 static var _loaded := false
-## Called with `data()` after each save while signed in.
-static var on_saved := Callable()
 
 
 ## The chosen scorestreaks' keys (up to three; the server sorts them).
@@ -49,33 +37,6 @@ static func set_streaks(keys: PackedStringArray) -> void:
 	_load()
 	_streaks = keys.slice(0, 3)
 	save()
-
-
-## The calling card shown: its key, or "default" for one still locked.
-static func card() -> String:
-	_load()
-	return _card if Progression.card_unlocked(ProgressStore.totals(), _card) else "default"
-
-
-static func set_card(key: String) -> void:
-	_load()
-	_card = key
-	save()
-
-
-## What the player shows others with the selected class: the prestige,
-## the calling card, and the camo on each of the class's weapons (only
-## those unlocked), as `NetClient.set_cosmetics` takes them.
-static func cosmetics() -> Dictionary:
-	var entry := by_id(selected_id())
-	var totals := ProgressStore.totals()
-	var camos := {}
-	for slot: String in ["primary", "secondary"]:
-		var weapon := String(entry.get(slot, ""))
-		var camo := String(entry.get(slot + "_camo", "none"))
-		if weapon != "" and camo != "none" and Progression.camo_unlocked(totals, weapon, camo):
-			camos[weapon] = camo
-	return {"prestige": ProgressStore.prestige(), "card": card(), "camos": camos}
 
 
 ## The custom classes, loading them on first use.
@@ -178,49 +139,9 @@ static func save() -> void:
 		config.set_value("custom", str(i), _custom[i])
 	config.set_value("class", "selected", _selected)
 	config.set_value("class", "streaks", _streaks)
-	config.set_value("profile", "card", _card)
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
-	if on_saved.is_valid():
-		on_saved.call(data())
-
-
-## Every class, the selected one, and the streaks, as plain data (JSON-safe)
-## for the account.
-static func data() -> Dictionary:
-	_load()
-	var custom_classes := []
-	for entry in _custom:
-		custom_classes.append(entry.duplicate(true))
-	return {
-		"custom": custom_classes,
-		"selected": _selected,
-		"streaks": Array(_streaks),
-		"card": _card,
-	}
-
-
-## Writes `value` (shaped like `data()`) to the file in use and loads it,
-## keeping the usual checks: a class that breaks a rule goes back to its
-## default. Does not call `on_saved`.
-static func set_data(value: Dictionary) -> void:
-	var config := ConfigFile.new()
-	var stored: Variant = value.get("custom", [])
-	if stored is Array:
-		for i in mini((stored as Array).size(), CUSTOM_SLOTS):
-			if stored[i] is Dictionary:
-				config.set_value("custom", str(i), _whole_numbers(stored[i]))
-	config.set_value("class", "selected", String(value.get("selected", "default:0")))
-	var keys := PackedStringArray()
-	var streak_list: Variant = value.get("streaks", [])
-	if streak_list is Array:
-		for key: Variant in streak_list:
-			keys.append(str(key))
-	config.set_value("class", "streaks", keys)
-	config.set_value("profile", "card", String(value.get("card", "default")))
-	config.save(path())
-	reload()
 
 
 ## Forgets what was loaded, so the next use reads `path` again (tests).
@@ -268,16 +189,6 @@ static func _load() -> void:
 				_streaks.append(key)
 	if not _valid_id(_selected):
 		_selected = "default:0"
-	_card = String(config.get_value("profile", "card", "default")) if err == OK else "default"
-
-
-## JSON brings every number back as a float; class counts are ints.
-static func _whole_numbers(value: Dictionary) -> Dictionary:
-	var out := {}
-	for key: Variant in value:
-		var item: Variant = value[key]
-		out[key] = int(item) if item is float else item
-	return out
 
 
 static func _valid_id(id: String) -> bool:
@@ -303,8 +214,6 @@ static func _clean(value: Dictionary) -> Dictionary:
 		"tacticals",
 		"perks",
 		"wildcards",
-		"primary_camo",
-		"secondary_camo",
 	]:
 		var item: Variant = value.get(key)
 		if item == null:

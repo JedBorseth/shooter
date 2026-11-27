@@ -42,9 +42,6 @@ pub struct RemotePlayer {
     rig: OnReady<Gd<SoldierRig>>,
     #[init(node = "Hitboxes")]
     hitboxes: OnReady<Gd<HitboxRig>>,
-    /// Zombies: reviving a downed teammate (their id) and seconds into it:
-    /// the body kneels over them, hands down, as at the charge.
-    reviving: Option<(u8, f32)>,
     #[init(node = "Name")]
     name_label: OnReady<Gd<Label3D>>,
     #[init(node = "AimAssist")]
@@ -52,8 +49,6 @@ pub struct RemotePlayer {
 
     /// The name shown over a teammate.
     display_name: String,
-    /// What the player shows: the camos on their weapons.
-    cosmetics: shooter_sim::cosmetics::Cosmetics,
     shots_fired: Option<u32>,
     hits: Option<u8>,
     /// Flinches played from snapshots (tests).
@@ -128,7 +123,8 @@ impl RemotePlayer {
     }
 
     /// The character, for tests.
-    /// The view yaw and pitch last drawn, in radians (spectator cameras).
+    /// The view yaw and pitch last drawn, in radians (Search and Destroy's
+    /// spectating camera).
     #[func]
     fn view_angles(&self) -> Vector2 {
         Vector2::new(self.yaw, self.pitch)
@@ -145,8 +141,7 @@ impl RemotePlayer {
         self.alive
     }
 
-    /// Cold-Blooded: enemies aiming at this player see no red name, and
-    /// enemy Guided Missiles do not box them.
+    /// Cold-Blooded: enemies aiming at this player see no red name.
     #[func]
     pub fn is_unmarked(&self) -> bool {
         self.unmarked
@@ -155,16 +150,6 @@ impl RemotePlayer {
     /// Whether this player is on our side.
     pub fn is_friendly(&self) -> bool {
         self.friendly
-    }
-
-    /// Zombies: this player started reviving `whom` (the server's `Revive`
-    /// event), or stopped reviving them (`None`).
-    pub fn set_reviving(&mut self, whom: u8, reviving: bool) {
-        match (reviving, self.reviving) {
-            (true, _) => self.reviving = Some((whom, 0.0)),
-            (false, Some((w, _))) if w == whom => self.reviving = None,
-            _ => {}
-        }
     }
 
     #[func]
@@ -474,34 +459,12 @@ impl RemotePlayer {
         self.base_mut().add_child(&fresh);
         let team = self.team_index;
         fresh.bind_mut().set_team_index(team);
-        fresh.bind_mut().set_cosmetics(&self.cosmetics);
         *self.rig = fresh;
-    }
-
-    /// What the player shows: their weapons wear its camos.
-    pub fn set_cosmetics(&mut self, cosmetics: &shooter_sim::cosmetics::Cosmetics) {
-        self.cosmetics = cosmetics.clone();
-        self.rig.bind_mut().set_cosmetics(cosmetics);
     }
 
     pub fn set_display_name(&mut self, name: &str) {
         self.display_name = name.to_owned();
         self.name_label.set_text(name);
-    }
-
-    /// Zombies: marks a teammate down in last stand over their head, seen
-    /// through walls like their name, until they are back up.
-    pub fn set_downed_marker(&mut self, downed: bool) {
-        let (text, colour) = if downed {
-            (
-                format!("REVIVE\n{}", self.display_name),
-                Color::from_rgb(1.0, 0.45, 0.3),
-            )
-        } else {
-            (self.display_name.clone(), Color::from_rgb(0.55, 0.78, 1.0))
-        };
-        self.name_label.set_text(&text);
-        self.name_label.set_modulate(colour);
     }
 
     /// Teammates wear the allies' colours, show their name, and take no hits
@@ -693,12 +656,6 @@ impl RemotePlayer {
         for age in &mut self.predicted {
             *age += delta;
         }
-        if let Some((_, t)) = &mut self.reviving {
-            *t += delta;
-        }
-        if !s.alive {
-            self.reviving = None;
-        }
         while self
             .predicted
             .front()
@@ -729,7 +686,7 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
             turn: Some((s.progress.turn, s.progress.step)),
-            // Kneeling over the charge or a downed teammate, or a throw.
+            // Kneeling over the charge, or a throw.
             action: s
                 .charge_use
                 .map(|(kind, t)| {
@@ -738,12 +695,6 @@ impl RemotePlayer {
                         UseKind::Defuse => ActionPose::Defuse,
                     };
                     (pose, t)
-                })
-                .or_else(|| {
-                    // A revive kneels as a defuse does, on its own clock.
-                    let defuse = UseKind::Defuse.duration(&shooter_sim::snd::SndRules::default());
-                    self.reviving
-                        .map(|(_, t)| (ActionPose::Defuse, (t / defuse).min(1.0)))
                 })
                 .or_else(|| s.throw.map(|t| (ActionPose::Throw, t)))
                 .filter(|_| s.alive),

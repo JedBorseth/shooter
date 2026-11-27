@@ -47,8 +47,8 @@ def _p(asset, keep=(), tris=3000, tags=(), kit="", height=0.0):
 
 
 PROPS: dict[str, Prop] = {
-    # The first set (November 2026), placed in Slamcity, Breakwater, the
-    # Testing Area, and the Zombies arena.
+    # The first set (November 2026), placed in Slamcity, Breakwater, and the
+    # Testing Area.
     "barrier": _p("concrete_road_barrier_02", tris=2500, tags=("street", "cover", "concrete")),
     "barrel_red": _p("Barrel_01", tris=2700, tags=("industrial", "barrel")),
     "barrel_blue": _p("Barrel_02", tris=2700, tags=("industrial", "barrel")),

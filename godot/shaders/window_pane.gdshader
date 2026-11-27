@@ -1,6 +1,6 @@
 // A window pane with a room behind it (interior mapping): the view ray is
-// intersected with a box behind the glass, so every window on Slamcity's
-// facades shows a furnished room that moves with parallax, for the cost of
+// intersected with a box behind the glass, so every window on a generated
+// map's facades shows a furnished room that moves with parallax, for the cost of
 // one quad. tools/build_slamcity_city.py writes each pane's size (metres / 10)
 // into the vertex colour's red and green and a random seed into its blue.
 shader_type spatial;

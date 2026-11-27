@@ -42,9 +42,6 @@ const DEFAULT_CONTROLS := [
 ## Replaces the controls legend ("action:Label" pairs), for levels whose
 ## controls differ.
 @export var controls: PackedStringArray = []
-## Multiplayer kill scoring (popups and medals). Zombies turns it off and shows
-## its own points.
-@export var score_feed := true
 
 var _controls_left := CONTROLS_TIME
 var _controls_forced := false
@@ -69,15 +66,11 @@ var _markers := {}
 
 
 func _ready() -> void:
-	if not score_feed:
-		_score_feed.queue_free()
-		_score_feed = null
 	if _player == null:
 		return
 	_player.hit_confirmed.connect(_on_hit)
-	if _score_feed != null:
-		_player.scored.connect(_score_feed.add_award)
-		_score_feed.player = _player
+	_player.scored.connect(_score_feed.add_award)
+	_score_feed.player = _player
 	_player.damaged.connect(_damage.on_damaged)
 	_player.respawned.connect(_on_respawned)
 	_damage.player = _player
@@ -88,8 +81,7 @@ func _ready() -> void:
 	Settings.fit_hud(_health, true)
 	Settings.fit_hud(_weapon)
 	Settings.fit_hud(_centre)
-	if _score_feed != null:
-		Settings.fit_hud(_score_feed)
+	Settings.fit_hud(_score_feed)
 
 
 ## The grenade danger indicator round the crosshair (`ui/grenade_danger.gd`).
@@ -177,23 +169,16 @@ func _process(delta: float) -> void:
 	# scope still shows, from `scope_amount`).
 	var killcam := _player.in_killcam()
 	# The results screen clears the play HUD, as in Call of Duty; the final
-	# killcam before it still needs the scope. Zombies keeps its own
-	# game-over screen, which lives on this layer.
+	# killcam before it still needs the scope.
 	visible = killcam or not _match_ended()
-	# Flying a Guided Missile shows its own view and overlay only, as Black
-	# Ops 2's Hellstorm does (`missile_view.gd`).
-	var aside := killcam or _piloting()
-	# The Zombies arena's HUD has no score feed.
 	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
-		if piece != null:
-			piece.visible = not aside
-	if aside:
+		piece.visible = not killcam
+	if killcam:
 		return
 	_crosshair.visible = true
 	_centre.visible = true
 	_damage.visible = true
-	if _score_feed != null:
-		_score_feed.visible = true
+	_score_feed.visible = true
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85
 	var magazine := _player.magazine()
@@ -215,7 +200,7 @@ func _process(delta: float) -> void:
 	var prompt := _player.interact_prompt()
 	_centre.prompt = Paint.split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
 
-	# Without respawns (Zombies) the mode shows its own end screen.
+	# Without respawns (Search and Destroy) the mode shows its own death screen.
 	var dead := not alive and _player.auto_respawn
 	# The held scoreboard covers the middle: the death card waits under it.
 	_centre.dead = dead and not Input.is_action_pressed(&"scoreboard")
@@ -274,14 +259,7 @@ func _match_ended() -> bool:
 	if client == null:
 		return false
 	var info: Dictionary = client.call(&"match_info")
-	return String(info.get("phase", "")) == "ended" and String(info.get("mode", "")) != "zombies"
-
-
-## Whether we fly a Guided Missile (see `_match_ended` for the look-up).
-func _piloting() -> bool:
-	var net := get_node_or_null(^"/root/Net")
-	var client: Object = net.call(&"client") if net != null else null
-	return client != null and int(client.call(&"piloting")) >= 0
+	return String(info.get("phase", "")) == "ended"
 
 
 ## The legend's [key, label] pairs for the current device.
@@ -290,7 +268,7 @@ func _legend(gamepad: bool) -> Array:
 	for entry in controls if not controls.is_empty() else PackedStringArray(DEFAULT_CONTROLS):
 		var action := entry.get_slice(":", 0)
 		var label := entry.get_slice(":", 1)
-		# The ammo refill is the Testing Area's alone (off online and in Zombies).
+		# The ammo refill is the Testing Area's alone (off online).
 		if action == "refill_ammo" and not _player.get(&"allow_refill"):
 			continue
 		var key := ""

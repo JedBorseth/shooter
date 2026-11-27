@@ -1,5 +1,5 @@
 extends SceneTree
-## Captures the Testing Area, the Zombies arena, and Breakwater for checking set
+## Captures the Testing Area and Breakwater for checking set
 ## dressing and atmosphere: wide views across each map, its benchmark
 ## viewpoints, and close views of the dressed corners, at one preset.
 ## Breakwater's views are taken from a free camera with the HUD hidden (eye
@@ -11,7 +11,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of maps: testing, zombies, breakwater (default: all).
+##   CAPTURE_ONLY    comma list of maps: testing, breakwater (default: all).
 ##   CAPTURE_VIEWS   optional extra views for one map, as
 ##                   "name:x,y,z,yaw,pitch[,1];name:..." (feet position,
 ##                   radians; a trailing 1 crouches).
@@ -42,24 +42,6 @@ const VIEWS := {
 			"tower": [Vector3(22, 0.1, -16), -0.5, 0.08],
 			"targets": [Vector3(20, 0.1, 14), -PI / 2, -0.05],
 			"container": [Vector3(22, 0.1, 6), -0.72, -0.04],
-		},
-	},
-	"zombies":
-	{
-		"scene": "res://scenes/zombies_arena.tscn",
-		"views":
-		{
-			"centre_north": [Vector3(0, 0.1, 6), 0.0, 0.0],
-			"centre_south": [Vector3(0, 0.1, -6), PI, 0.0],
-			"window_bay": [Vector3(-10, 0.1, -18), 0.6, 0.0],
-			"west_gate": [Vector3(-14, 0.1, 4), PI / 2, 0.0],
-			"east_yard": [Vector3(30, 0.1, 4), -PI / 2 + 0.4, 0.0],
-			"corner_se": [Vector3(18, 0.1, 18), -2.4, -0.05],
-			"ground_close": [Vector3(-4, 0.1, 3), 0.4, -0.5],
-			"sky_moon": [Vector3(0, 0.1, 0), 0.0, 0.5],
-			"barricade_south": [Vector3(-1, 0.1, 16), PI + 0.2, -0.08],
-			"burnt_car": [Vector3(-16, 0.1, -2), PI / 2 + 0.3, -0.1],
-			"window_close": [Vector3(-10, 0.1, -19), 0.9, -0.1],
 		},
 	},
 	"breakwater":
@@ -109,7 +91,7 @@ func _run() -> void:
 	_settings = root.get_node("Settings")
 	_settings.path = "user://capture_maps_settings.cfg"
 	_settings.set_graphics_preset(Benchmark.PRESET_KEYS[preset])
-	var bench_names := {"testing": "testing", "zombies": "zombies", "breakwater": "breakwater"}
+	var bench_names := {"testing": "testing", "breakwater": "breakwater"}
 	for map: String in VIEWS:
 		if not _only.is_empty() and not map in _only.split(","):
 			continue
@@ -181,9 +163,6 @@ func _load(path: String) -> void:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
 	_player = scene.get_node("Player") as FpsPlayer

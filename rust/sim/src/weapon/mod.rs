@@ -44,7 +44,7 @@ pub struct WeaponState {
     /// or the charge after an empty reload, was cut short by a switch. The
     /// weapon works its action when it is next drawn.
     pub needs_cycle: bool,
-    /// False for an empty slot (Zombies starts with only a sidearm). `id`
+    /// False for an empty slot (Gun Game carries one weapon). `id`
     /// then means nothing.
     pub carried: bool,
     /// Not drawn yet this game or round, or just picked up: the next draw is
@@ -131,16 +131,7 @@ pub enum Raise {
     /// (`WeaponDef::first_raise_time`): the draw ends by working the action,
     /// as Call of Duty's first raise does.
     First,
-    /// Zombies: a drink bought from its machine ([`crate::zombies::drinks`]).
-    /// The weapon stays down while the bottle is drunk for [`DRINK_SECONDS`],
-    /// then is drawn: Black Ops' perk bottle, which takes the hands for
-    /// about three seconds in all.
-    Drink(crate::zombies::drinks::Drink),
 }
-
-/// Seconds a drink's bottle takes (cap off, drink, toss it), before the
-/// weapon is drawn again.
-pub const DRINK_SECONDS: f32 = 2.3;
 
 /// Player combat state: loadout, current action, aim, recoil, and breath.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -241,43 +232,6 @@ impl CombatState {
         self
     }
 
-    /// This loadout coming back up from nothing in hand, as after a revive
-    /// in Zombies: out of aim, the weapon in hand being drawn.
-    pub fn raised(mut self) -> Self {
-        self.ads = 0.0;
-        self.burst_left = 0;
-        self.action = draw(&mut self);
-        self
-    }
-
-    /// This loadout with `drink` being drunk (Zombies): out of aim, the
-    /// weapon down for the bottle, then drawn (an ordinary draw, never a
-    /// first raise).
-    pub fn drinking(mut self, drink: crate::zombies::drinks::Drink) -> Self {
-        self.ads = 0.0;
-        self.burst_left = 0;
-        let def = self.def();
-        self.action = Action::Raising {
-            remaining: DRINK_SECONDS + def.raise_time,
-            kind: Raise::Drink(drink),
-        };
-        self
-    }
-
-    /// The drink being drunk and seconds into its bottle, while one is.
-    pub fn drinking_now(&self) -> Option<(crate::zombies::drinks::Drink, f32)> {
-        match self.action {
-            Action::Raising {
-                remaining,
-                kind: Raise::Drink(drink),
-            } => {
-                let left = remaining - self.def().raise_time;
-                (left > 0.0).then_some((drink, DRINK_SECONDS - left))
-            }
-            _ => None,
-        }
-    }
-
     /// This loadout carrying `count` of the tactical `kind`.
     pub fn with_tacticals(mut self, kind: equipment::Kind, count: u8) -> Self {
         self.tactical = kind;
@@ -348,14 +302,6 @@ impl CombatState {
     /// Whether `weapon` is in one of the slots.
     pub fn carries(&self, weapon: WeaponId) -> bool {
         self.slots.iter().any(|s| s.carried && s.id == weapon)
-    }
-
-    /// Whether the forge's upgrade of `weapon` is carried
-    /// ([`crate::zombies::forge`]).
-    pub fn carries_upgraded(&self, weapon: WeaponId) -> bool {
-        weapon
-            .upgraded()
-            .is_some_and(|up| self.slots.iter().any(|s| s.carried && s.id == up))
     }
 
     pub fn weapon(&self) -> &WeaponState {
@@ -624,9 +570,6 @@ pub struct CombatContext {
     /// How fast reloads, switches, throws, and the sprint-out run, from the
     /// player's perks ([`crate::perk::Perks::handling`]).
     pub handling: crate::perk::Handling,
-    /// Zombies drinks held ([`crate::zombies::drinks`]): Quickload speeds
-    /// reloads and Hair Trigger shortens the time between shots.
-    pub drinks: crate::zombies::drinks::Drinks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -762,12 +705,7 @@ pub fn step(
 
     request_switch(state, input);
     advance_throw(state, input, dt, ctx.handling.throw, events);
-    // Quickload speeds reloads on top of any perk.
-    let handling = crate::perk::Handling {
-        reload: ctx.handling.reload * ctx.drinks.reload_rate(),
-        ..ctx.handling
-    };
-    advance_action(state, dt, &handling, events);
+    advance_action(state, dt, &ctx.handling, events);
     if let Some((strike_in, lunge)) = input.melee
         && state.can_melee()
     {
@@ -863,14 +801,8 @@ pub fn step(
 
 fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEvent>) {
     let def = weapon.def();
-    // A wall weapon taken while carrying it, or its forged upgrade, refills
-    // the one carried.
-    let upgrade = weapon.upgraded();
-    if let Some(slot) = state
-        .slots
-        .iter_mut()
-        .find(|s| s.carried && (s.id == weapon || Some(s.id) == upgrade))
-    {
+    // A weapon taken while carrying it refills the one carried.
+    if let Some(slot) = state.slots.iter_mut().find(|s| s.carried && s.id == weapon) {
         slot.reserve = slot.reserve.max(slot.id.def().reserve);
         let weapon = slot.id;
         events.push(CombatEvent::PickedUp { weapon });
@@ -1347,7 +1279,7 @@ fn fire(
     let slot = &mut state.slots[usize::from(state.active)];
     slot.magazine -= 1;
     // Accumulate so the average fire rate is exact even when the interval is not a whole number of ticks.
-    state.cooldown += def.fire_interval() * ctx.drinks.fire_interval_scale();
+    state.cooldown += def.fire_interval();
     if let FireMode::Burst { delay, .. } = def.fire_mode {
         state.burst_left = state.burst_left.saturating_sub(1);
         if state.burst_left == 0 || slot.magazine == 0 {

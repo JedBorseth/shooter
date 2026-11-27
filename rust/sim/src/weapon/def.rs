@@ -52,17 +52,7 @@ impl WeaponId {
         Self::by_key(&key)
     }
 
-    /// The forge's upgrade of this plain weapon, if it has one.
-    pub fn upgraded(self) -> Option<WeaponId> {
-        let def = self.def();
-        if !def.plain() {
-            return None;
-        }
-        Self::by_key(&format!("{}{FORGED_SUFFIX}", def.key))
-    }
-
-    /// The plain weapon this is a variant of (attachments or upgrade), or
-    /// itself.
+    /// The plain weapon this is a variant of (attachments), or itself.
     pub fn plain(self) -> WeaponId {
         Self::by_key(self.def().model_key()).unwrap_or(self)
     }
@@ -98,13 +88,11 @@ pub enum WeaponClass {
     Sniper,
     Pistol,
     Launcher,
-    /// Test and debug weapons (the laser): no band.
-    Special,
 }
 
 impl WeaponClass {
     /// Create-a-Class order, primaries then secondaries (Black Ops 2's).
-    pub const ALL: [WeaponClass; 9] = [
+    pub const ALL: [WeaponClass; 8] = [
         WeaponClass::AssaultRifle,
         WeaponClass::Smg,
         WeaponClass::Lmg,
@@ -113,7 +101,6 @@ impl WeaponClass {
         WeaponClass::Sniper,
         WeaponClass::Pistol,
         WeaponClass::Launcher,
-        WeaponClass::Special,
     ];
 
     /// The class's heading in menus.
@@ -127,7 +114,6 @@ impl WeaponClass {
             WeaponClass::Sniper => "Sniper Rifles",
             WeaponClass::Pistol => "Pistols",
             WeaponClass::Launcher => "Launchers",
-            WeaponClass::Special => "Special",
         }
     }
 
@@ -480,10 +466,6 @@ pub struct WeaponDef {
     /// Draw a tracer for every Nth round of the player's own fire. 0 = never.
     #[serde(default)]
     pub tracer_every: u8,
-    /// An energy weapon: every shot draws a solid beam to the hit point instead
-    /// of tracers, and no shell casings come out.
-    #[serde(default)]
-    pub beam: bool,
     /// A launcher: each shot fires a rocket (`equipment::Kind::Rocket`)
     /// that flies and goes off instead of a hitscan round; `damage` and
     /// `range` are unused.
@@ -519,11 +501,6 @@ pub struct WeaponDef {
     /// On an attachment variant: the plain weapon's key (its model and sounds).
     #[serde(skip)]
     pub base_key: String,
-    /// Upgraded at the Zombies forge ([`crate::zombies::forge`]): the
-    /// table's `<key>+forged` variant of a plain weapon, with its
-    /// `base_key` set to the plain weapon's.
-    #[serde(skip)]
-    pub upgraded: bool,
 }
 
 /// Hand positions on a weapon model, in its space (origin at the rear sight,
@@ -682,9 +659,9 @@ impl WeaponDef {
         }
     }
 
-    /// A plain weapon: no attachments fitted and not upgraded.
+    /// A plain weapon: no attachments fitted.
     pub fn plain(&self) -> bool {
-        self.fitted.is_empty() && !self.upgraded
+        self.fitted.is_empty()
     }
 
     pub fn fire_interval(&self) -> f32 {
@@ -839,30 +816,6 @@ fn variants_of(def: &WeaponDef) -> Vec<WeaponDef> {
     out
 }
 
-/// The key suffix of a weapon upgraded at the forge (`m4+forged`).
-pub const FORGED_SUFFIX: &str = "+forged";
-
-/// A plain weapon as the Zombies forge upgrades it
-/// ([`crate::zombies::forge`]): twice the damage, half again the magazine,
-/// twice the reserve, and "MK II" after its name. Black Ops sets each
-/// upgraded weapon's numbers by hand; these are its typical changes.
-fn forged(def: &WeaponDef) -> WeaponDef {
-    use crate::zombies::forge;
-    let mut up = def.clone();
-    up.key = format!("{}{FORGED_SUFFIX}", def.key);
-    up.base_key = def.key.clone();
-    up.upgraded = true;
-    up.name = format!("{} MK II", def.name);
-    up.attachments = Vec::new();
-    up.unlock_level = u8::MAX;
-    up.damage.near *= forge::DAMAGE_SCALE;
-    up.damage.far *= forge::DAMAGE_SCALE;
-    up.magazine =
-        ((f32::from(def.magazine) * forge::MAGAZINE_SCALE).round() as u16).max(def.magazine + 1);
-    up.reserve = ((f32::from(def.reserve) * forge::RESERVE_SCALE).round() as u16).max(up.magazine);
-    up
-}
-
 /// A set of attachments, one bit per [`Attachment::ALL`] entry.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Attachments(u8);
@@ -931,9 +884,7 @@ pub fn parse_all<'a>(
         .map(|(key, source)| parse(key, source))
         .collect::<Result<Vec<_>, _>>()?;
     let variants: Vec<WeaponDef> = defs.iter().flat_map(variants_of).collect();
-    let upgrades: Vec<WeaponDef> = defs.iter().filter(|d| !d.beam).map(forged).collect();
     defs.extend(variants);
-    defs.extend(upgrades);
     defs.sort_by(|a, b| a.key.cmp(&b.key));
     if defs.len() > usize::from(u8::MAX) {
         return Err(LoadError {
@@ -953,8 +904,8 @@ macro_rules! builtin_files {
 /// The weapon files in `godot/data/weapons`, compiled in.
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
-        "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m40", "m4", "m870",
-        "pdw9", "rl4", "sg12"
+        "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "lsw6", "m1911", "m40", "m4", "m870", "pdw9",
+        "rl4", "sg12"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -1004,8 +955,8 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m4", "m40",
-                "m870", "pdw9", "rl4", "sg12"
+                "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "lsw6", "m1911", "m4", "m40", "m870",
+                "pdw9", "rl4", "sg12"
             ]
         );
         let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
@@ -1159,21 +1110,9 @@ mod tests {
         assert_eq!(m4.pellets, 1);
         assert_eq!(m4.cycle_time, 0.0);
         assert!(m4.scope.is_none());
-        assert!(!m4.beam);
         let shotgun = WeaponId::expect("m870").def();
         assert_eq!(shotgun.pellets, 10);
         assert!(matches!(shotgun.reload, Reload::PerRound { .. }));
-    }
-
-    #[test]
-    fn laser_kills_in_one_hit_anywhere() {
-        let laser = WeaponId::expect("laser").def();
-        assert!(laser.beam);
-        assert_eq!(laser.fire_mode, FireMode::Auto);
-        assert!(laser.damage_at(0.0) >= 1000.0);
-        assert!(laser.damage_at(laser.range) >= 1000.0);
-        assert_eq!(laser.spread.hip, 0.0);
-        assert!(laser.recoil.pattern.iter().all(|kick| *kick == Vec2::ZERO));
     }
 
     #[test]

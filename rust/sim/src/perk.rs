@@ -14,18 +14,17 @@
 //! | 1 | Flak Jacket | takes 35% of explosive damage |
 //! | 1 | Hardline | score counts 20% more toward scorestreaks |
 //! | 1 | Ghost | hidden from enemy UAV sweeps while moving |
-//! | 1 | Blind Eye | enemy AI air support (the Attack Chopper) never targets them |
 //! | 2 | Toughness | aim flinches a quarter as much when shot |
 //! | 2 | Fast Hands | switches weapons in half the time, throws faster |
 //! | 2 | Scavenger | refills ammo and grenades from packs enemies drop |
 //! | 2 | Sleight of Hand | reloads in half the time (Black Ops 1's Perk 2) |
 //! | 2 | Hard Wired | immune to enemy Counter-UAVs |
-//! | 2 | Cold-Blooded | no red name or crosshair when aimed at; enemy Guided Missiles neither box them nor send bomblets at them |
+//! | 2 | Cold-Blooded | no red name or crosshair when aimed at |
 //! | 3 | Dexterity | mantles 40% faster, climbs ladders 75% faster, weapon up sooner after a sprint |
 //! | 3 | Dead Silence | near-silent footsteps |
 //! | 3 | Awareness | hears enemy footsteps louder |
 //! | 3 | Tactical Mask | flashbangs blind for half as long |
-//! | 3 | Engineer | sees enemy Sentry Guns and Care Packages through walls |
+//! | 3 | Engineer | sees Care Packages not their own through walls |
 //!
 //! Movement and handling perks change what the client predicts, so they
 //! live in the player's simulated state ([`crate::player::PlayerState::perks`]),
@@ -37,8 +36,10 @@
 //! Black Ops 2's Extreme Conditioning is left out (sprint is unlimited here,
 //! a recorded project decision). Parts of other perks whose targets do not
 //! exist here are left out too: Hard Wired's EMP shield, Cold-Blooded's
-//! thermal and sensor immunity, and Engineer's booby-trapped and rerolled
-//! Care Packages and delayed enemy explosives.
+//! thermal and sensor immunity and its cover from enemy aircraft and
+//! streaks, Engineer's view of enemy Sentry Guns, its booby-trapped and
+//! rerolled Care Packages, and its delayed enemy explosives. Blind Eye is
+//! left out because the AI air support it hides from is not in the game.
 
 /// A perk's tier: the Create-a-Class slot it goes in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -77,7 +78,6 @@ pub enum Perk {
     Hardline,
     Ghost,
     HardWired,
-    BlindEye,
     ColdBlooded,
     Engineer,
 }
@@ -125,7 +125,7 @@ pub const TACTICAL_MASK_FLASH: f32 = 0.5;
 pub const GHOST_MOVING_SPEED: f32 = 0.5;
 
 impl Perk {
-    pub const ALL: [Perk; 16] = [
+    pub const ALL: [Perk; 15] = [
         Perk::Lightweight,
         Perk::FlakJacket,
         Perk::Toughness,
@@ -139,18 +139,13 @@ impl Perk {
         Perk::Hardline,
         Perk::Ghost,
         Perk::HardWired,
-        Perk::BlindEye,
         Perk::ColdBlooded,
         Perk::Engineer,
     ];
 
     pub fn tier(self) -> Tier {
         match self {
-            Perk::Lightweight
-            | Perk::FlakJacket
-            | Perk::Hardline
-            | Perk::Ghost
-            | Perk::BlindEye => Tier::One,
+            Perk::Lightweight | Perk::FlakJacket | Perk::Hardline | Perk::Ghost => Tier::One,
             Perk::Toughness
             | Perk::FastHands
             | Perk::Scavenger
@@ -186,7 +181,6 @@ impl Perk {
             Perk::Hardline => "hardline",
             Perk::Ghost => "ghost",
             Perk::HardWired => "hard_wired",
-            Perk::BlindEye => "blind_eye",
             Perk::ColdBlooded => "cold_blooded",
             Perk::Engineer => "engineer",
         }
@@ -213,7 +207,6 @@ impl Perk {
             Perk::Hardline => "Fast Track",
             Perk::Ghost => "Low Profile",
             Perk::HardWired => "Jam Proof",
-            Perk::BlindEye => "Cloud Cover",
             Perk::ColdBlooded => "Unmarked",
             Perk::Engineer => "Field Tech",
         }
@@ -237,11 +230,8 @@ impl Perk {
             Perk::Hardline => "Earn scorestreaks with less score.",
             Perk::Ghost => "Enemy UAVs cannot see you while you move.",
             Perk::HardWired => "Enemy Counter-UAVs cannot jam your minimap.",
-            Perk::BlindEye => "Enemy Attack Choppers cannot target you.",
-            Perk::ColdBlooded => {
-                "No red name or crosshair when enemies aim at you. Enemy Guided Missiles cannot mark you."
-            }
-            Perk::Engineer => "See enemy Sentry Guns and Care Packages through walls.",
+            Perk::ColdBlooded => "No red name or crosshair when enemies aim at you.",
+            Perk::Engineer => "See Care Packages that are not yours through walls.",
         }
     }
 }
@@ -252,12 +242,11 @@ pub struct Perks(u16);
 
 impl Perks {
     pub const NONE: Perks = Perks(0);
-    /// Bits the set uses on the wire: full, one a perk. A seventeenth perk
-    /// widens the set and the wire format.
+    /// Bits the set uses on the wire: one a perk, with room for one more. A
+    /// seventeenth perk widens the set and the wire format.
     pub const BITS: u32 = 16;
 
     pub fn from_bits(bits: u16) -> Option<Self> {
-        // Every bit is a perk once there are sixteen.
         let known = ((1u32 << Perk::ALL.len()) - 1) as u16;
         (bits & !known == 0).then_some(Self(bits))
     }
@@ -449,11 +438,13 @@ mod tests {
     fn sets_round_trip_their_bits() {
         let set = Perks::of(&[Perk::Lightweight, Perk::TacticalMask]);
         assert_eq!(Perks::from_bits(set.bits()), Some(set));
-        // Sixteen perks fill the sixteen bits: the last is Engineer's.
+        // Fifteen perks: the last bit is Engineer's, and the one above it
+        // is no perk.
         assert_eq!(
-            Perks::from_bits(1 << 15),
+            Perks::from_bits(1 << 14),
             Some(Perks::of(&[Perk::Engineer]))
         );
+        assert_eq!(Perks::from_bits(1 << 15), None);
         assert_eq!(set.len(), 2);
         assert_eq!(set.in_tier(Tier::One), 1);
         assert_eq!(set.in_tier(Tier::Two), 0);

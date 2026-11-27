@@ -1,6 +1,6 @@
 extends SceneTree
 ## Captures reference screenshots of Domination on a local server with bots
-## (Slamcity unless MAP names another): the flag markers and the A, B, C row
+## (Breakwater unless MAP names another): the flag markers and the A, B, C row
 ## from the spawn, facing B, the capture medal, each flag from above as the
 ## bots fight over it, and the scoreboard with captures and defences. Starts
 ## its own server process. Needs a GPU and a display (or Xvfb). ROUNDS sets
@@ -12,7 +12,7 @@ extends SceneTree
 const PORT := 27987
 
 var _out := OS.get_environment("CAPTURE_DIR")
-var _map := OS.get_environment("MAP") if OS.get_environment("MAP") else "slamcity"
+var _map := OS.get_environment("MAP") if OS.get_environment("MAP") else "breakwater"
 var _server_pid := -1
 
 

@@ -1,11 +1,10 @@
 extends SceneTree
 ## Capture a map with its in-game lighting. Requires a display and a renderer:
-##   CAPTURE_MAP=slamcity CAPTURE_DIR=/tmp/views godot --path godot \
+##   CAPTURE_MAP=breakwater CAPTURE_DIR=/tmp/views godot --path godot \
 ##     --resolution 1600x900 --audio-driver Dummy --script res://tests/capture_view.gd
 ##
 ## CAPTURE_DIR        Required output directory for PNGs and views.json.
-## CAPTURE_MAP        Net map key (arena, nuketown, slamcity, warehouse,
-##                    breakwater, zombies), "testing", or a res:// scene path.
+## CAPTURE_MAP        Net map key (arena, warehouse, breakwater), "testing", or a res:// scene path.
 ## CAPTURE_VIEWS      "name:x,y,z,heading,pitch[,fov];..." in world metres at
 ##                    the feet. Heading 0 is -Z, 90 is +X. Positive pitch
 ##                    looks up. Angles are degrees and FOV is vertical.
@@ -59,7 +58,7 @@ func _run() -> void:
 	settings.set_graphics_preset(Benchmark.PRESET_KEYS.get(preset, Benchmark.PRESET_KEYS["high"]))
 
 	var scene := packed.instantiate()
-	for name in ["Player", "HUD", "PauseMenu", "Director", "Sentry"]:
+	for name in ["Player", "HUD", "PauseMenu", "Sentry"]:
 		var node := scene.get_node_or_null(name)
 		if node != null:
 			node.process_mode = Node.PROCESS_MODE_DISABLED

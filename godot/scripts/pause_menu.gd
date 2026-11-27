@@ -63,7 +63,6 @@ const DESCRIPTIONS := {
 	&"aim_assist":
 	(
 		"With a controller, slows your aim over an enemy and follows them as you move."
-		+ " In Zombies, aiming down sights also snaps onto a zombie near the crosshair."
 		+ " Mouse aiming never gets aim assist."
 	),
 	&"rumble": "Controller vibration for shots, hits, and explosions.",
@@ -396,7 +395,7 @@ func _describe(title: String, text: String, default: String) -> void:
 	_info_default.visible = default != ""
 
 
-## Online: back to the server browser. Offline: back to the title screen.
+## Online: back to the Join screen. Offline: back to the title screen.
 func _leave() -> void:
 	_release_pause()
 	Settings.flush()

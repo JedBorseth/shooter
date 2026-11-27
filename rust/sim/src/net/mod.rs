@@ -1,6 +1,6 @@
 //! Netcode core, engine-free: wire protocol, server input buffering, client
 //! prediction and reconciliation, snapshot interpolation, lag compensation,
-//! a network condition simulator, and server discovery.
+//! a network condition simulator, and server queries.
 //!
 //! Model: the dedicated server is authoritative and runs the same fixed tick
 //! as client prediction (`TICK_RATE`), sending snapshots at 60 Hz.
@@ -18,14 +18,13 @@ pub mod bandwidth;
 pub mod bits;
 pub mod conditioner;
 pub mod delta;
-pub mod discovery;
-pub mod horde;
 pub mod input_queue;
 pub mod integrity;
 pub mod interpolation;
 pub mod lag;
 pub mod prediction;
 pub mod protocol;
+pub mod query;
 pub mod snapshot_history;
 pub mod subtick;
 

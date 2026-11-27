@@ -12,8 +12,8 @@ It downloads its pinned CC0 sources into a cache (``--cache``, by default
 ``~/.cache/shooter-characters``), checks their hashes, installs MPFB 2
 (MakeHuman for Blender) into a private Blender profile there, and then:
 
-1. Runs ``tools/blender_characters.py`` in Blender for each kit (the soldier,
-   the first-person arms, the zombies). It builds MakeHuman humans, dresses
+1. Runs ``tools/blender_characters.py`` in Blender for each kit (the soldier
+   and the first-person arms). It builds MakeHuman humans, dresses
    them, models the gear, fits everything onto the soldier skeleton with its
    weights, packs every part into one texture atlas, and bakes albedo, normal,
    roughness, occlusion, and palette-role maps.
@@ -78,10 +78,6 @@ UAL2_ANIMATIONS = [
     "Slide_Start",
     "Slide_Loop",
     "Slide_Exit",
-    "Hit_Knockback",
-    "Zombie_Idle_Loop",
-    "Zombie_Walk_Fwd_Loop",
-    "Zombie_Scratch",
     "ClimbUp_1m_RM",
 ]
 
@@ -119,7 +115,6 @@ SOURCES = {
     "skins02": (f"{MH}/skins02/skins02_cc0.zip", "1613f1ef3afca53094511d26620ed7cf1d2dedc29ed3d384d60bdebe250698ae"),
     "pants01": (f"{MH}/pants01/pants01_cc0.zip", "e4e0ec60db34f279be291a83cfd7b342a7c5cf09bb7676682a5f39f4f6ac4ad9"),
     "shirts01": (f"{MH}/shirts01/shirts01_cc0.zip", "a5a723b0e84a109bb190fcfeac7f1de4138d875da3e30fe5b3340eac9f38bcd3"),
-    "shoes01": (f"{MH}/shoes01/shoes01_cc0.zip", "ded3f70428505eabbf1f6d7b5f61196a7366ef20757103d276ad0ed336c35ada"),
     "gloves01": (f"{MH}/gloves01/gloves01_cc0.zip", "ecdaee1d02749d17352791d415cb622a883350cc8a4b90eda3725aef35d9afb2"),
     "hands01": (f"{MH}/hands01/hands01_cc0.zip", "b874210dc3a9a179b73a3dd04976bc27521f47f985d106ce46fb45a480ee1701"),
 }
@@ -468,16 +463,6 @@ def asset_paths(src: dict[str, Path]) -> dict[str, str]:
         "gloves": src["gloves01"] / "clothes/toigo_gloves_short/toigo_gloves_short.mhclo",
         "eyes": sys_ / "eyes/low-poly/low-poly.mhclo",
         "skin_young_caucasian_male": sys_ / "skins/young_caucasian_male/young_caucasian_male.mhmat",
-        # Civilian clothes and bodies for the zombies.
-        "overalls": sys_ / "clothes/male_worksuit01/male_worksuit01.mhclo",
-        "jacket": sys_ / "clothes/male_casualsuit05/male_casualsuit05.mhclo",
-        "tshirt": sys_ / "clothes/male_casualsuit06/male_casualsuit06.mhclo",
-        "skin_middleage_african_male": sys_ / "skins/middleage_african_male/middleage_african_male.mhmat",
-        "skin_old_caucasian_male": sys_ / "skins/old_caucasian_male/old_caucasian_male.mhmat",
-        "skin_young_asian_male": sys_ / "skins/young_asian_male/young_asian_male.mhmat",
-        "blouse_skirt": sys_ / "clothes/female_elegantsuit01/female_elegantsuit01.mhclo",
-        "ankle_boots": src["shoes01"] / "clothes/toigo_ankle_boots_female/toigo_ankle_boots_female.mhclo",
-        "skin_middleage_caucasian_female": sys_ / "skins/middleage_caucasian_female/middleage_caucasian_female.mhmat",
     }
     for name, path in files.items():
         if not path.exists():
@@ -517,8 +502,6 @@ MATERIALS = {
     "polymer": {"colour": (0.05, 0.05, 0.048), "detail": {"kind": "grit", "scale": 500, "strength": 0.15, "distance": 0.0005, "fade": 0.15}, "roughness": 0.5},
     "metal": {"colour": (0.06, 0.06, 0.062), "detail": {"kind": "grit", "scale": 800, "strength": 0.1, "distance": 0.0003, "fade": 0.2}, "roughness": 0.42, "metallic": 0.6},
     "lens": {"colour": (0.045, 0.05, 0.055), "roughness": 0.06},
-    # Zombies' clothes: the garment's own texture, worn matte.
-    "civilian": {"detail": {"kind": "grain", "scale": 400, "strength": 0.15, "distance": 0.001}, "roughness": 0.92},
 }
 
 KITS = {
@@ -641,136 +624,6 @@ KITS = {
         "size": 2048,
         "meshes": {"ArmsFP": None},
     },
-    # The undead: the same body and clothes with bare hands and no kit, so
-    # nothing under a helmet or plates is cut away.
-    "zombie": {
-        "spec": {
-            "macro": {
-                "gender": 1.0,
-                "age": 0.5,
-                "muscle": 0.45,
-                "weight": 0.5,
-                "height": 0.6,
-                "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
-            },
-            "skin": "skin_young_caucasian_male",
-            "parts": [
-                {"asset": "cargo", "role": "pants", "material": "civilian", "subdiv": 1},
-                {"asset": "shirt", "role": "uniform", "material": "civilian", "tighten": 0.018, "decimate": 0.75},
-                {"asset": "boots", "role": "boots", "material": "civilian", "decimate": 0.4},
-                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
-            ],
-            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-spine.003"], "threshold": 0.35,
-                          "uncovered": 0.03},
-            "body_decimate": 0.32,
-            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
-            "hair": {"colour": (0.2, 0.14, 0.09), "front": 0.055, "nape": 0.08, "density": 0.9, "stubble": 0.55},
-            # Decay painted into the bake (add_decay in blender_characters.py):
-            # wounds [x, y, z, radius] with blood soaked round and run down from
-            # them, a bloody mouth (its radius; it is placed from the eyes),
-            # rips [x, y, z, length], grime and mud.
-            "decay": {"seed": 1, "grime": 0.55, "mouth": [0.0, 0.0, 0.0, 0.011], "wounds": [[0.06, -0.01, 1.49, 0.035], [-0.58, 0.02, 1.43, 0.03], [0.04, -0.13, 1.18, 0.028]], "tears": [[-0.07, -0.13, 1.33, 0.05], [0.11, -0.09, 0.72, 0.05], [0.4, 0.0, 1.48, 0.04]]},
-        },
-        "density": {"skin": 3.0, "eyes": 2.0},
-        "size": 2048,
-        "far_ratio": 0.3,
-        "tinted": False,
-        "meshes": {"Body": None},
-    },
-    # More of the undead, each a different person in their own clothes. Zombie
-    # kits keep their clothes' colours (no team tint); the shader adds grime
-    # and blood per zombie. SoldierRig picks one per zombie.
-    "zombie_b": {
-        "spec": {
-            "macro": {"gender": 1.0, "age": 0.75, "muscle": 0.5, "weight": 0.75, "height": 0.55,
-                      "race": {"caucasian": 0.0, "african": 1.0, "asian": 0.0}},
-            "skin": "skin_middleage_african_male",
-            "parts": [
-                {"asset": "overalls", "role": "uniform", "material": "civilian"},
-                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
-            ],
-            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm.",
-                                    "DEF-spine.003", "DEF-shoulder."], "threshold": 0.35, "uncovered": 0.03},
-            "body_decimate": 0.32,
-            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
-            "hair": {"colour": (0.035, 0.03, 0.028), "front": 0.065, "nape": 0.07, "density": 0.95, "stubble": 0.75},
-            "decay": {"seed": 2, "grime": 0.65, "mouth": [0.0, 0.0, 0.0, 0.011], "wounds": [[-0.16, -0.03, 1.46, 0.04], [0.09, -0.13, 1.32, 0.03]], "tears": [[-0.09, -0.08, 0.5, 0.05], [0.03, -0.14, 1.25, 0.04]]},
-        },
-        "tinted": False,
-        "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 1024,
-        "far_ratio": 0.3,
-        "meshes": {"Body": None},
-    },
-    "zombie_c": {
-        "spec": {
-            "macro": {"gender": 1.0, "age": 0.95, "muscle": 0.3, "weight": 0.45, "height": 0.5,
-                      "race": {"caucasian": 1.0, "african": 0.0, "asian": 0.0}},
-            "skin": "skin_old_caucasian_male",
-            "parts": [
-                {"asset": "jacket", "role": "uniform", "material": "civilian"},
-                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
-            ],
-            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-spine.003"], "threshold": 0.35,
-                          "uncovered": 0.03},
-            "body_decimate": 0.32,
-            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
-            "hair": {"colour": (0.55, 0.53, 0.5), "front": 0.09, "nape": 0.06, "density": 0.6, "stubble": 0.45},
-            "decay": {"seed": 3, "grime": 0.6, "mouth": [0.0, 0.0, 0.0, 0.011], "wounds": [[-0.06, -0.01, 1.48, 0.03], [0.75, 0.05, 1.43, 0.025], [-0.06, -0.12, 1.12, 0.035]], "tears": [[0.0, 0.13, 1.3, 0.06], [0.09, -0.06, 0.35, 0.04]]},
-        },
-        "tinted": False,
-        "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 1024,
-        "far_ratio": 0.3,
-        "meshes": {"Body": None},
-    },
-    "zombie_d": {
-        "spec": {
-            "macro": {"gender": 1.0, "age": 0.4, "muscle": 0.55, "weight": 0.4, "height": 0.5,
-                      "race": {"caucasian": 0.0, "african": 0.0, "asian": 1.0}},
-            "skin": "skin_young_asian_male",
-            "parts": [
-                {"asset": "tshirt", "role": "uniform", "material": "civilian"},
-                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
-            ],
-            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm.",
-                                    "DEF-spine.003", "DEF-shoulder."], "threshold": 0.35, "uncovered": 0.03},
-            "body_decimate": 0.32,
-            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
-            "hair": {"colour": (0.03, 0.028, 0.03), "front": 0.05, "nape": 0.085, "density": 1.0, "stubble": 0.15},
-            "decay": {"seed": 4, "grime": 0.5, "mouth": [0.0, 0.0, 0.0, 0.011], "wounds": [[0.6, 0.03, 1.43, 0.035], [-0.3, -0.02, 1.47, 0.03], [0.0, -0.12, 1.3, 0.03], [0.09, -0.12, 1.34, 0.045], [0.0, 0.13, 1.3, 0.07]], "tears": [[0.12, -0.09, 1.15, 0.07], [0.09, -0.08, 0.5, 0.06]]},
-        },
-        "tinted": False,
-        "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 1024,
-        "far_ratio": 0.3,
-        "meshes": {"Body": None},
-    },
-    # A woman in office clothes: a blouse, a pencil skirt, and ankle boots,
-    # with her calves bare.
-    "zombie_e": {
-        "spec": {
-            "macro": {"gender": 0.0, "age": 0.6, "muscle": 0.4, "weight": 0.5, "height": 0.45,
-                      "race": {"caucasian": 1.0, "african": 0.0, "asian": 0.0}},
-            "skin": "skin_middleage_caucasian_female",
-            "parts": [
-                {"asset": "blouse_skirt", "role": "uniform", "material": "civilian"},
-                {"asset": "ankle_boots", "role": "boots", "material": "civilian", "decimate": 0.35},
-                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
-            ],
-            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-shin.", "DEF-spine.003"],
-                          "threshold": 0.35, "uncovered": 0.03},
-            "body_decimate": 0.32,
-            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
-            "hair": {"colour": (0.26, 0.13, 0.07), "front": 0.05, "nape": 0.12, "density": 1.0, "stubble": 0.0},
-            "decay": {"seed": 5, "grime": 0.5, "mouth": [0.0, 0.0, 0.0, 0.011], "wounds": [[0.055, 0.0, 1.47, 0.032], [-0.09, 0.03, 0.3, 0.035], [0.42, 0.0, 1.43, 0.03]], "tears": [[0.12, -0.06, 1.42, 0.045], [-0.06, -0.1, 0.62, 0.05]]},
-        },
-        "tinted": False,
-        "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 1024,
-        "far_ratio": 0.3,
-        "meshes": {"Body": None},
-    },
 }
 
 def bake_kit(name: str, kit: dict, cache: Path, ual1: Path, assets: dict[str, str]) -> Path:
@@ -840,16 +693,15 @@ def write_kit_model(name: str, ual: Gltf, meshes: dict[str, list[dict]], path: P
     w.save(path)
 
 
-def write_textures(name: str, work: Path, out_dir: Path, tinted: bool = True) -> None:
-    """albedo (tinted roles reduced to detail centred on 0.5, unless the kit
-    keeps its colours), normal, and ORM."""
+def write_textures(name: str, work: Path, out_dir: Path) -> None:
+    """albedo (tinted roles reduced to detail centred on 0.5), normal, and ORM."""
     albedo = np.asarray(Image.open(work / "albedo.png").convert("RGB"), dtype=np.float32) / 255.0
     role_map = np.asarray(Image.open(work / "role.png").convert("L"), dtype=np.float32) / 255.0
     roles = np.clip((role_map * 16.0).astype(int), 0, 15)
     linear = srgb_to_linear(albedo)
     lum = linear @ np.array([0.2126, 0.7152, 0.0722], np.float32)
     for i, role in enumerate(ROLES):
-        if not tinted or role not in TINTED:
+        if role not in TINTED:
             continue
         mask = roles == i
         if not mask.any():
@@ -932,7 +784,7 @@ def main() -> None:
             # Past 15 m a face's shape does not show: no blend shapes there.
             meshes["BodyFar"] = [{**part, "morph_pos": None, "morph_nrm": None} for part in load_parts(work, "mesh_far.npz")]
         write_kit_model(name, ual1, meshes, out_dir / f"{name}.glb")
-        write_textures(name, work, out_dir, kit.get("tinted", True))
+        write_textures(name, work, out_dir)
     if not args.no_animations:
         build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
         build_animations(Gltf(args.ual2), UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")

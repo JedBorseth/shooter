@@ -10,7 +10,7 @@
 use std::collections::VecDeque;
 
 use super::Tick;
-use super::protocol::{PlayerView, Predicted, ZombieView};
+use super::protocol::{PlayerView, Predicted};
 
 /// About a second of 60 Hz snapshots. An older acknowledgement falls back to a full snapshot.
 pub const HISTORY_TICKS: usize = 64;
@@ -20,8 +20,6 @@ pub struct SnapshotHistory {
     entries: VecDeque<(Tick, Vec<PlayerView>)>,
     /// Own states by tick, beside `entries` (sorted the same way).
     owns: VecDeque<(Tick, Vec<(u8, Predicted)>)>,
-    /// Zombies: the horde of each snapshot that carried it.
-    hordes: VecDeque<(Tick, Vec<ZombieView>)>,
 }
 
 impl SnapshotHistory {
@@ -45,39 +43,6 @@ impl SnapshotHistory {
         while self.owns.len() > HISTORY_TICKS {
             self.owns.pop_front();
         }
-    }
-
-    /// Records the horde a snapshot carried.
-    pub fn insert_zombies(&mut self, tick: Tick, zombies: Vec<ZombieView>) {
-        if self.hordes.back().is_some_and(|(t, _)| *t >= tick) {
-            let index = self.hordes.partition_point(|(t, _)| *t < tick);
-            if self.hordes.get(index).is_some_and(|(t, _)| *t == tick) {
-                return;
-            }
-            self.hordes.insert(index, (tick, zombies));
-        } else {
-            self.hordes.push_back((tick, zombies));
-        }
-        // Hordes go out at most every other snapshot; keep as long a reach.
-        while self.hordes.len() > HISTORY_TICKS {
-            self.hordes.pop_front();
-        }
-    }
-
-    /// The horde the snapshot for `tick` carried, if it carried one.
-    pub fn zombies(&self, tick: Tick) -> Option<&[ZombieView]> {
-        let index = self.hordes.partition_point(|(t, _)| *t < tick);
-        self.hordes
-            .get(index)
-            .filter(|(t, _)| *t == tick)
-            .map(|(_, z)| z.as_slice())
-    }
-
-    /// The newest horde sent at or before `tick`, and its tick.
-    pub fn zombies_by(&self, tick: Tick) -> Option<(Tick, &[ZombieView])> {
-        let index = self.hordes.partition_point(|(t, _)| *t <= tick);
-        let (t, z) = self.hordes.get(index.checked_sub(1)?)?;
-        Some((*t, z.as_slice()))
     }
 
     /// Player `id`'s own state as sent with the snapshot for `tick`.
@@ -161,21 +126,5 @@ mod tests {
         assert!(h.own(40, 4).is_none());
         assert!(h.own(10, 3).is_none());
         assert_eq!(h.get(40).unwrap()[0].id, 1);
-    }
-
-    #[test]
-    fn keeps_hordes_by_tick() {
-        let mut h = SnapshotHistory::default();
-        for tick in (0..400).step_by(4) {
-            h.insert_zombies(
-                tick,
-                vec![ZombieView::new(tick as u8, glam::Vec3::ZERO, 0.0, true)],
-            );
-        }
-        assert_eq!(h.zombies(396).unwrap()[0].id, 396u32 as u8);
-        assert!(h.zombies(397).is_none());
-        assert_eq!(h.zombies_by(399).unwrap().0, 396);
-        assert_eq!(h.zombies_by(150).unwrap().0, 148);
-        assert!(h.zombies(0).is_none(), "older than the history");
     }
 }

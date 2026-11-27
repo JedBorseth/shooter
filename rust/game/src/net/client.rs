@@ -46,15 +46,15 @@ use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::killcam::{self, Killcam, OwnRecorder, Tape};
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
-use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
     self as protocol, AirView, Baseline, ChargeStatus, ChargeView, ClientMessage, DominationView,
     FlagPlay, FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause,
     MAX_BUILD_BYTES, PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage,
-    Snapshot, StreakEvent, ZombiesEvent, ZoneView,
+    Snapshot, StreakEvent, ZoneView,
 };
+use shooter_sim::net::query::clean_text;
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
 use shooter_sim::perk::{Perk, Perks};
@@ -68,17 +68,12 @@ use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
-use super::horde_view::HordeView;
-use super::killcam::{KillcamView, Playing, ViewDriver, WeaponCue};
-use super::props::{PropSnapshot, PropsBridge};
+use super::killcam::{Playing, WeaponCue};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
 use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::{self, HitboxRig};
 use crate::player::FpsPlayer;
-use shooter_sim::camo::Camo;
-use shooter_sim::card::Card;
-use shooter_sim::cosmetics::Cosmetics;
 
 /// What the kill feed calls a knife kill.
 const KNIFE_NAME: &str = "Knife";
@@ -96,8 +91,6 @@ enum Status {
     Connecting,
     Joined,
     Rejected,
-    /// The server turned us away (`denied_reason`).
-    Denied,
     Disconnected,
 }
 
@@ -115,10 +108,6 @@ pub struct NetClient {
     /// The name other players see.
     #[export]
     player_name: GString,
-    /// Our account session token (`Online.session_token()`), or empty when
-    /// not signed in. A server that checks accounts needs it.
-    #[export]
-    account_token: GString,
     /// Primary weapon to ask for when joining (a weapon key, attachment
     /// variants included), or empty for the default class's. Ignored once a
     /// whole class is set (`set_class`).
@@ -157,10 +146,6 @@ pub struct NetClient {
     /// setting); ending killcams still play.
     #[var]
     skip_killcams: bool,
-    /// Join as a spectator (docs/custom-games.md): on no team, watching
-    /// any player from their eyes or flying free.
-    #[export]
-    spectate: bool,
 
     host: Option<Gd<ENetConnection>>,
     server: Option<Gd<ENetPacketPeer>>,
@@ -183,13 +168,6 @@ pub struct NetClient {
     ghosts: VecDeque<(Gd<HitboxRig>, f32)>,
     /// Everyone in the game, ourselves included.
     roster: Vec<RosterEntry>,
-    /// Our stats this match, as the server last sent them
-    /// (`shooter_sim::stats`).
-    match_stats: shooter_sim::stats::Stats,
-    /// What we ask to show (`set_cosmetics`), sent again on connecting.
-    cosmetics_wanted: Cosmetics,
-    /// What each player shows, as the server passed it on.
-    cosmetics: std::collections::HashMap<u8, Cosmetics>,
     match_phase: Option<Phase>,
     match_ends_at: Option<Tick>,
     /// Regulation, the second half, or overtime.
@@ -202,26 +180,8 @@ pub struct NetClient {
     mode: Mode,
     /// The server's build, from its welcome.
     server_build: String,
-    /// The server reports our match XP to our account (its welcome).
-    ranked: bool,
     /// The server's custom game settings (`shooter_sim::custom`).
     custom: custom::Settings,
-    /// The server let us in as a spectator.
-    spectator: bool,
-    /// As a spectator: the player we watch from their eyes, or none to fly
-    /// free; the weapon frames for their view; and the free camera.
-    follow: Option<u8>,
-    follow_driver: ViewDriver,
-    free_camera: Transform3D,
-    /// Whose body is hidden for being watched from inside it.
-    hidden_body: Option<u8>,
-    /// The newest snapshot acknowledged to the server as a spectator.
-    spectator_acked: Option<Tick>,
-    /// As a spectator: every player's class and scorestreaks
-    /// (`GameEvent::Caster`).
-    caster: Vec<protocol::CasterRow>,
-    /// Why the server turned us away.
-    denied_reason: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
     /// server tick it moves on.
     zones: Vec<ZoneView>,
@@ -232,12 +192,6 @@ pub struct NetClient {
     /// said.
     dom_points: Vec<FlagPointView>,
     dom: Option<DominationView>,
-    /// The map's interactive props manager, when the map has one.
-    props: PropsBridge,
-    /// Physics ticks until trying to find the props manager again.
-    props_retry: u32,
-    /// Population last sent to the props manager.
-    props_population: Option<i32>,
     /// The current Search and Destroy round, while a match is being played.
     round: Option<Round>,
     /// The last few seconds of snapshots, ourselves included, for killcams.
@@ -277,24 +231,10 @@ pub struct NetClient {
     /// tick the world is drawn at, where they are drawn.
     sky_orbit: streak::Orbit,
     render_tick: f64,
-    /// Sentry Guns set down (`shooter_sim::turret`), and the player each is
-    /// on, as the server said.
-    turrets: Vec<(protocol::TurretView, Option<u8>)>,
-    /// Guided Missiles in the air (`shooter_sim::missile`), each with the
-    /// draw tick its state came at; their bomblets; and the one we fly.
-    missiles: Vec<(protocol::MissileView, f64)>,
-    bomblets: Vec<shooter_sim::missile::Bomblet>,
-    piloting: Option<u16>,
-    /// Attack Choppers called in (`shooter_sim::chopper`), rebuilt from
-    /// what the server said, and the player each one's gun is on.
-    choppers: Vec<(shooter_sim::chopper::Chopper, Option<u8>)>,
     /// The enemy under our crosshair, shown by name in red (`update_aimed`).
     aimed: Option<u8>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
-    /// Zombies: the horde as drawn, and the map's director mirroring the
-    /// server's game.
-    horde: Option<HordeView>,
 }
 
 /// A Care Package as the client knows it.
@@ -363,7 +303,6 @@ impl INode for NetClient {
         self.base_mut().set_physics_process_priority(1);
         crate::body::check_tick_rate();
         self.clock = Some(SnapshotClock::new(self.interpolation_ms / 1000.0));
-        self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
         let path = self.player_path.clone();
         self.player = self.base().try_get_node_as::<FpsPlayer>(&path);
         if self.player.is_none() {
@@ -422,8 +361,6 @@ impl INode for NetClient {
         };
         let paused = self.base().get_tree().is_paused();
         let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
-        self.sync_props();
-
         if !paused {
             for bytes in std::mem::take(&mut self.paused_packets) {
                 self.handle_packet(&bytes);
@@ -438,16 +375,12 @@ impl INode for NetClient {
                     let hello = ClientMessage::Hello {
                         version: PROTOCOL_VERSION,
                         name: self.player_name.to_string(),
-                        account: self.account_token.to_string(),
-                        spectate: self.spectate,
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
                     let class = ClientMessage::Class(self.current_class());
                     transport::send_reliable(&mut peer, &class.encode());
                     let streaks = ClientMessage::Streaks(self.streak_choice);
                     transport::send_reliable(&mut peer, &streaks.encode());
-                    let cosmetics = ClientMessage::Cosmetics(self.cosmetics_wanted.clone());
-                    transport::send_reliable(&mut peer, &cosmetics.encode());
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
@@ -477,24 +410,12 @@ impl INode for NetClient {
         }
 
         if self.status == Status::Joined && !paused {
-            let revive = self.revive_spot();
             let charge = self.charge_spot();
-            let spot = charge.is_some() || revive.is_some();
             if let Some(player) = &mut self.player {
-                player.bind_mut().set_charge_spot(spot);
-                player.bind_mut().set_revive_spot(revive.is_some());
+                player.bind_mut().set_charge_spot(charge.is_some());
                 player
                     .bind_mut()
                     .set_defuse_spot(charge == Some(UseKind::Defuse));
-            }
-            if self.horde.is_some() {
-                let name = revive.map(|id| self.name_of(i32::from(id)).to_string());
-                if let Some(horde) = &mut self.horde {
-                    horde
-                        .director()
-                        .bind_mut()
-                        .net_revive_prompt(name.as_deref().unwrap_or(""));
-                }
             }
             self.send_inputs(now);
             self.send_debug_request();
@@ -509,7 +430,7 @@ impl INode for NetClient {
     }
 
     fn process(&mut self, delta: f64) {
-        let _profile = crate::profile::scope("client/remotes and horde");
+        let _profile = crate::profile::scope("client/remotes");
         if self.base().get_tree().is_paused()
             || self.status != Status::Joined
             || self.newest.is_none()
@@ -540,15 +461,11 @@ impl INode for NetClient {
                 remote.node.bind_mut().hold_hitboxes(&held);
             }
         }
-        if let Some(horde) = &mut self.horde {
-            horde.draw(render_tick);
-        }
         // Shots fired before the next frame aim at what was just drawn.
         if let Some(player) = &mut self.player {
             player.bind_mut().set_view_tick(render_tick);
         }
         self.age_ghosts(delta as f32);
-        self.update_spectator(render_tick, delta as f32);
         self.update_killcam(delta as f32);
         self.update_aimed();
     }
@@ -578,15 +495,6 @@ impl NetClient {
     /// Someone joined, left, or changed team or name.
     #[signal]
     fn roster_changed();
-
-    /// The server sent our match stats (`match_stats`).
-    #[signal]
-    fn stats_changed();
-
-    /// Player `id`'s prestige, calling card, or camos changed
-    /// (`cosmetics_of`).
-    #[signal]
-    fn cosmetics_changed(id: i32);
 
     /// The match phase or the team scores changed.
     #[signal]
@@ -653,44 +561,11 @@ impl NetClient {
     #[signal]
     fn aircraft_downed(streak: GString, ours: bool, by_me: bool, at: Vector3);
 
-    /// A Sentry Gun went (`turrets`): `destroyed` whether shot to pieces
-    /// rather than run out, `ours` whether it was our side's, `by_me`
-    /// whether we did it, and where it stood.
-    #[signal]
-    fn turret_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
-
-    /// An Attack Chopper was called in, `ours` whether by our side.
-    #[signal]
-    fn chopper_called(ours: bool);
-
-    /// An Attack Chopper went: `destroyed` whether shot down rather than
-    /// left, `ours` whether it was our side's, `by_me` whether we did it,
-    /// and where it was.
-    #[signal]
-    fn chopper_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
-
-    /// We started (`flying`) or stopped flying a Guided Missile.
-    #[signal]
-    fn missile_piloting(flying: bool);
-
-    /// A Guided Missile or one of its bomblets went off at `at`.
-    #[signal]
-    fn missile_blast(at: Vector3, bomblet: bool);
-
     /// A Care Package was called in, captured, taken, or ran out
     /// (`crates`). `taken_by` is who took one and `contents` the streak's
     /// key (-1 and "" otherwise).
     #[signal]
     fn crates_changed(taken_by: i32, contents: GString);
-
-    /// Player `owner` called an Airstrike: a strike lands on each of
-    /// `points` in `seconds`.
-    #[signal]
-    fn airstrike_called(owner: i32, points: PackedVector3Array, seconds: PackedFloat32Array);
-
-    /// A strike of `owner`'s Airstrike went off at `at`.
-    #[signal]
-    fn strike_landed(owner: i32, at: Vector3);
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -736,8 +611,6 @@ impl NetClient {
                 d.set("captures", e.row.captures);
                 d.set("returns", e.row.returns);
                 d.set("defends", e.row.defends);
-                d.set("revives", e.row.revives);
-                d.set("headshots", e.row.headshots);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
                 d.set("level", i32::from(e.row.level));
@@ -770,7 +643,6 @@ impl NetClient {
         d.set("hardcore", self.custom.hardcore);
         d.set("radar_off", self.custom.radar == custom::Radar::Off);
         d.set("streaks_off", !self.custom.streaks);
-        d.set("spectator", self.spectator);
         if let Mode::GunGame(rules) = self.mode {
             d.set("kills_per_weapon", i32::from(rules.kills_per_weapon));
         }
@@ -961,7 +833,6 @@ impl NetClient {
             KillCause::Knife => KNIFE_NAME.to_owned(),
             KillCause::Equipment(kind) => kind.name().to_owned(),
             KillCause::Charge => CHARGE_NAME.to_owned(),
-            KillCause::Streak(streak) => streak.label().to_owned(),
             KillCause::Weapon => base,
         };
         let attachment = match k.cause {
@@ -1123,27 +994,7 @@ impl NetClient {
     #[func]
     fn use_streak(&mut self) {
         if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
-            self.send_reliable(&ClientMessage::UseStreak {
-                streak,
-                targets: Vec::new(),
-            });
-        }
-    }
-
-    /// Calls in the selected held Airstrike on `targets` (points on the
-    /// map; their y is ignored, and only the first three count).
-    #[func]
-    fn use_airstrike(&mut self, targets: PackedVector3Array) {
-        if self.streak_held.get(self.streak_selected) == Some(&Streak::Airstrike) {
-            let targets = targets
-                .as_slice()
-                .iter()
-                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
-                .collect();
-            self.send_reliable(&ClientMessage::UseStreak {
-                streak: Streak::Airstrike,
-                targets,
-            });
+            self.send_reliable(&ClientMessage::UseStreak(streak));
         }
     }
 
@@ -1272,146 +1123,6 @@ impl NetClient {
                 d
             })
             .collect()
-    }
-
-    /// The Sentry Guns set down, as dictionaries with `id`, `ours` (our
-    /// side's), `mine`, `position` (its feet), `facing` (yaw), `armed`
-    /// (past its arming delay), `seconds_left`, and `target` (the chest of
-    /// the player it is on, or null).
-    #[func]
-    fn turrets(&self) -> Array<VarDictionary> {
-        let arm = f64::from(streak::seconds_to_ticks(shooter_sim::turret::ARM_SECONDS));
-        self.turrets
-            .iter()
-            .map(|(t, on)| {
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(t.id));
-                d.set("ours", self.ours(t.side));
-                d.set("mine", Some(t.owner) == self.player_id);
-                d.set("position", to_godot(t.at));
-                d.set("facing", t.facing);
-                d.set("armed", self.render_tick >= f64::from(t.placed) + arm);
-                d.set("seconds_left", self.seconds_until(Some(t.until)));
-                let target = on
-                    .and_then(|id| self.carrier_feet(id))
-                    .map(|feet| feet + Vector3::UP * (shooter_sim::turret::BODY_HEIGHT * 0.7));
-                match target {
-                    Some(at) => d.set("target", at),
-                    None => d.set("target", &Variant::nil()),
-                }
-                d
-            })
-            .collect()
-    }
-
-    /// The Attack Choppers as drawn now, as dictionaries with `id`, `ours`,
-    /// `position`, `heading` (the way it moves, as a yaw), and `target`
-    /// (the chest of the player its gun is on, or null).
-    #[func]
-    fn choppers(&self) -> Array<VarDictionary> {
-        let now = self.render_tick;
-        self.choppers
-            .iter()
-            .map(|(c, on)| {
-                let at = c.position(now);
-                let ahead = c.position(now + f64::from(TICK_RATE) * 0.25) - at;
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(c.id));
-                d.set("ours", self.ours(c.side));
-                d.set("position", to_godot(at));
-                let heading = if ahead.length() > 0.05 {
-                    (-ahead.x).atan2(-ahead.z)
-                } else {
-                    f32::NAN
-                };
-                d.set("heading", heading);
-                let target = on
-                    .and_then(|id| self.carrier_feet(id))
-                    .map(|feet| feet + Vector3::UP * 1.2);
-                match target {
-                    Some(at) => d.set("target", at),
-                    None => d.set("target", &Variant::nil()),
-                }
-                d
-            })
-            .collect()
-    }
-
-    /// Calls in the selected held streak on `targets` (points on the map;
-    /// their y is ignored): an Attack Chopper's one mark.
-    #[func]
-    fn use_streak_at(&mut self, targets: PackedVector3Array) {
-        if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
-            let targets = targets
-                .as_slice()
-                .iter()
-                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
-                .collect();
-            self.send_reliable(&ClientMessage::UseStreak { streak, targets });
-        }
-    }
-
-    /// The Guided Missiles in the air as drawn now, as dictionaries with
-    /// `id`, `mine`, `ours`, `position` (carried on from its last state),
-    /// `yaw` and `pitch` (its nose), `boosting`, and `split`.
-    #[func]
-    fn missiles(&self) -> Array<VarDictionary> {
-        self.missiles
-            .iter()
-            .map(|(m, at)| {
-                let dir = shooter_sim::look::view_direction(m.view.x, m.view.y);
-                let speed = if m.boosting && !m.split {
-                    shooter_sim::missile::BOOST_SPEED
-                } else {
-                    shooter_sim::missile::SPEED
-                };
-                let seconds = ((self.render_tick - at) / f64::from(TICK_RATE)).clamp(0.0, 0.4);
-                let position = m.at + dir * speed * seconds as f32;
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(m.id));
-                d.set("mine", Some(m.owner) == self.player_id);
-                d.set("ours", self.ours(m.side));
-                d.set("position", to_godot(position));
-                d.set("yaw", m.view.x);
-                d.set("pitch", m.view.y);
-                d.set("boosting", m.boosting);
-                d.set("split", m.split);
-                d
-            })
-            .collect()
-    }
-
-    /// Where the bomblets in flight are drawn now.
-    #[func]
-    fn bomblets(&mut self) -> PackedVector3Array {
-        let now = self.render_tick;
-        self.bomblets
-            .retain(|b| f64::from(b.lands_at()) + f64::from(TICK_RATE) > now);
-        self.bomblets
-            .iter()
-            .filter(|b| f64::from(b.lands_at()) >= now)
-            .filter_map(|b| b.at(now))
-            .map(to_godot)
-            .collect()
-    }
-
-    /// The Guided Missile we fly, or -1.
-    #[func]
-    fn piloting(&self) -> i32 {
-        self.piloting.map_or(-1, i32::from)
-    }
-
-    /// Steers the Guided Missile we fly: toward `yaw` and `pitch`,
-    /// boosting while `boost`, and splitting it if `split`.
-    #[func]
-    fn steer_missile(&mut self, yaw: f32, pitch: f32, boost: bool, split: bool) {
-        if self.piloting.is_some() {
-            self.send_reliable(&ClientMessage::SteerMissile {
-                view: shooter_sim::Vec2::new(yaw, pitch),
-                boost,
-                split,
-            });
-        }
     }
 
     /// Whether the crosshair is on an enemy it may show as one: the
@@ -1788,200 +1499,19 @@ impl NetClient {
         self.server_build.as_str().into()
     }
 
-    /// Whether the server reports our match XP to our account itself
-    /// (so the game must not report it too).
+    /// In the lobby: asks to move to the other team. The roster shows the move once the server makes it.
     #[func]
-    fn is_ranked(&self) -> bool {
-        self.ranked
+    fn switch_team(&mut self) {
+        self.send_reliable(&ClientMessage::SwitchTeam);
     }
 
     /// The server's custom game settings, for the HUD and menus:
     /// `custom` (any differ from the normal rules), `text` (the text form),
     /// `hardcore`, `health` (percent), `regen`, `friendly_fire`, `killcam`,
     /// `radar` ("normal", "constant", or "off"), `streaks`, and `loadouts`.
-    /// In the lobby: asks to move to the other team (a private match's team
-    /// swap). The roster shows the move once the server makes it.
-    #[func]
-    fn switch_team(&mut self) {
-        if !self.spectator {
-            self.send_reliable(&ClientMessage::SwitchTeam);
-        }
-    }
-
-    /// Whether the server let us in as a spectator.
-    #[func]
-    fn is_spectator(&self) -> bool {
-        self.spectator
-    }
-
-    /// As a spectator, for the caster's view: every player, by team and
-    /// id, as dictionaries with `id`, `name`, `team`, `alive`, `weapon` (the
-    /// key in their hands) and `weapon_name`, `primary` and `secondary`
-    /// (weapon keys with attachments, "" for none) with `primary_name` and
-    /// `secondary_name`, `lethals`, `tactical` (a key, "" for none), `perks`
-    /// (labels), `streaks` (the keys they bring, cheapest first), `held`
-    /// (keys) and `held_names`, `progress`, and `next_cost` (the count their
-    /// next streak needs, 0 with none left). Empty for players.
-    #[func]
-    fn caster_rows(&self) -> Array<VarDictionary> {
-        let mut out = Array::new();
-        if !self.spectator {
-            return out;
-        }
-        for id in self.spectate_order() {
-            let mut d = VarDictionary::new();
-            d.set("id", i32::from(id));
-            d.set("name", &self.name_of(i32::from(id)));
-            d.set("team", self.team_of(i32::from(id)));
-            let remote = self.remotes.iter().find(|r| r.id == id);
-            d.set("alive", remote.is_some_and(|r| r.node.bind().is_alive()));
-            let weapon = remote
-                .and_then(|r| r.buffer.newest())
-                .map(|(_, s)| s.weapon);
-            let key = |w: Option<WeaponId>| w.map_or(String::new(), |w| w.def().key.clone());
-            let name = |w: Option<WeaponId>| w.map_or(String::new(), |w| w.def().name.clone());
-            d.set("weapon", &GString::from(key(weapon).as_str()));
-            d.set("weapon_name", &GString::from(name(weapon).as_str()));
-            if let Some(row) = self.caster.iter().find(|r| r.id == id) {
-                let [primary, secondary] = row.class.weapons();
-                d.set("primary", &GString::from(key(primary).as_str()));
-                d.set("primary_name", &GString::from(name(primary).as_str()));
-                d.set("secondary", &GString::from(key(secondary).as_str()));
-                d.set("secondary_name", &GString::from(name(secondary).as_str()));
-                d.set("lethals", i32::from(row.class.lethals));
-                let tactical = if row.class.tacticals > 0 {
-                    row.class.tactical.key()
-                } else {
-                    ""
-                };
-                d.set("tactical", tactical);
-                let perks: PackedStringArray = row
-                    .class
-                    .perks
-                    .iter()
-                    .map(|p| GString::from(p.label()))
-                    .collect();
-                d.set("perks", &perks);
-                let streaks: PackedStringArray = row
-                    .streaks
-                    .streaks()
-                    .map(|s| GString::from(s.key()))
-                    .collect();
-                d.set("streaks", &streaks);
-                let held: PackedStringArray =
-                    row.held.iter().map(|s| GString::from(s.key())).collect();
-                d.set("held", &held);
-                let held_names: PackedStringArray =
-                    row.held.iter().map(|s| GString::from(s.label())).collect();
-                d.set("held_names", &held_names);
-                d.set("progress", row.progress as i64);
-                let next = row.streaks.streaks().find(|s| s.cost() > row.progress);
-                d.set("next_cost", next.map_or(0, |s| s.cost()) as i64);
-            }
-            out.push(&d);
-        }
-        out
-    }
-
-    /// As a spectator: the player watched from their eyes, or -1 flying
-    /// free.
-    #[func]
-    fn spectate_target(&self) -> i32 {
-        self.follow.map_or(-1, i32::from)
-    }
-
-    /// As a spectator: watches player `id` from their eyes, or with -1 flies
-    /// free from where the camera is.
-    #[func]
-    fn spectate_follow(&mut self, id: i32) {
-        if !self.spectator {
-            return;
-        }
-        let target = u8::try_from(id)
-            .ok()
-            .filter(|id| self.remotes.iter().any(|r| r.id == *id));
-        if target.is_none()
-            && self.follow.is_some()
-            && let Some(player) = &self.player
-        {
-            self.free_camera = player.bind().camera_transform();
-        }
-        if target != self.follow {
-            self.follow_driver = ViewDriver::default();
-        }
-        self.follow = target;
-    }
-
-    /// As a spectator: watches the next player (`step` 1) or the one before
-    /// (-1), by team and then id, from their eyes.
-    #[func]
-    fn spectate_next(&mut self, step: i32) {
-        let order = self.spectate_order();
-        if order.is_empty() {
-            return;
-        }
-        let at = self
-            .follow
-            .and_then(|id| order.iter().position(|o| *o == id));
-        let next = match at {
-            Some(i) => (i as i32 + step).rem_euclid(order.len() as i32) as usize,
-            None if step < 0 => order.len() - 1,
-            None => 0,
-        };
-        self.spectate_follow(i32::from(order[next]));
-    }
-
-    /// As a spectator flying free: puts the camera at `camera`.
-    #[func]
-    fn set_free_camera(&mut self, camera: Transform3D) {
-        self.free_camera = camera;
-    }
-
-    /// As a spectator: where the camera is now.
-    #[func]
-    fn free_camera(&self) -> Transform3D {
-        self.free_camera
-    }
-
     #[func]
     fn custom_settings(&self) -> VarDictionary {
         custom_dict(&self.custom)
-    }
-
-    /// Our stats this match so far (stat key to count), as the server
-    /// counts them; the server sends them every few seconds while they
-    /// change, and once more as the match ends.
-    #[func]
-    fn match_stats(&self) -> VarDictionary {
-        super::accounts::counts_dictionary(&self.match_stats)
-    }
-
-    /// Asks to show `cosmetics`: `prestige`, `card` (a calling card key),
-    /// and `camos` (plain weapon key to camo key). The server checks it on a
-    /// ranked server; what it allows comes back as `cosmetics_changed`.
-    #[func]
-    fn set_cosmetics(&mut self, cosmetics: VarDictionary) {
-        self.cosmetics_wanted = cosmetics_from_dict(&cosmetics);
-        let message = ClientMessage::Cosmetics(self.cosmetics_wanted.clone());
-        self.send_reliable(&message);
-    }
-
-    /// What player `id` shows, as `set_cosmetics` takes it (empty before
-    /// the server says).
-    #[func]
-    fn cosmetics_of(&self, id: i32) -> VarDictionary {
-        let Ok(id) = u8::try_from(id) else {
-            return VarDictionary::new();
-        };
-        self.cosmetics
-            .get(&id)
-            .map_or_else(VarDictionary::new, cosmetics_to_dict)
-    }
-
-    /// Why the server turned us away, or "".
-    #[func]
-    fn denied_reason(&self) -> GString {
-        self.denied_reason.as_str().into()
     }
 
     /// True once the server accepted us.
@@ -1994,12 +1524,6 @@ impl NetClient {
     #[func]
     fn player_id(&self) -> i32 {
         self.player_id.map_or(-1, i32::from)
-    }
-
-    /// Zombies: zombies drawn now (0 outside Zombies).
-    #[func]
-    fn drawn_zombies(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.drawn() as i32)
     }
 
     /// Ids of the other players currently shown.
@@ -2024,7 +1548,6 @@ impl NetClient {
             Status::Connecting => "connecting",
             Status::Joined => "joined",
             Status::Rejected => "rejected (version mismatch)",
-            Status::Denied => "denied",
             Status::Disconnected => "disconnected",
         };
         d.set("status", status);
@@ -2075,7 +1598,6 @@ impl NetClient {
             Some(Baseline {
                 players: history.get(tick)?,
                 own: history.own(tick, id),
-                zombies: history.zombies(tick).map(|z| (tick, z)),
             })
         }) {
             Ok(message) => message,
@@ -2091,15 +1613,12 @@ impl NetClient {
                 snapshot_interval,
                 mode,
                 server_build,
-                ranked,
                 custom,
-                spectator,
                 ..
             } => {
                 if self.status != Status::Connecting {
                     return;
                 }
-                self.ranked = ranked;
                 self.custom = custom;
                 self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
                 godot_print!(
@@ -2114,30 +1633,10 @@ impl NetClient {
                 if let Some(clock) = &mut self.clock {
                     clock.set_interval(u32::from(snapshot_interval));
                 }
-                if mode == Mode::Zombies {
-                    let tree = self.base().get_tree();
-                    self.horde = HordeView::attach(&tree, snapshot_interval);
-                    if self.horde.is_none() {
-                        godot_error!(
-                            "net client: the server runs Zombies on a map without a director"
-                        );
-                    }
-                }
-                self.spectator = spectator;
                 if let Some(player) = &mut self.player {
                     let mut player = player.bind_mut();
-                    if spectator {
-                        // No body of ours: the camera starts where it is,
-                        // flying free, until a player is picked.
-                        self.free_camera = player.camera_transform();
-                        player.set_spectator_camera(Some(self.free_camera));
-                    } else {
-                        player.start_prediction();
-                    }
+                    player.start_prediction();
                     player.set_health_params(custom.health_params(HealthParams::default()));
-                }
-                if spectator {
-                    godot_print!("net client: spectating as {player_id}");
                 }
                 if !custom.is_default() {
                     godot_print!("net client: custom game: {}", custom.to_text());
@@ -2148,14 +1647,6 @@ impl NetClient {
                     "net client: server speaks protocol {server_version}, this client {PROTOCOL_VERSION}"
                 );
                 self.status = Status::Rejected;
-                if let Some(server) = &mut self.server {
-                    server.peer_disconnect();
-                }
-            }
-            ServerMessage::Denied { reason } => {
-                godot_print!("net client: the server turned us away: {reason}");
-                self.denied_reason = clean_text(&reason, protocol::MAX_DENIED_BYTES);
-                self.status = Status::Denied;
                 if let Some(server) = &mut self.server {
                     server.peer_disconnect();
                 }
@@ -2233,7 +1724,6 @@ impl NetClient {
                     KillCause::Knife => GString::from(KNIFE_NAME),
                     KillCause::Equipment(kind) => GString::from(kind.name()),
                     KillCause::Charge => GString::from(CHARGE_NAME),
-                    KillCause::Streak(streak) => GString::from(streak.label()),
                     KillCause::Weapon => GString::from(&weapon.def().name),
                 };
                 self.signals().kill_reported().emit(
@@ -2290,7 +1780,6 @@ impl NetClient {
             }
             GameEvent::Left { id } => {
                 self.roster.retain(|e| e.id != id);
-                self.cosmetics.remove(&id);
                 self.signals().roster_changed().emit();
             }
             GameEvent::Match {
@@ -2300,11 +1789,6 @@ impl NetClient {
                 score_limit,
                 period,
             } => {
-                if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
-                    self.props.reset();
-                    // A new match counts its stats from nothing.
-                    self.match_stats.clear();
-                }
                 if matches!(phase, Phase::Lobby | Phase::Countdown) {
                     // Between matches there is no round, and no killcam.
                     self.set_round(None);
@@ -2319,43 +1803,12 @@ impl NetClient {
                 self.signals().match_changed().emit();
             }
             GameEvent::Scoreboard { rows } => {
-                if let (Some(horde), Some(me)) = (&mut self.horde, self.player_id)
-                    && let Some(row) = rows.iter().find(|r| r.id == me)
-                {
-                    horde.set_tallies(row.kills, row.headshots);
-                }
                 for row in rows {
                     if let Some(entry) = self.roster.iter_mut().find(|e| e.id == row.id) {
                         entry.row = row;
                     }
                 }
                 self.signals().scoreboard_changed().emit();
-            }
-            GameEvent::Zombies(event) => {
-                if let ZombiesEvent::Hit {
-                    shot,
-                    headshot,
-                    killed,
-                    ..
-                } = event
-                {
-                    self.stats.hits_confirmed += 1;
-                    if killed {
-                        self.stats.kills_confirmed += 1;
-                    }
-                    if let Some(player) = &mut self.player {
-                        player.bind_mut().on_server_hit(shot, headshot, killed);
-                    }
-                }
-                let newest = self.newest;
-                let me = self.player_id;
-                if let Some(horde) = &mut self.horde {
-                    horde.on_event(&event, me, |end| match newest {
-                        Some(now) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
-                        None => 0.0,
-                    });
-                }
-                self.on_last_stand(&event);
             }
             GameEvent::Spawned { yaw } => {
                 if let Some(player) = &mut self.player {
@@ -2419,11 +1872,6 @@ impl NetClient {
                     attackers,
                     halftime_after,
                 }));
-            }
-            GameEvent::PropState { id, stage, impulse } => {
-                // The server owns prop damage: clients only show the states
-                // it sends, never damage props themselves online.
-                self.props.apply_state(&PropSnapshot { id, stage, impulse });
             }
             GameEvent::Chat { from, text, team } => {
                 let name = self.name_of(i32::from(from));
@@ -2567,17 +2015,6 @@ impl NetClient {
                 self.crates.retain(|c| c.id != id);
                 self.signals().crates_changed().emit(-1, "");
             }
-            GameEvent::Streak(StreakEvent::Airstrike { owner, strikes }) => {
-                let points: PackedVector3Array =
-                    strikes.iter().map(|(at, _)| to_godot(*at)).collect();
-                let seconds: PackedFloat32Array = strikes
-                    .iter()
-                    .map(|(_, tick)| self.seconds_until(Some(*tick)) as f32)
-                    .collect();
-                self.signals()
-                    .airstrike_called()
-                    .emit(i32::from(owner), &points, &seconds);
-            }
             GameEvent::Streak(StreakEvent::Downed {
                 id,
                 streak,
@@ -2593,120 +2030,6 @@ impl NetClient {
                 self.signals()
                     .aircraft_downed()
                     .emit(streak.key(), ours, by_me, to_godot(at));
-            }
-            GameEvent::Stats(stats) => {
-                self.match_stats = stats;
-                self.signals().stats_changed().emit();
-            }
-            GameEvent::Streak(StreakEvent::Missile(view)) => {
-                let mine = Some(view.owner) == self.player_id;
-                self.missiles.retain(|(m, _)| m.id != view.id);
-                if view.ended {
-                    if mine && self.piloting == Some(view.id) {
-                        self.piloting = None;
-                        self.signals().missile_piloting().emit(false);
-                    }
-                } else {
-                    self.missiles.push((view, self.render_tick));
-                    if mine && self.piloting.is_none() && !view.split {
-                        self.piloting = Some(view.id);
-                        self.signals().missile_piloting().emit(true);
-                    }
-                }
-            }
-            GameEvent::Streak(StreakEvent::Cluster { id, from, bomblets }) => {
-                for (to, fire_at) in bomblets {
-                    self.bomblets.push(shooter_sim::missile::Bomblet {
-                        missile: id,
-                        owner: 0,
-                        side: 0,
-                        from,
-                        to,
-                        fire_at,
-                    });
-                }
-            }
-            GameEvent::Streak(StreakEvent::MissileBlast { at, bomblet }) => {
-                if !bomblet {
-                    // The missile itself went off: it is drawn no more.
-                    let near = self
-                        .missiles
-                        .iter()
-                        .position(|(m, _)| m.at.distance(at) < 20.0 && !m.split);
-                    if let Some(i) = near {
-                        self.missiles.remove(i);
-                    }
-                }
-                self.signals().missile_blast().emit(to_godot(at), bomblet);
-            }
-            GameEvent::Streak(StreakEvent::Chopper(view)) => {
-                self.choppers.retain(|(c, _)| c.id != view.id);
-                let chopper = shooter_sim::chopper::Chopper::new(
-                    view.id,
-                    view.owner,
-                    view.side,
-                    view.guard,
-                    view.called,
-                    view.seed,
-                );
-                self.choppers.push((chopper, None));
-                let ours = self.ours(view.side);
-                self.signals().chopper_called().emit(ours);
-            }
-            GameEvent::Streak(StreakEvent::ChopperTarget { id, target }) => {
-                if let Some((_, on)) = self.choppers.iter_mut().find(|(c, _)| c.id == id) {
-                    *on = target;
-                }
-            }
-            GameEvent::Streak(StreakEvent::ChopperGone { id, by, at }) => {
-                let Some(index) = self.choppers.iter().position(|(c, _)| c.id == id) else {
-                    return;
-                };
-                let (c, _) = self.choppers.remove(index);
-                let ours = self.ours(c.side);
-                let by_me = by.is_some() && by == self.player_id;
-                self.signals()
-                    .chopper_gone()
-                    .emit(by.is_some(), ours, by_me, to_godot(at));
-            }
-            GameEvent::Streak(StreakEvent::Turret(view)) => {
-                self.turrets.retain(|(t, _)| t.id != view.id);
-                self.turrets.push((view, None));
-            }
-            GameEvent::Streak(StreakEvent::TurretTarget { id, target }) => {
-                if let Some((_, on)) = self.turrets.iter_mut().find(|(t, _)| t.id == id) {
-                    *on = target;
-                }
-            }
-            GameEvent::Streak(StreakEvent::TurretGone { id, by }) => {
-                let Some(index) = self.turrets.iter().position(|(t, _)| t.id == id) else {
-                    return;
-                };
-                let (view, _) = self.turrets.remove(index);
-                let ours = self.ours(view.side);
-                let by_me = by.is_some() && by == self.player_id;
-                self.signals()
-                    .turret_gone()
-                    .emit(by.is_some(), ours, by_me, to_godot(view.at));
-            }
-            GameEvent::Caster(rows) => {
-                self.caster = rows;
-            }
-            GameEvent::Cosmetics { id, cosmetics } => {
-                if let Some(remote) = self.remotes.iter_mut().find(|r| r.id == id) {
-                    remote.node.bind_mut().set_cosmetics(&cosmetics);
-                }
-                let ours = Some(id) == self.player_id && self.playing.is_none();
-                if ours && let Some(player) = &mut self.player {
-                    player.bind_mut().set_cosmetics(&cosmetics);
-                }
-                self.cosmetics.insert(id, cosmetics);
-                self.signals().cosmetics_changed().emit(i32::from(id));
-            }
-            GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
-                self.signals()
-                    .strike_landed()
-                    .emit(i32::from(owner), to_godot(at));
             }
             GameEvent::Streak(StreakEvent::Sky { orbit, up }) => {
                 let new = up
@@ -2734,94 +2057,6 @@ impl NetClient {
         }
     }
 
-    /// What holding interact would do where the local player stands: plant
-    /// (carrying the charge, inside a site), defuse (a defender at the
-    /// planted charge), or nothing. The same rule the server holds players
-    /// still by (`Charge::spot`), from what it last told us.
-    /// Zombies: going down, getting up, and revives, for the HUD and the
-    /// markers over downed teammates.
-    fn on_last_stand(&mut self, event: &ZombiesEvent) {
-        let me = self.player_id;
-        match *event {
-            ZombiesEvent::Downed {
-                player,
-                bleeds_out_at,
-            } => {
-                let seconds = bleeds_out_at.map(|t| self.seconds_until(Some(t)));
-                if Some(player) == me {
-                    if let Some(horde) = &mut self.horde {
-                        horde.director().bind_mut().net_downed(seconds);
-                    }
-                } else if let Some(mut remote) = self.remote_player(i32::from(player)) {
-                    remote.bind_mut().set_downed_marker(seconds.is_some());
-                }
-                // A revive we were part of ends with them up (or gone).
-                if bleeds_out_at.is_none()
-                    && let Some(horde) = &mut self.horde
-                    && Some(player) != me
-                {
-                    horde.director().bind_mut().net_revive(None);
-                }
-            }
-            ZombiesEvent::Revive {
-                player,
-                by,
-                done_at,
-            } => {
-                // Everyone sees the reviver kneel over the downed player (or
-                // get up when the revive stops).
-                for remote in &mut self.remotes {
-                    let reviving = by == Some(remote.id) && by != Some(player);
-                    remote.node.bind_mut().set_reviving(player, reviving);
-                }
-                let involved = Some(player) == me || (by.is_some() && by == me);
-                if !involved {
-                    return;
-                }
-                let revive = by.map(|by| {
-                    let reviving = Some(by) == me;
-                    let other = if reviving { player } else { by };
-                    // Second Wind alone: getting back up by ourselves.
-                    let name = if by == player {
-                        String::new()
-                    } else {
-                        self.name_of(i32::from(other)).to_string()
-                    };
-                    (name, reviving, self.seconds_until(Some(done_at)))
-                });
-                if let Some(horde) = &mut self.horde {
-                    horde.director().bind_mut().net_revive(revive);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Zombies: the teammate down in last stand close enough for us to
-    /// revive, by the server's rule (`laststand::REVIVE_RADIUS` between
-    /// feet), so holding use there is predicted as the server runs it.
-    fn revive_spot(&self) -> Option<u8> {
-        let horde = self.horde.as_ref()?;
-        let player = self.player.as_ref()?;
-        let player = player.bind();
-        if !player.is_alive() || player.is_downed() {
-            return None;
-        }
-        let here = player.feet_position();
-        horde
-            .downed()
-            .iter()
-            .filter(|id| Some(**id) != self.player_id)
-            .filter_map(|id| {
-                let remote = self.remotes.iter().find(|r| r.id == *id)?;
-                let feet = remote.node.get_global_position();
-                Some((*id, feet.distance_to(here)))
-            })
-            .filter(|(_, d)| *d <= shooter_sim::zombies::laststand::REVIVE_RADIUS)
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(id, _)| id)
-    }
-
     /// The charge went off at `at`: its own big blast, a rattle by distance,
     /// and, close by, the controller's rumble and ringing ears.
     fn charge_blast(&mut self, at: Vector3) {
@@ -2834,6 +2069,10 @@ impl NetClient {
         }
     }
 
+    /// What holding interact would do where the local player stands: plant
+    /// (carrying the charge, inside a site), defuse (a defender at the
+    /// planted charge), or nothing. The same rule the server holds players
+    /// still by (`Charge::spot`), from what it last told us.
     fn charge_spot(&self) -> Option<UseKind> {
         let view = self.charge?;
         let round = self.round?;
@@ -2885,30 +2124,6 @@ impl NetClient {
                 interact: true,
             },
         )
-    }
-
-    /// Finds the props manager if the map has one and it is not loaded yet,
-    /// and keeps its population equal to the roster (bots included).
-    fn sync_props(&mut self) {
-        if !self.props.is_active() {
-            if self.props_retry == 0 {
-                self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
-                // A replacement manager needs the population again.
-                self.props_population = None;
-                // Maps without props need no quicker retry than this.
-                self.props_retry = 2 * TICK_RATE;
-            } else {
-                self.props_retry -= 1;
-            }
-            if !self.props.is_active() {
-                return;
-            }
-        }
-        let population = self.roster.len().min(i32::MAX as usize) as i32;
-        if self.props_population != Some(population) {
-            self.props.set_population(population);
-            self.props_population = Some(population);
-        }
     }
 
     /// Keeps the round, and holds the local player still during its freeze.
@@ -2971,11 +2186,6 @@ impl NetClient {
     }
 
     fn local_team(&self) -> Option<Team> {
-        // A spectator sees the match from the first team's side: its colours
-        // are ours, the other's the enemy's, as on a caster's screen.
-        if self.spectator {
-            return Some(0);
-        }
         let me = self.player_id?;
         self.roster.iter().find(|e| e.id == me).map(|e| e.team)
     }
@@ -3064,9 +2274,6 @@ impl NetClient {
             .map(|own| (self.player_id.unwrap_or(0), own.predicted));
         self.history
             .insert_with_own(tick, snapshot.players.clone(), owns.into_iter().collect());
-        if let Some(zombies) = &snapshot.zombies {
-            self.history.insert_zombies(tick, zombies.clone());
-        }
         let newest = self.newest.is_none_or(|n| tick > n);
         if newest {
             self.record_tape(&snapshot);
@@ -3077,9 +2284,6 @@ impl NetClient {
             self.radar_at = Time::singleton().get_ticks_usec() as f64 / 1e6;
             if let Some(clock) = &mut self.clock {
                 clock.on_snapshot(tick);
-            }
-            if let (Some(horde), Some(zombies)) = (&mut self.horde, &snapshot.zombies) {
-                horde.on_snapshot(tick, zombies.clone());
             }
         }
 
@@ -3311,15 +2515,6 @@ impl NetClient {
             return;
         };
         let playing = Playing::start(killcam, &self.tape, &mut parent, |id| self.killcam_copy(id));
-        // Our weapon rig plays the killer's weapon, in their camo.
-        let killer = self
-            .cosmetics
-            .get(&killcam.killer)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(player) = &mut self.player {
-            player.bind_mut().set_cosmetics(&killer);
-        }
         for remote in &mut self.remotes {
             remote.node.set_visible(false);
             remote.node.bind_mut().set_muted(true);
@@ -3336,13 +2531,8 @@ impl NetClient {
         };
         playing.stop();
         self.playing_kind = None;
-        let ours = self
-            .player_id
-            .and_then(|id| self.cosmetics.get(&id).cloned())
-            .unwrap_or_default();
         if let Some(player) = &mut self.player {
             player.bind_mut().set_killcam(None);
-            player.bind_mut().set_cosmetics(&ours);
         }
         for remote in &mut self.remotes {
             remote.node.set_visible(true);
@@ -3369,9 +2559,6 @@ impl NetClient {
                 copy.set_display_name(&entry.name);
             }
             copy.set_friendly(friendly);
-            if let Some(cosmetics) = self.cosmetics.get(&id) {
-                copy.set_cosmetics(cosmetics);
-            }
         }
         Some(node)
     }
@@ -3389,102 +2576,10 @@ impl NetClient {
         let mut parent = self.base().get_parent()?;
         parent.add_child(&node);
         node.bind_mut().set_display_name(&label);
-        if let Some(cosmetics) = self.cosmetics.get(&id) {
-            node.bind_mut().set_cosmetics(cosmetics);
-        }
         Some(node)
     }
 
-    /// Players in the order a spectator steps through them: team, then id.
-    fn spectate_order(&self) -> Vec<u8> {
-        let mut order: Vec<(u8, u8)> = self
-            .remotes
-            .iter()
-            .map(|r| (self.team_of(i32::from(r.id)).max(0) as u8, r.id))
-            .collect();
-        order.sort_unstable();
-        order.into_iter().map(|(_, id)| id).collect()
-    }
-
-    /// As a spectator: the watched player's eyes and weapon, or the free
-    /// camera, on the local player's camera, and the watched body hidden.
-    fn update_spectator(&mut self, render_tick: f64, dt: f32) {
-        if !self.spectator {
-            return;
-        }
-        if self
-            .follow
-            .is_some_and(|id| !self.remotes.iter().any(|r| r.id == id))
-        {
-            // They left: on to the next.
-            self.follow = None;
-            self.spectate_next(1);
-        }
-        let watched = self.follow;
-        if self.hidden_body != watched {
-            for remote in &mut self.remotes {
-                if Some(remote.id) == self.hidden_body {
-                    remote.node.bind_mut().set_first_person(false);
-                }
-                if Some(remote.id) == watched {
-                    remote.node.bind_mut().set_first_person(true);
-                }
-            }
-            self.hidden_body = watched;
-        }
-        let sample = watched.and_then(|id| {
-            let remote = self.remotes.iter_mut().find(|r| r.id == id)?;
-            remote.buffer.sample(render_tick)
-        });
-        let Some(player) = &mut self.player else {
-            return;
-        };
-        let mut player = player.bind_mut();
-        let Some(sample) = sample else {
-            player.set_killcam(None);
-            player.set_spectator_camera(Some(self.free_camera));
-            return;
-        };
-        let mut cues = Vec::new();
-        let frame = self.follow_driver.frame(&sample, dt, &mut cues);
-        let (camera, zoom) = super::killcam::eye(&sample);
-        player.set_spectator_camera(Some(camera));
-        player.set_killcam(Some(KillcamView {
-            camera,
-            zoom,
-            frame,
-            weapon: true,
-        }));
-        for cue in cues {
-            match cue {
-                WeaponCue::Fired(weapon) => player.killcam_fired(weapon),
-                WeaponCue::Melee => player.killcam_melee(),
-            }
-        }
-    }
-
     fn send_inputs(&mut self, now: f64) {
-        if self.spectator {
-            // Nothing to steer: only acknowledge snapshots, so they come as
-            // changes.
-            if self.newest == self.spectator_acked {
-                return;
-            }
-            self.spectator_acked = self.newest;
-            let bytes = ClientMessage::Input(InputPacket {
-                ack_snapshot: self.newest,
-                first_seq: 0,
-                inputs: Vec::new(),
-            })
-            .encode();
-            self.count_out(bytes.len());
-            match (&mut self.outgoing, &mut self.server) {
-                (Some(link), _) => link.send(now, bytes),
-                (None, Some(server)) => transport::send_unreliable(server, &bytes),
-                (None, None) => {}
-            }
-            return;
-        }
         let Some(player) = &self.player else { return };
         let Some((first_seq, inputs)) = player.bind().prediction().map(|p| p.unacked()) else {
             return;
@@ -3535,7 +2630,7 @@ impl NetClient {
     }
 
     fn on_disconnected(&mut self) {
-        if !matches!(self.status, Status::Rejected | Status::Denied) {
+        if self.status != Status::Rejected {
             godot_warn!("net client: disconnected from the server");
             self.status = Status::Disconnected;
         }
@@ -3560,10 +2655,6 @@ impl NetClient {
         self.zone_moves_at = None;
         self.dom_points.clear();
         self.dom = None;
-        if self.props.is_active() {
-            self.props.set_population(0);
-            self.props_population = Some(0);
-        }
         self.set_round(None);
         self.charge_sites.clear();
         self.charge = None;
@@ -3605,9 +2696,6 @@ impl NetClient {
 fn gun_of(key: &str) -> Option<Gun> {
     let id = WeaponId::by_key(key)?;
     let def = id.def();
-    if def.upgraded {
-        return None;
-    }
     let base = WeaponId::by_key(if def.fitted.is_empty() {
         &def.key
     } else {
@@ -3657,59 +2745,6 @@ fn ray_meets_body(
     let enter = t0.max(y0).max(0.0);
     let leave = t1.min(y1);
     (enter <= leave).then_some(enter)
-}
-
-/// Cosmetics from a dictionary (`NetClient.set_cosmetics`): `prestige`,
-/// `card` (key), and `camos` (plain weapon key to camo key). Unknown keys
-/// are left out.
-fn cosmetics_from_dict(d: &VarDictionary) -> Cosmetics {
-    let prestige = d
-        .get("prestige")
-        .and_then(|v| v.try_to::<i64>().ok())
-        .unwrap_or(0)
-        .clamp(0, i64::from(shooter_sim::progression::MAX_PRESTIGE)) as u8;
-    let card = d
-        .get("card")
-        .and_then(|v| v.try_to::<GString>().ok())
-        .and_then(|key| Card::by_key(&key.to_string()))
-        .unwrap_or_default();
-    let mut camos = Vec::new();
-    if let Some(map) = d
-        .get("camos")
-        .and_then(|v| v.try_to::<VarDictionary>().ok())
-    {
-        for (weapon, camo) in map.iter_shared() {
-            let (Ok(weapon), Ok(camo)) = (weapon.try_to::<GString>(), camo.try_to::<GString>())
-            else {
-                continue;
-            };
-            if let (Some(weapon), Some(camo)) = (
-                WeaponId::by_key(&weapon.to_string()),
-                Camo::by_key(&camo.to_string()),
-            ) && camo != Camo::NONE
-                && camos.len() < shooter_sim::cosmetics::MAX_CAMOS
-            {
-                camos.push((weapon.plain(), camo));
-            }
-        }
-    }
-    Cosmetics {
-        prestige,
-        card,
-        camos,
-    }
-}
-
-fn cosmetics_to_dict(cosmetics: &Cosmetics) -> VarDictionary {
-    let mut d = VarDictionary::new();
-    d.set("prestige", i64::from(cosmetics.prestige));
-    d.set("card", cosmetics.card.key());
-    let mut camos = VarDictionary::new();
-    for (weapon, camo) in &cosmetics.camos {
-        camos.set(weapon.def().key.as_str(), camo.key());
-    }
-    d.set("camos", &camos);
-    d
 }
 
 /// A custom game's settings as GDScript reads them (`NetClient.custom_settings`).

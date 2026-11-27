@@ -1,5 +1,5 @@
 [Unit]
-Description=Shooter private crash inbox on the master host
+Description=Shooter private crash inbox on the public host
 After=network.target
 
 [Service]

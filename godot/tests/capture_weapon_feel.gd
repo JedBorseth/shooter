@@ -68,9 +68,6 @@ const SCENARIOS := [
 	"crouch",
 	"crawl",
 	"crawl_m1911",
-	"drink",
-	"drink_m1911",
-	"revive",
 	"defuse",
 	"vault",
 	"mantle",
@@ -632,20 +629,6 @@ func _scenario_crawl_m1911() -> void:
 	await _crawl()
 
 
-## A Zombies drink (`Raise::Drink`): the weapon goes down, the bottle comes
-## up, the cap is flicked off, three gulps, the bottle is tossed, and the
-## weapon is drawn.
-## Reviving a downed teammate in Zombies: the weapon down, the left hand on
-## them, the right jabbing the syrette in and holding it.
-func _scenario_revive() -> void:
-	_mark("revive")
-	_player.debug_revive(true)
-	await _sixtieths(150)
-	_player.debug_revive(false)
-	_mark("up")
-	await _sixtieths(60)
-
-
 ## Defusing Search and Destroy's charge: cutters on its wires, one snip and
 ## then the other.
 func _scenario_defuse() -> void:
@@ -655,18 +638,6 @@ func _scenario_defuse() -> void:
 	_player.debug_defuse(false)
 	_mark("up")
 	await _sixtieths(60)
-
-
-func _scenario_drink() -> void:
-	_mark("drink")
-	_player.debug_drink("bulwark")
-	await _sixtieths(200)
-
-
-func _scenario_drink_m1911() -> void:
-	_mark("drink")
-	_player.debug_drink("long_stride")
-	await _sixtieths(200)
 
 
 func _scenario_switch() -> void:

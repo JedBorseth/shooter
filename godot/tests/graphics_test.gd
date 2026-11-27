@@ -507,10 +507,6 @@ func _check_bloom_and_dirt() -> void:
 
 ## How wet each map is, and how much surface detail each preset draws.
 func _check_world_surfaces() -> void:
-	_check(
-		Looks.wetness_for("res://scenes/zombies_arena.tscn") >= 0.5,
-		"the Zombies arena is wet enough for puddles"
-	)
 	_check(is_zero_approx(Looks.wetness_for("res://scenes/main.tscn")), "the Testing Area is dry")
 	_check(
 		is_zero_approx(Looks.wetness_for("res://scenes/unlisted.tscn")), "maps are dry by default"
@@ -558,7 +554,7 @@ func _check_world_surfaces() -> void:
 		"res://materials/models/tread_plate_0.tres",
 		"res://materials/models/concrete_floor_0.tres",
 		"res://materials/models/painted_metal_0.tres",
-		"res://materials/world/yard_dirt.tres",
+		"res://materials/models/dirt_0.tres",
 	]:
 		var detail: Variant = (load(path) as ShaderMaterial).get_shader_parameter(&"detail")
 		strengths[path.get_file().get_basename()] = 1.0 if detail == null else float(detail)
@@ -567,7 +563,7 @@ func _check_world_surfaces() -> void:
 		strengths["painted_metal_0"] < 0.5 and strengths["concrete_floor_0"] >= 1.0,
 		"paint takes less close-up detail than concrete"
 	)
-	_check(strengths["yard_dirt"] > 1.0, "dirt takes the most")
+	_check(strengths["dirt_0"] > 1.0, "dirt takes the most")
 
 
 ## One contact shadow per character: a flat patch laid on the ground.

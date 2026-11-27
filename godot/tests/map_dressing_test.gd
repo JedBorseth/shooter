@@ -3,9 +3,7 @@ extends SceneTree
 ## collide where they are drawn, the way down the range stays open, its meshes
 ## are set up to render cheaply (shadow twins, shadowless ground and detail,
 ## detail hidden at a distance), and Low drops the detail and uses two shadow
-## splits (scripts/map_render.gd). In the Zombies arena: the barricades and the
-## burnt-out car collide where they are drawn, and the way in from every window
-## and gate stays clear.
+## splits (scripts/map_render.gd).
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/map_dressing_test.gd
 
@@ -34,26 +32,6 @@ const MUST_MISS := [
 	["through the culvert", Vector3(-10, 0.7, -12), Vector3(-10, 0.7, -24)],
 	["vehicle route in from the gate", Vector3(21, 1.0, 30), Vector3(21, 1.0, 17)],
 	["across the middle", Vector3(-25, 1.0, 0.5), Vector3(25, 1.0, 0.5)],
-]
-
-const ZOMBIES := "res://scenes/zombies_arena.tscn"
-const ZOMBIES_HIT := [
-	["south barricade", Vector3(-5, 0.6, 18), Vector3(-5, 0.6, 24), 5.13, 0.1],
-	["east barricade", Vector3(18, 0.6, 13.5), Vector3(24, 0.6, 13.5), 5.13, 0.1],
-	["burnt-out car", Vector3(-15, 0.7, -4), Vector3(-25, 0.7, -4), 6.85, 0.2],
-]
-## From each window's climb-in point and each gate, 6 m into the yard.
-const ZOMBIES_MISS := [
-	["north-west window", Vector3(-14, 1.0, -22.9), Vector3(-14, 1.0, -16.9)],
-	["north-east window", Vector3(14, 1.0, -22.9), Vector3(14, 1.0, -16.9)],
-	["south-west window", Vector3(-14, 1.0, 22.9), Vector3(-14, 1.0, 16.9)],
-	["south-east window", Vector3(14, 1.0, 22.9), Vector3(14, 1.0, 16.9)],
-	["west windows", Vector3(-22.9, 1.0, -17), Vector3(-16.9, 1.0, -17)],
-	["west window, south", Vector3(-22.9, 1.0, 22), Vector3(-16.9, 1.0, 22)],
-	["east windows", Vector3(22.9, 1.0, -17), Vector3(16.9, 1.0, -17)],
-	["east window, south", Vector3(22.9, 1.0, 22), Vector3(16.9, 1.0, 22)],
-	["west gate", Vector3(-23, 1.0, 4), Vector3(-17, 1.0, 4)],
-	["east gate", Vector3(23, 1.0, 4), Vector3(17, 1.0, 4)],
 ]
 
 var _failures := 0
@@ -172,62 +150,11 @@ func _run() -> void:
 
 	scene.queue_free()
 	await process_frame
-	await _zombies()
 
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(settings.path))
 	print("Map dressing test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
-
-
-func _zombies() -> void:
-	var scene: Node = (load(ZOMBIES) as PackedScene).instantiate()
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
-	root.add_child(scene)
-	current_scene = scene
-	for i in 5:
-		await physics_frame
-	var space := (scene as Node3D).get_world_3d().direct_space_state
-	for check: Array in ZOMBIES_HIT:
-		var hit := _ray(space, check[1], check[2])
-		var distance: float = (
-			INF if hit.is_empty() else (hit["position"] as Vector3).distance_to(check[1])
-		)
-		_check(
-			absf(distance - float(check[3])) <= float(check[4]),
-			(
-				"the %s collides where it is drawn (%.2f m along the ray, want %.2f)"
-				% [check[0], distance, check[3]]
-			)
-		)
-	for check: Array in ZOMBIES_MISS:
-		var hit := _ray(space, check[1], check[2])
-		_check(
-			hit.is_empty(),
-			(
-				"the way in from the %s is clear%s"
-				% [check[0], "" if hit.is_empty() else " (hit %s)" % hit["position"]]
-			)
-		)
-	var names := scene.find_children("map_zombies_dressing*", "MeshInstance3D", true, false).map(
-		func(m: Node) -> String: return String(m.name)
-	)
-	_check("map_zombies_dressing_shadow" in names, "the arena's dressing has a shadow twin")
-	var sky := (
-		(scene.get_node("WorldEnvironment") as WorldEnvironment).environment.sky.sky_material
-		as ShaderMaterial
-	)
-	var settings := root.get_node(^"Settings")
-	settings.set_graphics_preset(GraphicsQuality.Preset.LOW)
-	await process_frame
-	_check(sky.get_shader_parameter(&"detailed") == false, "Low draws the night sky plain")
-	settings.set_graphics_preset(GraphicsQuality.Preset.MEDIUM)
-	await process_frame
-	_check(sky.get_shader_parameter(&"detailed") == true, "Medium draws its cloud and stars")
-	scene.queue_free()
-	await process_frame
 
 
 func _ray(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:

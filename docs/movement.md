@@ -36,8 +36,8 @@ is also why there is no Extreme Conditioning perk. The speed cap follows
 `MoveState::sprint_blend`, which builds over `sprint_in_time` while sprinting
 and winds down over the weapon's sprint-out time once it ends, so the legs and
 the gun come out of a run together. While sprinting the sideways input counts
-for half, so a diagonal sprint runs mostly forward. Perks and Zombies drinks
-scale every ground speed on top ([create-a-class.md](create-a-class.md)).
+for half, so a diagonal sprint runs mostly forward. Perks scale every ground
+speed on top ([create-a-class.md](create-a-class.md)).
 
 ## Jump, air, and landing
 
@@ -118,8 +118,7 @@ camera, the shot origin, the hit zones (`hitbox::poses::PRONE`, and
 speed cap all follow one curve. The stance hold lives in
 `MoveState::crouch_hold`, `hold_from_prone`, and `prone_held`; the input
 carries the prone button. Footsteps prone play at the crouched step's quiet
-level. Hard bots drop-shot (go prone in a close fight), and a downed Zombies
-player crawls; see [bots.md](bots.md) and [zombies.md](zombies.md).
+level. Hard bots drop-shot (go prone in a close fight); see [bots.md](bots.md).
 `godot/tests/prone_test.gd` checks the timings, heights, crawl, holds, and
 room; `net_test.gd` predicts prone online with no corrections.
 

@@ -6,9 +6,7 @@ extends SceneTree
 ## an all-black copy must both fail.
 ## Run from the repo root: godot --headless --path godot --script res://tests/lightmaps_test.gd
 
-const MAPS := [
-	"res://scenes/main.tscn", "res://scenes/slamcity.tscn", "res://scenes/zombies_arena.tscn"
-]
+const MAPS := ["res://scenes/main.tscn", "res://scenes/breakwater.tscn"]
 const TESTING := "res://scenes/main.tscn"
 
 var _failures := 0

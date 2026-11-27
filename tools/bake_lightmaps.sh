@@ -7,12 +7,12 @@
 # Needs the extension built (cargo build in rust/) and a GPU; without a display
 # it runs under xvfb-run.
 #
-#   tools/bake_lightmaps.sh [res://scenes/slamcity.tscn ...]
+#   tools/bake_lightmaps.sh [res://scenes/breakwater.tscn ...]
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 scenes=("$@")
 if [[ ${#scenes[@]} -eq 0 ]]; then
-	scenes=(res://scenes/main.tscn res://scenes/slamcity.tscn res://scenes/zombies_arena.tscn res://scenes/warehouse.tscn)
+	scenes=(res://scenes/main.tscn res://scenes/warehouse.tscn res://scenes/breakwater.tscn)
 fi
 cd "$repo/godot"
 godot --headless --path . --script res://tools/bake_map_meshes.gd -- "${scenes[@]}" 2>&1 |
@@ -40,8 +40,8 @@ grep -q "light_data" "${scenes[@]/#res:\/\//}" || { echo "bake failed" >&2; exit
 check="$(godot --headless --path . --script res://tools/check_lightmap.gd -- "${scenes[@]}" 2>&1)" ||
 	{ grep "check_lightmap" <<<"$check"; echo "bake failed: a lightmap came out black (all over, or on the map's main surfaces); bake again with the GPU otherwise idle" >&2; exit 1; }
 grep "check_lightmap" <<<"$check"
-# Record which generated mesh each map was baked with (Slamcity: city.hash), so
-# CI can tell a stale lightmap (tools/test_slamcity_layout.py).
+# Record which generated mesh each map was baked with (Breakwater: city.hash),
+# so CI can tell a stale lightmap (tools/test_breakwater_layout.py).
 for scene in "${scenes[@]}"; do
 	name="$(basename "$scene" .tscn)"
 	if [[ -f "assets/maps/$name/city.hash" ]]; then

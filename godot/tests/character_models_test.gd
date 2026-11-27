@@ -1,20 +1,18 @@
 extends SceneTree
 ## Headless test of the character models from tools/build_character_assets.py:
-## the soldier, the first-person arms, and the zombie keep the game's skeleton
+## the soldier and the first-person arms keep the game's skeleton
 ## (every bone, its parent, and its rest pose match
 ## tests/data/soldier_skeleton.json, taken from the mannequin soldier the
 ## animations, IK, and hit zones were measured on); each draws one mesh with one
 ## surface and one material, plus a decimated far mesh for the third-person
 ## kits; triangle budgets hold; a soldier gets its team's atlas material with a
-## per-character kit and face (head shapes as blend shapes); a zombie wears
-## the zombie kit; and every zombie body variant is retargeted onto the same
-## skeleton with a compressed atlas.
+## per-character kit and face (head shapes as blend shapes); and every kit's
+## atlas is compressed.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/character_models_test.gd
 
 const SOLDIER_TRIANGLES := 26000
 const ARMS_TRIANGLES := 26000
-const ZOMBIE_TRIANGLES := 14000
 const SOLDIER_HEAD_SHAPES := 4
 
 var _failures: PackedStringArray = []
@@ -33,11 +31,6 @@ func _run() -> void:
 	for spec in [
 		["res://assets/characters/soldier/soldier.glb", "Body", SOLDIER_TRIANGLES],
 		["res://assets/characters/arms/arms.glb", "ArmsFP", ARMS_TRIANGLES],
-		["res://assets/characters/zombie/zombie.glb", "Body", ZOMBIE_TRIANGLES],
-		["res://assets/characters/zombie_b/zombie_b.glb", "Body", ZOMBIE_TRIANGLES],
-		["res://assets/characters/zombie_c/zombie_c.glb", "Body", ZOMBIE_TRIANGLES],
-		["res://assets/characters/zombie_d/zombie_d.glb", "Body", ZOMBIE_TRIANGLES],
-		["res://assets/characters/zombie_e/zombie_e.glb", "Body", ZOMBIE_TRIANGLES],
 	]:
 		var path: String = spec[0]
 		# Every kit's atlas imports compressed with mipmaps, like the rest.
@@ -148,28 +141,6 @@ func _run() -> void:
 		_check(materials[0] != materials[1], "the teams draw with different materials")
 	for soldier in soldiers:
 		soldier.queue_free()
-	await process_frame
-
-	# A zombie wears its own kit: a whole body with nothing cut away under gear.
-	var zombie := (load("res://scenes/zombies/zombie.tscn") as PackedScene).instantiate()
-	root.add_child(zombie)
-	await process_frame
-	var zombie_body := zombie.find_child("Body", true, false) as MeshInstance3D
-	_check(zombie_body != null, "a zombie has a body")
-	if zombie_body != null:
-		var zombie_material := zombie_body.get_surface_override_material(0) as ShaderMaterial
-		_check(
-			zombie_material != null and zombie_material.get_shader_parameter("zombie") == 1.0,
-			"a zombie draws with the zombie palette"
-		)
-		var albedo: Texture2D = (
-			zombie_material.get_shader_parameter("albedo_texture") if zombie_material else null
-		)
-		_check(
-			albedo != null and albedo.resource_path.contains("/characters/zombie"),
-			"a zombie uses a zombie atlas (got %s)" % (albedo.resource_path if albedo else "none")
-		)
-	zombie.queue_free()
 	await process_frame
 
 	if _failures.is_empty():

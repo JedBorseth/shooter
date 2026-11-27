@@ -81,11 +81,7 @@ LOOKS: dict[str, dict] = {
     "range_platform": {"set": "tread_plate", "size": 2.0, "tint": (0.75, 0.82, 0.9), "metal": 1.0},
     "range_tunnel": {"set": "container", "size": 2.5, "tint": (0.36, 0.44, 0.26), "metal": 0.5},
     "range_crate": {"set": "planks", "size": 1.5, "tint": (1.0, 0.92, 0.78)},
-    # Zombies arena
-    "yard_dirt": {"set": "dirt", "size": 4.0, "tint": (0.7, 0.68, 0.64), "grime": 0.0},
-    "yard_wall": {"set": "concrete_stained", "size": 4.0, "tint": (0.72, 0.72, 0.74), "grime": 0.5},
-    "yard_pillar": {"set": "brick", "size": 2.2, "tint": (0.72, 0.62, 0.58), "grime": 0.4},
-    "barrel_rust": {"set": "rusty_paint", "size": 1.2, "tint": (0.85, 0.85, 0.85), "metal": 0.7, "grime": 0.0},
+    # Props
     "barrel_blue": {"set": "container", "size": 1.2, "tint": (0.18, 0.3, 0.52), "metal": 0.6, "grime": 0.0},
 }
 

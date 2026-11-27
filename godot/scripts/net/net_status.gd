@@ -1,7 +1,7 @@
 extends CanvasLayer
 ## Connection status while joining a server: a "Connecting" panel with a
 ## Cancel button until the server accepts us. If the server rejects us, never
-## answers, or the connection drops, it returns to the server browser with the
+## answers, or the connection drops, it returns to the Join screen with the
 ## reason (`Net.leave`).
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
@@ -10,7 +10,7 @@ const CONNECT_TIMEOUT := 12.0
 
 var client: NetClient
 var player: Node
-## How the server is named in messages: its browser name, or its address.
+## How the server is named in messages: its name, or its address.
 var server_label := ""
 
 var _joined := false
@@ -95,9 +95,7 @@ func _process(delta: float) -> void:
 			_set_player_input(true)
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
-	if status == "denied":
-		_leave(String(client.denied_reason()))
-	elif status.begins_with("rejected"):
+	if status.begins_with("rejected"):
 		_leave(
 			(
 				"%s runs a different version of the game. Restart the Shooter launcher to update."

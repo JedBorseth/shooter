@@ -124,14 +124,6 @@ pub struct Activity {
     /// (`MoveState::crouch`), while a stance change is under way. `None`
     /// takes it from the stance: fully in it.
     pub crouch: Option<f32>,
-    /// A zombie's hunch, 0 (a soldier) to 1: the hips low and back, the
-    /// spine bent forward, the head pushed out, and the arms hanging at the
-    /// sides instead of holding a weapon, as the shamble is drawn. Zombies
-    /// are not networked; snapshots never carry it.
-    pub hunch: f32,
-    /// A Zombies hound ([`crate::zombies::hounds`]): four-legged hit zones
-    /// ([`hound_hitboxes`]) instead of a person's. Snapshots never carry it.
-    pub hound: bool,
     /// How far along a grenade throw the body is (`PlayerView::throw`), if
     /// throwing: the support arm follows the grenade ([`action`]).
     pub throw: Option<f32>,
@@ -180,19 +172,6 @@ impl HitboxPose {
         }
     }
 }
-
-/// A zombie's hunch (`Activity::hunch`), fitted to the drawn shamble's neck
-/// and head joints: the hips this much lower (negative: higher) and further
-/// back (m), the spine bent forward over the hips this far and the neck
-/// this much more from the upper chest (radians), the head turned back up by
-/// this share of the bend, and the wrists hanging here (body space, the right
-/// hand's; the left mirrors it).
-const HUNCH_DROP: f32 = -0.04;
-const HUNCH_BACK: f32 = 0.1;
-const HUNCH_ANGLE: f32 = 0.7;
-const HUNCH_NECK: f32 = 0.1;
-const HUNCH_HEAD_UP: f32 = 0.6;
-const HUNCH_HAND: Vec3 = Vec3::new(0.36, 0.95, -0.02);
 
 /// Number of shapes [`hitboxes`] returns.
 pub const COUNT: usize = 13;
@@ -492,9 +471,6 @@ fn solve_arm(root: Vec3, target: Vec3, pole: Vec3) -> (Vec3, Vec3) {
 /// The shapes for a pose, in world space.
 pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let activity = &pose.activity;
-    if activity.hound {
-        return hound_hitboxes(pose.feet, pose.yaw);
-    }
     let (right, forward) = gait::local_velocity(activity.velocity, pose.yaw);
     let speed = (right * right + forward * forward).sqrt();
     let base = base_pose(pose, speed);
@@ -562,31 +538,6 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
         }
         head = turn * head;
     }
-    // A zombie's hunch: the hips drop and go back, the spine bends forward
-    // over them, and the head comes back up to look ahead.
-    let hunch = activity.hunch.clamp(0.0, 1.0);
-    if hunch > 0.0 {
-        let shift = Vec3::new(0.0, -HUNCH_DROP, HUNCH_BACK) * hunch;
-        hips += shift;
-        spine = spine.map(|p| p + shift);
-        shoulders = shoulders.map(|p| p + shift);
-        for leg in &mut legs {
-            leg[0] += shift;
-        }
-        let bend = Mat3::from_axis_angle(Vec3::X, -HUNCH_ANGLE * hunch);
-        let about = |p: Vec3| hips + bend * (p - hips);
-        spine = spine.map(about);
-        shoulders = shoulders.map(about);
-        // The upper back curves most: the neck reaches forward from the
-        // upper chest.
-        let curl = Mat3::from_axis_angle(Vec3::X, -HUNCH_NECK * hunch);
-        let pivot = spine[2];
-        for joint in &mut spine[3..] {
-            *joint = pivot + curl * (*joint - pivot);
-        }
-        let tilt = HUNCH_ANGLE + HUNCH_NECK;
-        head = Mat3::from_axis_angle(Vec3::X, tilt * HUNCH_HEAD_UP * hunch) * curl * bend * head;
-    }
     // Holding a long gun, the upper chest blades (support shoulder forward)
     // and the neck turns back, so the head keeps facing the aim.
     let carry = carry_of(activity);
@@ -634,7 +585,7 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
         (elbow, wrist + hand * poses::HAND_MIDDLE[side])
     };
     let [right_target, left_target] = targets;
-    let (mut left_elbow, mut left_hand) = match activity.throw {
+    let (left_elbow, left_hand) = match activity.throw {
         // Throwing: the support hand carries the grenade, which is where
         // the forearm ends.
         Some(p) => {
@@ -662,22 +613,7 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
             None => arm(left_target, 0, carry::LEFT_POLE),
         },
     };
-    let (mut right_elbow, mut right_hand) = arm(right_target, 1, carry::RIGHT_POLE);
-    if hunch > 0.0 {
-        // A zombie's arms hang at its sides, bent at the elbow.
-        let hang = |side: usize, sign: f32| {
-            let target = Vec3::new(sign * HUNCH_HAND.x, HUNCH_HAND.y, HUNCH_HAND.z);
-            let pole = shoulders[side] + Vec3::new(sign * 0.4, -0.2, 0.4);
-            let (elbow, wrist) = solve_arm(shoulders[side], target, pole);
-            (elbow, wrist + Vec3::new(0.0, -0.07, -0.02))
-        };
-        let (le, lh) = hang(0, -1.0);
-        let (re, rh) = hang(1, 1.0);
-        left_elbow = left_elbow.lerp(le, hunch);
-        left_hand = left_hand.lerp(lh, hunch);
-        right_elbow = right_elbow.lerp(re, hunch);
-        right_hand = right_hand.lerp(rh, hunch);
-    }
+    let (right_elbow, right_hand) = arm(right_target, 1, carry::RIGHT_POLE);
 
     let (s, c) = fmath::sin_cos(pose.yaw);
     let lie = Mat3::from_axis_angle(Vec3::X, -tilt);
@@ -722,56 +658,6 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
             left_leg[0].lerp(hips, 0.5),
             right_leg[0].lerp(hips, 0.5),
             STOMACH_RADIUS * 0.85,
-        ),
-    ]
-}
-
-/// A hound's hit zones (the model in `tools/build_hound.py`: 0.72 m at
-/// the shoulder, 1.3 m nose to tail), in [`SHAPE_PARTS`]' order so hits
-/// and reactions read alike: the head and muzzle, the chest, the belly,
-/// the forelegs where a person's arms are, the hind legs where their legs
-/// are, and the haunches as the hips.
-pub fn hound_hitboxes(feet: Vec3, yaw: f32) -> [Hitbox; COUNT] {
-    let (s, c) = fmath::sin_cos(yaw);
-    // Body space: x right, y up, forward along -z.
-    let world = |x: f32, y: f32, forward: f32| {
-        let z = -forward;
-        feet + Vec3::new(x * c + z * s, y, -x * s + z * c)
-    };
-    let shape = |zone, a: (f32, f32, f32), b: (f32, f32, f32), radius| Hitbox {
-        zone,
-        a: world(a.0, a.1, a.2),
-        b: world(b.0, b.1, b.2),
-        radius,
-    };
-    let leg = |x: f32, forward: f32, zone, upper: f32, lower: f32| {
-        [
-            shape(zone, (x, 0.52, forward), (x, 0.27, forward), upper),
-            shape(zone, (x, 0.27, forward), (x, 0.04, forward), lower),
-        ]
-    };
-    let [fl_upper, fl_lower] = leg(-0.11, 0.36, HitZone::Arm, 0.065, 0.045);
-    let [fr_upper, fr_lower] = leg(0.11, 0.36, HitZone::Arm, 0.065, 0.045);
-    let [hl_upper, hl_lower] = leg(-0.12, -0.36, HitZone::Leg, 0.08, 0.05);
-    let [hr_upper, hr_lower] = leg(0.12, -0.36, HitZone::Leg, 0.08, 0.05);
-    [
-        shape(HitZone::Head, (0.0, 0.72, 0.6), (0.0, 0.72, 0.6), 0.13),
-        shape(HitZone::Head, (0.0, 0.66, 0.68), (0.0, 0.64, 0.86), 0.07),
-        shape(HitZone::Chest, (0.0, 0.56, 0.22), (0.0, 0.58, 0.46), 0.2),
-        shape(HitZone::Stomach, (0.0, 0.55, -0.18), (0.0, 0.55, 0.2), 0.17),
-        fl_upper,
-        fl_lower,
-        fr_upper,
-        fr_lower,
-        hl_upper,
-        hl_lower,
-        hr_upper,
-        hr_lower,
-        shape(
-            HitZone::Stomach,
-            (0.0, 0.56, -0.42),
-            (0.0, 0.56, -0.2),
-            0.17,
         ),
     ]
 }
@@ -890,29 +776,6 @@ mod tests {
     fn zone_at(pose: &HitboxPose, x: f32, y: f32) -> Option<HitZone> {
         let origin = pose.feet + Vec3::new(x, y, 10.0);
         raycast(&hitboxes(pose), origin, Vec3::NEG_Z, 100.0).map(|h| h.zone)
-    }
-
-    #[test]
-    fn a_hound_is_hit_where_it_stands_and_low() {
-        let feet = Vec3::new(2.0, 0.0, -3.0);
-        let pose = HitboxPose {
-            activity: Activity {
-                hound: true,
-                ..Activity::default()
-            },
-            ..HitboxPose::new(feet, 0.0, 0.0, Stance::Standing)
-        };
-        let boxes = hitboxes(&pose);
-        // Facing -Z: the head is ahead (more negative z) of the haunches.
-        assert!(boxes[0].a.z < boxes[12].a.z);
-        assert!(boxes.iter().all(|b| b.a.y < 1.0 && b.b.y < 1.0));
-        // A shot across at shoulder height hits the body, one over it misses.
-        let across = |y: f32| raycast(&boxes, Vec3::new(-3.0, y, -3.1), Vec3::X, 10.0);
-        assert!(across(0.55).is_some());
-        assert!(across(1.2).is_none());
-        // Straight at the face from in front: the head.
-        let face = raycast(&boxes, Vec3::new(2.0, 0.72, -10.0), Vec3::Z, 20.0).unwrap();
-        assert_eq!(face.zone, HitZone::Head);
     }
 
     #[test]
@@ -1459,30 +1322,5 @@ mod tests {
         }
         // The head turned with the aim.
         assert!((turned[0].a - square[0].a).length() > 0.02);
-    }
-
-    #[test]
-    fn a_zombie_hunches_as_it_is_drawn() {
-        let zombie = with(Activity {
-            hunch: 1.0,
-            ..Activity::default()
-        });
-        let feet = pose(Stance::Standing).feet;
-        // The neck shape ends at the head bone's joint.
-        let head = zombie[1].b - feet;
-        let chest = (zombie[2].a + zombie[2].b) * 0.5 - feet;
-        // Measured from the zombie's walk (`Zombie_Walk_Fwd` with the poser):
-        // the head's joint about 1.32 m up and 0.31 m forward, the neck's
-        // 1.26 m up and 0.25 m forward. Standing, a soldier's is 1.5 m up.
-        let neck = zombie[1].a - feet;
-        assert!(
-            (head.y - 1.32).abs() < 0.05 && (head.z + 0.31).abs() < 0.05,
-            "{head}"
-        );
-        assert!(
-            (neck.y - 1.26).abs() < 0.04 && (neck.z + 0.25).abs() < 0.04,
-            "{neck}"
-        );
-        assert!(chest.y < head.y && chest.z > head.z, "{chest}");
     }
 }

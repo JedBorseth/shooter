@@ -7,8 +7,7 @@ extends Control
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
-## rounds to win, on Slamcity or Breakwater), or Zombies co-op ("zombies": name and map;
-## friends on the network join it from Multiplayer, LAN, up to four players), or
+## rounds to win, on Breakwater), or
 ## Free Roam ("freeroam": a map to walk alone, no server, no bots).
 ## Bots fill the empty places in the other modes. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
@@ -25,22 +24,16 @@ const ChipRow := preload("res://scripts/ui/chip_row.gd")
 const CustomPresets := preload("res://scripts/custom_presets.gd")
 const CustomSettingsPage := preload("res://scripts/ui/custom_settings_page.gd")
 const MAPS := [
-	["Slamcity", "slamcity"],
-	["Nuketown", "nuketown"],
-	["Warehouse", "warehouse"],
 	["Breakwater", "breakwater"],
+	["Warehouse", "warehouse"],
 	["Testing Arena", "arena"],
 ]
-## Zombies needs a map with zombie spawns and windows.
-const ZOMBIES_MAPS := [["Zombies Arena", "zombies"]]
 ## Search and Destroy needs a map with attacking and defending sides.
-const SND_MAPS := [["Slamcity", "slamcity"], ["Breakwater", "breakwater"]]
+const SND_MAPS := [["Breakwater", "breakwater"]]
 ## Free Roam walks a multiplayer map alone (the Testing Area has its own route).
 const FREE_ROAM_MAPS := [
-	["Slamcity", "slamcity"],
-	["Nuketown", "nuketown"],
-	["Warehouse", "warehouse"],
 	["Breakwater", "breakwater"],
+	["Warehouse", "warehouse"],
 ]
 const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
@@ -59,12 +52,9 @@ const FFA_SCORE_LIMITS := [10, 20, 30, 50]
 
 ## Pictures for the map header, by map id.
 const MAP_PICTURES := {
-	"slamcity": "res://assets/ui/maps/slamcity.jpg",
-	"nuketown": "res://assets/ui/maps/nuketown.jpg",
 	"warehouse": "res://assets/ui/maps/warehouse.jpg",
 	"breakwater": "res://assets/ui/maps/breakwater.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
-	"zombies": "res://assets/ui/maps/zombies.jpg",
 }
 const MODE_NAMES := {
 	"tdm": "Team Deathmatch",
@@ -74,7 +64,6 @@ const MODE_NAMES := {
 	"hardpoint": "Hardpoint",
 	"dom": "Domination",
 	"snd": "Search and Destroy",
-	"zombies": "Zombies",
 	"freeroam": "Free Roam",
 }
 ## The line under the map picture, by mode.
@@ -99,22 +88,13 @@ const DETAILS := {
 		+ " defenders hold out until time runs out."
 	),
 	"freeroam": "Walk the map on your own: no bots, no clock.",
-	"zombies":
-	(
-		"Co-op against rounds of zombies, up to four players. Friends find it under"
-		+ " Multiplayer, LAN, or Internet when listed there (players outside your"
-		+ " network need port 27027 forwarded to you); it starts once everyone is ready."
-	),
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", "zombies", or
-## "freeroam".
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", or "freeroam".
 var mode := "tdm"
 
 var _name: LineEdit
-## Zombies co-op: listed on the local network only, or on the Internet too.
-var _listing: ChipRow
 var _map: ChipRow
 ## Team modes: each team's size (ours counts us) and its bots' difficulty.
 var _allies: ChipRow
@@ -136,10 +116,7 @@ var _layout: VBoxContainer
 var _custom_page: Control
 var _custom_summary: Label
 var _custom_button: Button
-## Join the match as a spectator, watching the bots (CODcaster style).
-var _spectate: Button
-## The custom rules chosen (`CustomPresets`), for every mode but Zombies and
-## Free Roam.
+## The custom rules chosen (`CustomPresets`), for every mode but Free Roam.
 var _custom := CustomPresets.last()
 
 
@@ -170,42 +147,17 @@ func options() -> Dictionary:
 		var custom := CustomPresets.to_text(_custom)
 		if not custom.is_empty():
 			chosen["custom"] = custom
-		if _spectate != null and _spectate.button_pressed:
-			chosen["spectate"] = true
-		if _party_private():
-			chosen["private"] = true
 	return chosen
 
 
-## Leading a party of friends: Start makes a private match for the party on
-## a server of its own (`Matchmaking.start_private`), not a local one.
-func _party_private() -> bool:
-	return (
-		Online.is_signed_in()
-		and Matchmaking.is_in_party()
-		and Matchmaking.is_leader()
-		and Matchmaking.members.size() > 1
-	)
-
-
-## Whether this mode takes custom game settings (not Zombies or Free Roam).
+## Whether this mode takes custom game settings (not Free Roam).
 func _has_custom() -> bool:
-	return not _zombies() and not _free_roam()
+	return not _free_roam()
 
 
 func _base_options() -> Dictionary:
 	if _free_roam():
 		return {"mode": "freeroam", "map": FREE_ROAM_MAPS[_map.selected][1]}
-	if _zombies():
-		var host := _name.text.strip_edges()
-		return {
-			"mode": "zombies",
-			"map": ZOMBIES_MAPS[_map.selected][1],
-			"name": "%s's Zombies" % (host if host != "" else "Player"),
-			"shared": true,
-			# Listed on the server directory too: Multiplayer, Internet.
-			"master": Settings.master_server if _listing.selected == 1 else "",
-		}
 	if _gun_game():
 		return {
 			"mode": "gungame",
@@ -249,13 +201,12 @@ func _base_options() -> Dictionary:
 	)
 
 
-## A team mode's options with each team's bots: our team's size counts us
-## (unless we spectate), and each team's bots play at their own difficulty.
+## A team mode's options with each team's bots: our team's size counts us,
+## and each team's bots play at their own difficulty.
 func _with_teams(chosen: Dictionary) -> Dictionary:
 	var allies: int = TEAM_SIZES[_allies.selected]
 	var enemies: int = TEAM_SIZES[_enemies.selected]
-	var spectating := _spectate != null and _spectate.button_pressed
-	var ally_bots := allies if spectating else allies - 1
+	var ally_bots := allies - 1
 	chosen["bots"] = ally_bots + enemies
 	chosen["bot_skill"] = BOT_SKILLS[_enemy_skill.selected][1]
 	chosen["team_bots"] = "%d,%d" % [ally_bots, enemies]
@@ -289,10 +240,6 @@ func _ffa() -> bool:
 	return mode == "ffa"
 
 
-func _zombies() -> bool:
-	return mode == "zombies"
-
-
 func _free_roam() -> bool:
 	return mode == "freeroam"
 
@@ -300,8 +247,6 @@ func _free_roam() -> bool:
 func _maps() -> Array:
 	if _free_roam():
 		return FREE_ROAM_MAPS
-	if _zombies():
-		return ZOMBIES_MAPS
 	return SND_MAPS if _snd() else MAPS
 
 
@@ -372,7 +317,7 @@ func _build() -> void:
 	eyebrow.text = (
 		"%s  ·  %s"
 		% [
-			"CO-OP" if _zombies() else ("PRACTICE" if _free_roam() else "LOCAL MATCH"),
+			"PRACTICE" if _free_roam() else "LOCAL MATCH",
 			MODE_NAMES.get(mode, "Team Deathmatch").to_upper(),
 		]
 	)
@@ -403,8 +348,6 @@ func _build() -> void:
 		return
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
-	# Signed in, the account's name is the player's name.
-	_name.editable = not Online.is_signed_in()
 	_name.max_length = 16
 	_name.placeholder_text = "Player"
 	_name.custom_minimum_size = Vector2(0, 38)
@@ -412,9 +355,7 @@ func _build() -> void:
 	_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
 	_map.item_selected.connect(_show_map)
 	_show_map(0)
-	if _zombies():
-		_listing = _chips(rows, "Listed", ["LAN", "Internet"], 0)
-	elif _gun_game() or _ffa():
+	if _gun_game() or _ffa():
 		_players = _chips(
 			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
 		)
@@ -427,9 +368,7 @@ func _build() -> void:
 		_enemy_skill = _chips(rows, "Enemy bots", skills, 1)
 	if _gun_game() or _ffa():
 		_bot_skill = _chips(rows, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
-	if _zombies():
-		pass
-	elif _gun_game():
+	if _gun_game():
 		_kills_per_weapon = _chips(
 			rows, "Kills each", KILLS_PER_WEAPON.map(func(n: int) -> String: return str(n)), 1
 		)
@@ -457,13 +396,27 @@ func _build() -> void:
 		_score_limit = _chips(
 			rows, "Kills", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
-	if not _snd() and not _zombies():
+	if not _snd():
 		_time_limit = _chips(
 			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
 	if _has_custom():
 		_build_custom_line(layout)
+		_point_up_to_chosen(_custom_button, _rounds if _snd() else _time_limit)
 	_build_actions(layout)
+
+
+## Up from `button` lands on `row`'s chosen chip, not the chip nearest on
+## screen, so a controller starts from the current choice.
+func _point_up_to_chosen(button: Button, row: ChipRow) -> void:
+	if button == null or row == null:
+		return
+	button.focus_entered.connect(
+		func() -> void:
+			var chip := row.chosen_chip()
+			if chip != null:
+				button.focus_neighbor_top = button.get_path_to(chip)
+	)
 
 
 ## The custom rules in one line, and the button that opens Game Settings.
@@ -485,15 +438,6 @@ func _build_custom_line(layout: VBoxContainer) -> void:
 	_custom_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_custom_button.pressed.connect(_show_custom_page.bind(true))
 	line.add_child(_custom_button)
-	_spectate = Button.new()
-	_spectate.name = "Spectate"
-	_spectate.text = "Spectate"
-	_spectate.toggle_mode = true
-	_spectate.theme_type_variation = &"ChipButton"
-	_spectate.tooltip_text = "Watch the match instead of playing: any player's view, or a free camera."
-	_spectate.custom_minimum_size = Vector2(110, 38)
-	_spectate.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	line.add_child(_spectate)
 	_update_custom_summary()
 
 
@@ -547,9 +491,7 @@ func _build_actions(layout: VBoxContainer) -> void:
 	actions.add_child(back)
 	_start = Button.new()
 	_start.name = "Start"
-	_start.text = "HOST GAME" if _zombies() else ("START" if _free_roam() else "START MATCH")
-	if _has_custom() and _party_private():
-		_start.text = "START PRIVATE MATCH"
+	_start.text = "START" if _free_roam() else "START MATCH"
 	_start.theme_type_variation = &"PrimaryButton"
 	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
@@ -566,13 +508,8 @@ func _build_actions(layout: VBoxContainer) -> void:
 
 
 func _detail() -> String:
-	if _zombies() or _free_roam():
+	if _free_roam():
 		return DETAILS[mode]
-	if _party_private():
-		return (
-			DETAILS.get(mode, DETAILS.tdm)
-			+ " Your party plays it on a server of its own: pick teams and ready up in the lobby."
-		)
 	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 

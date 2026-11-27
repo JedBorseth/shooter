@@ -6,17 +6,9 @@
     "high": 12.0
   },
   "maps": {
-    "slamcity": {
-      "medium": 8.8,
-      "reason": "Over budget: Medium's own passes (SSAO's normal prepass, glow, SMAA) are the rest; a preset change awaits the owner (docs/performance.md)"
-    },
-    "slamcity_closeups": {
-      "medium": 8.0,
-      "reason": "As slamcity"
-    },
     "breakwater": {
       "medium": 7.6,
-      "reason": "As slamcity; the art pass awaits approval"
+      "reason": "Over budget: Medium's own passes (SSAO's normal prepass, glow, SMAA) are the rest; a preset change awaits the owner, and the art pass awaits approval (docs/performance.md)"
     },
     "warehouse": {
       "high": 12.8,

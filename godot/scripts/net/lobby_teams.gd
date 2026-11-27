@@ -1,9 +1,8 @@
 extends PanelContainer
-## The lobby's two teams beside the match menu, for a private match's team swap:
+## The lobby's two teams beside the match menu, for the team swap:
 ## each player by team, ours first, marked once ready, and the bots, with
 ## Switch team and Ready buttons. Shown only in a team mode's lobby; refreshed twice a
-## second while shown. (The match HUD hides its score block in hardcore, and
-## offers spectators no class menu.)
+## second while shown. (The match HUD hides its score block in hardcore.)
 
 ## Ready (or not) pressed: the match HUD sends it, as its own Ready does.
 signal ready_pressed
@@ -60,8 +59,7 @@ func _process(delta: float) -> void:
 	visible = (
 		String(info.get("phase", "")) == "lobby"
 		and not bool(info.get("free_for_all", false))
-		and String(info.get("mode", "")) not in ["zombies", "gungame"]
-		and not client.is_spectator()
+		and String(info.get("mode", "")) != "gungame"
 	)
 	if not is_visible_in_tree():
 		return

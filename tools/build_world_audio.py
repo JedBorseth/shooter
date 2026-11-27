@@ -24,8 +24,6 @@ a rebuild writes the same files). Each is built in the frequency domain or
 from events placed modulo the loop length, so it repeats without a seam:
 
 - ``day``: wind in two bands under sparse, distant bird phrases (stereo).
-- ``city``: a low traffic rumble, cars passing left to right, and wind.
-- ``night``: several crickets at their own rates and places, and low wind.
 - ``interior``: quiet room tone with a trace of mains hum.
 - ``hum``: an air conditioner (fan blade tone, airflow, compressor), mono.
 - ``buzz``: a lamp or transformer's 120 Hz buzz with a faint crackle, mono.
@@ -234,14 +232,6 @@ def place(out: np.ndarray, event: np.ndarray, at: int, pan: float = 0.0) -> None
     np.add.at(out[:, 1], idx, event * np.sin(angle))
 
 
-def place_moving(out: np.ndarray, event: np.ndarray, at: int, pan_from: float, pan_to: float) -> None:
-    """Like `place` into stereo `out`, panning smoothly from `pan_from` to `pan_to`."""
-    idx = (at + np.arange(len(event))) % len(out)
-    angle = (np.linspace(pan_from, pan_to, len(event)) + 1) * np.pi / 4
-    np.add.at(out[:, 0], idx, event * np.cos(angle))
-    np.add.at(out[:, 1], idx, event * np.sin(angle))
-
-
 def distant(x: np.ndarray, rng: np.random.Generator, cutoff: float, tail: float) -> np.ndarray:
     """Far away: highs rolled off and a short diffuse tail."""
     x = signal.sosfilt(signal.butter(2, cutoff, "low", fs=RATE, output="sos"), x)
@@ -290,69 +280,6 @@ def day(rng: np.random.Generator, seconds: float) -> np.ndarray:
     for _ in range(9):
         phrase = distant(bird_phrase(rng), rng, 7_000, 0.35) * rng.uniform(0.03, 0.06)
         place(out, phrase, int(rng.integers(n)), rng.uniform(-0.9, 0.9))
-    return out
-
-
-def car_pass(rng: np.random.Generator, seconds: float) -> np.ndarray:
-    """Tyre and engine noise swelling and brightening as a car goes by, panned
-    across by the caller over its length."""
-    n = int(seconds * RATE)
-    t = np.linspace(-1, 1, n)
-    env = 1 / (1 + (t * 3.2) ** 2)
-    noise = shaped_noise(rng, n, band(70, 1_800, 1.2))
-    bright = signal.sosfilt(signal.butter(2, 900, "high", fs=RATE, output="sos"), noise)
-    engine = np.sin(2 * np.pi * np.cumsum(rng.uniform(38, 55) * (1 - 0.06 * t)) / RATE)
-    return (noise * env + 0.6 * bright * env**2 + 0.25 * engine * env) * 0.6
-
-
-def city(rng: np.random.Generator, seconds: float) -> np.ndarray:
-    n = int(seconds * RATE)
-    rumble = lfo(rng, n, [1, 2, 4], 0.4)
-    out = np.zeros((n, 2))
-    for ch in range(2):
-        out[:, ch] = shaped_noise(rng, n, band(25, 260, 1.6)) * rumble * 0.07
-    out += wind(rng, n, 0.025)
-    for _ in range(6):
-        length = rng.uniform(4.0, 7.0)
-        x = car_pass(rng, length) * rng.uniform(0.012, 0.03)
-        # Across the listener, left to right or right to left.
-        direction = float(rng.choice([-1.0, 1.0]))
-        place_moving(out, x, int(rng.integers(n)), -0.85 * direction, 0.85 * direction)
-    return out
-
-
-def cricket(rng: np.random.Generator, n: int) -> np.ndarray:
-    """One cricket: bursts of three to five pulses at its own pitch, on a
-    period that divides the loop exactly."""
-    carrier = rng.uniform(4_200, 5_000)
-    pulses = int(rng.integers(3, 6))
-    pulse = int(0.012 * RATE)
-    gap = int(rng.uniform(0.018, 0.028) * RATE)
-    t = np.arange(pulse) / RATE
-    one = np.sin(2 * np.pi * carrier * t) * np.sin(np.pi * np.arange(pulse) / pulse) ** 2
-    chirp = np.zeros(pulses * (pulse + gap))
-    for k in range(pulses):
-        chirp[k * (pulse + gap) : k * (pulse + gap) + pulse] = one
-    period = rng.uniform(0.45, 0.95)
-    repeats = max(1, int(round(n / RATE / period)))
-    out = np.zeros(n)
-    rest = lfo(rng, n, [1, 3], 0.6)
-    for k in range(repeats):
-        at = int(k * n / repeats + rng.uniform(0, 0.02) * RATE)
-        # Crickets pause now and then.
-        if rest[at % n] > 0.5:
-            place(out, chirp * rest[at % n], at)
-    return out
-
-
-def night(rng: np.random.Generator, seconds: float) -> np.ndarray:
-    n = int(seconds * RATE)
-    out = wind(rng, n, 0.012)
-    for _ in range(6):
-        x = cricket(rng, n)
-        # The reverb tail wraps round to the start, so the loop has no seam.
-        x = distant(x, rng, rng.uniform(6_000, 9_000), 0.25) * rng.uniform(0.015, 0.035)
-        place(out, x, 0, rng.uniform(-0.95, 0.95))
     return out
 
 
@@ -408,16 +335,15 @@ def write_loop(name: str, x: np.ndarray) -> None:
 
 def ambience() -> None:
     AMBIENCE.mkdir(parents=True, exist_ok=True)
+    # Each loop keeps its own seed, so a rebuild writes the same files.
     builds = (
-        ("day", day, 32.0),
-        ("city", city, 32.0),
-        ("night", night, 32.0),
-        ("interior", interior, 12.0),
-        ("hum", hum, 8.0),
-        ("buzz", buzz, 6.0),
+        ("day", day, 32.0, 1000),
+        ("interior", interior, 12.0, 1003),
+        ("hum", hum, 8.0, 1004),
+        ("buzz", buzz, 6.0, 1005),
     )
-    for seed, (name, build, seconds) in enumerate(builds):
-        write_loop(name, build(np.random.default_rng(1000 + seed), seconds))
+    for name, build, seconds, seed in builds:
+        write_loop(name, build(np.random.default_rng(seed), seconds))
 
 
 # --- Bullets: cracks, whizzes, ricochets, and layered impacts ------------------

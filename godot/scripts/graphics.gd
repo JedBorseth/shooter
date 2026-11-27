@@ -111,8 +111,8 @@ const HIGH_ONLY := &"graphics_high_only"
 ## A map's ambient particles that fill a lot of the screen with transparent
 ## puffs (a smoke plume, steam, spray mist), saved in this group by their
 ## effect scenes. Low emits half as many, as Call of Duty's low particle
-## quality draws fewer and cheaper particles: the plume over Slamcity's
-## railway cost 0.32 ms of Low's 4 ms there.
+## quality draws fewer and cheaper particles: one smoke plume over a city
+## map cost 0.32 ms of Low's 4 ms there.
 const AMBIENT_PUFFS := &"graphics_ambient_puffs"
 const MotionBlur := preload("res://scripts/motion_blur.gd")
 const Looks := preload("res://scripts/looks.gd")
@@ -242,8 +242,8 @@ static func apply(
 	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED if temporal else p["screen_aa"]
 	# High resolves edges and sub-pixel detail over time (TAA) instead of 2x MSAA
 	# plus SMAA: steadier thin railings, wires, and specular glints for no more
-	# GPU time on the reference card (0.6 ms less in the Testing Area, the same
-	# in Slamcity). The lens's sharpening wins back its softness. FSR 2 does the
+	# GPU time on the reference card (0.6 ms less in the Testing Area). The
+	# lens's sharpening wins back its softness. FSR 2 does the
 	# same job when the picture is upscaled.
 	viewport.use_taa = p["taa"] and not temporal
 	viewport.positional_shadow_atlas_size = p["positional_atlas"]
@@ -260,7 +260,7 @@ static func apply(
 	RenderingServer.positional_soft_shadow_filter_set_quality(p["shadow_filter"])
 	# World surfaces: close-up detail on High only.
 	set_world_detail(p["world_detail"])
-	# Wet surfaces cost about 0.3 ms on Low in the Zombies arena: Low stays dry.
+	# Wet surfaces cost about 0.3 ms on Low: Low stays dry.
 	_wet_allowed = p["wet"]
 	set_world_wet(_wet_allowed and _map_wetness > 0.001)
 	# Gun smoke fades where it meets the world on High (free in the measured
@@ -384,7 +384,7 @@ static func _apply_node(node: Node, p: Dictionary) -> void:
 		var authored: Dictionary = _authored[light.get_instance_id()]
 		light.directional_shadow_max_distance = authored["shadow_distance"] * p["shadow_distance"]
 		# Low draws at most two shadow splits (its shadows reach only half as
-		# far): 0.08 ms at Slamcity's worst view.
+		# far): 0.08 ms at the worst view measured.
 		light.directional_shadow_mode = mini(authored["shadow_mode"], p["sun_splits"])
 	elif node is GPUParticles3D and node.is_in_group(AMBIENT_PUFFS):
 		(node as GPUParticles3D).amount_ratio = p["ambient_particles"]

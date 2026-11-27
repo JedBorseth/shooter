@@ -1,9 +1,6 @@
 //! Weapon pickups: a rack or dropped gun the player takes with the interact key.
 //!
 //! Racks never run out: taking a weapon you already carry refills its ammo.
-//! In Zombies they are wall weapons with a price: the weapon costs `price`
-//! points and its ammo half that, paid from the `zombies_wallet` group's
-//! node (`ZombieDirector::spend`).
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{IStaticBody3D, Label3D, MeshInstance3D, Node3D, PackedScene, StaticBody3D};
@@ -31,9 +28,6 @@ pub struct WeaponPickup {
     #[export]
     #[init(val = 0.16)]
     display_scale: f32,
-    /// Points the weapon costs (Zombies); 0 is free. Ammo costs half.
-    #[export]
-    price: i64,
 }
 
 #[godot_api]
@@ -46,12 +40,7 @@ impl IStaticBody3D for WeaponPickup {
             return;
         };
         if let Some(mut label) = self.base().try_get_node_as::<Label3D>("Label") {
-            let name = &id.def().name;
-            if self.price > 0 {
-                label.set_text(&format!("{name}\n{}", self.price));
-            } else {
-                label.set_text(name);
-            }
+            label.set_text(&id.def().name);
         }
         let Some(mut display) = self.base().try_get_node_as::<Node3D>("Display") else {
             return;
@@ -151,9 +140,5 @@ impl WeaponPickup {
 impl WeaponPickup {
     pub fn weapon_id(&self) -> Option<WeaponId> {
         WeaponId::by_key(&self.weapon.to_string())
-    }
-
-    pub fn price(&self) -> i64 {
-        self.price.max(0)
     }
 }

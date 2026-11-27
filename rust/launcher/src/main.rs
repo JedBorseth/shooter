@@ -53,7 +53,7 @@ struct Common {
 
 #[derive(clap::Args)]
 struct PlayArgs {
-    /// HTTPS crash collector on the master host. Empty disables uploads.
+    /// HTTPS crash collector on the public host. Empty disables uploads.
     #[arg(
         long,
         env = "SHOOTER_CRASH_URL",

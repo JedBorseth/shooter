@@ -5,14 +5,9 @@
 //! and can be unit-tested without the engine.
 
 pub mod bot;
-pub mod camo;
-pub mod card;
 pub mod care_package;
-pub mod challenge;
 pub mod chat;
-pub mod chopper;
 pub mod class;
-pub mod cosmetics;
 pub mod ctf;
 pub mod custom;
 pub mod domination;
@@ -24,7 +19,6 @@ pub mod hitbox;
 pub mod killcam;
 pub mod look;
 pub mod melee;
-pub mod missile;
 pub mod mount;
 pub mod movement;
 pub mod net;
@@ -37,12 +31,9 @@ pub mod rng;
 pub mod scavenger;
 pub mod score;
 pub mod snd;
-pub mod stats;
 pub mod streak;
 pub mod tdm;
-pub mod turret;
 pub mod weapon;
-pub mod zombies;
 
 pub use glam::{Mat3, Vec2, Vec3};
 

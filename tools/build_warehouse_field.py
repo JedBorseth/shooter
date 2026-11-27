@@ -274,8 +274,8 @@ def tyre_pile():
 
 
 def sedan():
-    # The Zombies wreck uses Slamcity's same sedan body with its glazing
-    # stripped. Reuse its open shell and give the paint scanned soot/rust.
+    # Slamcity's sedan body with its glazing stripped (map_dressing.burnt_car).
+    # Reuse its open shell and give the paint scanned soot/rust.
     b = Model(city.part_geo)
     burnt_car(b, seed=37)
     mats = {

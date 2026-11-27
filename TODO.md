@@ -28,21 +28,16 @@ The open work on this Call-of-Duty-style multiplayer FPS. The goal, the decision
 - **The wire.** A change to what client and server send bumps `PROTOCOL_VERSION` in `rust/sim/src/net/protocol.rs`, with a line in the version list above it. Parallel PRs often take the same number; rebase and bump again.
 - **Data.** Weapon numbers live in `godot/data/weapons/*.ron`. Call of Duty numbers go in data or named constants with a comment saying where they came from.
 - **Dependencies** are welcome when they save real work. They must be open source and self-hostable: no service that needs someone else's API key or account. Say why you added one in the PR.
-- **Assets** must be CC0 or another license that allows commercial use and modification, credited in [godot/assets/CREDITS.md](godot/assets/CREDITS.md). Visible geometry is built in Blender and exported as glTF, not made of Godot primitives or CSG (effects and debug drawing excepted). The user-supplied Black Ops II assets for Nuketown and the Zombies menu are the exceptions, listed apart in the credits.
+- **Assets** must be CC0 or another license that allows commercial use and modification, credited in [godot/assets/CREDITS.md](godot/assets/CREDITS.md). Visible geometry is built in Blender and exported as glTF, not made of Godot primitives or CSG (effects and debug drawing excepted).
 - **Sounds** merge only after the owner approves them by ear. Open the PR with listening clips and mark it held for listening ([gun-sound-design](.agents/skills/gun-sound-design/SKILL.md) for guns).
 
 ## Awaiting the owner
 
-- [ ] Slamcity (8.3 ms) and Breakwater (7.3 ms) are over the 6.5 ms Medium GPU gate at their worst views because of Medium's own passes (SSAO's normal prepass about 1.4 ms, glow 0.75, SMAA 0.7). Turn one down on Medium (for example SSAO off where the lightmap already darkens corners, or FXAA in place of SMAA), or keep the allowances in `docs/perf/budgets.json` ([docs/performance.md](docs/performance.md)).
+- [ ] Breakwater (7.3 ms) is over the 6.5 ms Medium GPU gate at its worst view because of Medium's own passes (SSAO's normal prepass about 1.4 ms, glow 0.75, SMAA 0.7). Turn one down on Medium (for example SSAO off where the lightmap already darkens corners, or FXAA in place of SMAA), or keep the allowances in `docs/perf/budgets.json` ([docs/performance.md](docs/performance.md)).
 - [ ] Inputs at 60 Hz, two ticks a packet: halves packet headers (about 19 kbps up) for up to 8 ms more input delay on every other tick ([docs/netcode.md](docs/netcode.md)).
-- [ ] Warehouse is marked `roofed`, so the Care Package, Airstrike, Guided Missile, and Attack Chopper are left out there ("NO OPEN SKY"). Decide whether it gets a skylight or roof hatch so they can come back.
+- [ ] Warehouse is marked `roofed`, so the Care Package is left out there ("NO OPEN SKY"). Decide whether it gets a skylight or roof hatch so it can come back.
 - [ ] The SG-12 rebuilt with the reproducible shape helpers (`tools/weapon_shapes.py` `canonical`) has a coarser atlas: `weapon_models_test`'s colour-detail proxy reads 0.064 against its 0.08 threshold. Settle the unwrap or the threshold before committing the rebuilt model; until then it keeps its old, non-reproducible files.
-- [ ] Whether private matches pay XP (Black Ops 2's pay none; today they report XP capped as local matches are) ([docs/custom-games.md](docs/custom-games.md)).
-- [ ] Confirm two custom-game choices: hardcore hides the score block, and ranked servers turn spectators away.
-- [ ] Replace the Zombies menu's Black Ops II reference assets (globe, signposts, music, font in `godot/assets/zombies/`) with our own.
-- [ ] Run the account stack on the public host behind TLS, so the default `borseth.ddns.net:7350` answers ([docs/online.md](docs/online.md)).
-- [ ] Confirm the account server's guards: the cap on self-reported match XP, the one-time import of pre-account progress, and quick play's 20 s fallback to a party-only match ([docs/online.md](docs/online.md)).
-- [ ] A ladder on Slamcity (for example up to the diner terrace).
+- [ ] Confirm a custom-game choice: hardcore hides the score block.
 - [ ] Pistol attachments: the BP-9's file lists Red Dot, Suppressor, and Ext. Mag, but the class rules give a sidearm none (`rust/sim/src/class.rs`), so the editor greys them out. Allow them (Black Ops 2 lets pistols take attachments) or drop them from the file.
 
 ## Held for listening
@@ -51,12 +46,11 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 - #344 to #348: the CQ-10, BP-9, KR-12, DM-7, and SG-12's own shots (they borrow the PDW-9's, M1911's, AK-47's, BR-3's, and M870's).
 - #396: the RL-4's launch and rocket flight (it fires with the M870's shot).
-- #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, Airstrike, Guided Missile, Attack Chopper, Sentry Gun, shoot-downs).
-- #402: Zombies sounds: drink machines and jingles, the bottle, the mystery crate, the forge, the power switch, hounds and their strike, the electric fence, the Carpenter and Fire Sale.
+- #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
 - #276: Search and Destroy's charge beeps, its own explosion, and the planted sting.
 - #288: Gun Game's weapon-up and set-back stings, and halftime and overtime stings.
 - #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
-- #403: a sting for a challenge completed mid-match.
+- #403 (a sting for a challenge completed mid-match): close; challenges were cut.
 
 #417 (a command-line `--connect` without `--map` loads the server's map) is also open.
 
@@ -67,20 +61,18 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 ## Movement, animation, and hit zones
 
-- [ ] Ladders on Slamcity, Breakwater, and the Zombies arena where their layouts want them (the Testing Area and Warehouse have them).
+- [ ] Ladders on Breakwater where its layout wants them (the Testing Area and Warehouse have them).
 - [ ] Prone turns: the stop before the legs sweep into a wall is the client's (`body::legs_clear` in `player.rs`); the server takes the view it is sent, so a modified client could still sweep its legs into a wall, and bots turn prone without the check. The body turns about the eyes; the IW engine turns it about its middle.
 - [ ] The killcam's recording of the local player (`killcam::OwnRecorder`) lies flat on slopes: it is built from the predicted state, which has no prone slope.
 - [ ] Hit zones partway through a stance change (a crouch, or the 0.3 s kneel at the charge) stray up to 12 cm from the drawn legs: the zones lerp joint positions between poses while the drawn body blends bone rotations. Settled in a stance, they match.
 - [ ] Arm hit zones stay on the weapon through a knife swing: snapshots say who is swinging, not how far along (`hitbox::carry::Carry::swing`).
 - [ ] Behind the strafes (112.5° and 157.5°), the drawn blend of a strafe and a back diagonal plants its feet poorly and slides about a fifth of the stance: author those directions, or warp the phases so both loops plant together.
-- [ ] Third-person drinking in Zombies: other players keep holding their weapon (the `Drank` event could pose the hand and show the bottle).
 - [ ] Third-person defusing: the defuser kneels with a hand at the keypad as the planter does, with no cutters in hand.
 
 ## Audio
 - [ ] Other players' suppressed shots play at full volume and range: only your own gun's suppressor changes its sound (`rust/game/src/viewmodel.rs`), and `rust/game/src/gunfire.rs` never checks it.
 
 - [ ] An announcer for every mode's calls (Hardpoint, Domination, scorestreaks, Gun Game), once CC0 voice recordings good enough exist. Captions are ready for it (`Settings.caption`).
-- [ ] Reverb zones in the Zombies arena (`ReverbZone`, `rust/game/src/acoustics.rs`).
 - [ ] Footsteps on water and in puddles, and a hollower step on stairs.
 - [ ] Other players' weapon switches and bolt or pump cycles, positional (only their reloads play today, `footsteps::Foley`).
 - [ ] An HRTF spatializer (for example a Steam Audio GDExtension) in place of stereo panning and the rear shelf, if playtests want sharper elevation and front and back.
@@ -93,55 +85,36 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - [ ] The match menu's Ready and Close buttons fall below the screen at 1600x900 when the class list is long (the lobby panel's Ready covers the lobby).
 
 ## Netcode and server checks
-- [ ] Re-measure the bandwidth figures in [docs/netcode.md](docs/netcode.md) with `godot/tests/bandwidth_test.gd`: they predate the scorestreak, radar, and Zombies-depth messages.
+- [ ] Re-measure the bandwidth figures in [docs/netcode.md](docs/netcode.md) with `godot/tests/bandwidth_test.gd`: they predate the scorestreak and radar messages.
 
 - [ ] Bandwidth: code a packet's first input against the newest input the client saw acknowledged (about 6 kbps up), and send the own state as an "in sync" bit when it matches the client's prediction (about 13 kbps down, for 4 up).
 - [ ] Send each client only the enemies it could see or hear, against wallhacks (killcams and the minimap need a plan for the rest).
 - [ ] A way for an operator to see integrity flags without reading the server log.
-- [ ] Reach a hosted game behind a home router without forwarding its port (NAT punch-through through the directory).
 
 ## Killcam
 
-- [ ] Streak killcams draw the live Sentry Gun and Attack Chopper, not where they were (the tape keeps no streaks), and a Guided Missile's killcam watches from above the blast instead of riding the missile down.
 - [ ] Hide the bodies of players who die while a killcam plays, and hide live grenades and smoke clouds under the replay (a cloud still hanging live shows twice).
 - [ ] First-person sounds for the killer's reloads and footsteps.
 
 ## Modes
 
-- [ ] Hardpoint: re-check that Nuketown's bots reach the Cul-de-sac zone (one of six did in a minute's test before its navigation mesh baked headless).
-- [ ] Domination: a Blender flag pole at each flag, overtime on a draw (Black Ops 3 onward), and Nuketown bot play: in `domination_bots_test -- --nuketown` one team takes all three flags in the first half minute and holds them, so only two of six bots capture (the test wants three). Bots pushing back for a lost flag when their team owns none would fix it.
-- [ ] Testing Area objectives: its fallback spawns stand 14 m apart on one open floor, so bots barely play objectives there. Real `SpawnPoints` at the north and south walls would fix it, but the net, killcam, bot equipment, Domination, CTF halves, Hardpoint overtime, local pause, and Zombies server tests are written around the fallback layout.
+- [ ] Domination: a Blender flag pole at each flag, and overtime on a draw (Black Ops 3 onward).
+- [ ] Testing Area objectives: its fallback spawns stand 14 m apart on one open floor, so bots barely play objectives there. Real `SpawnPoints` at the north and south walls would fix it, but the net, killcam, bot equipment, Domination, CTF halves, Hardpoint overtime, and local pause tests are written around the fallback layout.
 - [ ] Capture the Flag: a carrier speed or weapon penalty, if playtests call for one.
 
 ## Scorestreaks and perks
 
-- [ ] A damaged UAV's smoke trail, UAV assist points, and a full-map view for the dead and for spectators ([docs/scorestreaks.md](docs/scorestreaks.md)).
-- [ ] Attack Chopper: evading when locked on, and flares (Black Ops 2's).
-- [ ] Guided Missile: a warning to enemies under it, and restoring the pilot's view angle when it ends.
-- [ ] Sentry Gun: a minimap icon for our side's, and picking it up to move it (Black Ops 2 lets the owner carry it).
-- [ ] Engineer's Care Package reroll and booby trap, and Blind Eye's stand-still grace period once its value is known. A seventeenth perk needs a wider perk set on the wire (`perk::Perks` is a full `u16`).
+- [ ] A damaged UAV's smoke trail, UAV assist points, and a full-map view for the dead ([docs/scorestreaks.md](docs/scorestreaks.md)).
+- [ ] Engineer's Care Package reroll and booby trap.
 
 ## Bots
 
 - [ ] Search and Destroy on Warehouse: on the old layout the bench had attackers winning 5 to 8 rounds of 28. Re-run `godot/tools/bot_bench.gd` on the reworked map and look at the sites' approaches if the defenders still win most rounds ([docs/bots.md](docs/bots.md)).
 
-## Zombies
-
-- [ ] Playable versions of the menu's other maps; every map loads the one arena today (`zombies_menu.gd`).
-- [ ] More alternate ammo types (Black Ops III's Thunder Wall knock-back, Fireworks, Turned).
-
-## Online services
-- [ ] The game hard-codes the Nakama server key `defaultkey` (`godot/scripts/online.gd`, `godot/scripts/net/account_link.gd`) while `docker/online/.env.example` invites changing `NAKAMA_SERVER_KEY`. Read the key from settings or the command line, or document that it must stay `defaultkey`.
-
-- [ ] Party chat and a friends list (Nakama has both), and a party lobby that follows the leader into a server browser match.
-- [ ] Matchmaking by skill and ping (Nakama matchmaker properties), once there are enough players to choose from.
-
-## Custom games, spectating, and private matches
+## Custom games
 
 - [ ] Black Ops 2's teamkill punishment (`teamKillPunishCount`, `teamKillSpawnDelay`): a longer respawn after repeat teamkills, then a kick.
 - [ ] Grey out what a loadout rule (default classes, pistols only, snipers only) bars in the class menu, as Black Ops 2 shows restricted items; today the server applies the rule at spawn.
-- [ ] Spectating: a third-person follow camera and an overhead map view (Black Ops 2's CODcaster has both), and spectators by name on the scoreboard and in chat.
-- [ ] Private matches: the leader moving other players between teams, and a LAN-hosted private match without accounts.
 
 ## Create-a-Class and progression
 
@@ -153,17 +126,17 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - [ ] Breakwater art pass: set dressing and wear (decals, stains, litter drifts, signage) on the quay, rack, and tank farm; shoreline foam and the moored tanker's detail; pump house and drum store interiors; ambience (gulls, water, pumps); a grade in `godot/scripts/looks.gd`.
 - [ ] Warehouse: the strewn floor litter (MultiMeshes lit by the lightmap's probes) read darker than when lit live; check it against the re-baked lightmap, and bake it as meshes or brighten the probes if it still does.
 - [ ] Picture fidelity: contact-hardening sun shadows, daytime volumetric light on High, moving clouds, and shadows from the first-person weapon and arms (in the sun's shadow map they would also throw a floating gun's shadow, since the local player has no body shadow).
-- [ ] Heat haze from gunfire on High: priced at +0.4 ms in a firefight (a screen copy); waits for High headroom on Slamcity.
+- [ ] Re-shoot the title backdrop (`godot/assets/ui/title_backdrop.jpg`): it still shows Slamcity, which was cut. `CAPTURE_PHASE=stills` in `godot/tests/capture_ui.gd` now shoots Breakwater, Warehouse, and the Testing Area.
+- [ ] Heat haze from gunfire on High: priced at +0.4 ms in a firefight (a screen copy); waits for High headroom.
 
 ## Performance
 
 - [ ] Measure the reworked Warehouse on the reference GTX 1060 and set its allowance in `docs/perf/budgets.json` (its current views have only a GTX 1660 Ti baseline).
-- [ ] Slamcity's worst Low view sits at 3.96 ms of 4: the next Low cuts there would be decals (0.12 ms at the railway view) or the rest of the smoke plume (0.17).
 - [ ] Client CPU: deferred calls and skeleton updates are 2.4 ms of a 6v6 frame; the server's character movement (`move_and_slide` and probes) is 1.4 of its 1.8 ms tick.
 
 ## Tooling and CI
 - [ ] `tools/build_weapons.py`'s docstring names `tools/build_weapon_shared.py`, which does not exist; say where the shared glow material in `godot/assets/weapons/shared/` comes from.
 
 - [ ] Visual and performance checks on a self-hosted GPU runner, for trusted branches only: `capture_screens.gd` and `just perf-gate` (GitHub's runners have no GPU, so the gate runs only locally today).
-- [ ] Start the longest fixed-rate Godot tests first (`nuketown_bounds_test` takes 35 to 60 s and starts mid-run), so the workers in `.github/scripts/godot-tests.sh` finish together.
+- [ ] Start the longest fixed-rate Godot tests first (the slowest start mid-run), so the workers in `.github/scripts/godot-tests.sh` finish together.
 - [ ] The "server keeps up with its tick rate" checks in `bots_test`, `hardpoint_test`, and `domination_bots_test` time the wall clock. They have about 6x headroom on CI but could trip on a loaded machine; measure the server's own tick cost instead.

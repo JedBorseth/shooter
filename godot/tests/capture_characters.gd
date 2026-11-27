@@ -1,20 +1,16 @@
 extends SceneTree
 ## Captures the characters for review: both teams at 2, 10, 30, and 60 m in
-## sun, shade, indoors, and at night; mid-animation poses (run, crouch, aim,
-## reload) with close-ups of the joints; turntables and wireframes; the
-## first-person arms with several weapons at the hip and aimed; and the zombie
-## horde with close-ups.
+## sun, shade, and indoors; mid-animation poses (run, crouch, aim, reload) with
+## close-ups of the joints; turntables and wireframes; and the first-person
+## arms with several weapons at the hip and aimed.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde, bodies (also each zombie kit by day and at night), faces, wounds;
-## default all). CAPTURE_WEAPONS limits the hands and first-person sets to some
+## fp, faces, wounds; default all). CAPTURE_WEAPONS limits the hands and first-person sets to some
 ## weapons (comma list).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
-const ZOMBIE_BODY := preload("res://scenes/characters/zombie_body.tscn")
-const Puppets := preload("res://tests/zombie_puppets.gd")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
 const TEAMS := ["ally", "enemy"]
 
@@ -45,10 +41,6 @@ func _run() -> void:
 		await _hands()
 	if _wants("fp"):
 		await _first_person()
-	if _wants("horde"):
-		await _horde()
-	if _wants("bodies"):
-		await _bodies()
 	if _wants("faces"):
 		await _faces()
 	if _wants("wounds"):
@@ -70,12 +62,9 @@ func _open(path: String) -> Node:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
-	# Slamcity reloads itself when the player falls out of the map.
+	# Keep the map's own script still while the scene is staged.
 	scene.set_physics_process(false)
 	var player := scene.get_node_or_null("Player") as FpsPlayer
 	if player != null:
@@ -164,17 +153,12 @@ func _lineups() -> void:
 	var scene := await _open("res://scenes/main.tscn")
 	await _lineup(scene, "sun", Vector3(0, 0, 18), Vector3(0, 0, -1), DISTANCES)
 	await _close(scene)
-	# Shade and indoors: Slamcity in the late afternoon.
-	scene = await _open("res://scenes/slamcity.tscn")
+	# Shade and indoors: Breakwater in the late morning.
+	scene = await _open("res://scenes/breakwater.tscn")
 	await _frames(10)
-	# The north street in the shade of the block, and the platform (the
-	# benchmark's covered viewpoint).
+	# The quay, and the control house's upper floor (a benchmark viewpoint).
 	await _lineup(scene, "shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0), DISTANCES)
-	await _lineup(scene, "indoor", Vector3(-5.6, 6.65, -10.5), Vector3(0, 0, 1), [2.0, 3.5])
-	await _close(scene)
-	# Night: the Zombies arena under the moon.
-	scene = await _open("res://scenes/zombies_arena.tscn")
-	await _lineup(scene, "night", Vector3(0, 0, 8), Vector3(0, 0, -1), [2.0, 10.0, 20.0])
+	await _lineup(scene, "indoor", Vector3(-27, 3.85, -6), Vector3(0, 0, -1), [2.0, 3.5])
 	await _close(scene)
 
 
@@ -386,112 +370,6 @@ func _first_person() -> void:
 	await _close(scene)
 
 
-# --- Zombies ---------------------------------------------------------------------
-
-
-func _horde() -> void:
-	var arena: Node = (load("res://scenes/zombies_arena.tscn") as PackedScene).instantiate()
-	root.add_child(arena)
-	current_scene = arena
-	var director := arena.get_node("Director") as ZombieDirector
-	var player := arena.get_node("Player") as FpsPlayer
-	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
-		layer.visible = false
-	player.set_look(0.0, -0.06)
-	await _sixtieths(30)
-	var spots := []
-	for i in 6:
-		spots.append(player.global_position + Vector3(-3.0 + i * 1.5, 0, -8.0 - (i % 3) * 2.0))
-	var horde := Puppets.spawn(director, spots, player.global_position)
-	for f in 40:
-		Puppets.walk(horde, player.global_position, 1.0 / 60.0)
-		await physics_frame
-	await _shot("horde_01")
-	player.set_input_enabled(false)
-	player.get_node("Camera/Viewmodel").visible = false
-	var camera := _camera(arena, 45.0)
-	var zombies := director.zombies()
-	for n in mini(4, zombies.size()):
-		var zombie: Zombie = zombies[n]
-		var at := zombie.global_position
-		var ahead := Vector3(-sin(zombie.facing()), 0, -cos(zombie.facing()))
-		camera.look_at_from_position(at + ahead * 1.6 + Vector3.UP * 1.5, at + Vector3.UP * 1.2)
-		await _shot("zombie_close_%d" % n)
-	camera.look_at_from_position(
-		player.global_position + Vector3(4, 2.2, 2), player.global_position + Vector3(0, 0.8, -8)
-	)
-	await _shot("horde_02_side")
-	await _close(arena)
-
-
-# --- Zombie bodies ----------------------------------------------------------------
-
-
-func _bodies() -> void:
-	# A row of zombies in daylight, each wearing the body its seed picks, so
-	# every body shows up: the row from the front, then each face close up.
-	var scene := await _open("res://scenes/main.tscn")
-	var camera := _camera(scene, 40.0)
-	var bodies: Array[SoldierRig] = []
-	for i in 12:
-		var zombie := ZOMBIE_BODY.instantiate()
-		scene.add_child(zombie)
-		var rig := zombie as SoldierRig
-		rig.global_position = Vector3(-6.6 + i * 1.2, 0, 10)
-		bodies.append(rig)
-	for frame in 30:
-		for rig in bodies:
-			rig.drive({"yaw": PI}, 1.0 / 60.0)
-		await process_frame
-	camera.look_at_from_position(Vector3(0, 1.3, 17.5), Vector3(0, 0.95, 10))
-	await _shot("bodies_row")
-	for i in bodies.size():
-		var at := bodies[i].global_position
-		camera.look_at_from_position(at + Vector3(0.35, 1.45, 1.6), at + Vector3(0, 1.3, 0))
-		await _shot("bodies_face_%02d" % i)
-	for rig in bodies:
-		rig.queue_free()
-	camera.queue_free()
-	await _close(scene)
-	await _kits_at_night()
-
-
-## Each zombie body once, by day and under the arena's floodlights at night,
-## walking (each at its own moment of the stride), then each face at 1 m.
-func _kits_at_night() -> void:
-	for map: String in ["res://scenes/main.tscn", "res://scenes/zombies_arena.tscn"]:
-		var scene := await _open(map)
-		var night := map.contains("zombies")
-		var camera := _camera(scene, 40.0)
-		var origin := Vector3(0, 0, 10)
-		if night:
-			var player := scene.get_node("Player") as Node3D
-			origin = player.global_position + Vector3(0, 0, -7)
-		var kits: Array[SoldierRig] = []
-		for i in 5:
-			var zombie := ZOMBIE_BODY.instantiate() as SoldierRig
-			zombie.set("body", i)
-			scene.add_child(zombie)
-			zombie.global_position = origin + Vector3(-2.8 + i * 1.4, 0, 0)
-			kits.append(zombie)
-		for frame in 50:
-			for rig in kits:
-				rig.drive({"yaw": PI, "velocity": Vector3(0, 0, 1.4), "on_floor": true}, 1.0 / 60.0)
-			await process_frame
-		var tag := "night" if night else "day"
-		camera.look_at_from_position(origin + Vector3(0, 1.3, 7.0), origin + Vector3(0, 0.95, 0))
-		await _shot("kits_%s" % tag)
-		for i in kits.size():
-			var head := (
-				kits[i].get_node("Model").find_child("GeneralSkeleton", true, false) as Skeleton3D
-			)
-			var face := head.to_global(head.get_bone_global_pose(head.find_bone("Head")).origin)
-			camera.look_at_from_position(face + Vector3(0.25, 0.0, 1.0), face)
-			await _shot("kits_%s_face_%d" % [tag, i])
-		camera.queue_free()
-		await _close(scene)
-
-
 func _faces() -> void:
 	# Each of the soldier's faces (head shapes and their skin tones,
 	# palette.rs HEAD_TONES), bare-faced, in a row per team, then close up.
@@ -538,28 +416,23 @@ func _faces() -> void:
 
 func _wounds() -> void:
 	# Wound marks (wounds.rs): each team hit in the chest, the shoulder, and
-	# the thigh, and a zombie hit in the chest, a second after the hits.
+	# the thigh, a second after the hits.
 	var scene := await _open("res://scenes/main.tscn")
 	var camera := _camera(scene, 35.0)
 	var hits := [Vector3(0.05, 1.3, -0.13), Vector3(-0.2, 1.42, -0.04), Vector3(0.1, 0.75, -0.09)]
-	for i in 3:
-		var rig: SoldierRig
-		if i < 2:
-			rig = SOLDIER.instantiate() as SoldierRig
-			scene.add_child(rig)
-			rig.set_team_index(i)
-		else:
-			rig = ZOMBIE_BODY.instantiate() as SoldierRig
-			scene.add_child(rig)
+	for i in 2:
+		var rig := SOLDIER.instantiate() as SoldierRig
+		scene.add_child(rig)
+		rig.set_team_index(i)
 		rig.global_position = Vector3(-1.2 + i * 1.2, 0, 10)
 		for frame in 20:
-			rig.drive({"weapon": "" if i == 2 else "m4", "yaw": PI}, 1.0 / 60.0)
+			rig.drive({"weapon": "m4", "yaw": PI}, 1.0 / 60.0)
 			await process_frame
 		for hit: Vector3 in hits:
 			var at: Vector3 = rig.global_position + Vector3(-hit.x, hit.y, -hit.z)
 			rig.take_hit_at(Vector3(0, 0, -1), false, at, -1, 4.0)
 		for frame in 60:
-			rig.drive({"weapon": "" if i == 2 else "m4", "yaw": PI}, 1.0 / 60.0)
+			rig.drive({"weapon": "m4", "yaw": PI}, 1.0 / 60.0)
 			await process_frame
 		camera.look_at_from_position(
 			rig.global_position + Vector3(0.25, 1.25, 1.5), rig.global_position + Vector3(0, 1.1, 0)

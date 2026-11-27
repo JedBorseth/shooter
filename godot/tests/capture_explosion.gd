@@ -5,8 +5,8 @@ extends SceneTree
 ## grenade's cloud (`CombatEffects.smoke`), or a flashbang's pop
 ## (`CombatEffects.flash_pop`) as a frame strip in three lights: the
 ## Testing Area in the sun (10 m off, and 5 m off looking down at the chips
-## and the scorch), inside its culvert in shade, and the Zombies arena at
-## night. Needs a GPU and a display (or Xvfb),
+## and the scorch), and inside its culvert in shade. Needs a GPU and a display
+## (or Xvfb),
 ## and --fixed-fps 60 so the strip's moments are true time:
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1600x900 --audio-driver Dummy --fixed-fps 60 \
@@ -15,7 +15,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of lights: sun, close, shade, night (default: all).
+##   CAPTURE_ONLY    comma list of lights: sun, close, shade (default: all).
 ##   CAPTURE_EFFECT  explosion (default), charge, smoke, or flash.
 
 const Benchmark := preload("res://tests/benchmark.gd")
@@ -33,8 +33,6 @@ const LIGHTS := {
 	"sun": ["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.06, Vector3(0, 0.05, 10)],
 	"close": ["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.35, Vector3(0.5, 0.05, 15)],
 	"shade": ["res://scenes/main.tscn", Vector3(-10, 0.1, -9), 0.0, -0.08, Vector3(-10, 0.05, -17)],
-	"night":
-	["res://scenes/zombies_arena.tscn", Vector3(0, 0.1, 8), 0.0, -0.06, Vector3(0, 0.05, -2)],
 }
 
 var _out := OS.get_environment("CAPTURE_DIR")
@@ -102,9 +100,6 @@ func _load(path: String) -> void:
 	var sentry := scene.get_node_or_null("Sentry")
 	if sentry != null:
 		sentry.set("enabled", false)
-	var director := scene.get_node_or_null("Director")
-	if director != null:
-		director.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(scene)
 	current_scene = scene
 	_player = scene.get_node("Player") as FpsPlayer

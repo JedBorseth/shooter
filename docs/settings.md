@@ -60,9 +60,7 @@ it. It works on enemies within 80 m, fading from 55 m.
 - **Rotational.** While the player moves or looks, the view follows 45% of
   the enemy's motion relative to the camera, toward the upper chest, so
   strafing past an enemy, or an enemy strafing, keeps the crosshair with them.
-- **Target aim assist.** In Zombies only, as in Call of Duty, starting to aim
-  with a zombie within 7° of the crosshair eases the view onto it over 0.18 s.
-  Players and bots never get a snap.
+- **No snap.** Starting to aim never pulls the view onto an enemy.
 - The assist stays on one enemy until another is 40% nearer the crosshair.
 
 Targets are marked by an `AimAssistTarget` node on each body

@@ -22,7 +22,7 @@ player and draw everyone else a little in the past.
 | Simulation tick, server and client prediction | 120 Hz | `shooter_sim::TICK_RATE` |
 | Snapshots, server to each client | 60 Hz (every 2 ticks) | `NetServer.snapshot_interval` |
 | Input packets, client to server | 120 Hz, one a tick | `NetClient` |
-| Players per server | 12 (6v6), plus 8 spectators | `net::MAX_PLAYERS`, `MAX_SPECTATORS` in `server.rs` |
+| Players per server | 12 (6v6) | `net::MAX_PLAYERS` |
 | Protocol version | 93 | `protocol::PROTOCOL_VERSION` |
 | Transport | Godot's ENet, two channels | `rust/game/src/net/transport.rs` |
 
@@ -36,20 +36,18 @@ format is tested without the engine.
 `rust/sim/src/net/protocol.rs` holds every message, bit-packed
 (`net::bits`).
 
-- **Client to server.** A hello (protocol version, name, account session
-  token, and whether to spectate), then one `InputPacket` a tick. Each packet carries every input the server has not acknowledged, up
-  to 24 (200 ms), so a lost packet costs nothing while a later one arrives.
-  Reliable messages cover ready-up, the class, streaks, and cosmetics,
-  chat, skipping a killcam, steering a Guided Missile, and switching teams
-  in a private lobby.
+- **Client to server.** A hello (protocol version and name), then one
+  `InputPacket` a tick. Each packet carries every input the server has not
+  acknowledged, up to 24 (200 ms), so a lost packet costs nothing while a
+  later one arrives. Reliable messages cover ready-up, the class, streaks,
+  chat, skipping a killcam, and switching teams in the lobby.
 - **Server to client.** A welcome (player id, tick, snapshot interval, the
-  mode and its rules, the server's build, whether it is ranked, custom game
-  settings, and whether the player is a spectator), then snapshots. A client
-  of another protocol version gets a `Reject` with the server's version; a
-  ranked server that turns a player away sends `Denied` with the reason.
+  mode and its rules, the server's build, and custom game settings), then
+  snapshots. A client of another protocol version gets a `Reject` with the
+  server's version.
 - **Reliable game events.** Hits, damage, kills, score, the roster, the
-  match clock, the scoreboard, and each mode's objectives, streaks, and
-  Zombies events: things that happen once and must not be lost.
+  match clock, the scoreboard, and each mode's objectives and streaks: things
+  that happen once and must not be lost.
 
 `PROTOCOL_VERSION` goes up with every change to the wire format or to rules
 the client predicts, and the comment above it lists what each version added.
@@ -60,7 +58,7 @@ browser marks such a server **Newer version** or **Older version**.
 
 A snapshot holds the receiver's own state, every other player's view
 (`PlayerView`: quantized, and only what drawing and hit zones need), live
-grenades and smoke clouds, the minimap's red dots, and in Zombies the horde.
+grenades and smoke clouds, and the minimap's red dots.
 Each part is sent as changes from the snapshot the client last acknowledged.
 Both ends keep about a second of snapshots (`SnapshotHistory`, 64 entries) to
 encode and decode against; an acknowledgement older than that gets a full
@@ -79,9 +77,6 @@ delta-compressed with no further work, and the result is bit-exact.
 - **Other players.** Positions in millimetres, view angles in 16-bit steps,
   the shot counter, each small field on its own, and the flags as one field
   (`write_view`): about 8 bytes for a moving player.
-- **The Zombies horde.** Sent at 30 Hz (`ZOMBIE_SEND_TICKS`, every 4 ticks),
-  positions in centimetres, as changes from the newest horde the client
-  acknowledged: about 4 bytes a walking zombie.
 - **Inputs.** The first input in a packet is sent whole and each later one as
   changes from the one before. View angles are snapped to whole steps of
   2^-14 radians (about 0.0035 degrees) before the client predicts with them
@@ -205,15 +200,6 @@ HITBOX_FIT_DUMP=$PWD/rust/sim/src/hitbox/poses.rs \
   godot --headless --path godot --script res://tests/hitbox_fit_test.gd
 ```
 
-## Zombies
-
-The server runs the horde. Zombies are drawn one zombie send interval
-(4 ticks, about 33 ms) behind the other players, so two sent hordes always
-bracket the drawn moment, and the server rewinds them by the same amount for
-lag compensation (`shooter_sim::net::horde`, `protocol::zombie_lag`).
-Player bodies do not collide with zombies, so prediction never runs into a
-zombie drawn where the server no longer has it.
-
 ## Bandwidth
 
 `godot/tests/bandwidth_test.gd` runs a dedicated server in its own process
@@ -226,29 +212,24 @@ encoded in the real wire format and counted, payload alone and with IPv4,
 UDP, and ENet headers (40 bytes a packet). Reliable game events are not
 counted: they are rare next to 60 snapshots and 120 input packets a second.
 
-Two runs: a 6v6 of Normal bots playing Team Deathmatch on Slamcity for 60 s,
-and four players against a round-10 Zombies horde (24 zombies out at once)
-for 20 s, with zombie strikes made harmless so the scripted players stay up.
-It fails past its budgets, so CI catches a regression:
+The run is a 6v6 of Normal bots playing Team Deathmatch on Breakwater for
+60 s. It fails past its budget, so CI catches a regression:
 
 | Run | Down budget | Up budget |
 | --- | --- | --- |
 | Team Deathmatch, 6v6 | 110 kbps | 70 kbps |
-| Zombies, 4 players | 80 kbps | 70 kbps |
 
 ```sh
 godot --headless --fixed-fps 120 --path godot --script res://tests/bandwidth_test.gd
 RTT_MS=30 BOTS=12 SECONDS=60 godot --headless --fixed-fps 120 --path godot --script res://tests/bandwidth_test.gd
 ```
 
-`-- --tdm` or `-- --zombies` runs one of the two. Typical results per client,
-payload kbps with headers in brackets (runs vary by up to 10%, and busier
-bots cost more):
+Typical results per client, payload kbps with headers in brackets (runs vary
+by up to 10%, and busier bots cost more):
 
 | Run | RTT | Down | Own state | Up |
 | --- | --- | --- | --- | --- |
 | Team Deathmatch, 6v6 | 80 ms | 81 to 85 (100 to 104) | 15 to 16 | 39 to 41 (77 to 79) |
-| Zombies, 4 players, 24 zombies | 80 ms | 52 (71) | 19 | 22 (60) |
 
 Up traffic grows with ping, since each packet resends every unacknowledged
 input. At 120 packets a second a packet's headers cost more than its
@@ -270,7 +251,7 @@ client's word for an outcome:
 | A lunge to dash, a weapon from afar, a press aim off its path | Lunges must point at a visible enemy, pickups are raycast, press aims must lie on the view's path since the last input (`subtick::check`). |
 | An older view tick, to shoot where a target was | Rewinds are clamped to what the round trip explains plus 0.25 s, and to 300 ms. |
 | A pitch past straight up | Inputs with a pitch past the limit do not decode. |
-| A class or streak the player has not unlocked | A ranked server refuses it ([online.md](online.md)). |
+| A class or streak the player has not unlocked | Not checked: the server cannot know a player's level, which the game keeps itself. |
 | A chat flood | Rate-limited (`chat::ChatLimiter`). |
 
 What is left is watched two ways.
@@ -313,8 +294,8 @@ half-second-old view ticks, and a switch flipped every two seconds, which
 are flagged.
 
 Not covered: wallhacks (snapshots carry every player, which killcams,
-spectators, and the minimap rely on) and aim assistance subtle enough to
-look human. Both need data the server does not have, or review.
+Search and Destroy's spectating dead, and the minimap rely on) and aim
+assistance subtle enough to look human. Both need data the server does not have, or review.
 
 ## Trying it
 
@@ -338,7 +319,6 @@ look human. Both need data the server does not have, or review.
 | `godot/tests/hitbox_fit_test.gd` | Hit zones stay on the animated body in every state |
 | `godot/tests/integrity_test.gd` | Hard bots raise no flag; a flooding client and a garbage client are disconnected |
 | `godot/tests/bandwidth_test.gd` | Per-client kbps stays under budget |
-| `godot/tests/zombies_net_test.gd` | Zombies online: the client draws the server's horde, and a shot at a drawn zombie hits it on the server |
 
 ## References
 

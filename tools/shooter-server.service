@@ -16,7 +16,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/shooter-launcher serve -- --name Borseth --master 127.0.0.1:27010 --map nuketown --bots 3
+ExecStart=%h/.local/bin/shooter-launcher serve -- --name Borseth --map breakwater --bots 3
 Restart=always
 RestartSec=10
 

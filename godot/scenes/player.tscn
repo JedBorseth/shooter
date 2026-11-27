@@ -14,8 +14,6 @@
 [ext_resource type="PackedScene" path="res://scenes/weapons/m870_view.tscn" id="7_m870"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m40_view.tscn" id="8_m40"]
 [ext_resource type="PackedScene" path="res://scenes/characters/fp_arms.tscn" id="9_arms"]
-[ext_resource type="PackedScene" path="res://scenes/weapons/laser_view.tscn" id="10_laser"]
-[ext_resource type="PackedScene" path="res://scenes/effects/laser_beam.tscn" id="11_beam"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/lsw6_view.tscn" id="12_lsw6"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/br3_view.tscn" id="13_br3"]
 
@@ -65,7 +63,6 @@ collision_mask = 81
 floor_constant_speed = true
 floor_snap_length = 0.45
 tracer_scene = ExtResource("4_tracer")
-beam_scene = ExtResource("11_beam")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
@@ -126,8 +123,6 @@ near = 0.03
 [node name="M870" parent="Camera/Viewmodel" instance=ExtResource("7_m870")]
 
 [node name="M40" parent="Camera/Viewmodel" instance=ExtResource("8_m40")]
-
-[node name="Laser" parent="Camera/Viewmodel" instance=ExtResource("10_laser")]
 
 [node name="LSW6" parent="Camera/Viewmodel" instance=ExtResource("12_lsw6")]
 

@@ -5,7 +5,7 @@ extends SceneTree
 ## weapon), the scoreboard, and the results screen. Starts its own server
 ## process. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
-##     --script res://tests/capture_gun_game.gd [-- --map slamcity --bots 5]
+##     --script res://tests/capture_gun_game.gd [-- --map breakwater --bots 5]
 
 const PORT := 27998
 const WORLD_LAYER := 1
@@ -30,7 +30,7 @@ func _run() -> void:
 	# Autoloads are not globals in a --script SceneTree.
 	var net := root.get_node("Net")
 	var options: Dictionary = net.parse_args(OS.get_cmdline_user_args())
-	var map := String(options.get("map", "slamcity"))
+	var map := String(options.get("map", "breakwater"))
 	var args := PackedStringArray(
 		[
 			"--headless",

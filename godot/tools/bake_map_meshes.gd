@@ -9,7 +9,7 @@ extends SceneTree
 ## and the meshes it added are replaced. CSG that was hidden on purpose (the
 ## prop blockers) is left alone.
 ##   godot --headless --path godot --script res://tools/bake_map_meshes.gd -- \
-##     res://scenes/slamcity.tscn ...
+##     res://scenes/main.tscn ...
 ## tools/bake_lightmaps.sh runs this before it bakes.
 
 ## World-space size of one lightmap texel, in metres.

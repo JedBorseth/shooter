@@ -7,7 +7,7 @@ extends SceneTree
 
 const Minimap := preload("res://scripts/net/minimap.gd")
 const MinimapData := preload("res://scripts/net/minimap_data.gd")
-const MAP_KEYS := ["arena", "nuketown", "slamcity", "warehouse", "breakwater"]
+const MAP_KEYS := ["arena", "warehouse", "breakwater"]
 
 var _failures := 0
 

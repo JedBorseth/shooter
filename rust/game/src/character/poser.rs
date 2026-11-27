@@ -668,8 +668,7 @@ pub enum HandsOn {
     /// the left hand flat on its case, palms down, fingers along `facing`.
     Keypad,
     /// Each hand (right, left) with its fingers along `reach` and its palm
-    /// toward `palm` (world), in its own shape: a bottle, a tool, a hand on
-    /// a downed teammate.
+    /// toward `palm` (world), in its own shape: a tool in the hand.
     Placed {
         reach: [Vector3; 2],
         palm: [Vector3; 2],
@@ -680,12 +679,10 @@ pub enum HandsOn {
 /// A hand's shape in [`HandsOn::Placed`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grip {
-    /// Closed round a handle or a bottle.
+    /// Closed round a handle.
     Wrap,
     /// Flat, fingers together.
     Flat,
-    /// The index finger out, as on a key or a trigger.
-    Point,
 }
 
 #[derive(GodotClass)]
@@ -1399,7 +1396,6 @@ impl SoldierPoser {
                 (HandsOn::Placed { shape, .. }, _) => match shape[h] {
                     Grip::Wrap => &KNIFE_FIST,
                     Grip::Flat => &PLANTED,
-                    Grip::Point => &KEY_PRESS,
                 },
             };
             for (f, bones) in finger.iter().enumerate() {

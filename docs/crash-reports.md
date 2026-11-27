@@ -1,7 +1,7 @@
 # Crash reports
 
 When the game crashes, the launcher sends the end of that session's log to a
-private inbox on the master host. Nothing is sent for a normal close.
+private inbox on the public host. Nothing is sent for a normal close.
 
 ## Client logs
 
@@ -48,9 +48,10 @@ report goes with its log once twenty newer sessions push it out.
 `--crash-url https://…` or `SHOOTER_CRASH_URL` sends reports elsewhere; an
 empty value turns uploads off.
 
-## The inbox on the master host
+## The inbox on the public host
 
-`tools/crash_receiver.py` runs beside the master server. It accepts only
+`tools/crash_receiver.py` runs on `borseth.ddns.net`, beside its dedicated
+server. It accepts only
 plain UTF-8 `POST` bodies at `/shooter/crashes`, up to 2 MiB plus 512 bytes,
 with a ten-second socket timeout, a limit of thirty reports a minute, and at
 most 200 report files kept (about 400 MiB). It has no read or list endpoint,
@@ -88,7 +89,7 @@ handle /shooter/crashes {
 
 Use the private bridge gateway instead of loopback when Caddy is in Docker.
 Validate and reload Caddy, keeping its trusted TLS certificate and HTTPS
-redirect. The UDP directory's ports carry no reports.
+redirect. The game server's UDP ports carry no reports.
 
 ## Tests
 

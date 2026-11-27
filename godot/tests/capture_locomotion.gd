@@ -43,7 +43,7 @@ func _run() -> void:
 	var scene: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(scene)
 	current_scene = scene
-	for name in ["Sentry", "Director"]:
+	for name in ["Sentry"]:
 		var node := scene.get_node_or_null(name)
 		if node != null:
 			node.process_mode = Node.PROCESS_MODE_DISABLED

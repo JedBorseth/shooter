@@ -82,9 +82,6 @@ const MIX_BUS_OFFSETS: Array[Dictionary] = [
 ]
 const MIX_COMPRESSION: Array[bool] = [false, false, true, true]
 
-## Shared public host for discovery and future account/matchmaking services.
-const SERVICE_HOST := "borseth.ddns.net"
-const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
 ## Base stick turn rates (degrees per second) at 1× look speed.
 const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
@@ -191,7 +188,6 @@ const DEFAULTS := {
 	&"ui_volume": 0.7,
 	&"audio_mix": 0,
 	&"subtitles": false,
-	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"skip_killcams": false,
 	&"minimap_rotates": true,
@@ -352,10 +348,6 @@ var ui_volume: float = DEFAULTS[&"ui_volume"]
 var audio_mix: int = DEFAULTS[&"audio_mix"]
 ## Captions for calls and audio cues (`captions.gd`).
 var subtitles: bool = DEFAULTS[&"subtitles"]
-## Master server (`host[:port]`) the server browser lists internet servers
-## from. Runtime only: --directory HOST[:PORT] overrides the shared default.
-## Legacy saved addresses are ignored so old installs follow the public hostname.
-var master_server: String = DEFAULTS[&"master_server"]
 ## The name other players see (the server cuts it to 16 characters).
 var player_name: String = DEFAULTS[&"player_name"]
 ## Respawn without watching the killcam after each death (Call of Duty's
@@ -418,17 +410,6 @@ func _ready() -> void:
 		notice.settings = self
 		add_child(notice)
 	load_settings()
-
-
-## Client developer override, separate from --master (server registration).
-## This is deliberately not saved: the next ordinary launch uses the public host.
-static func directory_address(args: PackedStringArray) -> String:
-	for i in args.size():
-		if args[i] == "--directory" and i + 1 < args.size():
-			var address := args[i + 1].strip_edges()
-			if not address.is_empty() and not address.begins_with("--"):
-				return address
-	return DEFAULT_DIRECTORY
 
 
 ## Picks a graphics preset together with that preset's render scale, as the
@@ -708,7 +689,6 @@ func set_setting(key: StringName, value: Variant) -> void:
 func reset_to_defaults() -> void:
 	for key: StringName in DEFAULTS:
 		set(key, DEFAULTS[key])
-	master_server = directory_address(OS.get_cmdline_user_args())
 	key_bindings.clear()
 	apply_all()
 	_mark_dirty()
@@ -736,7 +716,6 @@ func load_settings() -> void:
 		input_device = InputDevice.CONTROLLER
 	if err == OK:
 		_migrate_sensitivity(config)
-	master_server = directory_address(OS.get_cmdline_user_args())
 	key_bindings.clear()
 	if err == OK and config.has_section("keys"):
 		for action: String in config.get_section_keys("keys"):

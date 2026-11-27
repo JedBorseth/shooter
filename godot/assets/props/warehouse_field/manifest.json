@@ -114,7 +114,7 @@
       "triangles": 5374,
       "origin": "Bottom centre; Godot +Y up",
       "clip": "Main body box or two boxes following the bonnet and roof; omit wheels and mirrors",
-      "use": "Burned sedan reused from the Zombies arena",
+      "use": "Burned-out sedan, Slamcity's car body",
       "tags": [
         "vehicle",
         "cover",

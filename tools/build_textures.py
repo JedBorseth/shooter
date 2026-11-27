@@ -163,7 +163,7 @@ def write_look(name: str, look: dict) -> None:
 
 
 def fix_imports(assets: Path = REPO / "godot/assets") -> None:
-    """Compress world sets, generated world extras (decals, noise, Slamcity),
+    """Compress world sets, generated world extras (decals, noise, chain-link),
     weapon PBR maps, and the registered Poly Haven prop textures with mipmaps.
     Effects and Warehouse textures use their own import settings.
 

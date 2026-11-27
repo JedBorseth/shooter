@@ -17,7 +17,7 @@ use crate::convert::{to_godot, to_sim};
 use crate::target::{BODY_LAYER, WORLD_LAYER};
 
 /// What a grenade bounces off: the map and solid bodies (dummies, props).
-/// Players and zombies do not stop it.
+/// Players do not stop it.
 pub const GRENADE_MASK: u32 = WORLD_LAYER | BODY_LAYER;
 
 /// Where a throw leaves the support hand, relative to the eye: a little

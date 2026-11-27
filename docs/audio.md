@@ -13,9 +13,9 @@ The layout is `godot/default_bus_layout.tres`.
 | Bus | Sends to | What plays on it |
 | --- | --- | --- |
 | Master | | `MixCompressor` (off unless the audio mix turns it on), then a hard limiter at -0.5 dBFS. |
-| Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's and chopper's guns. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
+| Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's gun. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
 | WeaponsDistant | Weapons | Other players' `mid` and `far` layers. Ducked by close gunfire. |
-| Effects | Master | Impacts, near misses, case clinks, explosions, grenades, zombie voices, Zombies barriers and doors. Gets the room reverb indoors. |
+| Effects | Master | Impacts, near misses, case clinks, explosions, grenades. Gets the room reverb indoors. |
 | WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`), so a reload follows the Effects slider and never ducks anything. |
 | Footsteps | Master | Everyone's steps, ladder rungs, landings, slides, mantles. Gets the room reverb indoors. |
 | Ambience | Master | Beds, prop hums, one-shots. `GunfireDuck`, a compressor keyed from Weapons (threshold -30 dB, ratio 6, 600 ms release), pulls it down under gunfire. |
@@ -148,7 +148,7 @@ out from 140 to 220 m, and the `far` one in from 100 to 170 m, each falling 6 dB
 per doubling past its own reference (40 and 120 m), on WeaponsDistant
 (`gunfire::layer_weights`).
 
-The sentry and the attack chopper fire with `weapons/ak47_fire.ogg`.
+The sentry fires with `weapons/ak47_fire.ogg`.
 
 ## Weapon handling (foley)
 
@@ -219,8 +219,8 @@ steps stand out. Dead Silence and Awareness scale level and range
 Each step plays the set for the surface under the feet (`surfaces.rs`):
 concrete, wood, metal, dirt, grass, gravel, tile, and carpet, glass borrowing
 tile. A collider's `surface` metadata says what it is; untagged geometry is
-judged from the hit triangle's material name, so imported maps such as Nuketown
-get grass, carpet, and tile without hand tagging. A sprinting soldier's kit
+judged from the hit triangle's material name (`gravel_0`, `planks_1`,
+`tread_plate_0`), so maps and props sound right without hand tagging. A sprinting soldier's kit
 rattles under every stride.
 
 ## Bullets
@@ -292,10 +292,9 @@ except the medal chime.
 
 ## Equipment and streaks
 
-Frags, the Search and Destroy charge, airstrikes, guided missiles, and downed
-UAVs, choppers, and sentries play the distant explosion takes up close on
-Effects; a flashbang plays one of them as its bang, and a smoke grenade hisses
-with a wind gust. None of them has a recording of its own. Scavenger pickups
+Frags, the Search and Destroy charge, and downed UAVs play the distant
+explosion takes up close on Effects; a flashbang plays one of them as its
+bang, and a smoke grenade hisses with a wind gust. None of them has a recording of its own. Scavenger pickups
 play the pouch sound.
 
 ## The world and the match
@@ -311,11 +310,8 @@ to 25 m away.
 | Map | Outdoor bed | Distant battle |
 | --- | --- | --- |
 | Testing Area | `day` | yes |
-| Slamcity | `city` | no |
 | Breakwater | `day` | no |
-| Nuketown | `day` | no |
 | Warehouse | per area (below) | no |
-| Zombies arena | `night` | yes |
 
 `distant_battle` plays a fight far beyond the map on one voice, 250 to 400 m
 out: bursts of the game's own guns' `far` recordings and, about one time in
@@ -367,15 +363,6 @@ found.
 
 During a killcam the live players are muted; the replayed bodies make the
 sounds.
-
-### Zombies
-
-Each zombie groans every 3 to 9 s, snarls when it swings, and cries out when it
-dies (`zombie.rs`, from artisticdude's Zombies Sound Pack sorted by
-`tools/build_zombie_audio.py`). A round's start and end play a drone-and-bell
-sting synthesized by the same tool (`zombies_hud.gd`). Barriers and doors use
-the wood impact, the power switch the metal one. The Zombies menu plays its
-reference theme and hover sound (see CREDITS).
 
 ## Reviewing sound without listening
 

@@ -30,10 +30,10 @@ pub struct Band {
     pub move_scale: (f32, f32),
 }
 
-/// The band `class` is held to, or `None` for one with none (test weapons).
-pub fn band(class: WeaponClass) -> Option<Band> {
+/// The band `class` is held to.
+pub fn band(class: WeaponClass) -> Band {
     const INF: f32 = f32::INFINITY;
-    Some(match class {
+    match class {
         WeaponClass::AssaultRifle => Band {
             ttk: &[
                 (5.0, 0.12, 0.32),
@@ -120,15 +120,12 @@ pub fn band(class: WeaponClass) -> Option<Band> {
             sprint_out: (0.30, 0.50),
             move_scale: (0.85, 0.95),
         },
-        WeaponClass::Special => return None,
-    })
+    }
 }
 
 /// Every way `def` falls outside its class's band, as readable lines.
 pub fn band_misses(def: &WeaponDef) -> Vec<String> {
-    let Some(band) = band(def.class) else {
-        return Vec::new();
-    };
+    let band = band(def.class);
     let mut misses = Vec::new();
     for &(range, fastest, slowest) in band.ttk {
         let t = ttk(def, range, HitZone::Chest, 100.0).unwrap_or(f32::INFINITY);
@@ -357,7 +354,7 @@ mod tests {
         println!("{header}");
         for id in WeaponId::all() {
             let d = id.def();
-            if !d.plain() || d.beam {
+            if !d.plain() {
                 continue;
             }
             let mut row = format!("| {} |", d.key);

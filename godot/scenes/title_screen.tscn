@@ -190,35 +190,15 @@ icon_alignment = 2
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
-text = "ONLINE AND CO-OP"
+text = "ONLINE"
 vertical_alignment = 2
 
-[node name="QuickPlay" type="Button" parent="Margin/Layout/Menu"]
+[node name="JoinServer" type="Button" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(500, 40)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"RouteButton"
-text = "Quick Play"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="Multiplayer" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Server Browser"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="Zombies" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Zombies"
+text = "Join Server"
 icon = ExtResource("3_arrow")
 alignment = 0
 icon_alignment = 2
@@ -258,15 +238,6 @@ mouse_filter = 2
 [node name="System" type="HBoxContainer" parent="Margin/Layout/Menu"]
 layout_mode = 2
 theme_override_constants/separation = 6
-
-[node name="Career" type="Button" parent="Margin/Layout/Menu/System"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_default_cursor_shape = 2
-theme_type_variation = &"QuietButton"
-text = "Career"
 
 [node name="Options" type="Button" parent="Margin/Layout/Menu/System"]
 unique_name_in_owner = true

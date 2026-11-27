@@ -21,8 +21,7 @@ use crate::target::WORLD_LAYER;
 /// Collision layer 2 ("players"), as a bit mask.
 pub const PLAYER_LAYER: u32 = 1 << 1;
 
-/// Collision layer 7: walls that stop players but not bullets or zombies
-/// (the Zombies arena's boarded windows).
+/// Collision layer 7: walls that stop players but not bullets.
 pub const PLAYER_BLOCK_LAYER: u32 = 1 << 6;
 
 /// What a player body collides with: walls and floors, solid bodies such as

@@ -5,7 +5,7 @@ extends SceneTree
 ## carries the settings, and the client predicts with hardcore's 30 health.
 ## Then a server in this process checks what it does with them: health,
 ## the respawn delay, a constant radar showing every enemy, and no
-## scorestreaks; and that a ranked server ignores them.
+## scorestreaks.
 ## Run from the repo root: godot --headless --path godot --script res://tests/custom_games_test.gd
 
 const REMOTE_PLAYER_SCENE := preload("res://scenes/remote_player.tscn")
@@ -36,7 +36,6 @@ func _run() -> void:
 	await _loadouts("pistols", ["m1911", "bp9"])
 	await _loadouts("snipers", ["m40"])
 	await _team_bots()
-	await _ranked_ignores()
 	_finish()
 
 
@@ -48,6 +47,8 @@ func _client_side() -> void:
 			ProjectSettings.globalize_path("res://"),
 			"--",
 			"--server",
+			"--map",
+			"arena",
 			"--port",
 			str(_port),
 			"--query-port",
@@ -94,7 +95,7 @@ func _client_side() -> void:
 	await process_frame
 
 
-func _start_server(custom: String, ranked := false) -> NetServer:
+func _start_server(custom: String) -> NetServer:
 	var server := SERVER_SCENE.instantiate() as NetServer
 	server.map_scene = ARENA_SCENE
 	_servers += 1
@@ -104,7 +105,6 @@ func _start_server(custom: String, ranked := false) -> NetServer:
 	server.bot_skill = "normal"
 	server.auto_start = true
 	server.custom_settings = custom
-	server.accounts = ranked
 	root.add_child(server)
 	return server
 
@@ -232,15 +232,6 @@ func _team_bots() -> void:
 	for id in server.player_ids():
 		per_team[server.player_team(id)] += 1
 	_check(per_team == [1, 3], "bots per team: one ally, three enemies, %s" % [per_team])
-	server.queue_free()
-	await process_frame
-
-
-func _ranked_ignores() -> void:
-	var server := _start_server(CUSTOM, true)
-	await _ticks(5)
-	_check(not bool(server.custom_rules().get("custom", true)), "a ranked server ignores them")
-	_check(is_equal_approx(server.player_health(200), 100.0), "ranked health is normal")
 	server.queue_free()
 	await process_frame
 

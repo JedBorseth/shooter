@@ -2,11 +2,9 @@
 
 # Shooter
 
-A multiplayer first-person shooter in the style of Call of Duty, built on Godot 4.7 (Forward+, Jolt physics) with the gameplay written in Rust. Matches run on dedicated servers at a 120 Hz simulation, against bots or other players: Team Deathmatch, objective modes, Search and Destroy, and co-op Zombies, with Black Ops 2's Create-a-Class, scorestreaks, and progression. Each feature follows a named Call of Duty game, and its docs page records which.
+A multiplayer first-person shooter in the style of Call of Duty, built on Godot 4.7 (Forward+, Jolt physics) with the gameplay written in Rust. Matches run on dedicated servers at a 120 Hz simulation, against bots or other players: Team Deathmatch, objective modes, and Search and Destroy, with Black Ops 2's Create-a-Class, scorestreaks, and progression. Each feature follows a named Call of Duty game, and its docs page records which.
 
-The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
-
-![Slamcity: a street by the diner, the derailed El car under the station, a platform with a stalled train, an alley, the diner's booths, and a market street](docs/media/slamcity-junction.jpg)
+What is in the game, and what was cut on purpose, is in [SCOPE.md](SCOPE.md). The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
 
 ![Breakwater from above, and at eye level: the control building, the truck loading rack, the tank farm, and the walkways](docs/media/breakwater.jpg)
 
@@ -43,10 +41,10 @@ The launcher updates itself as well (set `SHOOTER_LAUNCHER_NO_SELF_UPDATE` to st
 | `--dir PATH` | Keep builds in another folder (`SHOOTER_DIR`). |
 | `--manifest URL` | Follow builds published elsewhere: a URL or a path to a `latest.json` (`SHOOTER_MANIFEST`). |
 | `--crash-url URL` | Where crash logs go (`SHOOTER_CRASH_URL`); empty turns uploads off. |
-| `-- ARGS` | Pass the rest to the game: `shooter-launcher -- --connect 10.0.0.5 --map slamcity`. |
+| `-- ARGS` | Pass the rest to the game: `shooter-launcher -- --connect 10.0.0.5 --map breakwater`. |
 | `serve [--check-minutes N] -- ARGS` | Run a dedicated server (Linux x86_64) and keep it on the latest build: it downloads each new build while the old one runs and swaps when no human player is connected (every 5 minutes by default). |
 
-A server on a newer build turns older games away, and the server browser marks it **Newer version**. Restart the launcher to update.
+A server on a newer build turns older games away, and Join Server says so. Restart the launcher to update.
 
 ## Build from source
 
@@ -78,14 +76,14 @@ godot=~/Applications/Godot.app/Contents/MacOS/Godot
 
 Cargo builds the extension for your Mac's architecture. The first build and import take a few minutes. Rebuild with `cargo build` after changing Rust code; the editor reloads the extension.
 
-`tools/dev-sync.sh` does a whole update in one step: it pulls, fetches LFS, builds the extension and master server, imports assets, and starts the game (`--no-run` to stop before playing, `--no-pull` to skip the pull, `-- ARGS` for the game).
+`tools/dev-sync.sh` does a whole update in one step: it pulls, fetches LFS, builds the extension, imports assets, and starts the game (`--no-run` to stop before playing, `--no-pull` to skip the pull, `-- ARGS` for the game).
 
 `just` lists every recipe:
 
 | Recipe | What it does |
 | --- | --- |
 | `build`, `import`, `run`, `edit` | Build the Rust code, import assets, play, open the editor. |
-| `server ARGS` | Run a dedicated server: `just server --map slamcity --bots 5 --bot-skill normal`. |
+| `server ARGS` | Run a dedicated server: `just server --map breakwater --bots 5 --bot-skill normal`. |
 | `check-rust`, `check-gd` | Format, lint, and test the Rust code; format-check and lint the GDScript. |
 | `test [NAMES]`, `test-one NAME` | Run every headless Godot test the way CI does, or only the named ones. |
 | `ci` | `check-rust`, `check-gd`, `test`, and the frame-budget gate when there is an NVIDIA GPU. |
@@ -98,9 +96,9 @@ Cargo builds the extension for your Mac's architecture. The first build and impo
 The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 
 - **Vs bots:** Team Deathmatch, Gun Game, Free-for-all, Capture the Flag, Hardpoint, Domination, and Search and Destroy. Each opens a setup card (map, team size or player count, bot skill, limits, and custom game rules), then starts a dedicated server in the background and joins it.
-- **Online and co-op:** Quick Play (matchmaking, alone or with a party), Server Browser, and Zombies.
+- **Online:** Join Server (a dedicated server, by its address).
 - **Practice:** Testing Area (the training range) and Free Roam (walk any multiplayer map alone).
-- **Career** (challenges, camos, combat record), **Options**, and **Quit**.
+- **Options** and **Quit**.
 
 ### Modes
 
@@ -113,50 +111,42 @@ The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 | Hardpoint | `hardpoint` | Hold the live zone, which moves every 60 seconds, for a point a second; to 250. | [modes.md](docs/modes.md) |
 | Domination | `dom` | Hold flags A, B, and C; each scores every 5 seconds; to 200, sides swap at halftime. | [domination.md](docs/domination.md) |
 | Search and Destroy | `snd` | One life a round; the attackers win by wiping out the defenders or by planting the charge at a site until it goes off; first to 6 rounds. | [search-and-destroy.md](docs/search-and-destroy.md) |
-| Zombies | `zombies` | Co-op against rounds of zombies, up to four players. | [zombies.md](docs/zombies.md) |
 
-Any mode can run as a custom game, with Black Ops 2's game settings (limits, health and regeneration, friendly fire, radar, killcams, streaks, loadout rules, hardcore) and a bot count and skill per team, and players can join as spectators with a caster's view ([docs/custom-games.md](docs/custom-games.md)). Bots play every multiplayer mode at Easy, Normal, or Hard ([docs/bots.md](docs/bots.md)).
+Any mode can run as a custom game, with Black Ops 2's game settings (limits, health and regeneration, friendly fire, radar, killcams, streaks, loadout rules, hardcore) and a bot count and skill per team ([docs/custom-games.md](docs/custom-games.md)). Bots play every multiplayer mode at Easy, Normal, or Hard ([docs/bots.md](docs/bots.md)).
 
 ### Maps
 
 | Map | `--map` | What it is |
 | --- | --- | --- |
-| Slamcity | `slamcity` | City blocks at dusk round an elevated station, Slam Junction; each half is the other turned round and dressed differently. |
-| Nuketown | `nuketown` | Black Ops 2's Nuketown 2025, converted from the game's own map export ([docs/assets/nuketown.md](docs/assets/nuketown.md)). |
+| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. The default map. |
 | Warehouse | `warehouse` | A corrugated-box plant rebuilt from reference photos: an overgrown field on one side, a truck dock on the other. |
-| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. |
 | Testing Area | `arena` | The training range: weapon racks, target dummies, steel plates, and a sentry that shoots back. |
-| Zombies arena | `zombies` | A walled yard at night with boarded windows, side yards behind debris, and a skyline. |
 
-Search and Destroy plays on Slamcity and Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
-
-### Zombies
-
-Survive rounds of zombies that climb in through boarded windows, alone or with up to three friends, on a dedicated server (a private local one for Solo). Spend points on wall weapons, debris, the power, drinks, the mystery crate, the forge and its alternate ammo, and an electric fence; every few rounds a pack of hounds strikes. A downed player can be revived. The title's Zombies menu picks a location on a globe; every location plays the Zombies arena. See [docs/zombies.md](docs/zombies.md).
+Search and Destroy plays on Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
 
 ### Classes, streaks, and progression
 
 - **Create-a-Class:** Black Ops 2's Pick 10: two weapons, up to two attachments (three with a wildcard), grenades, three perk tiers, and wildcards; weapons, and custom classes themselves, unlock with level ([docs/create-a-class.md](docs/create-a-class.md)).
-- **Scorestreaks:** UAV, Counter-UAV, Care Package, Airstrike, Sentry Gun, Guided Missile, and Attack Chopper, with a minimap ([docs/scorestreaks.md](docs/scorestreaks.md)).
-- **Progression:** XP and 55 levels, prestige, challenges, weapon camos, calling cards, and a career record ([docs/progression.md](docs/progression.md)).
+- **Scorestreaks:** UAV, Counter-UAV, and Care Package, with a minimap ([docs/scorestreaks.md](docs/scorestreaks.md)).
+- **Progression:** XP and 55 levels, with level and weapon-kill unlocks ([docs/progression.md](docs/progression.md)).
 - **Killcams:** the killer's view after a death, a round-winning killcam in Search and Destroy, and the final killcam at the end of a match ([docs/killcam.md](docs/killcam.md)).
 
 ### Online
 
-The server browser lists servers on your LAN and on the public directory at `borseth.ddns.net:27010`, plus favorites and direct connect. Accounts, parties, Quick Play, ranked servers, and private matches run on a self-hosted Nakama stack with an allocator that starts a server per match; everything online is optional ([docs/online.md](docs/online.md)). The netcode (prediction, interpolation, server-side hit detection with lag compensation) is in [docs/netcode.md](docs/netcode.md).
+Join Server takes a dedicated server's address (HOST or HOST:PORT), asks the server for its map and version, and joins; it keeps the last few addresses. There are no accounts, server lists, or matchmaking: progress stays on the machine ([docs/multiplayer.md](docs/multiplayer.md)). The netcode (prediction, interpolation, server-side hit detection with lag compensation) is in [docs/netcode.md](docs/netcode.md).
 
 ## Quick multiplayer
 
 Multiplayer always runs on a dedicated server, even on one machine. Start one headless, then connect with the same map:
 
 ```sh
-godot --headless --path godot -- --server --map slamcity --mode tdm --bots 6 --bot-skill normal
-godot --path godot -- --connect 127.0.0.1 --map slamcity    # HOST or HOST:PORT
+godot --headless --path godot -- --server --map breakwater --mode tdm --bots 6 --bot-skill normal
+godot --path godot -- --connect 127.0.0.1 --map breakwater  # HOST or HOST:PORT
 ```
 
-The server listens on UDP 27015 (`--port N`) and answers server browsers on the next port, 27016 (`--query-port N`). Each player who joins takes a bot's place. `--name NAME` sets what browsers show, and `--master HOST[:PORT]` lists the server on a master server. To play over the internet, forward both ports to the server or share a VPN. A client can add `--lag MS --jitter MS --loss PERCENT` to simulate a link. Every server and client option, the server browser, the master server, and the launcher's `serve` are in [docs/multiplayer.md](docs/multiplayer.md).
+The server listens on UDP 27015 (`--port N`) and answers queries on the next port, 27016 (`--query-port N`), which Join Server asks for the map and version before joining. Each player who joins takes a bot's place. `--name NAME` sets the name joining players see. To play over the internet, forward both ports to the server or share a VPN. A client can add `--lag MS --jitter MS --loss PERCENT` to simulate a link. Every server and client option, Join Server, and the launcher's `serve` are in [docs/multiplayer.md](docs/multiplayer.md).
 
-The server also ships as a Linux zip (with `shooter-master` and `shooter-query`), as `shooter-launcher serve`, and as a Docker image, `ghcr.io/jedborseth/shooter-server` ([docs/server.md](docs/server.md)).
+The server also ships as a Linux zip, as `shooter-launcher serve`, and as a Docker image, `ghcr.io/jedborseth/shooter-server` ([docs/server.md](docs/server.md)).
 
 ## Controls
 
@@ -169,7 +159,7 @@ The server also ships as a Linux zip (with `shooter-master` and `shooter-query`)
 | Jump; mantle at a ledge; cancel a slide | Space |
 | Fire / aim down sights | Left / right mouse |
 | Reload | R |
-| Interact: take a weapon, buy, open, revive, plant or defuse | F |
+| Interact: take a weapon, plant or defuse | F |
 | Knife (lunges at an enemy within about 3 m); while aiming at cover, mount the weapon | V |
 | Frag grenade (hold to cook) / tactical (flashbang or smoke) | G / Q |
 | Primary / secondary weapon, or switch | 1 / 2, mouse wheel |
@@ -222,7 +212,7 @@ One RON file per weapon in `godot/data/weapons/`; a debug build reloads a file w
 | BP-9 | Pistol | 3-round burst | 1150 | 30 | 35–22 | 13 | One burst kills to about 11 m. |
 | RL-4 | Launcher | Single | 60 | 1 | 200 blast | 19 | A rocket that goes off on what it meets; two spare. |
 
-`laser.ron` is the Nuketown easter egg, not a class weapon. Each class is held to a time-to-kill band by a test; the rules for recoil, spread, reloads, and equipment (frag, flashbang, smoke) are in [docs/weapons.md](docs/weapons.md).
+Each class is held to a time-to-kill band by a test; the rules for recoil, spread, reloads, and equipment (frag, flashbang, smoke) are in [docs/weapons.md](docs/weapons.md).
 
 Attachments (`rust/sim/src/weapon/def.rs`, `Attachment`), fitted in Create-a-Class. A weapon takes only those its file lists, and one optic at most:
 
@@ -240,7 +230,7 @@ Each fitted combination is its own weapon variant (`m4+reddot+grip`), so predict
 
 `just ci` runs what CI checks, except the exports: `cargo fmt --check`, `clippy -D warnings`, and `cargo test` over the Rust workspace; gdformat and gdlint; and every headless Godot test. Python unit tests for the tools (`tools/test_*.py`) run in CI too.
 
-- **Godot tests:** every `godot/tests/*_test.gd` runs headless through `.github/scripts/godot-tests.sh`, so a new test file needs no workflow change. `just test smoke_test bots_test` runs some; `just test-one net_test` runs one directly. Tests that start a server or master process run in real time; the script's header explains the lanes. [docs/ci.md](docs/ci.md) covers the pipeline and running tests locally.
+- **Godot tests:** every `godot/tests/*_test.gd` runs headless through `.github/scripts/godot-tests.sh`, so a new test file needs no workflow change. `just test smoke_test bots_test` runs some; `just test-one net_test` runs one directly. Tests that start a server process run in real time; the script's header explains the lanes. [docs/ci.md](docs/ci.md) covers the pipeline and running tests locally.
 - **GDScript style:** gdtoolkit 4.5.0, as CI runs it:
 
   ```sh
@@ -254,14 +244,12 @@ Each fitted combination is its own weapon variant (`m4+reddot+grip`), so predict
 ## Repository layout
 
 - `rust/`: the Cargo workspace.
-  - `sim/` (`shooter-sim`): the engine-free, deterministic simulation that client and server share: movement, weapons, health, equipment, hit zones, every mode's rules, Zombies, classes, streaks, progression, bots' decisions, and the netcode core in `src/net/`.
-  - `game/` (`shooter-game`): the GDExtension that puts the simulation in Godot: the player, characters, weapons' views, sound, the dedicated server and client (`src/net/`), and Zombies.
-  - `master/` (`shooter-master`, `shooter-query`): the master server behind the browser's Internet tab, and a query tool.
+  - `sim/` (`shooter-sim`): the engine-free, deterministic simulation that client and server share: movement, weapons, health, equipment, hit zones, every mode's rules, classes, streaks, progression, bots' decisions, and the netcode core in `src/net/`.
+  - `game/` (`shooter-game`): the GDExtension that puts the simulation in Godot: the player, characters, weapons' views, sound, and the dedicated server and client (`src/net/`).
   - `launcher/` (`shooter-launcher`): installs, updates, and starts the game or a dedicated server.
-  - `allocator/` (`shooter-allocator`): starts a dedicated server for each matchmade match.
-- `godot/`: the Godot project: `scenes/` (maps, the player, menus), `scripts/` (menus, HUD, settings, and the `Net` autoload in `scripts/net/`), `data/weapons/`, `assets/` (in LFS), `shaders/`, `tests/` (headless tests and capture scripts), and `addons/` (editor and Nakama plugins).
+- `godot/`: the Godot project: `scenes/` (maps, the player, menus), `scripts/` (menus, HUD, settings, and the `Net` autoload in `scripts/net/`), `data/weapons/`, `assets/` (in LFS), `shaders/`, `tests/` (headless tests and capture scripts), and `addons/` (editor plugins).
 - `tools/`: asset builders (weapons, characters, maps, props, textures, audio), map layout and blockout tools (`map_blockout/`), benchmarks, and service units.
-- `docker/`: the dedicated server image (`server/`), the allocator image, and the online stack's Compose file (`online/`).
+- `docker/`: the dedicated server image (`server/`).
 - `docs/`: design and reference pages (below); `docs/media/` holds their screenshots.
 - `.github/`: the CI workflow and its scripts; `.agents/skills/`: the project's agent skills.
 
@@ -273,7 +261,7 @@ Playing:
 - [weapons.md](docs/weapons.md): firing, recoil, aiming, reloads, equipment, and each class's time-to-kill band.
 - [settings.md](docs/settings.md): every setting, its default, and the Call of Duty option it follows.
 - [create-a-class.md](docs/create-a-class.md): Pick 10 classes, attachments, perks, wildcards, and unlocks.
-- [progression.md](docs/progression.md): XP, levels, prestige, challenges, camos, calling cards, and the career record.
+- [progression.md](docs/progression.md): XP and levels.
 - [scorestreaks.md](docs/scorestreaks.md): the streaks, how they are earned and used, and the minimap.
 - [killcam.md](docs/killcam.md): respawn, round-winning, and final killcams, and their Call of Duty timings.
 
@@ -283,15 +271,13 @@ Modes:
 - [domination.md](docs/domination.md): Domination's flags, scoring, and halftime.
 - [search-and-destroy.md](docs/search-and-destroy.md): rounds, the charge, sites, and the spectating dead.
 - [spawns.md](docs/spawns.md): how the server chooses spawns in each mode, and each map's spawn points.
-- [custom-games.md](docs/custom-games.md): custom game settings, hardcore, spectators, and the caster's view.
-- [zombies.md](docs/zombies.md): Zombies rounds, the horde, last stand, power, drinks, the mystery crate, the forge, and hounds.
+- [custom-games.md](docs/custom-games.md): custom game settings, hardcore, bots per team, and the lobby.
 - [bots.md](docs/bots.md): how bots see, aim, move, and play each mode.
 
 Online and servers:
 
-- [multiplayer.md](docs/multiplayer.md): running and joining servers, server flags, the browser, and the master server.
+- [multiplayer.md](docs/multiplayer.md): running and joining servers, server flags, Join Server, and the launcher's `serve`.
 - [netcode.md](docs/netcode.md): prediction, interpolation, lag compensation, bandwidth, and what the server checks.
-- [online.md](docs/online.md): accounts, parties, Quick Play, ranked servers, and the self-hosted Nakama stack.
 - [server.md](docs/server.md): the dedicated server's Docker image, its tags, and its options.
 - [crash-reports.md](docs/crash-reports.md): client logs and the crash collector.
 
@@ -302,7 +288,6 @@ Making the game:
 - [performance.md](docs/performance.md): the frame budget, the benchmark, and the baseline.
 - [map-design.md](docs/map-design.md): how maps are laid out, and what we took from Call of Duty's.
 - [maps.md](docs/maps.md): each map's layout and features.
-- [nuketown-lighting.md](docs/nuketown-lighting.md) and [assets/nuketown.md](docs/assets/nuketown.md): how Nuketown was exported, converted, and lit.
 - [editor-mcp.md](docs/editor-mcp.md): driving the Godot editor from a coding agent.
 - [ci.md](docs/ci.md): the CI workflow, its jobs, and how it stays fast.
 - [roadmap.md](docs/roadmap.md): the plan and the owner's decisions.

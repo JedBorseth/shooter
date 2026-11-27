@@ -28,7 +28,6 @@ func _run() -> void:
 
 	_check_buses()
 	_check_fov(settings)
-	_check_directory(settings)
 	_check_validation(settings)
 	_check_sensitivity_levels(settings)
 	_check_audio_mix(settings)
@@ -45,32 +44,6 @@ func _run() -> void:
 	settings.flush()
 	_remove(TEST_PATH)
 	_finish()
-
-
-func _check_directory(settings: Node) -> void:
-	_check(
-		settings.directory_address([]) == "borseth.ddns.net:27010",
-		"public directory uses the shared hostname"
-	)
-	_check(
-		settings.directory_address(["--directory", "127.0.0.1:27985"]) == "127.0.0.1:27985",
-		"developer flag overrides the directory"
-	)
-	for args: PackedStringArray in [
-		["--directory"], ["--directory", "  "], ["--directory", "--connect", "localhost"]
-	]:
-		_check(
-			settings.directory_address(args) == settings.DEFAULT_DIRECTORY,
-			"missing developer address keeps the default"
-		)
-	var config := ConfigFile.new()
-	config.set_value("multiplayer", "master_server", "50.67.76.237:27010")
-	config.save(TEST_PATH)
-	settings.load_settings()
-	_check(
-		settings.master_server == settings.DEFAULT_DIRECTORY,
-		"legacy saved IP migrates to the shared hostname"
-	)
 
 
 func _check_buses() -> void:
@@ -138,7 +111,6 @@ func _check_validation(settings: Node) -> void:
 	config.set_value("video", "vsync", "yes")
 	config.set_value("audio", "master_volume", NAN)
 	config.set_value("controls", "ads_sensitivity", 1.5)
-	config.set_value("multiplayer", "master_server", "  ")
 	config.save(TEST_PATH)
 	settings.load_settings()
 	_check(settings.fov == 80.0, "loaded fov clamps to 80, got %s" % settings.fov)
@@ -147,10 +119,6 @@ func _check_validation(settings: Node) -> void:
 	_check(
 		settings.ads_sensitivity == 1.5,
 		"valid loaded value is kept, got %s" % settings.ads_sensitivity
-	)
-	_check(
-		settings.master_server == settings.DEFAULTS[&"master_server"],
-		"older installs with a blank master use the public directory"
 	)
 	settings.reset_to_defaults()
 
@@ -345,7 +313,6 @@ func _check_round_trip(settings: Node) -> void:
 	settings.set_setting(&"camera_motion", false)
 	settings.set_setting(&"max_fps", 144)
 	settings.set_setting(&"weapons_volume", 0.4)
-	settings.set_setting(&"master_server", "custom.example:27010")
 	_check(settings.save_settings() == OK, "settings save")
 	_check(Engine.max_fps == 144, "frame cap applied to the engine, got %d" % Engine.max_fps)
 	var weapons := AudioServer.get_bus_index("Weapons")
@@ -367,16 +334,6 @@ func _check_round_trip(settings: Node) -> void:
 	_check(fresh.max_fps == 144, "max_fps round-trips, got %d" % fresh.max_fps)
 	_check(is_equal_approx(fresh.weapons_volume, 0.4), "weapons_volume round-trips")
 	_check(fresh.ui_volume == 0.7, "untouched setting keeps its default")
-	_check(
-		fresh.master_server == settings.DEFAULT_DIRECTORY,
-		"runtime directory overrides are not persisted"
-	)
-	var saved := ConfigFile.new()
-	saved.load(TEST_PATH)
-	_check(
-		not saved.has_section_key("multiplayer", "master_server"),
-		"directory is not a saved player setting"
-	)
 	fresh.free()
 
 	# Apply to a stand-in for the Rust player.
@@ -617,7 +574,7 @@ func _check_bindings(settings: Node) -> void:
 	_check(Glyphs.plain("pad:x") == "Square", "a PlayStation pad calls it Square")
 	_check(Glyphs.texture("pad:rt") != null, "the PlayStation set has R2")
 	_check(
-		Glyphs.plain_text("Hold [pad:x] to revive") == "Hold [Square] to revive",
+		Glyphs.plain_text("Hold [pad:x] to defuse") == "Hold [Square] to defuse",
 		"labels get the button in words"
 	)
 	Glyphs.family = Glyphs.Family.XBOX

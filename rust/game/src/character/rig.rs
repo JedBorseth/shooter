@@ -15,13 +15,10 @@ use godot::classes::animation_mixer::AnimationCallbackModeProcess;
 use godot::classes::skeleton_3d::ModifierCallbackModeProcess;
 use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
-    AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
-    AnimationNodeTimeScale, AnimationNodeTimeSeek, AnimationRootNode, AnimationTree,
-    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, PhysicsRayQueryParameters3D, Skeleton3D,
-    SphereMesh,
+    AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeTimeSeek, AnimationRootNode,
+    AnimationTree, INode3D, MeshInstance3D, Node3D, PhysicsRayQueryParameters3D, Skeleton3D,
 };
 use godot::prelude::*;
-use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::hitbox::Activity;
 use shooter_sim::hitbox::action;
 use shooter_sim::hitbox::carry::{self, Carry};
@@ -105,11 +102,6 @@ fn recoil_scale(def: &shooter_sim::weapon::WeaponDef) -> f32 {
         .map_or(REFERENCE_KICK, |k| k.length());
     (first / REFERENCE_KICK).clamp(0.6, 2.2)
 }
-
-/// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
-const ZOMBIE_WALK_SPEED: f32 = 0.95;
-/// Zombies slower than this play the shamble alone, sped up to their speed.
-const ZOMBIE_SHAMBLE_LIMIT: f32 = 2.1;
 
 // Weapon offsets from the eyes, the reload reach, and the hand placement are
 // in `shooter_sim::hitbox::carry`, shared with the arm hit zones.
@@ -241,13 +233,11 @@ impl SoldierFrame {
             mantling: self.mantling,
             vaulting: self.vaulting,
             reloading: self.reload.is_some(),
-            hound: false,
             ads: self.ads,
             velocity: to_sim(self.velocity),
             weapon: self.weapon,
             progress,
             crouch: self.crouch,
-            hunch: 0.0,
             throw: match self.action {
                 Some((ActionPose::Throw, t)) => Some(t),
                 _ => None,
@@ -339,27 +329,12 @@ pub struct SoldierRig {
     #[export]
     #[init(val = 1)]
     team: i32,
-    /// Animate as a zombie: shambling walk, arms reaching, a scratch attack,
-    /// and no weapon. Set before the rig enters the tree.
-    #[export]
-    zombie: bool,
-    /// Other bodies this character may wear instead of `Model` (zombies): one
-    /// is picked per character, `Model` included.
-    #[export]
-    variants: Array<Gd<PackedScene>>,
-    /// Wear this body instead of the seed's pick (0 is `Model`, then
-    /// `variants` in order; -1 picks by seed). For captures and tests.
-    #[export]
-    #[init(val = -1)]
-    body: i32,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
     tree: Option<Gd<AnimationTree>>,
     poser: Option<Gd<SoldierPoser>>,
     weapon: Option<(WeaponId, Gd<WeaponView>)>,
-    /// What the player shows: the camo on each weapon they hold.
-    cosmetics: Cosmetics,
     applied_team: Option<Team>,
 
     frame: SoldierFrame,
@@ -460,7 +435,6 @@ impl INode3D for SoldierRig {
     fn ready(&mut self) {
         self.was_alive = true;
         self.ik = 1.0;
-        self.pick_body();
         let Some(skeleton) = self.skeleton() else {
             godot_error!("SoldierRig: no GeneralSkeleton under Model");
             return;
@@ -468,16 +442,14 @@ impl INode3D for SoldierRig {
         let mut poser = SoldierPoser::new_alloc();
         poser.set_name("Poser");
         skeleton.clone().upcast::<Node>().add_child(&poser);
-        if !self.zombie {
-            // The knife the support hand swings in a melee, and the grenade
-            // it throws.
-            let knife = crate::knife::build();
-            self.base_mut().add_child(&knife);
-            poser.bind_mut().knife = Some(knife);
-            let grenade = crate::grenade_hold::build();
-            self.base_mut().add_child(&grenade);
-            poser.bind_mut().grenade = Some(grenade);
-        }
+        // The knife the support hand swings in a melee, and the grenade
+        // it throws.
+        let knife = crate::knife::build();
+        self.base_mut().add_child(&knife);
+        poser.bind_mut().knife = Some(knife);
+        let grenade = crate::grenade_hold::build();
+        self.base_mut().add_child(&grenade);
+        poser.bind_mut().grenade = Some(grenade);
         self.poser = Some(poser);
 
         // Every kit is one mesh, `Body`, and a decimated copy, `BodyFar`, drawn
@@ -500,14 +472,7 @@ impl INode3D for SoldierRig {
         for child in skeleton.get_children().iter_shared() {
             if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
                 mesh.set_instance_shader_parameter("variant", &variant.to_variant());
-                if self.zombie {
-                    // A horde is many bodies at mid range: drop detail sooner.
-                    mesh.set_lod_bias(ZOMBIE_LOD_BIAS);
-                }
             }
-        }
-        if self.zombie {
-            add_zombie_eyes(&skeleton);
         }
 
         let tree = self.build_tree();
@@ -519,39 +484,6 @@ impl INode3D for SoldierRig {
 
 #[godot_api]
 impl SoldierRig {
-    /// Swaps `Model` for one of `variants`, chosen by this character's seed.
-    fn pick_body(&mut self) {
-        if self.variants.is_empty() {
-            return;
-        }
-        let seed = self.base().instance_id().to_i64().unsigned_abs();
-        // Instance ids are spaced regularly, so mix the bits before picking:
-        // otherwise a horde wears only some of the bodies.
-        let pick = match usize::try_from(self.body) {
-            Ok(body) => body.min(self.variants.len()),
-            Err(_) => (splitmix(seed) % (self.variants.len() as u64 + 1)) as usize,
-        };
-        if pick == 0 {
-            return;
-        }
-        let Some(scene) = self.variants.get(pick - 1) else {
-            return;
-        };
-        let Some(mut body) = scene.try_instantiate_as::<Node3D>() else {
-            godot_error!("SoldierRig: a body variant is not a Node3D scene");
-            return;
-        };
-        let mut old = self.model.clone();
-        body.set_transform(old.get_transform());
-        let index = old.get_index();
-        self.base_mut().remove_child(&old);
-        old.queue_free();
-        body.set_name("Model");
-        self.base_mut().add_child(&body);
-        self.base_mut().move_child(&body, index);
-        *self.model = body;
-    }
-
     /// The world position of the weapon's muzzle, or the chest if unarmed.
     #[func]
     pub fn muzzle_position(&self) -> Vector3 {
@@ -781,16 +713,6 @@ impl SoldierRig {
     pub fn set_team_index(&mut self, team: i32) {
         self.team = team;
         self.apply_team();
-    }
-}
-
-impl SoldierRig {
-    /// What the player shows: the weapon in their hands wears its camo.
-    pub fn set_cosmetics(&mut self, cosmetics: &Cosmetics) {
-        self.cosmetics = cosmetics.clone();
-        if let Some((id, view)) = &mut self.weapon {
-            view.bind_mut().set_camo(cosmetics.camo_for(*id));
-        }
     }
 }
 
@@ -1165,125 +1087,107 @@ impl SoldierRig {
             let set = |tree: &mut Gd<AnimationTree>, path: &str, value: Variant| {
                 tree.set(&format!("parameters/{path}"), &value);
             };
-            if self.zombie {
-                // Walkers shamble; faster zombies blend into a jog and a run.
-                let position = if !moving {
-                    0.0
-                } else if speed < ZOMBIE_SHAMBLE_LIMIT {
-                    ZOMBIE_WALK_SPEED
-                } else {
-                    speed.min(gait::SPRINT_SPEED)
-                };
-                let rate = if moving {
-                    (speed / position.max(ZOMBIE_WALK_SPEED)).clamp(0.5, 1.8)
-                } else {
-                    1.0
-                };
-                set(tree, "walk/blend_position", position.to_variant());
-                set(tree, "walk_rate/scale", rate.to_variant());
+            // Stepping round on the spot plays the walk at the stride, as
+            // the hit zones pose it.
+            let (stand_position, walk) = if stand_position <= 0.0 && self.step > 0.0 {
+                (gait::WALK_SPEED, self.step * gait::TURN_STEP_WEIGHT)
             } else {
-                // Stepping round on the spot plays the walk at the stride, as
-                // the hit zones pose it.
-                let (stand_position, walk) = if stand_position <= 0.0 && self.step > 0.0 {
-                    (gait::WALK_SPEED, self.step * gait::TURN_STEP_WEIGHT)
-                } else {
-                    (stand_position, gait::walk_share(stand_position))
-                };
-                // The travel's direction picks the loops; each direction
-                // blends its own by speed.
+                (stand_position, gait::walk_share(stand_position))
+            };
+            // The travel's direction picks the loops; each direction
+            // blends its own by speed.
+            set(
+                tree,
+                "stand_loops/blend_position",
+                self.direction.to_variant(),
+            );
+            for (_, name, _) in DIRECTION_POINTS {
                 set(
                     tree,
-                    "stand_loops/blend_position",
-                    self.direction.to_variant(),
+                    &format!("stand_loops/{name}/blend_position"),
+                    stand_position.to_variant(),
                 );
-                for (_, name, _) in DIRECTION_POINTS {
-                    set(
-                        tree,
-                        &format!("stand_loops/{name}/blend_position"),
-                        stand_position.to_variant(),
-                    );
-                }
-                set(
-                    tree,
-                    "crouch_loop/blend_position",
-                    self.direction.to_variant(),
-                );
-                set(tree, "stand_seek/seek_request", self.stride.to_variant());
-                set(tree, "stand/blend_amount", walk.to_variant());
-                set(tree, "crouch_seek/seek_request", self.stride.to_variant());
-                let crouch_walk = if moving { 1.0f32 } else { 0.0 };
-                set(tree, "crouch/blend_amount", crouch_walk.to_variant());
-                set(
-                    tree,
-                    "climb_seek/seek_request",
-                    self.mantle_progress.to_variant(),
-                );
-                set(
-                    tree,
-                    "vault_seek/seek_request",
-                    self.mantle_progress.to_variant(),
-                );
-                set(tree, "vault_or_climb/blend_amount", self.vault.to_variant());
-                set(tree, "climb/blend_amount", self.climb.to_variant());
-                // A leg hit dips the body toward a crouch for a moment.
-                let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
-                set(tree, "stance/blend_amount", stance.to_variant());
-                // Down from the crouch to prone; the crawl runs on the
-                // stride.
-                set(
-                    tree,
-                    "prone_loop/blend_position",
-                    self.direction.to_variant(),
-                );
-                set(tree, "prone_seek/seek_request", self.stride.to_variant());
-                let crawl = if moving { 1.0f32 } else { 0.0 };
-                set(tree, "prone_move/blend_amount", crawl.to_variant());
-                set(tree, "prone/blend_amount", self.prone.to_variant());
-
-                set(tree, "slide/blend_amount", self.slide.to_variant());
-                let start = self.slide_for.map_or(1.0, |t| {
-                    (t * SLIDE_START_SPEED / (SLIDE_START_END - SLIDE_START_FROM)).min(1.0)
-                });
-                set(tree, "slide_in/blend_amount", (1.0 - start).to_variant());
-                let start_at = SLIDE_START_FROM + self.slide_for.unwrap_or(0.0) * SLIDE_START_SPEED;
-                set(
-                    tree,
-                    "slide_start_seek/seek_request",
-                    start_at.min(SLIDE_START_END).to_variant(),
-                );
-                let exit = self.slide_exit.map_or(0.0, |_| 1.0);
-                set(tree, "slide_out/blend_amount", exit.to_variant());
-                let exit_at = SLIDE_EXIT_FROM
-                    + self.slide_exit.unwrap_or(0.0) / SLIDE_EXIT_SECONDS * (0.5 - SLIDE_EXIT_FROM);
-                set(tree, "slide_exit_seek/seek_request", exit_at.to_variant());
-                set(tree, "air/blend_amount", self.air.to_variant());
-                let push = self
-                    .takeoff
-                    .map_or(0.0, |t| 1.0 - (t / TAKEOFF_SECONDS).clamp(0.0, 1.0));
-                set(tree, "jump_in/blend_amount", push.to_variant());
-                set(
-                    tree,
-                    "jump_start_seek/seek_request",
-                    (TAKEOFF_FROM + self.takeoff.unwrap_or(0.0)).to_variant(),
-                );
-                let (land_at, land) = self.landing.map_or((0.0, 0.0), |(t, s)| {
-                    let envelope = (t / 0.04).min(1.0)
-                        * (1.0 - ((t - 0.3) / (LANDING_SECONDS - 0.3)).clamp(0.0, 1.0));
-                    (t, s * envelope * LANDING_WEIGHT)
-                });
-                set(tree, "land/blend_amount", land.to_variant());
-                set(
-                    tree,
-                    "land_seek/seek_request",
-                    (LANDING_FROM + land_at).to_variant(),
-                );
-                let hold = if self.weapon.is_some() && frame.alive {
-                    1.0f32
-                } else {
-                    0.0
-                };
-                set(tree, "hold/blend_amount", hold.to_variant());
             }
+            set(
+                tree,
+                "crouch_loop/blend_position",
+                self.direction.to_variant(),
+            );
+            set(tree, "stand_seek/seek_request", self.stride.to_variant());
+            set(tree, "stand/blend_amount", walk.to_variant());
+            set(tree, "crouch_seek/seek_request", self.stride.to_variant());
+            let crouch_walk = if moving { 1.0f32 } else { 0.0 };
+            set(tree, "crouch/blend_amount", crouch_walk.to_variant());
+            set(
+                tree,
+                "climb_seek/seek_request",
+                self.mantle_progress.to_variant(),
+            );
+            set(
+                tree,
+                "vault_seek/seek_request",
+                self.mantle_progress.to_variant(),
+            );
+            set(tree, "vault_or_climb/blend_amount", self.vault.to_variant());
+            set(tree, "climb/blend_amount", self.climb.to_variant());
+            // A leg hit dips the body toward a crouch for a moment.
+            let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
+            set(tree, "stance/blend_amount", stance.to_variant());
+            // Down from the crouch to prone; the crawl runs on the
+            // stride.
+            set(
+                tree,
+                "prone_loop/blend_position",
+                self.direction.to_variant(),
+            );
+            set(tree, "prone_seek/seek_request", self.stride.to_variant());
+            let crawl = if moving { 1.0f32 } else { 0.0 };
+            set(tree, "prone_move/blend_amount", crawl.to_variant());
+            set(tree, "prone/blend_amount", self.prone.to_variant());
+
+            set(tree, "slide/blend_amount", self.slide.to_variant());
+            let start = self.slide_for.map_or(1.0, |t| {
+                (t * SLIDE_START_SPEED / (SLIDE_START_END - SLIDE_START_FROM)).min(1.0)
+            });
+            set(tree, "slide_in/blend_amount", (1.0 - start).to_variant());
+            let start_at = SLIDE_START_FROM + self.slide_for.unwrap_or(0.0) * SLIDE_START_SPEED;
+            set(
+                tree,
+                "slide_start_seek/seek_request",
+                start_at.min(SLIDE_START_END).to_variant(),
+            );
+            let exit = self.slide_exit.map_or(0.0, |_| 1.0);
+            set(tree, "slide_out/blend_amount", exit.to_variant());
+            let exit_at = SLIDE_EXIT_FROM
+                + self.slide_exit.unwrap_or(0.0) / SLIDE_EXIT_SECONDS * (0.5 - SLIDE_EXIT_FROM);
+            set(tree, "slide_exit_seek/seek_request", exit_at.to_variant());
+            set(tree, "air/blend_amount", self.air.to_variant());
+            let push = self
+                .takeoff
+                .map_or(0.0, |t| 1.0 - (t / TAKEOFF_SECONDS).clamp(0.0, 1.0));
+            set(tree, "jump_in/blend_amount", push.to_variant());
+            set(
+                tree,
+                "jump_start_seek/seek_request",
+                (TAKEOFF_FROM + self.takeoff.unwrap_or(0.0)).to_variant(),
+            );
+            let (land_at, land) = self.landing.map_or((0.0, 0.0), |(t, s)| {
+                let envelope = (t / 0.04).min(1.0)
+                    * (1.0 - ((t - 0.3) / (LANDING_SECONDS - 0.3)).clamp(0.0, 1.0));
+                (t, s * envelope * LANDING_WEIGHT)
+            });
+            set(tree, "land/blend_amount", land.to_variant());
+            set(
+                tree,
+                "land_seek/seek_request",
+                (LANDING_FROM + land_at).to_variant(),
+            );
+            let hold = if self.weapon.is_some() && frame.alive {
+                1.0f32
+            } else {
+                0.0
+            };
+            set(tree, "hold/blend_amount", hold.to_variant());
             self.was_mantling = frame.mantling;
             let _profile = crate::profile::scope("animation tree advance");
             tree.advance(f64::from(dt));
@@ -1400,31 +1304,6 @@ impl SoldierRig {
             },
             turn: self.turn,
             step: self.step,
-        }
-    }
-
-    /// A zombie's scratch attack (zombie rigs only).
-    pub fn attack(&mut self) {
-        if let Some(tree) = &mut self.tree
-            && self.zombie
-        {
-            tree.set(
-                "parameters/attack/request",
-                &(godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord()).to_variant(),
-            );
-        }
-    }
-
-    /// A zombie rocks back from a heavy hit (`Hit_Knockback`; zombie rigs
-    /// only).
-    pub fn stagger(&mut self) {
-        if let Some(tree) = &mut self.tree
-            && self.zombie
-        {
-            tree.set(
-                "parameters/stagger/request",
-                &(godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord()).to_variant(),
-            );
         }
     }
 
@@ -1843,12 +1722,7 @@ impl SoldierRig {
         self.fall_from = ragdoll.centre();
         self.fall_to = self.fall_from;
         self.came_to_rest = false;
-        let cap = if self.zombie {
-            ragdoll::MAX_SIMULATING_ZOMBIES
-        } else {
-            ragdoll::MAX_SIMULATING
-        };
-        for id in ragdoll::admit(owner, cap) {
+        for id in ragdoll::admit(owner, ragdoll::MAX_SIMULATING) {
             if id == owner {
                 continue;
             }
@@ -1934,22 +1808,20 @@ impl SoldierRig {
         };
         // The kit this character wears (face coverings), from a per-character seed.
         let seed = self.base().instance_id().to_i64().unsigned_abs();
-        let hidden_parts = palette::hidden_parts(seed, team);
+        let hidden_parts = palette::hidden_parts(seed);
         // And a face: a head shape (blend shapes on the soldier's meshes) and
         // the skin tone that goes with it.
-        let face = palette::face(seed, team);
+        let face = palette::face(seed);
         for child in skeleton.get_children().iter_shared() {
             if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
                 mesh.set_instance_shader_parameter("hidden_parts", &hidden_parts.to_variant());
-                if let Some(face) = face {
-                    let [r, g, b] = face.tone;
-                    mesh.set_instance_shader_parameter(
-                        "skin_tone",
-                        &Vector3::new(r, g, b).to_variant(),
-                    );
-                    for i in 0..mesh.get_blend_shape_count() {
-                        mesh.set_blend_shape_value(i, face.blend(i as usize));
-                    }
+                let [r, g, b] = face.tone;
+                mesh.set_instance_shader_parameter(
+                    "skin_tone",
+                    &Vector3::new(r, g, b).to_variant(),
+                );
+                for i in 0..mesh.get_blend_shape_count() {
+                    mesh.set_blend_shape_value(i, face.blend(i as usize));
                 }
                 recolour(mesh, team);
             }
@@ -1997,7 +1869,6 @@ impl SoldierRig {
             return;
         };
         view.set_name("Weapon");
-        view.bind_mut().set_camo(self.cosmetics.camo_for(id));
         self.base_mut().add_child(&view);
         crate::effects::keep_decals_off(&view.clone().upcast());
         if let Some(poser) = &mut self.poser {
@@ -2028,14 +1899,6 @@ impl SoldierRig {
             }
         }
         tree.set_root_node("../Model");
-        if self.zombie {
-            // Each zombie starts its moving loops at its own moment of a
-            // stride, so a horde that set off together does not walk in step.
-            let seed = self.base().instance_id().to_i64().unsigned_abs();
-            let phase = (splitmix(seed ^ 0x5EED_57E9) % 1024) as f32 / 1024.0;
-            let graph = zombie_graph(&tree, phase);
-            return self.finish_tree(tree, graph);
-        }
 
         let mut graph = AnimationNodeBlendTree::new_gd();
         let mut add = |name: &str, node: Gd<AnimationNode>, x: f32| {
@@ -2342,123 +2205,6 @@ fn splitmix(mut x: u64) -> u64 {
 const FAR_DISTANCE: f32 = 15.0;
 const FAR_MARGIN: f32 = 1.0;
 
-/// LOD bias for zombies (1 is the default): a horde is two dozen bodies at
-/// mid range, where the lower levels of detail look the same.
-const ZOMBIE_LOD_BIAS: f32 = 0.2;
-
-/// Eye offsets from the head bone, in skeleton space (the model faces +Z there).
-const EYE_SPREAD: f32 = 0.034;
-const EYE_UP: f32 = 0.075;
-const EYE_FORWARD: f32 = 0.095;
-
-/// Two glowing eyes on the head bone.
-fn add_zombie_eyes(skeleton: &Gd<Skeleton3D>) {
-    let head = skeleton.find_bone("Head");
-    if head < 0 {
-        godot_error!("SoldierRig: no Head bone for the zombie's eyes");
-        return;
-    }
-    let rest = skeleton.get_bone_global_rest(head);
-    let mut attachment = BoneAttachment3D::new_alloc();
-    attachment.set_name("Eyes");
-    attachment.set_bone_name("Head");
-    skeleton.clone().upcast::<Node>().add_child(&attachment);
-    let mut sphere = SphereMesh::new_gd();
-    sphere.set_radius(0.016);
-    sphere.set_height(0.026);
-    sphere.set_radial_segments(8);
-    sphere.set_rings(4);
-    sphere.set_material(&palette::zombie_eye_material());
-    for side in [-1.0, 1.0] {
-        let eye = Vector3::new(side * EYE_SPREAD, EYE_UP, EYE_FORWARD);
-        let mut mesh = MeshInstance3D::new_alloc();
-        mesh.set_mesh(&sphere);
-        mesh.set_cast_shadows_setting(
-            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
-        );
-        mesh.set_position(rest.basis.inverse() * eye);
-        attachment.add_child(&mesh);
-    }
-}
-
-/// The zombie's animation graph: a shamble that blends into a jog and a run
-/// with speed, a one-shot scratch attack, and a stagger from heavy hits.
-/// Deaths are ragdolls.
-///
-/// The moving loops start `phase` (0 to 1) of the way through.
-fn zombie_graph(tree: &Gd<AnimationTree>, phase: f32) -> Gd<AnimationNodeBlendTree> {
-    let mut graph = AnimationNodeBlendTree::new_gd();
-    let clip = |name: &str| {
-        let mut a = AnimationNodeAnimation::new_gd();
-        a.set_animation(name);
-        a
-    };
-    let looped = |name: &str| {
-        let mut a = clip(name);
-        if let Some(animation) = tree.get_animation(name) {
-            let length = animation.get_length();
-            a.set_use_custom_timeline(true);
-            a.set_timeline_length(length);
-            a.set_stretch_time_scale(false);
-            a.set_start_offset(f64::from(phase) * length);
-            a.set_loop_mode(godot::classes::animation::LoopMode::LINEAR);
-        }
-        a
-    };
-    let mut walk = AnimationNodeBlendSpace1D::new_gd();
-    walk.set_min_space(0.0);
-    walk.set_max_space(gait::SPRINT_SPEED);
-    for (name, position) in [
-        ("ual2/Zombie_Idle", 0.0),
-        ("ual2/Zombie_Walk_Fwd", ZOMBIE_WALK_SPEED),
-        ("ual1/Jog_Fwd", gait::JOG_SPEED),
-        ("ual1/Sprint", gait::SPRINT_SPEED),
-    ] {
-        let point = name.rsplit('/').next().unwrap_or(name);
-        // The idle keeps its own start: a zombie stands still only to swing
-        // or tear at a barrier, and its hit zones are fitted at that start.
-        let node = if position > 0.0 {
-            looped(name)
-        } else {
-            clip(name)
-        };
-        walk.add_blend_point_ex(&node.upcast::<AnimationRootNode>(), position)
-            .name(point)
-            .done();
-    }
-    graph.add_node("walk", &walk.upcast::<AnimationNode>());
-    graph.add_node(
-        "walk_rate",
-        &AnimationNodeTimeScale::new_gd().upcast::<AnimationNode>(),
-    );
-    let mut scratch = clip("ual2/Zombie_Scratch");
-    scratch.set_loop_mode(godot::classes::animation::LoopMode::NONE);
-    graph.add_node("attack_clip", &scratch.upcast::<AnimationNode>());
-    let mut attack = AnimationNodeOneShot::new_gd();
-    attack.set_fadein_time(0.08);
-    attack.set_fadeout_time(0.25);
-    graph.add_node("attack", &attack.upcast::<AnimationNode>());
-    // A heavy hit rocks it back.
-    let mut knockback = clip("ual2/Hit_Knockback");
-    knockback.set_loop_mode(godot::classes::animation::LoopMode::NONE);
-    graph.add_node("stagger_clip", &knockback.upcast::<AnimationNode>());
-    let mut stagger = AnimationNodeOneShot::new_gd();
-    stagger.set_fadein_time(0.05);
-    stagger.set_fadeout_time(0.2);
-    graph.add_node("stagger", &stagger.upcast::<AnimationNode>());
-    for (to, port, from) in [
-        ("walk_rate", 0, "walk"),
-        ("attack", 0, "walk_rate"),
-        ("attack", 1, "attack_clip"),
-        ("stagger", 0, "attack"),
-        ("stagger", 1, "stagger_clip"),
-        ("output", 0, "stagger"),
-    ] {
-        graph.connect_node(to, port, from);
-    }
-    graph
-}
-
 /// Swaps each surface's imported material for the team's material of its kit.
 fn recolour(mut mesh: Gd<MeshInstance3D>, team: Team) {
     let Some(source) = mesh.get_mesh() else {
@@ -2640,22 +2386,5 @@ mod section_tests {
     #[test]
     fn nothing_at_the_marker_gives_no_section() {
         assert_eq!(section_bounds(&[], Vector3::ZERO), None);
-    }
-}
-
-#[cfg(test)]
-mod body_pick_tests {
-    use super::splitmix;
-
-    #[test]
-    fn regularly_spaced_seeds_reach_every_body() {
-        // Godot's instance ids step by fixed strides; every body must show up.
-        for stride in [1u64, 2, 7, 8, 64, 4096] {
-            let mut seen = [false; 5];
-            for i in 0..40u64 {
-                seen[(splitmix(0x1_0000 + i * stride) % 5) as usize] = true;
-            }
-            assert!(seen.iter().all(|s| *s), "stride {stride}: {seen:?}");
-        }
     }
 }

@@ -50,9 +50,9 @@
 //! through the same inputs players send. Without one, bots are scripted
 //! targets for tests.
 //!
-//! It also answers server browser queries on its query port (the game port
-//! plus one) and, given a master server, keeps itself listed there
-//! (`super::discovery`).
+//! It also answers queries on its query port (the game port plus one), so a
+//! game joining by address can learn its map and version first
+//! (`super::query`).
 //!
 //! Started by `scripts/net/bootstrap.gd` with `-- --server`, or automatically
 //! in a dedicated server export.
@@ -69,9 +69,7 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
-use shooter_sim::chopper::{self, Chopper};
 use shooter_sim::class::{self, Class};
-use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::custom;
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
@@ -81,9 +79,7 @@ use shooter_sim::hardpoint::{self, HardpointRules, HardpointState, HillTime, Hol
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
 use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
-use shooter_sim::missile::{self, Bomblet, Missile};
 use shooter_sim::net::bandwidth::Probe;
-use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::integrity::{self, Flag, PacketLimit, Verdict, Watch};
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
@@ -94,12 +90,12 @@ use shooter_sim::net::protocol::{
     PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot,
     StreakEvent, UseView, ZoneView,
 };
+use shooter_sim::net::query::{ServerInfo, query_port_for};
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::progression::{Earned, Outcome};
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -108,30 +104,20 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
-use shooter_sim::stats;
 use shooter_sim::streak::{self, Loadout, Sky, Streak, StreakState};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
     Transition,
 };
-use shooter_sim::turret::{self, Turret, TurretHit, Turrets};
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
-use shooter_sim::zombies::alt_ammo::{self, AltAmmo};
-use shooter_sim::zombies::drinks::{self, Drink, Drinks};
-use shooter_sim::zombies::forge;
-use shooter_sim::zombies::{self, laststand};
 use shooter_sim::{Vec2, Vec3, rng};
 
-use super::accounts::{self, AccountState, MatchShare};
 use super::bots::{
     BotAircraft, BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
     ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
 };
-use super::discovery::QueryResponder;
-use super::horde::{Horde, HordeEvent, HordePlayer};
-use super::machines::CrateChange;
 use super::match_log::{MatchLog, RoundLog};
-use super::props::{PropExplosion, PropSnapshot, PropsBridge};
+use super::query::QueryResponder;
 use super::snd_plan::{Intel, SndPlan};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -146,31 +132,14 @@ use crate::target::WORLD_LAYER;
 /// player and its UI, practice targets, and the sentry turret (it would damage
 /// players without the server knowing). Weapon racks stay: they are solid, and
 /// players take weapons from them through their input.
-const CLIENT_ONLY_NODES: [&str; 6] = [
-    "Player",
-    "HUD",
-    "PauseMenu",
-    "Targets",
-    "Sentry",
-    "SecretLaser",
-];
+const CLIENT_ONLY_NODES: [&str; 5] = ["Player", "HUD", "PauseMenu", "Targets", "Sentry"];
 
 /// Seconds a new connection has to say hello.
 const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
-/// How often a player's match stats go to their game while they change:
-/// often enough for a challenge's popup to follow the kill that finished it.
-const STATS_INTERVAL_TICKS: Tick = 2 * TICK_RATE;
 /// A little more than the client's weapon rack reach (`FpsPlayer::interact_distance`).
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
 const FIRST_BOT_ID: u8 = 200;
-/// Spectators get ids from here up, between players' and bots'.
-const FIRST_SPECTATOR_ID: u8 = 100;
-/// Most spectators a server takes (Black Ops 2's CODcaster lobbies take a
-/// few casters beside the twelve players).
-const MAX_SPECTATORS: u8 = 8;
-/// Why a ranked server turns a spectator away.
-const NO_RANKED_SPECTATORS: &str = "Spectating is off on ranked servers.";
 /// Seconds a death keeps nearby spawn points unattractive.
 const RECENT_DEATH_SECONDS: u32 = 5;
 /// Ticks between scoreboard updates when nothing scored.
@@ -261,22 +230,18 @@ pub struct NetServer {
     /// differently (the bot bench). 0 keeps the usual seeds.
     #[export]
     bot_seed: i32,
-    /// Name shown in server browsers.
+    /// Name a game joining this server shows.
     #[export]
     #[init(val = GString::from("Shooter server"))]
     server_name: GString,
-    /// Map name shown in server browsers.
+    /// Map name queries answer with; a joining game loads this map.
     #[export]
     #[init(val = GString::from("Arena"))]
     map_name: GString,
-    /// UDP port that answers server browser queries; 0 means `port + 1`, and
-    /// -1 turns queries off.
+    /// UDP port that answers queries; 0 means `port + 1`, and -1 turns
+    /// queries off.
     #[export]
     query_port: i32,
-    /// Master server (`host[:port]`) to stay listed on, or empty for LAN and
-    /// direct connects only.
-    #[export]
-    master_server: GString,
     /// Points a team needs to win: kills in Team Deathmatch, captures in
     /// Capture the Flag, points in Hardpoint and Domination. 0 uses the
     /// mode's usual limit.
@@ -290,15 +255,6 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
-    /// Check accounts (`accounts.rs`, docs/online.md): admit only signed-in
-    /// players the account server vouches for, refuse classes and streaks
-    /// they have not unlocked, and report their match XP. The account
-    /// server is asked through the `account_check` and `account_award`
-    /// signals.
-    #[export]
-    accounts: bool,
-    /// Numbers account checks, so a late answer finds its connection.
-    account_serial: i64,
     /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag),
     /// "hardpoint", "dom" (Domination), "gungame", or "snd" (Search and
     /// Destroy).
@@ -327,13 +283,9 @@ pub struct NetServer {
     /// away, and counted (`bandwidth_report`).
     #[export]
     bandwidth_probe_rtt_ms: f32,
-    /// Zombies: zombies swing but their strikes do no harm, so a bench keeps
-    /// its players up through a long round.
-    #[export]
-    zombies_harmless: bool,
     /// The host's custom game settings, in the text form
     /// `shooter_sim::custom::Settings::parse` reads ("hardcore=on,ff=reflect");
-    /// empty for the normal rules. Ranked servers (`accounts`) ignore them.
+    /// empty for the normal rules.
     #[export]
     custom_settings: GString,
     /// The custom settings in force, parsed from `custom_settings`.
@@ -415,18 +367,6 @@ pub struct NetServer {
     roofed: bool,
     /// Care Packages called in and not yet taken (`shooter_sim::care_package`).
     crates: care_package::Crates,
-    /// Airstrike strikes on their way (`shooter_sim::streak`).
-    strikes: streak::Strikes,
-    /// Sentry Guns set down (`shooter_sim::turret`).
-    turrets: Turrets,
-    /// Guided Missiles in the air and their bomblets
-    /// (`shooter_sim::missile`), and the next missile's id.
-    missiles: Vec<Flight>,
-    bomblets: Vec<Bomblet>,
-    next_missile: u16,
-    /// Attack Choppers called in (`shooter_sim::chopper`), and the next id.
-    choppers: Vec<Chopper>,
-    next_chopper: u16,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -451,20 +391,8 @@ pub struct NetServer {
     /// Hardpoint: living players of each team in the live zone, as of the
     /// last tick (for overtime).
     hill_presence: [u32; tdm::TEAM_COUNT],
-    /// The map's interactive props manager, when the map has one.
-    props: PropsBridge,
-    /// Population last sent to the props manager, to avoid redundant calls.
-    props_population: Option<i32>,
-    /// Ticks until looking for the props manager again (maps without props
-    /// never pay more than a group lookup every couple of seconds).
-    props_retry: u32,
     /// Every live grenade.
     grenades: GrenadeSim,
-    /// Zombies: the horde, the windows, and the rounds.
-    horde: Option<Horde>,
-    /// The round event last sent to everyone, to send it again only when
-    /// it changes.
-    zombies_round_sent: Option<protocol::ZombiesEvent>,
     /// Smoke clouds still hanging, oldest first: bots see through them
     /// only as far as they allow, and snapshots carry them so players who
     /// join after one popped still see it.
@@ -472,8 +400,6 @@ pub struct NetServer {
     /// The latest kill of the match (or the Search and Destroy round), for
     /// the killcam that ends it.
     last_kill: Option<KillRecord>,
-    /// The caster's rows last sent to spectators (`GameEvent::Caster`).
-    caster_sent: Vec<protocol::CasterRow>,
 }
 
 /// A smoke cloud still hanging.
@@ -490,14 +416,9 @@ struct ClientSlot {
     peer: Gd<ENetPacketPeer>,
     /// Set once the hello is accepted.
     player: Option<u8>,
-    /// Watching, not playing: `player` is a spectator id
-    /// (`FIRST_SPECTATOR_ID` up), with no body and no team.
-    spectator: bool,
     inputs: InputQueue,
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
-    /// Zombies: newest acknowledged snapshot that carried the horde.
-    zombie_ack: Option<Tick>,
     connected_at: Tick,
     /// The newest view tick the client sent, for shots fired by inputs
     /// without one.
@@ -518,23 +439,6 @@ struct ClientSlot {
     limit: PacketLimit,
     /// Disconnected for abuse: whatever it still sends is ignored.
     kicked: bool,
-    /// The account behind this connection, on a server with `accounts`.
-    account: AccountState,
-    /// The class and streaks last asked for, applied once the account is
-    /// known (`accounts`).
-    wanted_class: Option<Class>,
-    wanted_streaks: Option<Loadout>,
-    /// The cosmetics last asked for, and what the server lets them show
-    /// (`shooter_sim::cosmetics`).
-    wanted_cosmetics: Option<Cosmetics>,
-    cosmetics: Cosmetics,
-}
-
-impl ClientSlot {
-    /// Admitted as a player (not a spectator).
-    fn playing(&self) -> bool {
-        self.player.is_some() && !self.spectator
-    }
 }
 
 struct Avatar {
@@ -571,10 +475,6 @@ struct Avatar {
     hill: HillTime,
     /// Holding interact, as of the last input applied.
     interact: bool,
-    /// Zombies: points, kills, and the rest of the co-op scoreboard.
-    zombies: ZombiesStats,
-    /// Zombies: down in last stand, waiting for a revive.
-    last_stand: Option<LastStand>,
     /// Aim, view tick, and input flow heuristics (`integrity`).
     watch: Watch,
     /// Scorestreaks (`shooter_sim::streak`): the three this life counts
@@ -584,47 +484,6 @@ struct Avatar {
     streak_wanted: Loadout,
     streaks: StreakState,
     streak_seen: u32,
-    /// Flying a Guided Missile: which, and the pilot's last steering.
-    pilot: Option<Pilot>,
-    /// This match's playing time and weapon kills, for the account.
-    share: MatchShare,
-}
-
-/// A player down in last stand.
-#[derive(Clone, Copy, Debug)]
-struct LastStand {
-    /// Seconds until they bleed out (the clock stops during a revive).
-    bleed_left: f32,
-    /// What they carried when they went down, given back on a revive.
-    stored: CombatState,
-    /// Points they lost going down, which their reviver earns.
-    lost: u32,
-    /// Who is reviving them, and for how long so far.
-    reviver: Option<u8>,
-    revived_for: f32,
-    /// A lone player with Second Wind: they get back up by themselves after
-    /// `drinks::SELF_REVIVE_SECONDS`, and the game goes on meanwhile.
-    self_revive: bool,
-}
-
-/// One player's Zombies tallies.
-#[derive(Clone, Debug, Default)]
-struct ZombiesStats {
-    points: u32,
-    kills: u32,
-    headshots: u32,
-    downs: u32,
-    revives: u32,
-    /// Seconds into the board being put back on a window, and what
-    /// rebuilding has earned this round, paid or past the cap.
-    rebuild_for: f32,
-    rebuilt: u32,
-    /// The last tick they held use at a window.
-    rebuild_seen: Option<Tick>,
-    /// Their re-packed weapons' alternate ammo.
-    alt_ammo: Vec<(WeaponId, AltAmmo)>,
-    /// Zombies ignore them until this tick (just revived).
-    ignored_until: Tick,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -698,13 +557,15 @@ struct Fighter {
     spawned_at: Tick,
 }
 
-/// One pellet's hit on a damageable prop, before player hits are known.
-struct PropHit {
-    id: u16,
-    /// Distance from the eye, to compare with player hits.
-    distance: f32,
-    direction: Vec3,
+/// An explosion the server applies to players (a planted charge).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Blast {
+    position: Vec3,
+    radius: f32,
     damage: f32,
+    outer_damage: f32,
+    /// The player credited with the explosion, if any.
+    attacker: Option<u8>,
 }
 
 #[godot_api]
@@ -758,11 +619,6 @@ impl INode3D for NetServer {
             },
         );
         self.params.health = self.custom.health_params(self.params.health);
-        if self.game == Mode::Zombies {
-            // The horde ends the game, not a clock or a score.
-            self.rules.score_limit = 0;
-            self.rules.time_limit = None;
-        }
         if self.game == Mode::SearchAndDestroy {
             // Rounds won are the score, and there is no match clock.
             self.snd_rules = SndRules {
@@ -888,12 +744,6 @@ impl INode3D for NetServer {
         self.start_query_responder();
     }
 
-    fn exit_tree(&mut self) {
-        if let Some(responder) = &mut self.responder {
-            responder.goodbye();
-        }
-    }
-
     fn physics_process(&mut self, _delta: f64) {
         let Some(mut host) = self.host.clone() else {
             return;
@@ -946,7 +796,6 @@ impl INode3D for NetServer {
         self.update_scavenger();
         self.update_streaks();
         self.update_match();
-        self.update_props();
         drop(modes);
         self.tick += 1;
         if self
@@ -960,8 +809,6 @@ impl INode3D for NetServer {
         if self.tick >= self.next_scoreboard {
             self.broadcast_scoreboard();
         }
-        self.send_stats(false);
-        self.send_caster();
         self.send_events();
         host.flush();
         drop(net_out);
@@ -973,11 +820,9 @@ impl INode3D for NetServer {
             }
         }
 
-        let players = self.clients.iter().filter(|c| c.playing()).count();
-        let bots = self.avatars.iter().filter(|a| a.bot).count();
+        let players = self.clients.iter().filter(|c| c.player.is_some()).count();
         if let Some(responder) = &mut self.responder {
             responder.info.players = players.min(255) as u8;
-            responder.info.bots = bots.min(255) as u8;
             responder.poll();
         }
     }
@@ -985,19 +830,10 @@ impl INode3D for NetServer {
 
 impl NetServer {
     /// The custom settings this server runs: `custom_settings` parsed, or
-    /// the normal rules on a ranked server, in Zombies, or when they do not
-    /// parse.
+    /// the normal rules when they do not parse.
     fn read_custom_settings(&self) -> custom::Settings {
         let text = self.custom_settings.to_string();
         if text.trim().is_empty() {
-            return custom::Settings::default();
-        }
-        if self.accounts {
-            godot_print!("server: ranked: custom settings ignored ({text})");
-            return custom::Settings::default();
-        }
-        if self.game == Mode::Zombies {
-            godot_print!("server: Zombies keeps its own rules; custom settings ignored");
             return custom::Settings::default();
         }
         match custom::Settings::parse(&text) {
@@ -1012,43 +848,13 @@ impl NetServer {
         }
     }
 
-    /// Sends spectators every player's class and scorestreaks
-    /// (`GameEvent::Caster`) twice a second, when they changed.
-    fn send_caster(&mut self) {
-        if !self.tick.is_multiple_of(TICK_RATE / 2) || !self.clients.iter().any(|c| c.spectator) {
-            return;
-        }
-        let mut rows: Vec<protocol::CasterRow> = self
-            .avatars
-            .iter()
-            .map(|a| protocol::CasterRow {
-                id: a.id,
-                class: self.custom.loadouts.restrict(a.class),
-                streaks: a.streak_loadout,
-                progress: a.streaks.progress,
-                held: a.streaks.held.clone(),
-            })
-            .collect();
-        rows.sort_by_key(|r| r.id);
-        if rows == self.caster_sent {
-            return;
-        }
-        let event = GameEvent::Caster(rows.clone());
-        self.caster_sent = rows;
-        for client in self.clients.iter_mut().filter(|c| c.spectator) {
-            client.outbox.push(event.clone());
-        }
-    }
-
-    /// A player asks to change teams in the lobby (a private match's team
-    /// swap): they move to the other team and respawn there, and the bots
+    /// A player asks to change teams in the lobby: they move to the other team and respawn there, and the bots
     /// even out. Only before the countdown, and only in team modes.
     fn switch_team(&mut self, index: usize) {
         let client = &self.clients[index];
-        if !client.playing()
+        if client.player.is_none()
             || self.match_state.phase != Phase::Lobby
             || self.game.free_for_all()
-            || self.game == Mode::Zombies
         {
             return;
         }
@@ -1102,67 +908,6 @@ impl NetServer {
 
 #[godot_api]
 impl NetServer {
-    /// `accounts`: a joining player's account session token, to be checked
-    /// with the account server; answer with `accept_account` or
-    /// `deny_account` and the same `serial`.
-    #[signal]
-    fn account_check(serial: i64, token: GString);
-
-    /// `accounts`: a player's match, to add to their account: `xp` (score,
-    /// bonus, and the challenges it completed), `weapon_kills` (plain weapon
-    /// key to count), and `stats` (stat key to count).
-    #[signal]
-    fn account_award(user_id: GString, award: VarDictionary);
-
-    /// The account server vouched for the player of check `serial`: their
-    /// account id, username (the name others see), and progress (`xp`,
-    /// `prestige`, `weapon_kills`, `stats`, as the account server keeps
-    /// them). Lets them in.
-    #[func]
-    fn accept_account(
-        &mut self,
-        serial: i64,
-        user_id: GString,
-        username: GString,
-        progress: VarDictionary,
-    ) {
-        let Some(index) = self.pending_account(serial) else {
-            return;
-        };
-        let user_id = user_id.to_string();
-        if self
-            .clients
-            .iter()
-            .any(|c| c.account.user_id() == Some(user_id.as_str()))
-        {
-            return self.deny(index, accounts::ALREADY_PLAYING);
-        }
-        let AccountState::Pending { name, .. } = std::mem::take(&mut self.clients[index].account)
-        else {
-            return;
-        };
-        let username = username.to_string();
-        let name = if username.is_empty() { name } else { username };
-        self.clients[index].account = AccountState::Verified {
-            user_id,
-            earned: accounts::earned_from(&progress),
-        };
-        // What they asked for while they waited, now that it can be checked.
-        self.apply_wanted_class(index);
-        self.apply_wanted_streaks(index);
-        self.apply_wanted_cosmetics(index);
-        self.admit(index, &name);
-    }
-
-    /// The account server refused the player of check `serial` (or could
-    /// not be reached): they are told `reason` and disconnected.
-    #[func]
-    fn deny_account(&mut self, serial: i64, reason: GString) {
-        if let Some(index) = self.pending_account(serial) {
-            self.deny(index, &reason.to_string());
-        }
-    }
-
     /// Bandwidth bench: starts counting from zero (after a warm-up).
     #[func]
     fn start_bandwidth_probe(&mut self) {
@@ -1231,12 +976,6 @@ impl NetServer {
     #[func]
     fn player_count(&self) -> i32 {
         self.avatars.len() as i32
-    }
-
-    /// Connections from games, joined or still joining (no bots).
-    #[func]
-    fn connection_count(&self) -> i32 {
-        self.clients.len() as i32
     }
 
     #[func]
@@ -1471,7 +1210,7 @@ impl NetServer {
 
     /// The latest kill of the match by one player of another (tests):
     /// `killer`, `victim`, the `weapon` key, and whether it was the weapon in
-    /// hand (`by_weapon`, false for equipment, the knife, and streaks).
+    /// hand (`by_weapon`, false for equipment, the knife, and the charge).
     /// Empty before any.
     #[func]
     fn last_kill(&self) -> VarDictionary {
@@ -1481,9 +1220,6 @@ impl NetServer {
             d.set("victim", i64::from(kill.victim));
             d.set("weapon", &GString::from(kill.weapon.def().key.as_str()));
             d.set("by_weapon", kill.cause == protocol::KillCause::Weapon);
-            if let protocol::KillCause::Streak(streak) = kill.cause {
-                d.set("streak", streak.key());
-            }
         }
         d
     }
@@ -1543,19 +1279,6 @@ impl NetServer {
             .map_or(0, |a| a.streaks.progress as i32)
     }
 
-    /// Debug: player `id` calls in their held Airstrike on `points` (tests).
-    #[func]
-    fn debug_airstrike(&mut self, id: i32, points: PackedVector3Array) {
-        let marks: Vec<shooter_sim::Vec2> = points
-            .as_slice()
-            .iter()
-            .map(|p| shooter_sim::Vec2::new(p.x, p.z))
-            .collect();
-        if let Ok(id) = u8::try_from(id) {
-            let _ = self.use_streak(id, Streak::Airstrike, &marks);
-        }
-    }
-
     /// Debug: player `id` holds scorestreak `key` as if earned (tests).
     #[func]
     fn debug_give_streak(&mut self, id: i32, key: GString) {
@@ -1604,7 +1327,7 @@ impl NetServer {
     #[func]
     fn debug_use_streak(&mut self, id: i32, key: GString) {
         if let (Ok(id), Some(streak)) = (u8::try_from(id), Streak::by_key(&key.to_string())) {
-            let _ = self.use_streak(id, streak, &[]);
+            let _ = self.use_streak(id, streak);
         }
     }
 
@@ -1862,95 +1585,6 @@ impl NetServer {
         }
     }
 
-    /// The Attack Choppers up (tests), as dictionaries with `id`, `owner`,
-    /// `position` now, `position_in_1s`, `damage`, and `target` (-1 for
-    /// none).
-    #[func]
-    fn choppers(&self) -> Array<VarDictionary> {
-        let now = f64::from(self.tick);
-        self.choppers
-            .iter()
-            .map(|c| {
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(c.id));
-                d.set("owner", i32::from(c.owner));
-                d.set("position", to_godot(c.position(now)));
-                d.set(
-                    "position_in_1s",
-                    to_godot(c.position(now + f64::from(TICK_RATE))),
-                );
-                d.set("damage", c.damage);
-                d.set("target", c.target.map_or(-1, |(id, _)| i32::from(id)));
-                d
-            })
-            .collect()
-    }
-
-    /// The Guided Missiles in the air (tests), as dictionaries with `id`,
-    /// `owner`, `position`, `split`, and `exploded`.
-    #[func]
-    fn missiles(&self) -> Array<VarDictionary> {
-        self.missiles
-            .iter()
-            .map(|f| {
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(f.missile.id));
-                d.set("owner", i32::from(f.missile.owner));
-                d.set("position", to_godot(f.missile.position));
-                d.set("split", f.missile.split);
-                d.set("exploded", f.exploded);
-                d
-            })
-            .collect()
-    }
-
-    /// Whether player `id` is flying a Guided Missile (tests).
-    #[func]
-    fn player_piloting(&self, id: i32) -> bool {
-        self.avatars
-            .iter()
-            .any(|a| i32::from(a.id) == id && a.pilot.is_some())
-    }
-
-    /// Debug: player `id` steers their Guided Missile toward `at`
-    /// (boosting if `boost`, splitting it if `split`), as their client's
-    /// steering would (tests).
-    #[func]
-    fn debug_steer_missile(&mut self, id: i32, at: Vector3, boost: bool, split: bool) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) else {
-            return;
-        };
-        let Some(pilot) = &mut avatar.pilot else {
-            return;
-        };
-        if let Some(flight) = self.missiles.iter().find(|f| f.missile.id == pilot.missile) {
-            pilot.view = shooter_sim::look::bearing(flight.missile.position, to_sim(at));
-        }
-        pilot.boost = boost;
-        pilot.split |= split;
-    }
-
-    /// The Sentry Guns set down (tests), as dictionaries with `id`,
-    /// `owner`, `position` (its feet), `centre` (where shots meet it),
-    /// `damage`, and `target` (the player it is on, -1 for none).
-    #[func]
-    fn turrets(&self) -> Array<VarDictionary> {
-        self.turrets
-            .list
-            .iter()
-            .map(|t| {
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(t.id));
-                d.set("owner", i32::from(t.owner));
-                d.set("position", to_godot(t.at));
-                d.set("centre", to_godot(t.centre()));
-                d.set("damage", t.damage);
-                d.set("target", t.target.map_or(-1, |(id, _)| i32::from(id)));
-                d
-            })
-            .collect()
-    }
-
     /// The UAVs and Counter-UAVs up (tests), as dictionaries with `id`,
     /// `streak`, `owner`, `side`, `position` now, `position_in_1s`, and
     /// `damage`.
@@ -2064,484 +1698,6 @@ impl NetServer {
             .and_then(|t| self.match_state.scores.get(t))
             .map_or(0, |s| i64::from(*s))
     }
-
-    /// Zombies: the round being played or counted down to (0 outside Zombies).
-    #[func]
-    fn zombies_round(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.round() as i32)
-    }
-
-    /// Zombies: "break", "fighting", or "over" ("" outside Zombies).
-    #[func]
-    fn zombies_phase(&self) -> GString {
-        let Some(horde) = &self.horde else {
-            return GString::new();
-        };
-        GString::from(if horde.over() {
-            "over"
-        } else if horde.fighting() {
-            "fighting"
-        } else {
-            "break"
-        })
-    }
-
-    /// Zombies: zombies alive now.
-    #[func]
-    fn zombie_count(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.alive() as i32)
-    }
-
-    /// Zombies: every living zombie's id, feet, and health (tests).
-    #[func]
-    fn zombies_alive(&self) -> Array<VarDictionary> {
-        let mut out = Array::new();
-        let Some(horde) = &self.horde else {
-            return out;
-        };
-        for (id, feet) in horde.living() {
-            out.push(&vdict! {
-                "id" => i64::from(id),
-                "position" => to_godot(feet),
-                "health" => horde.health(id).unwrap_or(0.0),
-                "hound" => horde.is_hound(id),
-            });
-        }
-        out
-    }
-
-    /// Zombies: boards up on window `index`, or -1 if there is none.
-    #[func]
-    fn window_boards(&self, index: i32) -> i32 {
-        self.horde
-            .as_ref()
-            .and_then(|h| h.window_boards(usize::try_from(index).ok()?))
-            .map_or(-1, i32::from)
-    }
-
-    /// Zombies: tears window `index` down to `boards` boards (tests).
-    #[func]
-    fn debug_set_boards(&mut self, index: i32, boards: i32) {
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        let (Ok(index), Ok(boards)) = (usize::try_from(index), u8::try_from(boards)) else {
-            return;
-        };
-        horde.set_boards(index, boards);
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
-            window: index as u8,
-            boards,
-        }));
-    }
-
-    /// Zombies: makes `round` the next hound round (tests and benches).
-    #[func]
-    fn debug_next_hound_round(&mut self, round: i32) {
-        if let Some(horde) = &mut self.horde {
-            horde.set_next_hound_round(round.max(1) as u32);
-        }
-    }
-
-    /// Zombies: moves zombie `id` to `at` (tests).
-    #[func]
-    fn debug_place_zombie(&mut self, id: i32, at: Vector3) {
-        if let (Some(horde), Ok(id)) = (&mut self.horde, u8::try_from(id)) {
-            horde.place(id, to_sim(at));
-        }
-    }
-
-    /// Zombies: trap `index`'s phase ("idle", "active", "cooling"), or ""
-    /// (tests).
-    #[func]
-    fn trap_phase(&self, index: i32) -> GString {
-        self.horde
-            .as_ref()
-            .and_then(|h| Some(h.trap_phase(usize::try_from(index).ok()?)))
-            .map_or(GString::new(), GString::from)
-    }
-
-    /// Zombies: whether this round is a hound round.
-    #[func]
-    fn hound_round(&self) -> bool {
-        self.horde.as_ref().is_some_and(|h| h.hound_round())
-    }
-
-    /// Zombies: strikes whose hound has yet to arrive (tests).
-    #[func]
-    fn hound_strikes(&self) -> i32 {
-        self.horde
-            .as_ref()
-            .map_or(0, |h| h.strikes_pending() as i32)
-    }
-
-    /// Zombies: windows on the map.
-    #[func]
-    fn window_count(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.window_count() as i32)
-    }
-
-    /// Zombies: a player's points.
-    #[func]
-    fn player_points(&self, id: i32) -> i64 {
-        self.avatars
-            .iter()
-            .find(|a| i32::from(a.id) == id)
-            .map_or(0, |a| i64::from(a.zombies.points))
-    }
-
-    /// Zombies: doors on the map, and whether door `index` is open.
-    #[func]
-    fn door_count(&self) -> i32 {
-        self.horde.as_ref().map_or(0, |h| h.door_count() as i32)
-    }
-
-    #[func]
-    fn door_open(&self, index: i32) -> bool {
-        self.horde
-            .as_ref()
-            .zip(usize::try_from(index).ok())
-            .is_some_and(|(h, i)| h.door_open(i))
-    }
-
-    /// Zombies: player `id` uses door (`kind` "door"), window ("window"),
-    /// drink machine ("drink") `index`, or the power switch ("power") this
-    /// tick, as if looking at it with the use button held; `pressed` on the
-    /// first tick (tests).
-    #[func]
-    fn debug_use(&mut self, id: i32, kind: GString, index: i32, pressed: bool) {
-        let (Ok(id), Ok(index)) = (u8::try_from(id), usize::try_from(index)) else {
-            return;
-        };
-        let node = self
-            .horde
-            .as_ref()
-            .and_then(|h| match kind.to_string().as_str() {
-                "door" => h.door_node(index),
-                "drink" => h.machines.drink_machine_node(index),
-                "trap" => h.machines.traps.get(index).map(|t| t.node.clone().upcast()),
-                "power" => h.machines.power_switch_node(),
-                "crate" => h.machines.mystery.as_ref()?.spot_node(index),
-                "forge" => h.machines.forge.as_ref().map(|f| f.node()),
-                _ => h.window_node(index),
-            });
-        if let Some(node) = node {
-            self.zombies_uses(vec![(id, node, pressed)]);
-        }
-    }
-
-    /// Zombies: whether the power is on.
-    #[func]
-    fn power_on(&self) -> bool {
-        self.horde.as_ref().is_some_and(|h| h.machines.power())
-    }
-
-    /// Zombies: the mystery crate's spot and phase ("idle", "cycling",
-    /// "offering", "duck", "away"), every spot's phase (`phases`, "hidden"
-    /// where there is no crate), the price of a spin, and the weapon the
-    /// crate's own spot holds out, if any (tests).
-    #[func]
-    fn mystery_crate(&self) -> VarDictionary {
-        let Some(crate_) = self
-            .horde
-            .as_ref()
-            .and_then(|h| h.machines.mystery.as_ref())
-        else {
-            return VarDictionary::new();
-        };
-        let at = crate_.at();
-        let offered = self
-            .avatars
-            .iter()
-            .find_map(|a| crate_.offered(at, a.id).map(|w| (a.id, w)));
-        let phases: PackedStringArray = (0..crate_.spot_count())
-            .map(|spot| GString::from(crate_.phase_name(spot)))
-            .collect();
-        vdict! {
-            "spot" => at as i64,
-            "spots" => crate_.spot_count() as i64,
-            "phase" => crate_.phase_name(at),
-            "phases" => &phases,
-            "price" => i64::from(crate_.price()),
-            "weapon" => &offered.map_or(GString::new(), |(_, w)| GString::from(&w.def().key)),
-            "for" => offered.map_or(-1, |(id, _)| i64::from(id)),
-        }
-    }
-
-    /// Zombies: the forge's phase ("idle", "working", "offering"), or "" on
-    /// a map without one (tests).
-    #[func]
-    fn forge_phase(&self) -> GString {
-        self.horde
-            .as_ref()
-            .and_then(|h| h.machines.forge.as_ref())
-            .map_or(GString::new(), |f| GString::from(f.phase_name()))
-    }
-
-    /// Zombies: player `id` takes the upgrade the forge holds out to them,
-    /// as a press of use looking at it would (tests).
-    #[func]
-    fn debug_take_from_forge(&mut self, id: i32) -> bool {
-        let Ok(id) = u8::try_from(id) else {
-            return false;
-        };
-        let Some(forge_) = self.horde.as_mut().and_then(|h| h.machines.forge.as_mut()) else {
-            return false;
-        };
-        let Some(weapon) = forge_.offered(id) else {
-            return false;
-        };
-        let taken = forge_.taken();
-        self.debug_pick_up(id, weapon);
-        self.broadcast_forge();
-        if let Some((by, weapon, repack)) = taken {
-            self.set_alt_ammo(by, weapon, repack);
-        }
-        true
-    }
-
-    /// Zombies: the alternate ammo on player `id`'s `weapon` (a key), or ""
-    /// (tests).
-    #[func]
-    fn alt_ammo_of(&self, id: i32, weapon: GString) -> GString {
-        let Some(weapon) = WeaponId::by_key(&weapon.to_string()) else {
-            return GString::new();
-        };
-        self.avatars
-            .iter()
-            .find(|a| i32::from(a.id) == id)
-            .and_then(|a| a.zombies.alt_ammo.iter().find(|(w, _)| *w == weapon))
-            .map_or(GString::new(), |(_, kind)| GString::from(kind.key()))
-    }
-
-    /// Zombies: gives player `id`'s `weapon` (a key) alternate ammo `kind`
-    /// ("arc", "cinder", or "" for none) (tests).
-    #[func]
-    fn debug_set_alt_ammo(&mut self, id: i32, weapon: GString, kind: GString) {
-        let (Ok(id), Some(weapon)) = (u8::try_from(id), WeaponId::by_key(&weapon.to_string()))
-        else {
-            return;
-        };
-        let kind = kind.to_string();
-        let kind = AltAmmo::ALL.into_iter().find(|a| a.key() == kind);
-        self.set_alt_ammo(id, weapon, kind);
-    }
-
-    /// Zombies: player `id` takes `weapon` (a key) from a wall rack priced
-    /// `price`, paying what a press at the rack would (tests).
-    #[func]
-    fn debug_buy_wall_weapon(&mut self, id: i32, weapon: GString, price: i32) -> bool {
-        let (Ok(id), Some(weapon)) = (u8::try_from(id), WeaponId::by_key(&weapon.to_string()))
-        else {
-            return false;
-        };
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return false;
-        };
-        let due = forge::wall_cost(i64::from(price), &avatar.predicted.state.combat, weapon);
-        if avatar.zombies.points < due {
-            return false;
-        }
-        avatar.zombies.points -= due;
-        self.debug_pick_up(id, weapon);
-        self.send_points(id, -(due as i32));
-        true
-    }
-
-    /// Zombies: player `id` takes what the mystery crate holds out to them,
-    /// as a press of use looking at it would (tests).
-    #[func]
-    fn debug_take_from_crate(&mut self, id: i32) -> bool {
-        let Ok(id) = u8::try_from(id) else {
-            return false;
-        };
-        let Some(crate_) = self
-            .horde
-            .as_mut()
-            .and_then(|h| h.machines.mystery.as_mut())
-        else {
-            return false;
-        };
-        let Some(spot) = crate_.offering_to(id) else {
-            return false;
-        };
-        let Some(weapon) = crate_.offered(spot, id) else {
-            return false;
-        };
-        crate_.taken(spot, id, weapon);
-        self.debug_pick_up(id, weapon);
-        self.broadcast_crate();
-        true
-    }
-
-    /// Steps player `id` one tick with `weapon` picked up (tests).
-    fn debug_pick_up(&mut self, id: u8, weapon: WeaponId) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let input = PlayerInput {
-            pickup: Some(weapon),
-            ..PlayerInput::default()
-        };
-        let mut events = Vec::new();
-        body::tick(
-            &mut avatar.parts,
-            &self.params,
-            &mut avatar.predicted,
-            &input,
-            &mut events,
-        );
-    }
-
-    /// Zombies: drink machines on the map.
-    #[func]
-    fn drink_machine_count(&self) -> i32 {
-        self.horde
-            .as_ref()
-            .map_or(0, |h| h.machines.drink_machine_count() as i32)
-    }
-
-    /// Zombies: the index of the machine selling `drink` (a `Drink::key`),
-    /// or -1.
-    #[func]
-    fn drink_machine_for(&self, drink: GString) -> i32 {
-        Drink::from_key(&drink.to_string())
-            .and_then(|d| self.horde.as_ref()?.machines.machine_for(d))
-            .map_or(-1, |i| i as i32)
-    }
-
-    /// Zombies: whether drink machine `index` is still there.
-    #[func]
-    fn drink_machine_available(&self, index: i32) -> bool {
-        usize::try_from(index).ok().is_some_and(|i| {
-            self.horde
-                .as_ref()
-                .and_then(|h| h.machines.drink_machine(i))
-                .is_some_and(|(_, available)| available)
-        })
-    }
-
-    /// Zombies: the keys of the drinks player `id` holds.
-    #[func]
-    fn player_drinks(&self, id: i32) -> PackedStringArray {
-        self.avatars
-            .iter()
-            .find(|a| i32::from(a.id) == id)
-            .map(|a| {
-                a.predicted
-                    .state
-                    .drinks
-                    .iter()
-                    .map(|d| GString::from(d.key()))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Zombies: power-ups on the ground, and seconds of Insta-Kill and
-    /// Double Points left.
-    #[func]
-    fn power_ups(&self) -> VarDictionary {
-        let Some(horde) = &self.horde else {
-            return VarDictionary::new();
-        };
-        let (insta, double) = horde.timers();
-        vdict! {
-            "on_ground" => horde.drops_on_ground() as i64,
-            "insta_kill" => insta,
-            "double_points" => double,
-            "fire_sale" => horde.fire_sale_left(),
-        }
-    }
-
-    /// Zombies: drops a power-up ("max_ammo", "insta_kill", "double_points",
-    /// "nuke", "carpenter", "fire_sale") at `position` (tests).
-    #[func]
-    fn debug_drop_power_up(&mut self, kind: GString, position: Vector3) {
-        let Some(kind) = zombies::PowerUp::from_key(&kind.to_string()) else {
-            return;
-        };
-        if let Some(horde) = &mut self.horde {
-            horde.drop_power_up(kind, to_sim(position));
-        }
-        self.drain_horde();
-    }
-
-    /// Zombies: whether player `id` is down in last stand.
-    #[func]
-    fn player_downed(&self, id: i32) -> bool {
-        self.avatars
-            .iter()
-            .any(|a| i32::from(a.id) == id && a.last_stand.is_some())
-    }
-
-    /// Zombies: teammates player `id` has revived this game.
-    #[func]
-    fn player_revives(&self, id: i32) -> i32 {
-        self.avatars
-            .iter()
-            .find(|a| i32::from(a.id) == id)
-            .map_or(0, |a| a.zombies.revives as i32)
-    }
-
-    /// Zombies: puts player `id` down as a zombie's second hit would (tests).
-    #[func]
-    fn debug_down(&mut self, id: i32) {
-        if let Ok(id) = u8::try_from(id) {
-            self.go_down(id);
-        }
-    }
-
-    /// Zombies: gives player `id` points outright (tests).
-    #[func]
-    fn debug_add_points(&mut self, id: i32, points: i32) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) else {
-            return;
-        };
-        avatar.zombies.points = avatar.zombies.points.saturating_add(points.max(0) as u32);
-        let id = avatar.id;
-        self.send_points(id, points.max(0));
-    }
-
-    /// Zombies: ends the break before the next round now (tests).
-    #[func]
-    fn debug_skip_zombie_break(&mut self) {
-        if let Some(horde) = &mut self.horde {
-            horde.skip_break();
-        }
-    }
-
-    /// Zombies: ends the break now and starts round `round` (benches).
-    #[func]
-    fn debug_skip_zombie_break_to(&mut self, round: i32) {
-        if let Some(horde) = &mut self.horde {
-            horde.skip_break_to(round.max(1) as u32);
-        }
-    }
-
-    /// Zombies: player `attacker` deals `damage` to zombie `zombie` as if
-    /// shot, with the points it pays (tests).
-    #[func]
-    fn debug_hurt_zombie(&mut self, attacker: i32, zombie: i32, damage: f32, headshot: bool) {
-        let (Ok(attacker), Ok(zombie)) = (u8::try_from(attacker), u8::try_from(zombie)) else {
-            return;
-        };
-        let hit = TargetHit {
-            id: zombie,
-            damage,
-            headshot,
-            distance: 5.0,
-            direction: Vec3::NEG_Z,
-            part: shooter_sim::hitbox::CHEST_SHAPE as u8,
-        };
-        // As a shot of the weapon in hand.
-        let weapon = self
-            .avatars
-            .iter()
-            .find(|a| a.id == attacker)
-            .map(|a| a.predicted.state.combat.weapon().id);
-        self.hurt_zombies(attacker, 0, &[hit], false, weapon);
-    }
 }
 
 impl NetServer {
@@ -2557,30 +1713,25 @@ impl NetServer {
             },
         };
         let info = ServerInfo {
-            instance: QueryResponder::new_instance_id(),
             protocol: PROTOCOL_VERSION,
-            game_port,
             name: self.server_name.to_string(),
             map: self.map_name.to_string(),
-            mode: self.game.label().to_owned(),
             players: 0,
             max_players: MAX_PLAYERS as u8,
-            bots: 0,
             build: crate::build_info::BUILD.to_owned(),
         };
-        match QueryResponder::bind(query_port, info, &self.master_server.to_string()) {
+        match QueryResponder::bind(query_port, info) {
             Ok(responder) => {
                 godot_print!(
-                    "server: \"{}\" answers server browsers on UDP port {query_port}",
+                    "server: \"{}\" answers queries on UDP port {query_port}",
                     responder.info.name
                 );
                 self.responder = Some(responder);
             }
-            // The game still works without it; only browsers cannot see it.
+            // The game still works without it: a joining game cannot learn
+            // the map first, and joins on the arena.
             Err(error) => {
-                godot_warn!(
-                    "server: cannot answer server browsers on UDP port {query_port}: {error}"
-                );
+                godot_warn!("server: cannot answer queries on UDP port {query_port}: {error}");
             }
         }
     }
@@ -2624,25 +1775,12 @@ impl NetServer {
                 node.free();
             }
         }
-        // The offline Zombies director: the server runs the horde itself.
-        if let Some(director) = map.get_node_or_null("Director") {
-            director.free();
-        }
         map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
         // The map is the server's first child (`get_child(0)` finds it for
-        // the bots' navigation and the props), even when helpers such as the
-        // account link were added before the server entered the tree.
+        // the bots' navigation), even when helpers were added before the
+        // server entered the tree.
         self.base_mut().move_child(&map, 0);
-        if self.game == Mode::Zombies {
-            let parent = self.base().clone().upcast::<Node3D>();
-            self.horde = Horde::new(&map, parent);
-        }
-        // Groups register when a node enters the tree, so find the props
-        // manager after the map is a child.
-        self.props = PropsBridge::discover_under(&map);
-        self.props_population = None;
-        self.props_retry = 0;
     }
 
     fn handle_event(&mut self, event: NetEvent) {
@@ -2654,12 +1792,10 @@ impl NetServer {
                     peer.get_remote_port()
                 );
                 self.clients.push(ClientSlot {
-                    spectator: false,
                     peer,
                     player: None,
                     inputs: InputQueue::default(),
                     ack: None,
-                    zombie_ack: None,
                     connected_at: self.tick,
                     view_tick: None,
                     debug_rewound: false,
@@ -2670,11 +1806,6 @@ impl NetServer {
                     chat: ChatLimiter::default(),
                     limit: PacketLimit::new(self.tick),
                     kicked: false,
-                    account: AccountState::None,
-                    wanted_class: None,
-                    wanted_streaks: None,
-                    wanted_cosmetics: None,
-                    cosmetics: Cosmetics::default(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -2682,22 +1813,8 @@ impl NetServer {
                     return;
                 };
                 let client = self.clients.swap_remove(index);
-                if let Some(id) = client.player.filter(|_| client.spectator) {
-                    godot_print!("server: spectator {id} left");
-                } else if let Some(id) = client.player {
+                if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
-                    // Leaving mid-match keeps the score, without the bonus.
-                    if self.match_state.phase == Phase::Playing {
-                        if self.stats_on() {
-                            let tick = self.tick;
-                            let mode = self.game.key();
-                            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                                let seconds = avatar.share.seconds(tick);
-                                avatar.share.stats.finish(mode, seconds, None);
-                            }
-                        }
-                        self.award_account(&client.account, id, None);
-                    }
                     self.despawn_avatar(id);
                     self.broadcast_event(&GameEvent::Left { id });
                     self.next_scoreboard = self.tick;
@@ -2781,47 +1898,17 @@ impl NetServer {
         );
     }
 
-    fn pending_account(&self, serial: i64) -> Option<usize> {
-        self.clients.iter().position(
-            |c| matches!(c.account, AccountState::Pending { serial: s, .. } if s == serial),
-        )
-    }
-
     /// Lets a connection in: a player id, the welcome, the state of the
-    /// game, and a spawn. The hello already passed; on a server with
-    /// `accounts`, the account server too.
+    /// game, and a spawn. The hello already passed.
     fn admit(&mut self, index: usize, name: &str) {
-        self.admit_as(index, name, false);
-    }
-
-    /// Lets a client in, as a player or as a `spectator`: a spectator gets
-    /// the welcome and everything a late joiner needs to follow the match,
-    /// but no body, no team, and no place a bot would fill.
-    fn admit_as(&mut self, index: usize, name: &str, spectator: bool) {
         let mut peer = self.clients[index].peer.clone();
-        // Zombies is for up to four players, as in Black Ops.
-        let players = self.clients.iter().filter(|c| c.playing()).count();
-        let full = !spectator && self.game == Mode::Zombies && players >= zombies::MAX_PLAYERS;
-        let ids = if spectator {
-            FIRST_SPECTATOR_ID..FIRST_SPECTATOR_ID + MAX_SPECTATORS
-        } else {
-            0..MAX_PLAYERS as u8
-        };
-        let Some(id) = ids
-            .clone()
-            .find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
-            .filter(|_| !full)
+        let Some(id) =
+            (0..MAX_PLAYERS as u8).find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
         else {
             peer.peer_disconnect_later();
             return;
         };
         self.clients[index].player = Some(id);
-        self.clients[index].spectator = spectator;
-        if spectator {
-            // Everything for the caster's view, on the next send.
-            self.caster_sent.clear();
-            godot_print!("server: spectator {id} \"{name}\" joined");
-        }
         let name = tdm::clean_name(name, &format!("Player {}", id + 1));
         let class = self.clients[index].class;
         // The welcome goes first, so the client knows its id before
@@ -2832,74 +1919,21 @@ impl NetServer {
             snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
             mode: self.game,
             server_build: crate::build_info::BUILD.to_owned(),
-            ranked: self.accounts,
             custom: self.custom,
-            spectator,
         };
         transport::send_reliable(&mut peer, &welcome.encode(&[]));
         // Everyone already here, then the newcomer for everyone.
         let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
         self.clients[index].outbox.extend(roster);
-        let mut shown: Vec<GameEvent> = self
-            .clients
-            .iter()
-            .filter(|c| c.cosmetics != Cosmetics::default())
-            .filter_map(|c| {
-                c.player.map(|id| GameEvent::Cosmetics {
-                    id,
-                    cosmetics: c.cosmetics.clone(),
-                })
-            })
-            .collect();
-        shown.extend(
-            self.avatars
-                .iter()
-                .filter(|a| a.bot)
-                .map(|a| GameEvent::Cosmetics {
-                    id: a.id,
-                    cosmetics: bot_cosmetics(a.id),
-                }),
-        );
-        self.clients[index].outbox.extend(shown);
-        if !spectator {
-            self.spawn_avatar(id, false, &name, class, None);
-            if self.clients[index].cosmetics != Cosmetics::default() {
-                let cosmetics = self.clients[index].cosmetics.clone();
-                self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
-            }
-            let streaks = self.clients[index].streaks;
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                avatar.streak_wanted = streaks;
-                avatar.streak_loadout = streaks;
-            }
-            self.send_streaks(id);
+        self.spawn_avatar(id, false, &name, class, None);
+        let streaks = self.clients[index].streaks;
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+            avatar.streak_wanted = streaks;
+            avatar.streak_loadout = streaks;
         }
+        self.send_streaks(id);
         let sky = self.sky_event();
         self.send_event(id, sky);
-        for c in self.choppers.clone() {
-            self.send_event(id, chopper_event(&c));
-            if let Some((target, _)) = c.target {
-                self.send_event(
-                    id,
-                    GameEvent::Streak(StreakEvent::ChopperTarget {
-                        id: c.id,
-                        target: Some(target),
-                    }),
-                );
-            }
-        }
-        for turret in self.turrets.list.clone() {
-            self.send_event(id, turret_event(&turret));
-            if let Some((target, _)) = turret.target {
-                self.send_event(
-                    id,
-                    GameEvent::Streak(StreakEvent::TurretTarget {
-                        id: turret.id,
-                        target: Some(target),
-                    }),
-                );
-            }
-        }
         for crate_ in self.crates.list.clone() {
             self.send_event(id, crate_incoming(&crate_));
             if crate_.capture.is_some() {
@@ -2925,11 +1959,6 @@ impl NetServer {
             let status = self.domination_event();
             self.send_event(id, status);
         }
-        // A late joiner needs the props as they are now: everyone
-        // already here saw each change as it happened.
-        for state in self.props.snapshot_states() {
-            self.send_event(id, prop_event(&state));
-        }
         if let Some(event) = self.round_event() {
             self.send_event(id, event);
         }
@@ -2940,44 +1969,13 @@ impl NetServer {
         if let Some(event) = self.charge_event_for(id) {
             self.send_event(id, event);
         }
-        if let Some(horde) = &self.horde {
-            let mut events = vec![horde.round_event(self.tick)];
-            events.extend(horde.window_events());
-            events.extend(horde.door_events());
-            events.extend(horde.drop_events());
-            events.push(horde.timers_event(self.tick));
-            events.extend(self.crate_events());
-            events.extend(self.trap_events());
-            events.extend(self.forge_event());
-            events.extend(self.forge_event());
-            for avatar in &self.avatars {
-                if let Some(stand) = &avatar.last_stand {
-                    events.push(protocol::ZombiesEvent::Downed {
-                        player: avatar.id,
-                        bleeds_out_at: Some(self.ticks_from_now(stand.bleed_left)),
-                    });
-                }
-            }
-            for event in events {
-                self.send_event(id, GameEvent::Zombies(event));
-            }
-            self.send_points(id, 0);
-            self.broadcast_machines();
-        }
         godot_print!("server: player {id} \"{name}\" joined");
     }
 
     fn handle_message(&mut self, index: usize, message: ClientMessage) {
         match message {
-            ClientMessage::Hello {
-                version,
-                name,
-                account,
-                spectate,
-            } => {
-                if self.clients[index].player.is_some()
-                    || !matches!(self.clients[index].account, AccountState::None)
-                {
+            ClientMessage::Hello { version, name } => {
+                if self.clients[index].player.is_some() {
                     return;
                 }
                 let mut peer = self.clients[index].peer.clone();
@@ -2989,31 +1987,6 @@ impl NetServer {
                     peer.peer_disconnect_later();
                     return;
                 }
-                if spectate {
-                    // Ranked play has no spectators: a second client could
-                    // watch for its team.
-                    if self.accounts {
-                        return self.deny(index, NO_RANKED_SPECTATORS);
-                    }
-                    return self.admit_as(index, &name, true);
-                }
-                if self.accounts {
-                    // Held until the account server vouches for the token.
-                    if account.is_empty() {
-                        return self.deny(index, accounts::NOT_SIGNED_IN);
-                    }
-                    self.account_serial += 1;
-                    let serial = self.account_serial;
-                    self.clients[index].account = AccountState::Pending {
-                        serial,
-                        name,
-                        since: self.tick,
-                    };
-                    self.signals()
-                        .account_check()
-                        .emit(serial, &GString::from(account.as_str()));
-                    return;
-                }
                 self.admit(index, &name);
             }
             ClientMessage::Input(packet) => {
@@ -3021,18 +1994,12 @@ impl NetServer {
                 if client.player.is_none() {
                     return;
                 }
-                // A spectator's inputs move nothing; only its acks count.
-                if !client.spectator {
-                    client.inputs.receive(packet.first_seq, &packet.inputs);
-                }
+                client.inputs.receive(packet.first_seq, &packet.inputs);
                 if let Some(ack) = packet.ack_snapshot
                     && ack <= self.tick
                     && client.ack.is_none_or(|current| ack > current)
                 {
                     client.ack = Some(ack);
-                    if self.history.zombies(ack).is_some() {
-                        client.zombie_ack = Some(ack);
-                    }
                 }
             }
             ClientMessage::Debug { rewound_hitboxes } => {
@@ -3049,34 +2016,13 @@ impl NetServer {
                     godot_warn!("server: refused a class ({error:?})");
                     return;
                 }
-                self.clients[index].wanted_class = Some(class);
-                self.apply_wanted_class(index);
+                self.apply_class(index, class);
             }
-            ClientMessage::Streaks(loadout) => {
-                self.clients[index].wanted_streaks = Some(loadout);
-                self.apply_wanted_streaks(index);
-            }
-            ClientMessage::UseStreak { streak, targets } => {
+            ClientMessage::Streaks(loadout) => self.apply_streaks(index, loadout),
+            ClientMessage::UseStreak(streak) => {
                 if let Some(id) = self.clients[index].player {
-                    let _ = self.use_streak(id, streak, &targets);
+                    let _ = self.use_streak(id, streak);
                 }
-            }
-            ClientMessage::SteerMissile { view, boost, split } => {
-                let id = self.clients[index].player;
-                if let Some(pilot) = self
-                    .avatars
-                    .iter_mut()
-                    .find(|a| Some(a.id) == id)
-                    .and_then(|a| a.pilot.as_mut())
-                {
-                    pilot.view = view;
-                    pilot.boost = boost;
-                    pilot.split |= split;
-                }
-            }
-            ClientMessage::Cosmetics(cosmetics) => {
-                self.clients[index].wanted_cosmetics = Some(cosmetics);
-                self.apply_wanted_cosmetics(index);
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
@@ -3084,23 +2030,9 @@ impl NetServer {
         }
     }
 
-    /// Applies the class the client last asked for (it passed the class
-    /// rules) from the next spawn on. On a server with `accounts`, only once
-    /// the account is known and only if everything in it is unlocked;
-    /// otherwise the player keeps the class they had.
-    fn apply_wanted_class(&mut self, index: usize) {
-        let Some(class) = self.clients[index].wanted_class else {
-            return;
-        };
-        if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            if let Err(locked) = earned.check_class(&class) {
-                godot_warn!("server: refused a class with something locked ({locked:?})");
-                return;
-            }
-        }
+    /// Applies the class the client asked for (it passed the class rules)
+    /// from the next spawn on.
+    fn apply_class(&mut self, index: usize, class: Class) {
         self.clients[index].class = class;
         let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
         let gun_game = matches!(self.game, Mode::GunGame(_));
@@ -3120,195 +2052,15 @@ impl NetServer {
         }
     }
 
-    /// Applies the scorestreaks the client last asked for: each streak
-    /// once, cheapest first, from the next spawn, as Black Ops 2's do. With
-    /// `accounts`, only unlocked ones.
-    fn apply_wanted_streaks(&mut self, index: usize) {
-        let Some(loadout) = self.clients[index].wanted_streaks else {
-            return;
-        };
-        if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            if let Err(locked) = earned.check_streaks(loadout) {
-                godot_warn!("server: refused streaks with one locked ({locked:?})");
-                return;
-            }
-        }
+    /// Applies the scorestreaks the client asked for: each streak once,
+    /// cheapest first, from the next spawn, as Black Ops 2's do.
+    fn apply_streaks(&mut self, index: usize, loadout: Loadout) {
         let loadout = loadout.sorted();
         self.clients[index].streaks = loadout;
         if let Some(id) = self.clients[index].player
             && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
         {
             avatar.streak_wanted = loadout;
-        }
-    }
-
-    /// Takes the cosmetics the client last asked for, as far as the server
-    /// allows them: on a server with `accounts`, once the account is known,
-    /// with its prestige and only what it has unlocked. Everyone hears of
-    /// them once the player is in.
-    fn apply_wanted_cosmetics(&mut self, index: usize) {
-        let Some(wanted) = &self.clients[index].wanted_cosmetics else {
-            return;
-        };
-        let checked = if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            wanted.checked(Some(earned))
-        } else {
-            wanted.checked(None)
-        };
-        if checked == self.clients[index].cosmetics {
-            return;
-        }
-        self.clients[index].cosmetics = checked.clone();
-        if let Some(id) = self.clients[index].player {
-            self.broadcast_event(&GameEvent::Cosmetics {
-                id,
-                cosmetics: checked,
-            });
-        }
-    }
-
-    /// Turns a connection away with a reason the player sees.
-    fn deny(&mut self, index: usize, reason: &str) {
-        let client = &mut self.clients[index];
-        godot_print!("server: turned a player away: {reason}");
-        client.account = AccountState::None;
-        client.kicked = true;
-        let denied = ServerMessage::Denied {
-            reason: reason.to_owned(),
-        };
-        transport::send_reliable(&mut client.peer, &denied.encode(&[]));
-        client.peer.peer_disconnect_later();
-    }
-
-    /// Reports a player's match to their account (`account_award`):
-    /// `outcome` when the match ended with them in it, `None` when they
-    /// left it early (score only). The XP includes the challenges the match
-    /// completed, worked out from what the account had; returns the
-    /// account's totals with the match added.
-    fn award_account(
-        &mut self,
-        account: &AccountState,
-        id: u8,
-        outcome: Option<Outcome>,
-    ) -> Option<Earned> {
-        let user_id = account.user_id()?;
-        let avatar = self.avatars.iter().find(|a| a.id == id)?;
-        let score = avatar.score.score;
-        if !avatar.share.earned_anything(score) && outcome.is_none() {
-            return None;
-        }
-        let mut earned = account.earned().cloned().unwrap_or_default();
-        let gain = earned.add_match(
-            avatar.share.xp(score, self.tick, outcome),
-            &avatar.share.weapon_kills,
-            avatar.share.stats.stats(),
-        );
-        let xp = gain.xp.saturating_add(gain.challenge_xp);
-        let mut award = VarDictionary::new();
-        award.set("xp", i64::from(xp));
-        award.set(
-            "weapon_kills",
-            &accounts::counts_dictionary(&avatar.share.weapon_kills),
-        );
-        award.set(
-            "stats",
-            &accounts::counts_dictionary(avatar.share.stats.stats()),
-        );
-        godot_print!(
-            "server: player {id} earned {xp} XP for their account ({} challenges)",
-            gain.challenges.len()
-        );
-        self.signals()
-            .account_award()
-            .emit(&GString::from(user_id), &award);
-        Some(earned)
-    }
-
-    /// How the match that `winner` won ended for player `id`.
-    fn outcome_for(&self, id: u8, winner: Option<u8>) -> Outcome {
-        let won = if self.game.free_for_all() {
-            winner == Some(id)
-        } else {
-            self.avatars
-                .iter()
-                .find(|a| a.id == id)
-                .is_some_and(|a| winner == Some(a.team))
-        };
-        match winner {
-            None => Outcome::Draw,
-            Some(_) if won => Outcome::Win,
-            Some(_) => Outcome::Loss,
-        }
-    }
-
-    /// The match is over: each player's stats take its result and time, and
-    /// go to their game (which shows the challenges they finished).
-    fn finish_stats(&mut self, winner: Option<u8>) {
-        if !self.stats_on() {
-            return;
-        }
-        let ids: Vec<u8> = self.clients.iter().filter_map(|c| c.player).collect();
-        let mode = self.game.key();
-        for id in ids {
-            let outcome = self.outcome_for(id, winner);
-            let tick = self.tick;
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                let seconds = avatar.share.seconds(tick);
-                avatar.share.stats.finish(mode, seconds, Some(outcome));
-            }
-        }
-        self.send_stats(true);
-    }
-
-    /// Sends each player their match stats when they changed: at most every
-    /// [`STATS_INTERVAL_TICKS`], or now with `now`.
-    fn send_stats(&mut self, now: bool) {
-        let tick = self.tick;
-        let mut out = Vec::new();
-        for avatar in &mut self.avatars {
-            if avatar.bot || (!now && tick < avatar.share.stats_sent + STATS_INTERVAL_TICKS) {
-                continue;
-            }
-            if avatar.share.stats.take_changed() {
-                avatar.share.stats_sent = tick;
-                out.push((avatar.id, avatar.share.stats.stats().clone()));
-            }
-        }
-        for (id, stats) in out {
-            self.send_event(id, GameEvent::Stats(stats));
-        }
-    }
-
-    /// Whether stats count now: while a match is played, outside Zombies
-    /// (Call of Duty keeps Zombies' stats apart).
-    fn stats_on(&self) -> bool {
-        self.game != Mode::Zombies
-            && matches!(self.match_state.phase, Phase::Playing | Phase::Ended { .. })
-    }
-
-    /// The match is over: every player with an account is paid for it.
-    fn award_accounts(&mut self, winner: Option<u8>) {
-        let players: Vec<(usize, u8)> = self
-            .clients
-            .iter()
-            .enumerate()
-            .filter_map(|(i, c)| c.player.map(|id| (i, id)))
-            .collect();
-        for (index, id) in players {
-            let account = self.clients[index].account.clone();
-            let outcome = self.outcome_for(id, winner);
-            if let Some(earned) = self.award_account(&account, id, Some(outcome))
-                && let AccountState::Verified { earned: kept, .. } =
-                    &mut self.clients[index].account
-            {
-                *kept = earned;
-            }
         }
     }
 
@@ -3366,20 +2118,8 @@ impl NetServer {
     /// A connection that never says hello would hold a player slot forever.
     fn drop_silent_peers(&mut self) {
         let tick = self.tick;
-        // A player the account server never vouched for is told so.
-        let unanswered: Vec<usize> = (0..self.clients.len())
-            .filter(|&i| {
-                matches!(self.clients[i].account, AccountState::Pending { since, .. }
-                    if tick.saturating_sub(since) > accounts::ACCOUNT_TIMEOUT_TICKS)
-            })
-            .collect();
-        for index in unanswered {
-            self.deny(index, accounts::NO_ANSWER);
-        }
         self.clients.retain_mut(|client| {
-            let waiting = matches!(client.account, AccountState::Pending { .. });
             let silent = client.player.is_none()
-                && !waiting
                 && !client.kicked
                 && tick.saturating_sub(client.connected_at) > HELLO_TIMEOUT_TICKS;
             if silent {
@@ -3418,8 +2158,8 @@ impl NetServer {
                 counts[usize::from(avatar.team)] += 1;
             }
         }
-        // Without teams, and in co-op, everyone is on team 0.
-        let team = if self.game.free_for_all() || self.game == Mode::Zombies {
+        // Without teams everyone is on team 0.
+        let team = if self.game.free_for_all() {
             0
         } else if let Some(team) = team {
             team.min(1)
@@ -3459,42 +2199,16 @@ impl NetServer {
             progress: Progress::default(),
             hill: HillTime::default(),
             interact: false,
-            zombies: ZombiesStats {
-                points: zombies::START_POINTS,
-                ..ZombiesStats::default()
-            },
-            last_stand: None,
             watch: Watch::default(),
             // Bots bring every streak there is (Call of Duty's bots bring
             // a fixed set).
-            streak_loadout: if bot {
-                bot_streaks(id)
-            } else {
-                Loadout::default()
-            },
-            streak_wanted: if bot {
-                bot_streaks(id)
-            } else {
-                Loadout::default()
-            },
+            streak_loadout: if bot { BOT_STREAKS } else { Loadout::default() },
+            streak_wanted: if bot { BOT_STREAKS } else { Loadout::default() },
             streaks: StreakState::default(),
             streak_seen: 0,
-            pilot: None,
-            share: MatchShare::default(),
         });
-        if self.match_state.phase == Phase::Playing
-            && let Some(avatar) = self.avatars.last_mut()
-        {
-            avatar.share.start(self.tick);
-        }
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
-        if bot {
-            self.broadcast_event(&GameEvent::Cosmetics {
-                id,
-                cosmetics: bot_cosmetics(id),
-            });
-        }
         // Before a match the team starts together; during one, or without
         // teams, somewhere safe. In a Search and Destroy round, at their
         // side: joiners in a round's freeze play it, and later ones wait for
@@ -3504,10 +2218,9 @@ impl NetServer {
         let slot = counts[usize::from(team)];
         // A joiner's first spawn is their first of the game.
         self.respawn(id, start.then_some(slot), true);
-        // Zombies: a player joining a game under way watches until the next
-        // round starts, as in Black Ops.
-        let waits = self.round.is_some_and(|r| r.phase != RoundPhase::Freeze)
-            || (self.horde.is_some() && self.match_state.scoring());
+        // Search and Destroy: a player joining a round under way watches
+        // until the next round starts.
+        let waits = self.round.is_some_and(|r| r.phase != RoundPhase::Freeze);
         if waits && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
             avatar.predicted.state.health = 0.0;
         }
@@ -3553,8 +2266,8 @@ impl NetServer {
     }
 
     fn respawns(&self) -> bool {
-        // Zombies: the dead come back when the next round starts.
-        !matches!(self.game, Mode::SearchAndDestroy | Mode::Zombies)
+        // Search and Destroy: the dead come back when the next round starts.
+        !matches!(self.game, Mode::SearchAndDestroy)
             || matches!(self.match_state.phase, Phase::Lobby | Phase::Countdown)
     }
 
@@ -3621,12 +2334,7 @@ impl NetServer {
         }
         // A custom game's loadout rule (pistols only, say).
         let class = loadouts.restrict(avatar.class);
-        let mut state = if self.game == Mode::Zombies {
-            // Zombies: the sidearm and two frags; the rest is bought.
-            let mut state = PlayerState::new(loadout_for(&avatar.class));
-            state.combat = zombies::start_combat();
-            state
-        } else if gun_game {
+        let mut state = if gun_game {
             // Gun Game: the ladder's weapon and nothing else.
             let weapon = gun_game::weapon(avatar.progress.level);
             let mut state = PlayerState::new([weapon, weapon]);
@@ -3635,7 +2343,7 @@ impl NetServer {
         } else {
             let mut state = PlayerState::new(loadout_for(&class));
             state.combat = class.combat();
-            // Perks come with the class; Zombies and Gun Game carry none.
+            // Perks come with the class; Gun Game carries none.
             state.perks = class.perks;
             state
         };
@@ -3652,7 +2360,6 @@ impl NetServer {
         avatar.yaw = point.yaw;
         avatar.pitch = 0.0;
         avatar.spawned_at = tick;
-        avatar.last_stand = None;
         avatar.streak_loadout = avatar.streak_wanted;
         avatar.streak_seen = avatar.score.score;
         avatar.respawn_in = self.respawn_delay;
@@ -3720,8 +2427,8 @@ impl NetServer {
     /// Playing bots fill the teams up to the size the server started with
     /// (its bots plus one player): each player who joins takes a bot's place,
     /// and a bot comes back when a player leaves. Teams stay even.
-    /// Parses `team_bots` and `team_bot_skill`. Free-for-all modes and
-    /// Zombies take the sum as `bots`, with the first difficulty.
+    /// Parses `team_bots` and `team_bot_skill`. Free-for-all modes take the
+    /// sum as `bots`, with the first difficulty.
     fn read_team_bots(&mut self, skill: Option<Skill>) {
         let pair = |text: &GString| -> Option<[String; 2]> {
             let text = text.to_string();
@@ -3740,7 +2447,7 @@ impl NetServer {
             Some([x, y]) => [Skill::parse(&x).or(skill), Skill::parse(&y).or(skill)],
             None => [skill, skill],
         };
-        if self.game.free_for_all() || self.game == Mode::Zombies {
+        if self.game.free_for_all() {
             self.bots = i32::from(a) + i32::from(b);
             if let Some(first) = self.team_skills[0] {
                 self.bot_skill = GString::from(first.key());
@@ -3847,7 +2554,6 @@ impl NetServer {
         if let Some(index) = self.avatars.iter().position(|a| a.id == id) {
             let avatar = self.avatars.swap_remove(index);
             avatar.parts.body.upcast::<Node>().queue_free();
-            self.broadcast_machines();
         }
     }
 
@@ -3863,19 +2569,6 @@ impl NetServer {
         let mut throws: Vec<Throw> = Vec::new();
         let mut fall_deaths = Vec::new();
         let mut respawns = Vec::new();
-        let mut spent: Vec<(u8, u32)> = Vec::new();
-        let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
-        let mut revivers: Vec<(u8, u8)> = Vec::new();
-        let mut crate_taken: Vec<(usize, u8, WeaponId)> = Vec::new();
-        let mut forge_taken = false;
-        // Zombies: who is down, and where, as of the start of the tick.
-        let downed: Vec<(u8, Vec3)> = self
-            .avatars
-            .iter()
-            .filter(|a| a.last_stand.is_some())
-            .map(|a| (a.id, a.predicted.position))
-            .collect();
-        let zombies_mode = self.horde.is_some();
         let tick = self.tick;
         // What bots know about everyone this tick.
         let mut players: Vec<BotPlayer> = self
@@ -3904,24 +2597,6 @@ impl NetServer {
                     velocity: to_godot((later - at) * 10.0),
                 }
             })
-            .chain(self.choppers.iter().map(|c| {
-                let at = c.position(f64::from(tick));
-                let later = c.position(f64::from(tick + TICK_RATE / 10));
-                BotAircraft {
-                    id: 0x8000 | c.id,
-                    side: c.side,
-                    position: to_godot(at),
-                    velocity: to_godot((later - at) * 10.0),
-                }
-            }))
-            .collect();
-        // Sentry Guns that have armed, for bots to shoot at.
-        let bot_turrets: Vec<(u16, u8, Vector3)> = self
-            .turrets
-            .list
-            .iter()
-            .filter(|t| t.armed(tick))
-            .map(|t| (t.id, t.side, to_godot(t.centre())))
             .collect();
         // Each team's own side, for bots' goals on the enemy's side.
         let mut team_spawns: [Vec<Vector3>; 2] = [Vec::new(), Vec::new()];
@@ -4041,23 +2716,13 @@ impl NetServer {
                                 .find(|(id, _)| *id == avatar.id)
                                 .map_or(&[], |(_, dots)| dots.as_slice()),
                             aircraft: &bot_aircraft,
-                            turrets: &bot_turrets,
                         };
                         let objective = objectives
                             .iter()
                             .find(|(id, _)| *id == avatar.id)
                             .and_then(|(_, o)| *o);
                         let _think = profile::scope("server/simulate/avatars/bots think");
-                        let mut input = brain.think(&me, &avatar.predicted, &mut world, objective);
-                        // Flying a Guided Missile, a bot stands where it is,
-                        // as Black Ops 2's do in the missile's camera.
-                        if avatar.pilot.is_some() {
-                            input = PlayerInput {
-                                yaw: input.yaw,
-                                pitch: input.pitch,
-                                ..Default::default()
-                            };
-                        }
+                        let input = brain.think(&me, &avatar.predicted, &mut world, objective);
                         // Bots that think later this tick see the lane this
                         // one just took.
                         if let Some(p) = players.iter_mut().find(|p| p.id == avatar.id) {
@@ -4116,65 +2781,12 @@ impl NetServer {
                 {
                     input = input.using_charge();
                 }
-                // Zombies: holding the use button beside a teammate who is
-                // down revives them, held still with the weapon away (as
-                // the client predicts); otherwise at a door or a window.
-                let reviving = (zombies_mode && input.interact)
-                    .then(|| revive_target(avatar, &downed))
-                    .flatten();
-                if let Some(target) = reviving {
-                    revivers.push((avatar.id, target));
-                    input = input.using_charge();
-                } else if zombies_mode
-                    && input.interact
-                    && let Some(node) = looked_at(avatar, &input, &self.params)
-                {
-                    uses.push((avatar.id, node, !avatar.interact));
-                }
                 avatar.interact = input.interact;
-                // Zombies: a wall weapon costs its price, and its ammo half
-                // that, paid when it is taken.
-                let mut cost = None;
-                let mut from_crate = None;
-                let mut from_forge = false;
-                if let Some(weapon) = input.pickup {
-                    let price = if racks {
-                        pickup_in_reach(avatar, &input, weapon, &self.params)
-                    } else {
-                        None
-                    };
-                    // Zombies: the mystery crate holding a weapon out to
-                    // its buyer gives it for nothing.
-                    // So does the forge, the upgrade it holds out.
-                    let price = price.or_else(|| {
-                        let machines = &self.horde.as_ref()?.machines;
-                        let node = looked_at(avatar, &input, &self.params)?;
-                        if let Some(forge_) = &machines.forge
-                            && forge_.is(&node)
-                        {
-                            from_forge = forge_.offered(avatar.id) == Some(weapon);
-                            return from_forge.then_some(0);
-                        }
-                        let crate_ = machines.mystery.as_ref()?;
-                        let spot = crate_.spot_of(&node)?;
-                        let offered = crate_.offered(spot, avatar.id) == Some(weapon);
-                        from_crate = offered.then_some((spot, weapon));
-                        offered.then_some(0)
-                    });
-                    match price {
-                        Some(price) if zombies_mode => {
-                            let combat = &avatar.predicted.state.combat;
-                            // Ammo for an upgraded weapon costs 4500.
-                            let due = forge::wall_cost(price, combat, weapon);
-                            if avatar.zombies.points >= due {
-                                cost = Some(due);
-                            } else {
-                                input.pickup = None;
-                            }
-                        }
-                        Some(_) => {}
-                        None => input.pickup = None,
-                    }
+                // A pickup counts only from a rack in reach.
+                if let Some(weapon) = input.pickup
+                    && !(racks && pickup_in_reach(avatar, &input, weapon, &self.params))
+                {
+                    input.pickup = None;
                 }
                 // A click between ticks may only aim somewhere the view
                 // passed through since the last input; the client checked the
@@ -4182,11 +2794,8 @@ impl NetServer {
                 input.fire_aim = subtick::check(Some((avatar.yaw, avatar.pitch)), &input);
                 // A player's lunge must point at an enemy they could see;
                 // otherwise it would be a free dash. Bots aim theirs here.
-                // Zombies has no enemy players: a lunge goes for a zombie,
-                // and a free dash gains nothing against the horde.
                 if let Some(offset) = input.lunge
                     && !avatar.bot
-                    && !zombies_mode
                     && !lunge_backed(
                         &self.lag,
                         tick,
@@ -4209,23 +2818,6 @@ impl NetServer {
                     &mut events,
                 );
                 drop(movement);
-                let picked_up = events
-                    .iter()
-                    .any(|e| matches!(e, PlayerEvent::Combat(CombatEvent::PickedUp { .. })));
-                if let Some(cost) = cost
-                    && picked_up
-                {
-                    avatar.zombies.points -= cost;
-                    spent.push((avatar.id, cost));
-                }
-                if let Some((spot, weapon)) = from_crate
-                    && picked_up
-                {
-                    crate_taken.push((spot, avatar.id, weapon));
-                }
-                if from_forge && picked_up {
-                    forge_taken = true;
-                }
                 avatar.yaw = input.yaw;
                 avatar.watch.on_input(input.yaw, input.pitch);
                 avatar.pitch = input.pitch;
@@ -4379,1157 +2971,9 @@ impl NetServer {
             self.resolve_melee(&strike);
         }
         self.update_grenades(throws);
-        for (id, cost) in spent {
-            self.send_points(id, -(cost as i32));
-        }
-        if forge_taken {
-            let taken = self
-                .horde
-                .as_mut()
-                .and_then(|h| h.machines.forge.as_mut())
-                .and_then(|f| f.taken());
-            self.broadcast_forge();
-            if let Some((by, weapon, repack)) = taken {
-                self.set_alt_ammo(by, weapon, repack);
-            }
-        }
-        if !crate_taken.is_empty() {
-            if let Some(crate_) = self
-                .horde
-                .as_mut()
-                .and_then(|h| h.machines.mystery.as_mut())
-            {
-                for (spot, by, weapon) in crate_taken {
-                    crate_.taken(spot, by, weapon);
-                }
-            }
-            self.broadcast_crate();
-        }
-        self.zombies_uses(uses);
-        if zombies_mode && self.match_state.scoring() {
-            self.update_last_stands(&revivers);
-        }
         drop(rest);
-        {
-            let _horde = profile::scope("server/simulate/horde");
-            self.update_horde();
-        }
         for (id, flag) in flags {
             self.log_flag(id, flag);
-        }
-    }
-
-    /// Zombies: runs the horde one tick during a game, acts on what it did,
-    /// tells everyone when the round changes, and ends the game once every
-    /// player is down.
-    fn update_horde(&mut self) {
-        if !self.match_state.scoring() {
-            return;
-        }
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        let players: Vec<HordePlayer> = self
-            .avatars
-            .iter()
-            .map(|a| HordePlayer {
-                id: a.id,
-                feet: a.predicted.position,
-                standing: a.predicted.state.alive()
-                    && !a.predicted.state.downed
-                    && self.tick >= a.zombies.ignored_until,
-            })
-            .collect();
-        horde.step(&players);
-        self.drain_horde();
-        self.update_crate();
-        let everyone_down = !self.avatars.is_empty()
-            && self.avatars.iter().all(|a| {
-                !a.predicted.state.alive()
-                    || (a.predicted.state.downed && !a.last_stand.is_some_and(|s| s.self_revive))
-            });
-        if let Some(horde) = &mut self.horde
-            && everyone_down
-            && !horde.over()
-        {
-            horde.end();
-            godot_print!("server: Zombies over in round {}", horde.round());
-            let transition = self.match_state.finish(&self.rules, None);
-            self.on_transition(transition);
-        }
-        self.broadcast_zombies_round();
-    }
-
-    /// Zombies: a fresh game. Everything back as the map starts, everyone
-    /// on 500 points, and every client told.
-    fn reset_zombies(&mut self) {
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        // Power-ups still lying about go from every client.
-        let mut events: Vec<protocol::ZombiesEvent> = horde
-            .drop_events()
-            .into_iter()
-            .filter_map(|e| match e {
-                protocol::ZombiesEvent::PowerUpDropped { id, .. } => {
-                    Some(protocol::ZombiesEvent::PowerUpGone { id, by: None })
-                }
-                _ => None,
-            })
-            .collect();
-        horde.reset();
-        events.extend(horde.window_events());
-        events.extend(horde.door_events());
-        events.push(horde.timers_event(self.tick));
-        events.extend(horde.machines.events(self.avatars.len() == 1));
-        events.extend(self.crate_events());
-        events.extend(self.trap_events());
-        for event in events {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-        for avatar in &mut self.avatars {
-            avatar.zombies = ZombiesStats {
-                points: zombies::START_POINTS,
-                ..ZombiesStats::default()
-            };
-        }
-        let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-        for id in ids {
-            self.send_points(id, 0);
-        }
-    }
-
-    /// Acts on what the horde did since the last call.
-    fn drain_horde(&mut self) {
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        for event in horde.take_events() {
-            match event {
-                HordeEvent::RoundStarted(round) => self.on_zombies_round(round),
-                HordeEvent::Struck { player, from } => self.zombie_strike(player, from, false),
-                HordeEvent::Bitten { player, from } => self.zombie_strike(player, from, true),
-                HordeEvent::BurnedToDeath { shooter } => self.pay_kills(shooter, 1),
-                HordeEvent::Shocked { player } => self.trap_shock(player),
-                HordeEvent::TrapChanged { trap } => self.broadcast_trap(trap),
-                HordeEvent::HoundStrike { at } => {
-                    self.broadcast_event(&GameEvent::Zombies(
-                        protocol::ZombiesEvent::HoundStrike { at },
-                    ));
-                }
-                HordeEvent::Boards { window, boards } => {
-                    self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
-                        window,
-                        boards,
-                    }));
-                }
-                HordeEvent::PowerUpDropped { id, kind, at } => {
-                    self.broadcast_event(&GameEvent::Zombies(
-                        protocol::ZombiesEvent::PowerUpDropped { id, kind, at },
-                    ));
-                }
-                HordeEvent::PowerUpExpired { id } => {
-                    self.broadcast_event(&GameEvent::Zombies(
-                        protocol::ZombiesEvent::PowerUpGone { id, by: None },
-                    ));
-                }
-                HordeEvent::PowerUpTaken {
-                    id,
-                    kind,
-                    by,
-                    nuked,
-                } => {
-                    godot_print!("server: player {by} took {}", kind.label());
-                    self.broadcast_event(&GameEvent::Zombies(
-                        protocol::ZombiesEvent::PowerUpGone { id, by: Some(by) },
-                    ));
-                    match kind {
-                        // Every player standing gets their ammo back.
-                        zombies::PowerUp::MaxAmmo => {
-                            for avatar in &mut self.avatars {
-                                if avatar.predicted.state.alive() {
-                                    avatar.predicted.state.combat.refill_ammo(&mut Vec::new());
-                                }
-                            }
-                        }
-                        // Every player is paid, as in Black Ops.
-                        zombies::PowerUp::Nuke => {
-                            let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-                            for id in ids {
-                                self.award_points(id, zombies::NUKE_POINTS);
-                            }
-                            if nuked > 0 {
-                                self.next_scoreboard = self.tick;
-                            }
-                        }
-                        zombies::PowerUp::InstaKill
-                        | zombies::PowerUp::DoublePoints
-                        | zombies::PowerUp::Carpenter
-                        | zombies::PowerUp::FireSale => {}
-                    }
-                }
-                // Every board is back: every player is paid, as in Black Ops.
-                HordeEvent::CarpenterDone => {
-                    godot_print!("server: the Carpenter finished");
-                    let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-                    for id in ids {
-                        self.award_points(id, zombies::powerups::CARPENTER_POINTS);
-                    }
-                }
-                HordeEvent::CrateChanged => self.broadcast_crate(),
-                HordeEvent::TimersChanged => {
-                    let event = self.horde.as_ref().map(|h| h.timers_event(self.tick));
-                    if let Some(event) = event {
-                        self.broadcast_event(&GameEvent::Zombies(event));
-                    }
-                }
-            }
-        }
-    }
-
-    /// Zombies: players holding the use button at a door (a press buys it)
-    /// or a window (holding rebuilds it a board at a time, for points).
-    fn zombies_uses(&mut self, uses: Vec<(u8, Gd<Node>, bool)>) {
-        let tick = self.tick;
-        for (id, node, pressed) in uses {
-            let Some(horde) = &mut self.horde else {
-                return;
-            };
-            if !self.match_state.scoring() || horde.over() {
-                return;
-            }
-            if horde.machines.is_power_switch(&node) {
-                // A press turns the power on, free, for the rest of the game.
-                if pressed && horde.machines.set_power(true) {
-                    godot_print!("server: player {id} turned the power on");
-                    self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Power {
-                        on: true,
-                    }));
-                }
-                continue;
-            }
-            if let Some(machine) = horde.machines.drink_machine_of(&node) {
-                if pressed {
-                    self.buy_drink(id, machine);
-                }
-                continue;
-            }
-            if let Some(trap) = horde.machines.trap_of(&node) {
-                if pressed {
-                    self.buy_trap(id, trap);
-                }
-                continue;
-            }
-            if horde.machines.forge.as_ref().is_some_and(|f| f.is(&node)) {
-                if pressed {
-                    self.use_forge(id);
-                }
-                continue;
-            }
-            if let Some(spot) = horde
-                .machines
-                .mystery
-                .as_ref()
-                .and_then(|c| c.spot_of(&node))
-            {
-                if pressed {
-                    self.open_crate(id, spot);
-                }
-                continue;
-            }
-            if let Some(door) = horde.door_of(&node) {
-                let Some(price) = horde.door_price(door) else {
-                    continue;
-                };
-                let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-                    continue;
-                };
-                if !pressed || avatar.zombies.points < price || !horde.open_door(door) {
-                    continue;
-                }
-                avatar.zombies.points -= price;
-                godot_print!("server: player {id} opened door {door}");
-                self.send_points(id, -(price as i32));
-                self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Door {
-                    door: door as u8,
-                    open: true,
-                }));
-            } else if let Some(window) = horde.window_of(&node) {
-                let Some(boards) = horde.window_boards(window) else {
-                    continue;
-                };
-                if boards >= super::horde::WINDOW_BOARDS {
-                    continue;
-                }
-                let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-                    continue;
-                };
-                // A board goes up as soon as use is held, then one a
-                // second; letting go, or looking away, starts over.
-                if avatar
-                    .zombies
-                    .rebuild_seen
-                    .is_none_or(|seen| seen + 1 < tick)
-                {
-                    avatar.zombies.rebuild_for = zombies::REBUILD_SECONDS;
-                }
-                avatar.zombies.rebuild_seen = Some(tick);
-                avatar.zombies.rebuild_for += TICK_DT;
-                if avatar.zombies.rebuild_for < zombies::REBUILD_SECONDS {
-                    continue;
-                }
-                avatar.zombies.rebuild_for = 0.0;
-                let pay = zombies::rebuild_pay(horde.round(), avatar.zombies.rebuilt);
-                avatar.zombies.rebuilt += zombies::REBUILD_POINTS;
-                horde.set_boards(window, boards + 1);
-                self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
-                    window: window as u8,
-                    boards: boards + 1,
-                }));
-                if pay > 0 {
-                    self.award_points(id, pay);
-                }
-            }
-        }
-    }
-
-    /// Zombies: player `id` presses use at drink machine `machine`: if they
-    /// may buy it (`drinks::can_buy`), they pay, drink it, and bring their
-    /// weapon back up.
-    fn buy_drink(&mut self, id: u8, machine: usize) {
-        let solo = self.avatars.len() == 1;
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        let Some((drink, available)) = horde.machines.drink_machine(machine) else {
-            return;
-        };
-        let powered = horde.machines.power();
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &mut avatar.predicted.state;
-        if !state.alive() || state.downed {
-            return;
-        }
-        let Ok(price) = drinks::can_buy(
-            drink,
-            state.drinks,
-            avatar.zombies.points,
-            powered,
-            solo,
-            available,
-        ) else {
-            return;
-        };
-        avatar.zombies.points -= price;
-        state.drinks = state.drinks.with(drink);
-        // The drink: the weapon goes down for the bottle and comes back up.
-        let shots = state.combat.shots_fired;
-        state.combat = state.combat.drinking(drink);
-        state.combat.shots_fired = shots;
-        godot_print!("server: player {id} drank {}", drink.label());
-        let left =
-            drink == Drink::SecondWind && solo && horde.machines.sold_solo_second_wind(machine);
-        self.send_points(id, -(price as i32));
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Drank {
-            player: id,
-            drink,
-        }));
-        if left {
-            self.broadcast_machines();
-        }
-    }
-
-    /// Zombies: player `id` presses use at mystery crate spot `spot`: if the
-    /// crate is there and closed, they pay and it opens.
-    fn open_crate(&mut self, id: u8, spot: usize) {
-        let Some(crate_) = self
-            .horde
-            .as_mut()
-            .and_then(|h| h.machines.mystery.as_mut())
-        else {
-            return;
-        };
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &avatar.predicted.state;
-        if !state.alive() || state.downed {
-            return;
-        }
-        let Some(price) = crate_.press(spot, id, &state.combat, avatar.zombies.points) else {
-            return;
-        };
-        avatar.zombies.points -= price;
-        godot_print!("server: player {id} opened the mystery crate");
-        self.send_points(id, -(price as i32));
-        self.broadcast_crate();
-    }
-
-    /// Zombies: player `id` presses use at trap `trap`'s switch: with the
-    /// power on and 1000 points, it goes live for 40 s.
-    fn buy_trap(&mut self, id: u8, trap: usize) {
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        let powered = horde.machines.power();
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &avatar.predicted.state;
-        if !state.alive() || state.downed {
-            return;
-        }
-        let Some(price) = horde.buy_trap(trap, id, avatar.zombies.points, powered) else {
-            return;
-        };
-        avatar.zombies.points -= price;
-        godot_print!("server: player {id} switched trap {trap} on");
-        self.send_points(id, -(price as i32));
-        self.broadcast_trap(trap);
-    }
-
-    /// Zombies: trap `trap` as everyone is told it.
-    fn broadcast_trap(&mut self, trap: usize) {
-        let tick = self.tick;
-        let event = self.horde.as_ref().and_then(|h| {
-            Some(h.machines.traps.get(trap)?.event(trap, |seconds| {
-                tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick
-            }))
-        });
-        if let Some(event) = event {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-    }
-
-    /// Zombies: player `id` walked into a live trap: down, unless they have
-    /// Bulwark, which turns it into a fifth of their health.
-    fn trap_shock(&mut self, id: u8) {
-        let max = self.params.health.max_health;
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &mut avatar.predicted.state;
-        if !state.alive() || state.downed {
-            return;
-        }
-        let damage = if state.drinks.has(Drink::Bulwark) {
-            (max * zombies::traps::BULWARK_SHOCK_SHARE).min(state.health)
-        } else {
-            state.health
-        };
-        let downs = damage >= state.health;
-        let damage = if downs {
-            state.health - laststand::DOWNED_HEALTH
-        } else {
-            damage
-        };
-        player::apply_damage(state, damage, false, &mut Vec::new());
-        let from = avatar.predicted.position;
-        self.send_event(
-            id,
-            GameEvent::Hurt {
-                attacker: u8::MAX,
-                from,
-                damage,
-                killed: false,
-            },
-        );
-        if downs {
-            self.go_down(id);
-        }
-    }
-
-    /// Zombies: player `id` presses use at the forge: if it is powered and
-    /// free and they hold a weapon it can upgrade (and carry another), they
-    /// pay, hand it over, and the forge starts on it.
-    fn use_forge(&mut self, id: u8) {
-        let Some(machines) = self.horde.as_mut().map(|h| &mut h.machines) else {
-            return;
-        };
-        let powered = machines.power();
-        let Some(forge_) = machines.forge.as_mut() else {
-            return;
-        };
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &mut avatar.predicted.state;
-        if !state.alive() || state.downed {
-            return;
-        }
-        let Ok(job) =
-            forge::can_forge(&state.combat, avatar.zombies.points, powered, forge_.free())
-        else {
-            return;
-        };
-        let price = job.price();
-        // A re-pack comes out with alternate ammo it does not have now.
-        let repack = job.repack.then(|| {
-            let current = avatar
-                .zombies
-                .alt_ammo
-                .iter()
-                .find(|(w, _)| *w == job.weapon)
-                .map(|(_, a)| *a);
-            AltAmmo::repack(current, rng::hash(u32::from(id), self.tick))
-        });
-        avatar.zombies.points -= price;
-        forge::hand_over(&mut state.combat);
-        forge_.start(id, job.weapon, repack);
-        godot_print!(
-            "server: player {id} handed the forge {}",
-            job.weapon.def().key
-        );
-        self.send_points(id, -(price as i32));
-        self.broadcast_forge();
-    }
-
-    /// Zombies: the forge as clients are told it.
-    fn forge_event(&self) -> Option<protocol::ZombiesEvent> {
-        let tick = self.tick;
-        let forge_ = self.horde.as_ref()?.machines.forge.as_ref()?;
-        Some(forge_.event(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick))
-    }
-
-    /// Zombies: tells everyone what the forge is doing, and shows it on the
-    /// server's own node.
-    fn broadcast_forge(&mut self) {
-        if let Some(forge_) = self.horde.as_ref().and_then(|h| h.machines.forge.as_ref()) {
-            forge_.show();
-        }
-        if let Some(event) = self.forge_event() {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-    }
-
-    /// Zombies: every trap as clients are told it.
-    fn trap_events(&self) -> Vec<protocol::ZombiesEvent> {
-        let tick = self.tick;
-        self.horde
-            .as_ref()
-            .map(|h| {
-                h.machines.trap_events(|seconds| {
-                    tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick
-                })
-            })
-            .unwrap_or_default()
-    }
-
-    /// Zombies: the mystery crate's spots as clients are told them.
-    fn crate_events(&self) -> Vec<protocol::ZombiesEvent> {
-        let tick = self.tick;
-        self.horde
-            .as_ref()
-            .and_then(|h| h.machines.mystery.as_ref())
-            .map(|c| {
-                c.events(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick)
-            })
-            .unwrap_or_default()
-    }
-
-    /// Zombies: tells everyone what the mystery crate is doing, and shows it
-    /// on the server's own spots (their colliders follow it).
-    fn broadcast_crate(&mut self) {
-        if let Some(crate_) = self
-            .horde
-            .as_ref()
-            .and_then(|h| h.machines.mystery.as_ref())
-        {
-            crate_.show();
-        }
-        for event in self.crate_events() {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-    }
-
-    /// Zombies: runs the mystery crate one tick: a duck refunds the buyer.
-    fn update_crate(&mut self) {
-        let mut changes = Vec::new();
-        if let Some(crate_) = self
-            .horde
-            .as_mut()
-            .and_then(|h| h.machines.mystery.as_mut())
-        {
-            crate_.step(TICK_DT, &mut changes);
-        }
-        let forge_changed = self
-            .horde
-            .as_mut()
-            .and_then(|h| h.machines.forge.as_mut())
-            .is_some_and(|f| f.step(TICK_DT));
-        if forge_changed {
-            self.broadcast_forge();
-        }
-        for change in changes {
-            match change {
-                CrateChange::Changed => self.broadcast_crate(),
-                CrateChange::Refund { by, points } => {
-                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
-                        avatar.zombies.points = avatar.zombies.points.saturating_add(points);
-                        godot_print!(
-                            "server: the mystery crate moves; player {by} gets {points} back"
-                        );
-                        self.send_points(by, points as i32);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Zombies: the power and every drink machine, to everyone: on a
-    /// machine leaving, and when players join or leave (a game for one
-    /// prices Second Wind lower and runs it without power).
-    fn broadcast_machines(&mut self) {
-        let Some(horde) = &self.horde else {
-            return;
-        };
-        for event in horde.machines.events(self.avatars.len() == 1) {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-    }
-
-    /// Sends the round to everyone if it changed since the last time.
-    fn broadcast_zombies_round(&mut self) {
-        let Some(horde) = &self.horde else {
-            return;
-        };
-        let event = horde.round_event(self.tick);
-        let key = |e: &protocol::ZombiesEvent| match *e {
-            protocol::ZombiesEvent::Round {
-                round,
-                phase,
-                remaining,
-                ..
-            } => Some((round, phase, remaining)),
-            _ => None,
-        };
-        if self.zombies_round_sent.as_ref().and_then(key) == key(&event) {
-            return;
-        }
-        self.zombies_round_sent = Some(event);
-        self.broadcast_event(&GameEvent::Zombies(event));
-    }
-
-    /// A new Zombies round: everyone standing gets two more frags (after
-    /// the first), and everyone watching comes back in, as in Black Ops.
-    fn on_zombies_round(&mut self, round: u32) {
-        godot_print!("server: Zombies round {round}");
-        let mut back = Vec::new();
-        for avatar in &mut self.avatars {
-            avatar.zombies.rebuilt = 0;
-            if avatar.predicted.state.downed {
-                continue;
-            }
-            if avatar.predicted.state.alive() {
-                if round > 1 {
-                    let combat = &mut avatar.predicted.state.combat;
-                    combat.lethals = zombies::restock_frags(combat.lethals);
-                }
-            } else {
-                back.push(avatar.id);
-            }
-        }
-        for id in back {
-            self.respawn(id, None, true);
-            let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-                continue;
-            };
-            let before = avatar.zombies.points;
-            avatar.zombies.points = zombies::respawn_points(round, before);
-            let change = avatar.zombies.points as i32 - before as i32;
-            self.send_points(id, change);
-        }
-        self.next_scoreboard = self.tick;
-    }
-
-    /// A zombie's swing landed on player `id`: the two-hit rule.
-    fn zombie_strike(&mut self, id: u8, from: Vec3, hound: bool) {
-        if self.zombies_harmless {
-            return;
-        }
-        let max = self.params.health.max_health;
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        if !avatar.predicted.state.alive() {
-            return;
-        }
-        let state = &mut avatar.predicted.state;
-        if state.downed {
-            return;
-        }
-        let damage = if hound {
-            let bulwark = state.drinks.has(Drink::Bulwark);
-            zombies::hounds::bite_damage(max, bulwark).min(state.health)
-        } else {
-            drinks::hit_damage(state.health, max, state.drinks)
-        };
-        // The hit that would kill downs instead (last stand).
-        let downs = damage >= state.health;
-        let damage = if downs {
-            state.health - laststand::DOWNED_HEALTH
-        } else {
-            damage
-        };
-        player::apply_damage(state, damage, false, &mut Vec::new());
-        let killed = false;
-        let travel = avatar.predicted.position - from;
-        avatar.hits = avatar.hits.wrapping_add(1);
-        avatar.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
-        avatar.hit_part =
-            protocol::HitPart::new(Some(shooter_sim::hitbox::CHEST_SHAPE as u8), damage, false)
-                .to_u8();
-        self.send_event(
-            id,
-            GameEvent::Hurt {
-                attacker: u8::MAX,
-                from,
-                damage,
-                killed,
-            },
-        );
-        if downs {
-            self.go_down(id);
-        }
-    }
-
-    /// Zombies: player `id` goes down in last stand: the sidearm alone, a
-    /// crawl, 5% of their points lost (the reviver earns them), and 45 s to
-    /// be revived.
-    fn go_down(&mut self, id: u8) {
-        let bleeds_out_at = self.ticks_from_now(laststand::BLEED_OUT_SECONDS);
-        let self_revive_at = self.ticks_from_now(drinks::SELF_REVIVE_SECONDS);
-        let solo = self.avatars.len() == 1;
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let state = &mut avatar.predicted.state;
-        if state.downed || !state.alive() {
-            return;
-        }
-        let stored = state.combat;
-        // A lone player with Second Wind gets back up by themselves; every
-        // drink is lost either way, as in Black Ops.
-        let self_revive = solo && state.drinks.has(Drink::SecondWind);
-        state.drinks = Drinks::NONE;
-        state.downed = true;
-        state.health = laststand::DOWNED_HEALTH;
-        state.combat = laststand::pistol();
-        state.combat.shots_fired = stored.shots_fired;
-        let movement = &mut state.movement;
-        // Down on the belly, crawling prone, as Black Ops' last stand.
-        movement.stance = shooter_sim::movement::Stance::Prone;
-        movement.sprinting = false;
-        movement.mounted = false;
-        movement.leave_ladder(&self.params.movement);
-        let lost = laststand::down_penalty(avatar.zombies.points);
-        avatar.zombies.points -= lost;
-        avatar.zombies.downs += 1;
-        avatar.score.deaths += 1;
-        avatar.last_stand = Some(LastStand {
-            bleed_left: laststand::BLEED_OUT_SECONDS,
-            stored,
-            lost,
-            reviver: None,
-            revived_for: 0.0,
-            self_revive,
-        });
-        godot_print!("server: player {id} is down");
-        self.send_points(id, -(lost as i32));
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
-            player: id,
-            bleeds_out_at: Some(bleeds_out_at),
-        }));
-        if self_revive {
-            self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Revive {
-                player: id,
-                by: Some(id),
-                done_at: self_revive_at,
-            }));
-        }
-        self.next_scoreboard = self.tick;
-    }
-
-    /// Zombies: runs every last stand one tick: revives under way (the
-    /// teammates in `revivers` held use beside someone down this tick), and
-    /// the bleed-out clock, which stops during a revive.
-    fn update_last_stands(&mut self, revivers: &[(u8, u8)]) {
-        let tick = self.tick;
-        let mut revived = Vec::new();
-        let mut bled_out = Vec::new();
-        let mut events = Vec::new();
-        // How long each player takes to revive: half with Second Wind.
-        let revive_seconds: Vec<(u8, f32)> = self
-            .avatars
-            .iter()
-            .map(|a| (a.id, a.predicted.state.drinks.revive_seconds()))
-            .collect();
-        for avatar in &mut self.avatars {
-            let Some(stand) = &mut avatar.last_stand else {
-                continue;
-            };
-            if stand.self_revive {
-                stand.revived_for += TICK_DT;
-                if stand.revived_for >= drinks::SELF_REVIVE_SECONDS {
-                    revived.push((avatar.id, avatar.id));
-                }
-                continue;
-            }
-            let helpers: Vec<u8> = revivers
-                .iter()
-                .filter(|(_, target)| *target == avatar.id)
-                .map(|(by, _)| *by)
-                .collect();
-            let by = stand
-                .reviver
-                .filter(|r| helpers.contains(r))
-                .or_else(|| helpers.first().copied());
-            match by {
-                Some(by) => {
-                    let seconds = revive_seconds
-                        .iter()
-                        .find(|(id, _)| *id == by)
-                        .map_or(laststand::REVIVE_SECONDS, |(_, s)| *s);
-                    if stand.reviver != Some(by) {
-                        stand.reviver = Some(by);
-                        stand.revived_for = 0.0;
-                        let left = (seconds * TICK_RATE as f32).ceil() as Tick;
-                        events.push(protocol::ZombiesEvent::Revive {
-                            player: avatar.id,
-                            by: Some(by),
-                            done_at: tick + left,
-                        });
-                    }
-                    stand.revived_for += TICK_DT;
-                    if stand.revived_for >= seconds {
-                        revived.push((avatar.id, by));
-                    }
-                }
-                None => {
-                    if stand.reviver.take().is_some() {
-                        stand.revived_for = 0.0;
-                        events.push(protocol::ZombiesEvent::Revive {
-                            player: avatar.id,
-                            by: None,
-                            done_at: tick,
-                        });
-                    }
-                    stand.bleed_left -= TICK_DT;
-                    if stand.bleed_left <= 0.0 {
-                        bled_out.push(avatar.id);
-                    }
-                }
-            }
-        }
-        for event in events {
-            self.broadcast_event(&GameEvent::Zombies(event));
-        }
-        for (id, by) in revived {
-            self.revive(id, by);
-        }
-        for id in bled_out {
-            self.bleed_out(id);
-        }
-    }
-
-    /// Player `by` brought player `id` back up: their weapons back, full
-    /// health, a moment before zombies notice them, and `by` earns the
-    /// points `id` lost going down.
-    fn revive(&mut self, id: u8, by: u8) {
-        let ignore = self.ticks_from_now(laststand::REVIVED_IGNORE_SECONDS);
-        let max = self.params.health.max_health;
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let Some(stand) = avatar.last_stand.take() else {
-            return;
-        };
-        let state = &mut avatar.predicted.state;
-        let shots = state.combat.shots_fired;
-        state.downed = false;
-        state.health = max;
-        state.since_damage = f32::MAX;
-        state.combat = stand.stored.raised();
-        state.combat.shots_fired = shots;
-        state.movement.stance = shooter_sim::movement::Stance::Standing;
-        avatar.zombies.ignored_until = ignore;
-        if by == id {
-            // Second Wind alone: nobody earns the points lost going down.
-            godot_print!("server: player {id} got back up");
-            self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
-                player: id,
-                bleeds_out_at: None,
-            }));
-            self.next_scoreboard = self.tick;
-            return;
-        }
-        godot_print!("server: player {by} revived player {id}");
-        if let Some(reviver) = self.avatars.iter_mut().find(|a| a.id == by) {
-            reviver.zombies.revives += 1;
-            reviver.zombies.points = reviver.zombies.points.saturating_add(stand.lost);
-        }
-        self.send_points(by, stand.lost as i32);
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
-            player: id,
-            bleeds_out_at: None,
-        }));
-        self.next_scoreboard = self.tick;
-    }
-
-    /// Player `id` bled out: dead until the next round, and every other
-    /// player loses 10% of their points.
-    fn bleed_out(&mut self, id: u8) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        avatar.last_stand = None;
-        avatar.predicted.state.downed = false;
-        avatar.predicted.state.health = 0.0;
-        godot_print!("server: player {id} bled out");
-        let mut fined = Vec::new();
-        for other in &mut self.avatars {
-            if other.id != id {
-                let lost = laststand::no_revive_penalty(other.zombies.points);
-                other.zombies.points -= lost;
-                fined.push((other.id, lost));
-            }
-        }
-        for (other, lost) in fined {
-            self.send_points(other, -(lost as i32));
-        }
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
-            player: id,
-            bleeds_out_at: None,
-        }));
-        self.next_scoreboard = self.tick;
-    }
-
-    /// Tells player `id` their points, which just changed by `change`.
-    fn send_points(&mut self, id: u8, change: i32) {
-        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
-            return;
-        };
-        let total = avatar.zombies.points;
-        self.send_event(
-            id,
-            GameEvent::Zombies(protocol::ZombiesEvent::Points { total, change }),
-        );
-    }
-
-    /// Pays player `id` for hurting zombies, doubled during Double Points.
-    fn award_points(&mut self, id: u8, points: u32) {
-        let points = if self.horde.as_ref().is_some_and(|h| h.double_points()) {
-            points * 2
-        } else {
-            points
-        };
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        avatar.zombies.points = avatar.zombies.points.saturating_add(points);
-        if let Some(horde) = &mut self.horde {
-            horde.earned(points);
-        }
-        self.send_points(id, points as i32);
-    }
-
-    /// Zombies: player `id`'s `weapon` comes out of the forge: a re-pack
-    /// gives it alternate ammo `kind`; a first upgrade has none.
-    fn set_alt_ammo(&mut self, id: u8, weapon: WeaponId, kind: Option<AltAmmo>) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
-        };
-        let list = &mut avatar.zombies.alt_ammo;
-        list.retain(|(w, _)| *w != weapon);
-        if let Some(kind) = kind {
-            list.push((weapon, kind));
-            godot_print!(
-                "server: player {id}'s {} has {} ammo",
-                weapon.def().key,
-                kind.key()
-            );
-        }
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::AltAmmo {
-            player: id,
-            weapon,
-            kind,
-        }));
-    }
-
-    /// Zombies: the alternate ammo of the weapon player `id` shot with, if
-    /// they still carry it.
-    fn alt_ammo_for(&self, id: u8, weapon: WeaponId) -> Option<AltAmmo> {
-        let avatar = self.avatars.iter().find(|a| a.id == id)?;
-        if !avatar
-            .predicted
-            .state
-            .combat
-            .carries_upgraded(weapon.plain())
-        {
-            return None;
-        }
-        avatar
-            .zombies
-            .alt_ammo
-            .iter()
-            .find(|(w, _)| *w == weapon)
-            .map(|(_, kind)| *kind)
-    }
-
-    /// Zombies: a hit with alternate ammo `kind` on zombie `zombie`, which
-    /// was at `at`, may set it off: the Arc kills down a chain, Cinder
-    /// kills it and sets those round it on fire. Kills pay `attacker`.
-    fn fire_alt_ammo(&mut self, attacker: u8, shot: u32, kind: AltAmmo, zombie: u8, at: Vec3) {
-        let roll = rng::unit(
-            shot.wrapping_mul(131)
-                .wrapping_add(u32::from(attacker))
-                .wrapping_add(self.tick.wrapping_mul(7)),
-            u32::from(zombie),
-        );
-        let Some(horde) = &mut self.horde else {
-            return;
-        };
-        if !horde.try_alt_ammo(attacker, kind, roll) {
-            return;
-        }
-        let (struck, burning) = match kind {
-            AltAmmo::Arc => (horde.arc_path(zombie, at), Vec::new()),
-            AltAmmo::Cinder => (vec![zombie], horde.cinder_targets(zombie, at)),
-        };
-        let mut kills = 0;
-        for &id in &struck {
-            if let Some(health) = horde.health(id)
-                && horde
-                    .hurt(id, health + 1.0, Vec3::Y, None, false)
-                    .is_some_and(|h| h.killed)
-            {
-                kills += 1;
-            }
-        }
-        horde.ignite(&burning, attacker);
-        let mut ids = [0u8; alt_ammo::ARC_KILLS];
-        let count = struck.len().min(ids.len());
-        ids[..count].copy_from_slice(&struck[..count]);
-        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::AltAmmoFired {
-            kind,
-            at,
-            struck: ids,
-            count: count as u8,
-        }));
-        self.pay_kills(attacker, kills);
-    }
-
-    /// Zombies: `attacker` killed `kills` zombies by other means than a
-    /// hit of their own (alternate ammo): each counts and pays as a kill.
-    fn pay_kills(&mut self, attacker: u8, kills: u32) {
-        if kills == 0 {
-            return;
-        }
-        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == attacker) {
-            avatar.zombies.kills += kills;
-            avatar.score.kills += kills;
-        }
-        self.award_points(attacker, kills * zombies::points::KILL);
-        self.next_scoreboard = self.tick;
-    }
-
-    /// Applies one attack's hits on zombies: damage, the attacker's hit
-    /// markers, and points. `weapon` is the gun that fired, for its
-    /// alternate ammo.
-    fn hurt_zombies(
-        &mut self,
-        attacker: u8,
-        shot: u32,
-        hits: &[TargetHit],
-        melee: bool,
-        weapon: Option<WeaponId>,
-    ) {
-        let alt = weapon.and_then(|w| self.alt_ammo_for(attacker, w));
-        for hit in hits {
-            let Some(horde) = &mut self.horde else {
-                return;
-            };
-            let Some(hurt) = horde.hurt(hit.id, hit.damage, hit.direction, Some(hit.part), melee)
-            else {
-                continue;
-            };
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == attacker)
-                && hurt.killed
-            {
-                avatar.zombies.kills += 1;
-                if hit.headshot {
-                    avatar.zombies.headshots += 1;
-                }
-                avatar.score.kills += 1;
-            }
-            self.send_event(
-                attacker,
-                GameEvent::Zombies(protocol::ZombiesEvent::Hit {
-                    zombie: hit.id,
-                    shot,
-                    headshot: hit.headshot,
-                    killed: hurt.killed,
-                }),
-            );
-            let points = zombies::points::for_hit(hurt.killed, hit.headshot, melee);
-            self.award_points(attacker, points);
-            if hurt.killed {
-                self.next_scoreboard = self.tick;
-            }
-            if let Some(kind) = alt {
-                self.fire_alt_ammo(attacker, shot, kind, hit.id, hurt.position);
-            }
-        }
-    }
-
-    /// The tick zombies were drawn at for a shot checked at `rewind`.
-    fn zombie_rewind(&self, rewind: f64) -> f64 {
-        rewind - protocol::zombie_lag(self.snapshot_interval.clamp(1, 255) as u8)
-    }
-
-    /// Zombies: a frag's blast hurts every zombie it reaches.
-    fn blast_zombies(
-        &mut self,
-        space: &mut Gd<PhysicsDirectSpaceState3D>,
-        at: Vec3,
-        kind: equipment::Kind,
-        owner: Option<u8>,
-        shot: u32,
-    ) {
-        let Some(horde) = &self.horde else {
-            return;
-        };
-        if !kind.lethal() {
-            return;
-        }
-        let radius = equipment::blast_radius(kind);
-        let center = to_godot(at);
-        let hits: Vec<TargetHit> = horde
-            .near(at, radius)
-            .into_iter()
-            .filter(|(_, feet)| grenades::blast_reaches(space, center, to_godot(*feet)))
-            .filter_map(|(id, feet)| {
-                let chest = feet + Vec3::Y * EXPLOSION_TARGET_HEIGHT;
-                let distance = chest.distance(at);
-                let damage = equipment::blast_damage(kind, distance);
-                (damage > 0.0).then(|| TargetHit {
-                    id,
-                    damage,
-                    headshot: false,
-                    distance,
-                    direction: (feet - at).normalize_or_zero(),
-                    part: shooter_sim::hitbox::CHEST_SHAPE as u8,
-                })
-            })
-            .collect();
-        if let Some(owner) = owner {
-            self.hurt_zombies(owner, shot, &hits, false, None);
-        } else if let Some(horde) = &mut self.horde {
-            for hit in hits {
-                horde.hurt(hit.id, hit.damage, hit.direction, Some(hit.part), false);
-            }
         }
     }
 
@@ -5605,55 +3049,6 @@ impl NetServer {
         for (id, owner) in struck {
             self.hurt_aircraft(id, streak::AIRCRAFT_HEALTH + 1.0, owner, u32::MAX);
         }
-        // And on enemy Guided Missiles, which a rocket sets off.
-        let missiles = &self.missiles;
-        let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
-            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
-            missiles
-                .iter()
-                .filter(|f| !f.exploded && f.missile.side != side)
-                .filter_map(|f| {
-                    let t = streak::segment_meets_sphere(
-                        from,
-                        to,
-                        f.missile.position,
-                        equipment::ROCKET_AIRCRAFT_RADIUS,
-                    )?;
-                    Some((f.missile.id, t))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-        });
-        for (id, owner) in struck {
-            self.shoot_down_missile(id, owner, u32::MAX);
-        }
-        // And on enemy Attack Choppers, any of which one rocket downs.
-        let choppers = &self.choppers;
-        let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
-            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
-            choppers
-                .iter()
-                .filter(|c| c.side != side)
-                .filter_map(|c| {
-                    let at = c.position(f64::from(tick));
-                    let t = streak::segment_meets_sphere(
-                        from,
-                        to,
-                        at,
-                        equipment::ROCKET_AIRCRAFT_RADIUS,
-                    )?;
-                    Some((c.id, t))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-        });
-        for (id, owner) in struck {
-            self.hurt_chopper(id, chopper::HEALTH + 1.0, owner, u32::MAX);
-        }
-        // And on enemy Sentry Guns, whose blast then does the damage.
-        let turrets = &self.turrets;
-        self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
-            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
-            turrets.first_on_segment(from, to, side)
-        });
         let outcome = self.grenades.step(&mut space, TICK_DT);
         for blast in outcome.blasts {
             self.resolve_grenade(&mut space, &blast);
@@ -5683,12 +3078,6 @@ impl NetServer {
             equipment::Kind::Frag | equipment::Kind::Rocket => {}
         }
         if !self.attacks_hurt() {
-            return;
-        }
-        self.blast_zombies(space, at, kind, blast.owner, blast.shot);
-        // Zombies: frags hurt only zombies, so a player is never killed
-        // outside the last-stand rules.
-        if self.horde.is_some() {
             return;
         }
         let attacker = blast
@@ -5731,28 +3120,6 @@ impl NetServer {
             let damage = equipment::blast_damage(kind, distance) * scale;
             if damage > 0.0 {
                 victims.push((avatar.id, distance, damage));
-            }
-        }
-        // Enemy Sentry Guns in the blast take double (Black Ops 2: a
-        // launcher's rocket counts 200, so two destroy one).
-        if let (Some(attacker), Some(side)) = (attacker, attacker_side) {
-            let hit: Vec<(u16, f32)> = self
-                .turrets
-                .list
-                .iter()
-                .filter(|t| t.side != side)
-                .filter_map(|t| {
-                    let distance = center.distance_to(to_godot(t.centre()));
-                    if distance > radius || !grenades::blast_reaches(space, center, to_godot(t.at))
-                    {
-                        return None;
-                    }
-                    let damage = equipment::blast_damage(kind, distance);
-                    (damage > 0.0).then_some((t.id, damage))
-                })
-                .collect();
-            for (id, damage) in hit {
-                self.hurt_turret(id, TurretHit::Explosive, damage, attacker, u32::MAX);
             }
         }
         // The weapon the thrower holds names nothing in the feed; the grenade
@@ -5831,7 +3198,6 @@ impl NetServer {
                 weapon,
                 cause,
                 headshot: false,
-                eye: None,
             });
             self.record_death(id);
             if credited.is_none() {
@@ -5934,33 +3300,6 @@ impl NetServer {
         let rewind = self
             .lag
             .rewind_target_for(self.tick, strike.view_tick, strike.rtt);
-        if let Some(horde) = &self.horde {
-            // Zombies: the knife goes for the nearest zombie in front.
-            let candidates = horde.melee_candidates(self.zombie_rewind(rewind));
-            let Some((zombie, feet)) = melee::pick(
-                strike.feet,
-                strike.yaw,
-                melee::REACH + melee::SERVER_SLACK,
-                melee::STRIKE_CONE_DEGREES,
-                candidates,
-            ) else {
-                return;
-            };
-            let chest = to_godot(feet) + Vector3::UP * melee::CHEST_HEIGHT;
-            if world_hit(&mut space, strike.eye, chest).is_some() {
-                return;
-            }
-            let hit = TargetHit {
-                id: zombie,
-                damage: melee::DAMAGE,
-                headshot: false,
-                distance: strike.eye.distance_to(chest),
-                direction: (feet - strike.feet).normalize_or_zero(),
-                part: shooter_sim::hitbox::CHEST_SHAPE as u8,
-            };
-            self.hurt_zombies(strike.attacker, strike.shot, &[hit], true, None);
-            return;
-        }
         let candidates: Vec<(u8, Vec3)> = self
             .avatars
             .iter()
@@ -6027,15 +3366,6 @@ impl NetServer {
             return;
         }
         let shooter_side = self.side(shooter);
-        let shooter_id = shooter.id;
-        if self.recording_stats()
-            && let Some(avatar) = self
-                .avatars
-                .iter_mut()
-                .find(|a| a.id == shooter_id && !a.bot)
-        {
-            avatar.share.stats.shot(shot.weapon);
-        }
         let Some(shooter) = self.avatars.iter().find(|a| a.id == shot.shooter) else {
             return;
         };
@@ -6049,9 +3379,6 @@ impl NetServer {
         };
         let def = shot.weapon.def();
         let origin = to_sim(shot.eye);
-        // Maps without props skip the metadata walk entirely.
-        let track_props = self.props.is_active();
-        let mut prop_hits: Vec<PropHit> = Vec::new();
         let pellets: Vec<Pellet> = (0..def.pellets)
             .map(|pellet| {
                 let offset =
@@ -6077,18 +3404,6 @@ impl NetServer {
                     {
                         scale = hit.damage_scale;
                         *wall = (shot.eye.distance_to(hit.position), scale);
-                    }
-                    // Props are hit in the present like walls; whether the
-                    // pellet reached one is decided below, once player hits
-                    // are known.
-                    if track_props && let Some(id) = prop_id_of(hit.collider.as_ref()) {
-                        let distance = shot.eye.distance_to(hit.position);
-                        prop_hits.push(PropHit {
-                            id,
-                            distance,
-                            direction,
-                            damage: def.damage_at(distance) * hit.damage_scale,
-                        });
                     }
                 }
                 pellet
@@ -6121,70 +3436,6 @@ impl NetServer {
         }
         for (id, damage) in aircraft_hits {
             self.hurt_aircraft(id, damage, shot.shooter, shot.shot);
-        }
-        // Enemy Attack Choppers: bullets do half (Black Ops 2's armour).
-        let mut chopper_hits: Vec<(u16, f32)> = Vec::new();
-        for pellet in &pellets {
-            let reach = pellet.max_distance.min(def.range);
-            let to = pellet.origin + pellet.direction * reach;
-            let hit = self
-                .choppers
-                .iter()
-                .filter(|c| c.side != shooter_side)
-                .filter_map(|c| {
-                    let at = c.position(rewind);
-                    let t =
-                        streak::segment_meets_sphere(pellet.origin, to, at, chopper::HIT_RADIUS)?;
-                    Some((c.id, t))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some((id, t)) = hit {
-                let damage = def.damage_at(reach * t) * chopper::BULLET_SCALE;
-                match chopper_hits.iter_mut().find(|(hit, _)| *hit == id) {
-                    Some((_, total)) => *total += damage,
-                    None => chopper_hits.push((id, damage)),
-                }
-            }
-        }
-        for (id, damage) in chopper_hits {
-            self.hurt_chopper(id, damage, shot.shooter, shot.shot);
-        }
-        // Enemy Guided Missiles: any hit sets one off (Black Ops 2), checked
-        // where the shooter saw it.
-        let back = (f64::from(self.tick) - rewind).max(0.0) as f32;
-        let missile_hit = pellets.iter().find_map(|pellet| {
-            let to = pellet.origin + pellet.direction * pellet.max_distance.min(def.range);
-            self.missiles
-                .iter()
-                .filter(|f| !f.exploded && f.missile.side != shooter_side)
-                .find(|f| {
-                    let at = f.missile.back(back);
-                    streak::segment_meets_sphere(pellet.origin, to, at, missile::HIT_RADIUS)
-                        .is_some()
-                })
-                .map(|f| f.missile.id)
-        });
-        if let Some(id) = missile_hit {
-            self.shoot_down_missile(id, shot.shooter, shot.shot);
-        }
-        // Enemy Sentry Guns: a pellet that meets one short of a wall.
-        let mut turret_hits: Vec<(u16, f32)> = Vec::new();
-        for pellet in &pellets {
-            let reach = pellet.max_distance.min(def.range);
-            let to = pellet.origin + pellet.direction * reach;
-            if let Some((id, t)) = self
-                .turrets
-                .first_on_segment(pellet.origin, to, shooter_side)
-            {
-                let damage = def.damage_at(reach * t);
-                match turret_hits.iter_mut().find(|(hit, _)| *hit == id) {
-                    Some((_, total)) => *total += damage,
-                    None => turret_hits.push((id, damage)),
-                }
-            }
-        }
-        for (id, damage) in turret_hits {
-            self.hurt_turret(id, TurretHit::Bullet, damage, shot.shooter, shot.shot);
         }
         let tick = self.tick;
         let stretched = self
@@ -6228,28 +3479,6 @@ impl NetServer {
             );
         }
 
-        if self.horde.is_some() {
-            let zombie_tick = self.zombie_rewind(rewind);
-            let zombie_targets = self.horde.as_ref().map(|h| h.targets(zombie_tick));
-            let mut zombie_hits =
-                lag::resolve_shot(def, &pellets, &zombie_targets.unwrap_or_default());
-            // Hair Trigger: every round hits twice.
-            let scale = self
-                .avatars
-                .iter()
-                .find(|a| a.id == shot.shooter)
-                .map_or(1.0, |a| a.predicted.state.drinks.zombie_damage_scale());
-            for hit in &mut zombie_hits {
-                hit.damage *= scale;
-            }
-            self.hurt_zombies(
-                shot.shooter,
-                shot.shot,
-                &zombie_hits,
-                false,
-                Some(shot.weapon),
-            );
-        }
         let hits = lag::resolve_shot(def, &pellets, &targets);
         let attack = Attack {
             attacker: shot.shooter,
@@ -6271,7 +3500,6 @@ impl NetServer {
             }
         }
         self.apply_hits(&attack, &hits);
-        self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
     }
 
     /// Applies the hits decided for one attack (a shot's pellets or a knife
@@ -6381,7 +3609,6 @@ impl NetServer {
                     weapon: attack.weapon,
                     cause,
                     headshot: hit.headshot,
-                    eye: None,
                 });
                 self.record_death(hit.id);
                 let victim = self
@@ -6443,8 +3670,6 @@ impl NetServer {
                     // Only holding the zone (or the flags) scores for the team.
                     Mode::Hardpoint | Mode::Domination => None,
                     Mode::FreeForAll => self.free_for_all_end(attack.attacker, kills.len()),
-                    // Players never hurt each other in Zombies.
-                    Mode::Zombies => None,
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -6495,103 +3720,10 @@ impl NetServer {
         }
     }
 
-    /// Damages the props this shot struck, once player hits are known. A
-    /// pellet that hit a player closer than the prop never reached it. The
-    /// manager owns prop health and stages; what it queues is broadcast on
-    /// the next tick.
-    fn damage_props(
-        &self,
-        attacker: u8,
-        weapon: WeaponId,
-        prop_hits: &[PropHit],
-        target_hits: &[lag::TargetHit],
-    ) {
-        if prop_hits.is_empty() || !self.props.is_active() {
-            return;
-        }
-        // Conservative: if anyone was hit closer than a prop, the prop is
-        // behind cover from the shooter's point of view on that pellet.
-        let nearest_player = target_hits
-            .iter()
-            .map(|hit| hit.distance)
-            .fold(f32::INFINITY, f32::min);
-        let mut totals: Vec<(u16, f32, Vec3)> = Vec::new();
-        for hit in prop_hits {
-            if hit.distance >= nearest_player || hit.damage <= 0.0 {
-                continue;
-            }
-            match totals.iter_mut().find(|(id, _, _)| *id == hit.id) {
-                Some((_, damage, impulse)) => {
-                    *damage += hit.damage;
-                    *impulse += hit.direction * hit.damage;
-                }
-                None => totals.push((hit.id, hit.damage, hit.direction * hit.damage)),
-            }
-        }
-        for (id, damage, impulse) in totals {
-            self.props
-                .damage_prop(id, damage, impulse, attacker, weapon);
-        }
-    }
-
-    /// Drains the props manager once a tick: population, changed prop states
-    /// for every client, and explosions to apply to players.
-    fn update_props(&mut self) {
-        if !self.props.is_active() {
-            if self.props_retry > 0 {
-                self.props_retry -= 1;
-                return;
-            }
-            self.props_retry = 2 * TICK_RATE;
-            // The map manager may have been added after the map loaded (or a
-            // map without props may stay that way).
-            if let Some(map) = self.base().get_child(0) {
-                self.props = PropsBridge::discover_under(&map);
-                // A replacement manager needs the population again.
-                self.props_population = None;
-            }
-            if !self.props.is_active() {
-                return;
-            }
-        }
-        let population = self.avatars.len().min(i32::MAX as usize) as i32;
-        if self.props_population != Some(population) {
-            self.props.set_population(population);
-            self.props_population = Some(population);
-        }
-        for state in self.props.drain_events() {
-            self.broadcast_event(&prop_event(&state));
-        }
-        for blast in self.props.drain_explosions() {
-            self.resolve_explosion(&blast, protocol::KillCause::Weapon);
-        }
-    }
-
-    /// Resets every prop and tells clients only the ones that changed. Called
-    /// when a match starts and when the server falls back to the lobby, so a
-    /// fresh match never inherits last match's debris.
-    fn reset_props(&mut self) {
-        if !self.props.is_active() {
-            return;
-        }
-        let before = self.props.snapshot_states();
-        self.props.reset();
-        // The reset may queue the same changes as events; the diff below is
-        // complete, so drop them to avoid sending every change twice.
-        let _ = self.props.drain_events();
-        for state in self.props.snapshot_states() {
-            let previous = before.iter().find(|old| old.id == state.id);
-            if previous != Some(&state) {
-                self.broadcast_event(&prop_event(&state));
-            }
-        }
-    }
-
-    /// Applies one prop explosion on the server: distance falloff, obstruction
-    /// by the map, no friendly fire (but self-damage counts), kill credit, and
-    /// the same scoring paths as gunfire. Prop-to-prop damage stays in the
-    /// manager's chain reaction, so this never feeds back into it.
-    fn resolve_explosion(&mut self, blast: &PropExplosion, cause: protocol::KillCause) {
+    /// Applies one explosion on the server: distance falloff, obstruction by
+    /// the map, no friendly fire (but self-damage counts), kill credit, and
+    /// the same scoring paths as gunfire.
+    fn resolve_explosion(&mut self, blast: &Blast, cause: protocol::KillCause) {
         if matches!(
             self.match_state.phase,
             Phase::Countdown | Phase::Ended { .. }
@@ -6648,36 +3780,7 @@ impl NetServer {
             }
         }
 
-        // Enemy Sentry Guns in the blast take double (Black Ops 2).
-        if let Some(attacker) = attacker {
-            let side = self
-                .avatars
-                .iter()
-                .find(|a| a.id == attacker)
-                .map(|a| self.side(a));
-            let hit: Vec<(u16, f32)> = self
-                .turrets
-                .list
-                .iter()
-                .filter(|t| Some(t.side) != side)
-                .filter_map(|t| {
-                    let centre = to_godot(t.centre());
-                    let distance = origin.distance_to(centre);
-                    if distance > blast.radius {
-                        return None;
-                    }
-                    let blocked = world_hit(&mut space, origin, centre)
-                        .is_some_and(|hit| origin.distance_to(hit) + BLAST_CLEARANCE < distance);
-                    let damage = blast.damage
-                        + (blast.outer_damage - blast.damage) * (distance / blast.radius);
-                    (!blocked && damage > 0.0).then_some((t.id, damage))
-                })
-                .collect();
-            for (id, damage) in hit {
-                self.hurt_turret(id, TurretHit::Explosive, damage, attacker, u32::MAX);
-            }
-        }
-        let weapon = blast.weapon.unwrap_or_else(default_primary);
+        let weapon = default_primary();
         let victims = self.split_friendly_damage(attacker, victims);
         self.hurt_players(
             attacker,
@@ -6689,7 +3792,7 @@ impl NetServer {
         );
     }
 
-    /// Applies one blast's or Sentry Gun round's damage to `victims` (each
+    /// Applies one blast's damage to `victims` (each
     /// player's id, distance, and damage): hurt events, kills credited to
     /// `attacker` (on `attacker_team`) with `weapon` and `cause`, the
     /// mode's rules, and the attacker's points.
@@ -6744,13 +3847,6 @@ impl NetServer {
                     weapon,
                     cause,
                     headshot: false,
-                    // A streak's kill is watched from the streak.
-                    eye: match cause {
-                        protocol::KillCause::Streak(streak) => {
-                            Some(killcam::streak_eye(streak, from))
-                        }
-                        _ => None,
-                    },
                 });
                 self.record_death(id);
                 if credited.is_some() && !teamkill {
@@ -6902,19 +3998,16 @@ impl NetServer {
             self.snd_plan.on_death(team, at, tick);
         }
         self.next_scoreboard = tick;
-        // Everyone leaves a Scavenger pack, for their enemies with the perk
-        // (not in Zombies, which has no perks).
-        if self.horde.is_none() {
-            let (pack, pushed_out) = self.scavenger.drop_pack(at, id, Some(side), tick);
-            if let Some(old) = pushed_out {
-                self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Gone { id: old.id }));
-            }
-            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Dropped {
-                id: pack.id,
-                at: pack.at,
-                dropped_by: id,
-            }));
+        // Everyone leaves a Scavenger pack, for their enemies with the perk.
+        let (pack, pushed_out) = self.scavenger.drop_pack(at, id, Some(side), tick);
+        if let Some(old) = pushed_out {
+            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Gone { id: old.id }));
         }
+        self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Dropped {
+            id: pack.id,
+            at: pack.at,
+            dropped_by: id,
+        }));
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
@@ -6942,12 +4035,10 @@ impl NetServer {
         {
             self.recent_deaths.pop_front();
         }
-        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.playing()).collect();
+        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.player.is_some()).collect();
         if humans.is_empty() && !self.auto_start {
             if self.match_state.phase != Phase::Lobby {
                 self.match_state.reset();
-                // Back in the lobby, put the map back the way it started.
-                self.reset_props();
                 self.round = None;
                 self.charge = None;
             }
@@ -6965,7 +4056,6 @@ impl NetServer {
             Mode::FreeForAll => {
                 tdm::kill_leader(self.avatars.iter().map(|a| (a.id, a.score.kills)))
             }
-            Mode::Zombies => None,
         };
         if self.game == Mode::Hardpoint
             && let Some(end) = self.hardpoint_overtime(leader)
@@ -7360,9 +4450,6 @@ impl NetServer {
         match transition {
             Transition::Started => {
                 godot_print!("server: match started");
-                if self.horde.is_some() {
-                    self.reset_zombies();
-                }
                 self.last_kill = None;
                 self.reset_flags();
                 if self.game == Mode::SearchAndDestroy {
@@ -7375,7 +4462,6 @@ impl NetServer {
                 self.hardpoint = HardpointState::new(&self.hardpoint_rules);
                 self.dom = DominationState::new(self.dom_points.len());
                 for avatar in &mut self.avatars {
-                    avatar.share.start(self.tick);
                     avatar.score = ScoreState::default();
                     avatar.progress = Progress::default();
                     avatar.hill = HillTime::default();
@@ -7383,25 +4469,6 @@ impl NetServer {
                     avatar.streak_seen = 0;
                 }
                 self.sky.clear();
-                self.strikes.clear();
-                self.missiles.clear();
-                self.bomblets.clear();
-                for c in std::mem::take(&mut self.choppers) {
-                    self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
-                        id: c.id,
-                        by: None,
-                        at: c.position(f64::from(self.tick)),
-                    }));
-                }
-                for avatar in &mut self.avatars {
-                    avatar.pilot = None;
-                }
-                for turret in std::mem::take(&mut self.turrets.list) {
-                    self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone {
-                        id: turret.id,
-                        by: None,
-                    }));
-                }
                 let sky = self.sky_event();
                 self.broadcast_event(&sky);
                 for change in self.crates.clear() {
@@ -7426,7 +4493,6 @@ impl NetServer {
                         },
                     );
                 }
-                self.reset_props();
             }
             Transition::Ended { winner } => {
                 if self.game.free_for_all() {
@@ -7445,18 +4511,13 @@ impl NetServer {
                         self.match_state.scores[1]
                     );
                 }
-                self.finish_stats(winner);
-                if self.accounts {
-                    self.award_accounts(winner);
-                }
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
                     client.ready = true;
                 }
                 // The kill that ended the match, for everyone (Search and
-                // Destroy plays its own when the last round is won; Zombies
-                // ends on the horde).
-                if !matches!(self.game, Mode::SearchAndDestroy | Mode::Zombies) {
+                // Destroy plays its own when the last round is won).
+                if self.game != Mode::SearchAndDestroy {
                     self.play_ending_killcam(killcam::Kind::Final);
                 }
                 self.reset_flags();
@@ -7764,8 +4825,7 @@ impl NetServer {
                 | Mode::Hardpoint
                 | Mode::Domination
                 | Mode::SearchAndDestroy
-                | Mode::FreeForAll
-                | Mode::Zombies => self.rules.score_limit,
+                | Mode::FreeForAll => self.rules.score_limit,
                 Mode::GunGame(_) => u32::from(gun_game::LEVELS),
             },
         }
@@ -7806,25 +4866,11 @@ impl NetServer {
             .iter()
             .map(|a| {
                 let client = self.client_of(a.id);
-                // Zombies: points, zombies killed, and times down.
-                let zombies = self.horde.is_some();
                 ScoreRow {
                     id: a.id,
-                    score: if zombies {
-                        a.zombies.points
-                    } else {
-                        a.score.score
-                    },
-                    kills: if zombies {
-                        a.zombies.kills
-                    } else {
-                        a.score.kills
-                    },
-                    deaths: if zombies {
-                        a.zombies.downs
-                    } else {
-                        a.score.deaths
-                    },
+                    score: a.score.score,
+                    kills: a.score.kills,
+                    deaths: a.score.deaths,
                     ping_ms: client.map_or(0, |c| {
                         transport::round_trip_ms(&c.peer).clamp(0.0, 9999.0) as u16
                     }),
@@ -7836,8 +4882,6 @@ impl NetServer {
                     hill_seconds: a.hill.whole_seconds(),
                     defends: a.score.defends,
                     alive: a.predicted.state.alive(),
-                    revives: a.zombies.revives,
-                    headshots: a.zombies.headshots,
                 }
             })
             .collect();
@@ -7857,9 +4901,7 @@ impl NetServer {
     /// Whether a custom game's friendly fire lets teammates hurt each other
     /// (free-for-all modes have no teammates).
     fn friendly_fire_on(&self) -> bool {
-        self.custom.friendly_fire != custom::FriendlyFire::Off
-            && !self.game.free_for_all()
-            && self.horde.is_none()
+        self.custom.friendly_fire != custom::FriendlyFire::Off && !self.game.free_for_all()
     }
 
     /// Whether an attack from `side` can hurt `avatar`: an enemy, or a
@@ -7914,19 +4956,16 @@ impl NetServer {
     }
 
     /// Whether `a` and `b` are enemies.
-    /// Whether this game has scorestreaks: not Gun Game, Zombies, or
-    /// outside a match (Black Ops 2's party modes and Zombies have none).
+    /// Whether this game has scorestreaks: not Gun Game, or outside a match
+    /// (Black Ops 2's party modes have none).
     fn streaks_on(&self) -> bool {
-        !matches!(self.game, Mode::GunGame(_) | Mode::Zombies)
-            && self.custom.streaks
-            && self.match_state.scoring()
+        !matches!(self.game, Mode::GunGame(_)) && self.custom.streaks && self.match_state.scoring()
     }
 
     /// Counts score earned since the last look toward each living player's
     /// streaks, runs the UAVs' sweeps, and sends off what has left.
     fn update_streaks(&mut self) {
         let on = self.streaks_on();
-        let record = self.recording_stats();
         let mut changed = Vec::new();
         for avatar in &mut self.avatars {
             let points = avatar.score.score.saturating_sub(avatar.streak_seen);
@@ -7936,12 +4975,7 @@ impl NetServer {
             }
             let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
             let loadout = avatar.streak_loadout.usable(self.roofed);
-            let earned = avatar.streaks.on_points(loadout, points, hardline);
-            if record && !avatar.bot {
-                for streak in earned {
-                    avatar.share.stats.streak_earned(streak);
-                }
-            }
+            avatar.streaks.on_points(loadout, points, hardline);
             changed.push(avatar.id);
         }
         for id in changed {
@@ -7950,7 +4984,7 @@ impl NetServer {
         // Bots call in what they hold as soon as they are alive to, as
         // Call of Duty's bots do (passive test bots hold on to them).
         // A bot tries what it holds in turn, twice a second, until one
-        // goes (a Sentry Gun needs room in front of it).
+        // goes (a Care Package needs open sky to land in).
         let bot_calls: Vec<(u8, Vec<Streak>)> = self
             .avatars
             .iter()
@@ -7970,7 +5004,7 @@ impl NetServer {
             .collect();
         for (id, streaks) in bot_calls {
             for streak in streaks {
-                if self.use_streak(id, streak, &[]) {
+                if self.use_streak(id, streak) {
                     break;
                 }
             }
@@ -7980,10 +5014,6 @@ impl NetServer {
             self.broadcast_event(&sky);
         }
         self.update_crates();
-        self.update_strikes();
-        self.update_turrets();
-        self.update_missiles();
-        self.update_choppers();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -8001,10 +5031,7 @@ impl NetServer {
     /// Ghost still hides a moving player from it.
     fn constant_radar(&mut self) {
         let interval = streak::seconds_to_ticks(streak::UAV_SWEEP_SECONDS).max(1);
-        if self.custom.radar != custom::Radar::Constant
-            || self.horde.is_some()
-            || !self.tick.is_multiple_of(interval)
-        {
+        if self.custom.radar != custom::Radar::Constant || !self.tick.is_multiple_of(interval) {
             return;
         }
         let mut sides: Vec<u8> = self.avatars.iter().map(|a| self.side(a)).collect();
@@ -8038,7 +5065,7 @@ impl NetServer {
 
     /// Calls in `id`'s first held `streak`, if they hold one and may.
     /// Returns whether it went.
-    fn use_streak(&mut self, id: u8, streak: Streak, targets: &[shooter_sim::Vec2]) -> bool {
+    fn use_streak(&mut self, id: u8, streak: Streak) -> bool {
         if !self.streaks_on() {
             return false;
         }
@@ -8062,71 +5089,6 @@ impl NetServer {
             },
             _ => None,
         };
-        // A Guided Missile dives at a point on the ground ahead of its
-        // caller (a bot's at its nearest enemy in reach), one at a time.
-        let missile_target = if streak == Streak::GuidedMissile {
-            if avatar.pilot.is_some() {
-                return false;
-            }
-            match self.missile_target(avatar) {
-                Some(target) => Some(target),
-                None => return false,
-            }
-        } else {
-            None
-        };
-        // An Attack Chopper guards the point marked on the map (a bot's: a
-        // random enemy's, as Black Ops 2's bots mark), one a side at once.
-        let chopper_guard = if streak == Streak::AttackChopper {
-            if self.choppers.iter().any(|c| c.side == side) {
-                return false;
-            }
-            let mark = if targets.is_empty() && avatar.brain.is_some() {
-                self.bot_chopper_mark(avatar)
-            } else {
-                targets.first().copied()
-            };
-            let Some(mark) = mark.filter(|m| m.is_finite()) else {
-                return false;
-            };
-            let floor = self.sky.orbit.centre.y - streak::Orbit::HEIGHT;
-            Some(Vec3::new(mark.x, floor + chopper::HEIGHT, mark.y))
-        } else {
-            None
-        };
-        // A Sentry Gun needs floor in front of the caller, and room under
-        // Black Ops 2's limits (four a side, eight in all).
-        let sentry = if streak == Streak::SentryGun {
-            if !self.turrets.room_for(side) {
-                return false;
-            }
-            match self.turret_spot(avatar) {
-                Some(spot) => Some(spot),
-                None => return false,
-            }
-        } else {
-            None
-        };
-        // An Airstrike needs a marked point that is on the map; a bot marks
-        // where it last saw its enemies.
-        let strike_points = if streak == Streak::Airstrike {
-            let marks: Vec<shooter_sim::Vec2> = if targets.is_empty() && avatar.brain.is_some() {
-                self.bot_strike_marks(avatar)
-            } else {
-                targets.to_vec()
-            };
-            let points: Vec<Vec3> = marks
-                .iter()
-                .take(streak::AIRSTRIKE_TARGETS)
-                .filter_map(|m| self.strike_ground(*m))
-                .collect();
-            if points.is_empty() {
-                return false;
-            }
-            points
-        } else {
-            Vec::new()
-        };
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return false;
         };
@@ -8136,13 +5098,6 @@ impl NetServer {
         avatar.streaks.select(index);
         avatar.streaks.take();
         match (streak, drop) {
-            (Streak::Airstrike, _) => {
-                let called = self.strikes.call(id, &strike_points, tick);
-                self.broadcast_event(&GameEvent::Streak(StreakEvent::Airstrike {
-                    owner: id,
-                    strikes: called.iter().map(|s| (s.at, s.tick)).collect(),
-                }));
-            }
             (Streak::CarePackage, Some(at)) => {
                 let seed = rng::hash(
                     u32::from(id) << 16 | u32::from(self.crates.list.len() as u8),
@@ -8154,46 +5109,6 @@ impl NetServer {
                 }
                 self.broadcast_event(&crate_incoming(&crate_));
             }
-            (Streak::GuidedMissile, _) => {
-                if let Some((target, yaw, bot_target)) = missile_target {
-                    let m = Missile::launch(self.next_missile, id, side, target, yaw, tick);
-                    self.next_missile = self.next_missile.wrapping_add(1);
-                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                        avatar.pilot = Some(Pilot {
-                            missile: m.id,
-                            view: m.view,
-                            boost: false,
-                            split: false,
-                        });
-                    }
-                    // Black Ops 2's bots split it a second and a half in.
-                    let bot_split = bot_target
-                        .map(|_| tick + streak::seconds_to_ticks(BOT_MISSILE_SPLIT_SECONDS));
-                    self.missiles.push(Flight {
-                        missile: m,
-                        exploded: false,
-                        pilot_until: None,
-                        bot_target,
-                        bot_split,
-                    });
-                    self.broadcast_event(&missile_event(&m, false));
-                }
-            }
-            (Streak::AttackChopper, _) => {
-                if let Some(guard) = chopper_guard {
-                    let seed = rng::hash(u32::from(id) << 8 | u32::from(self.next_chopper), tick);
-                    let c = Chopper::new(self.next_chopper, id, side, guard, tick, seed);
-                    self.next_chopper = self.next_chopper.wrapping_add(1);
-                    self.broadcast_event(&chopper_event(&c));
-                    self.choppers.push(c);
-                }
-            }
-            (Streak::SentryGun, _) => {
-                if let Some((at, facing)) = sentry {
-                    let turret = self.turrets.place(id, side, at, facing, tick);
-                    self.broadcast_event(&turret_event(&turret));
-                }
-            }
             _ => {
                 let phase = rng::hash(u32::from(id) << 8 | streak.code() as u32, tick) as u16;
                 self.sky.call(streak, id, side, tick, phase);
@@ -8204,752 +5119,6 @@ impl NetServer {
         let sky = self.sky_event();
         self.broadcast_event(&sky);
         true
-    }
-
-    /// Where `avatar`'s Sentry Gun goes: the floor a step in front of them,
-    /// facing the way they face, if nothing stands between and the floor is
-    /// near their feet's height. Black Ops 2 has the player carry it and set
-    /// it down where they choose; ours sets down where they stand facing.
-    fn turret_spot(&self, avatar: &Avatar) -> Option<(Vec3, f32)> {
-        const STEP: f32 = 1.2;
-        let mut space = self
-            .base()
-            .get_world_3d()
-            .and_then(|world| world.get_direct_space_state())?;
-        let feet = to_godot(avatar.predicted.position);
-        let forward = Vector3::new(-avatar.yaw.sin(), 0.0, -avatar.yaw.cos());
-        let chest = feet + Vector3::UP * 1.0;
-        let ahead = chest + forward * STEP;
-        // Room for the gun: nothing between the chest and the spot, nor in
-        // the spot's own half-metre.
-        if world_hit(&mut space, chest, ahead + forward * 0.4).is_some() {
-            return None;
-        }
-        let floor = world_hit(&mut space, ahead, ahead - Vector3::UP * 1.6)?;
-        if (floor.y - feet.y).abs() > 0.6 {
-            return None;
-        }
-        Some((to_sim(floor), avatar.yaw))
-    }
-
-    /// Runs the Sentry Guns: those whose owner left or whose time is up go,
-    /// each armed one picks and turns onto the nearest enemy in its field
-    /// of fire it can see, and fires; its rounds hurt the first enemy they
-    /// meet short of a wall. Its kills are its owner's, as "Sentry Gun",
-    /// and count nothing toward streaks.
-    fn update_turrets(&mut self) {
-        if self.turrets.list.is_empty() {
-            return;
-        }
-        let tick = self.tick;
-        let owners: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-        let orphaned: Vec<u16> = self
-            .turrets
-            .list
-            .iter()
-            .filter(|t| !owners.contains(&t.owner))
-            .map(|t| t.id)
-            .collect();
-        self.turrets.list.retain(|t| owners.contains(&t.owner));
-        let expired: Vec<u16> = self.turrets.expire(tick).iter().map(|t| t.id).collect();
-        for id in orphaned.into_iter().chain(expired) {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone { id, by: None }));
-        }
-        let Some(mut space) = self
-            .base()
-            .get_world_3d()
-            .and_then(|world| world.get_direct_space_state())
-        else {
-            return;
-        };
-        let candidates: Vec<turret::Candidate> = self
-            .avatars
-            .iter()
-            .filter(|a| a.predicted.state.alive())
-            .map(|a| turret::Candidate {
-                id: a.id,
-                side: self.side(a),
-                feet: a.predicted.position,
-                ignored: false,
-            })
-            .collect();
-        let before: Vec<(u16, Option<u8>)> = self
-            .turrets
-            .list
-            .iter()
-            .map(|t| (t.id, t.target.map(|(id, _)| id)))
-            .collect();
-        let rounds = self.turrets.step(tick, &candidates, |from, to| {
-            world_hit(&mut space, to_godot(from), to_godot(to)).is_none()
-        });
-        let changed: Vec<(u16, Option<u8>)> = self
-            .turrets
-            .list
-            .iter()
-            .map(|t| (t.id, t.target.map(|(id, _)| id)))
-            .filter(|now| !before.contains(now))
-            .collect();
-        for (id, target) in changed {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretTarget { id, target }));
-        }
-        for round in rounds {
-            let Some(side) = self
-                .turrets
-                .list
-                .iter()
-                .find(|t| t.id == round.turret)
-                .map(|t| t.side)
-            else {
-                continue;
-            };
-            let from = to_godot(round.from);
-            let to = from + to_godot(round.direction) * turret::RANGE;
-            let wall =
-                world_hit(&mut space, from, to).map_or(turret::RANGE, |hit| from.distance_to(hit));
-            let victim = candidates
-                .iter()
-                .filter(|c| c.side != side)
-                .filter_map(|c| {
-                    let distance = turret::round_meets_body(round.from, round.direction, c.feet)?;
-                    (distance < wall).then_some((c.id, distance))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            let Some((victim, distance)) = victim else {
-                continue;
-            };
-            let owner_team = self
-                .avatars
-                .iter()
-                .find(|a| a.id == round.owner)
-                .map(|a| a.team);
-            let before = self
-                .avatars
-                .iter()
-                .find(|a| a.id == round.owner)
-                .map(|a| a.score.score);
-            self.hurt_players(
-                Some(round.owner),
-                owner_team,
-                round.from,
-                vec![(victim, distance, turret::DAMAGE)],
-                default_primary(),
-                protocol::KillCause::Streak(Streak::SentryGun),
-            );
-            // Streak kills count nothing toward streaks (Black Ops 2).
-            if let (Some(before), Some(owner)) = (
-                before,
-                self.avatars.iter_mut().find(|a| a.id == round.owner),
-            ) {
-                owner.streak_seen += owner.score.score.saturating_sub(before);
-            }
-        }
-    }
-
-    /// A bot's Attack Chopper mark: a random living enemy's spot.
-    fn bot_chopper_mark(&self, bot: &Avatar) -> Option<shooter_sim::Vec2> {
-        let enemies: Vec<&Avatar> = self
-            .avatars
-            .iter()
-            .filter(|a| a.predicted.state.alive() && self.hostile(bot, a))
-            .collect();
-        let pick = rng::hash(u32::from(bot.id), self.tick) as usize % enemies.len().max(1);
-        let at = enemies.get(pick)?.predicted.position;
-        Some(shooter_sim::Vec2::new(at.x, at.z))
-    }
-
-    /// Runs the Attack Choppers: those whose time is up go, and each one's
-    /// gun picks, turns onto, and fires on the nearest enemy it can see
-    /// (`chopper::Chopper::step`). Its rounds hurt the first enemy they
-    /// meet short of a wall; its kills are its owner's, shown as "Attack
-    /// Chopper", and count nothing toward streaks.
-    fn update_choppers(&mut self) {
-        if self.choppers.is_empty() {
-            return;
-        }
-        let tick = self.tick;
-        let owners: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-        let gone: Vec<Chopper> = self
-            .choppers
-            .iter()
-            .filter(|c| tick >= c.gone_at() || !owners.contains(&c.owner))
-            .copied()
-            .collect();
-        self.choppers
-            .retain(|c| tick < c.gone_at() && owners.contains(&c.owner));
-        for c in gone {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
-                id: c.id,
-                by: None,
-                at: c.position(f64::from(tick)),
-            }));
-        }
-        let Some(mut space) = self
-            .base()
-            .get_world_3d()
-            .and_then(|world| world.get_direct_space_state())
-        else {
-            return;
-        };
-        let protection = streak::seconds_to_ticks(chopper::SPAWN_PROTECTION_SECONDS);
-        let candidates: Vec<chopper::Candidate> = self
-            .avatars
-            .iter()
-            .filter(|a| a.predicted.state.alive())
-            .map(|a| chopper::Candidate {
-                id: a.id,
-                side: self.side(a),
-                feet: a.predicted.position,
-                // Black Ops 2's chopper leaves the newly spawned alone, and
-                // Blind Eye players (`cantargetplayerwithspecialty`).
-                ignored: tick < a.spawned_at + protection
-                    || a.predicted.state.perks.has(Perk::BlindEye),
-            })
-            .collect();
-        let mut rounds = Vec::new();
-        let mut changed = Vec::new();
-        for c in &mut self.choppers {
-            let before = c.target.map(|(id, _)| id);
-            if let Some(round) = c.step(tick, &candidates, |from, to| {
-                world_hit(&mut space, to_godot(from), to_godot(to)).is_none()
-            }) {
-                rounds.push((round, c.side));
-            }
-            let after = c.target.map(|(id, _)| id);
-            if after != before {
-                changed.push((c.id, after));
-            }
-        }
-        for (id, target) in changed {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperTarget {
-                id,
-                target,
-            }));
-        }
-        for (round, side) in rounds {
-            let from = to_godot(round.from);
-            let to = from + to_godot(round.direction) * chopper::RANGE;
-            let wall =
-                world_hit(&mut space, from, to).map_or(chopper::RANGE, |hit| from.distance_to(hit));
-            let victim = candidates
-                .iter()
-                .filter(|c| c.side != side)
-                .filter_map(|c| {
-                    let distance = shooter_sim::equipment::segment_hits_body(
-                        round.from,
-                        round.from + round.direction * chopper::RANGE,
-                        c.feet,
-                        turret::BODY_HEIGHT,
-                        turret::BODY_RADIUS,
-                    )? * chopper::RANGE;
-                    (distance < wall).then_some((c.id, distance))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            let Some((victim, distance)) = victim else {
-                continue;
-            };
-            let owner_team = self
-                .avatars
-                .iter()
-                .find(|a| a.id == round.owner)
-                .map(|a| a.team);
-            let before = self
-                .avatars
-                .iter()
-                .find(|a| a.id == round.owner)
-                .map(|a| a.score.score);
-            self.hurt_players(
-                Some(round.owner),
-                owner_team,
-                round.from,
-                vec![(victim, distance, chopper::DAMAGE)],
-                default_primary(),
-                protocol::KillCause::Streak(Streak::AttackChopper),
-            );
-            if let (Some(before), Some(owner)) = (
-                before,
-                self.avatars.iter_mut().find(|a| a.id == round.owner),
-            ) {
-                owner.streak_seen += owner.score.score.saturating_sub(before);
-            }
-        }
-    }
-
-    /// Attack Chopper `id` takes `damage` from player `by`: a hit marker,
-    /// and if that downs it (1000 health), it crashes, everyone hears, and
-    /// `by` scores for it.
-    fn hurt_chopper(&mut self, id: u16, damage: f32, by: u8, shot: u32) {
-        self.send_event(
-            by,
-            GameEvent::Hit {
-                victim: u8::MAX,
-                shot,
-                damage,
-                headshot: false,
-                killed: false,
-            },
-        );
-        let tick = self.tick;
-        let Some(index) = self.choppers.iter().position(|c| c.id == id) else {
-            return;
-        };
-        self.choppers[index].damage += damage;
-        if self.choppers[index].damage <= chopper::HEALTH {
-            return;
-        }
-        let c = self.choppers.remove(index);
-        godot_print!(
-            "server: player {by} shot down player {}'s Attack Chopper",
-            c.owner
-        );
-        self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
-            id,
-            by: Some(by),
-            at: c.position(f64::from(tick)),
-        }));
-        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
-            let scored = avatar.score.award(
-                Award::ShotDown(Streak::AttackChopper),
-                chopper::SHOT_DOWN_POINTS,
-            );
-            let totals = avatar.score.totals();
-            self.send_event(
-                by,
-                GameEvent::Score {
-                    awards: vec![scored],
-                    totals,
-                },
-            );
-        }
-    }
-
-    /// Sentry Gun `id` takes a `hit` of `damage` from player `by`: a hit
-    /// marker, and if that destroys it, it goes, everyone hears, and `by`
-    /// scores for it.
-    fn hurt_turret(&mut self, id: u16, hit: TurretHit, damage: f32, by: u8, shot: u32) {
-        if hit != TurretHit::Melee {
-            self.send_event(
-                by,
-                GameEvent::Hit {
-                    victim: u8::MAX,
-                    shot,
-                    damage,
-                    headshot: false,
-                    killed: false,
-                },
-            );
-        }
-        let Some(turret) = self.turrets.hurt(id, hit, damage) else {
-            return;
-        };
-        godot_print!(
-            "server: player {by} destroyed player {}'s Sentry Gun",
-            turret.owner
-        );
-        self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone {
-            id,
-            by: Some(by),
-        }));
-        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
-            let scored = avatar
-                .score
-                .award(Award::ShotDown(Streak::SentryGun), turret::DESTROY_POINTS);
-            let totals = avatar.score.totals();
-            self.send_event(
-                by,
-                GameEvent::Score {
-                    awards: vec![scored],
-                    totals,
-                },
-            );
-        }
-    }
-
-    /// The topmost surface under map point `mark` (x, z): where a bomb
-    /// from above lands. None off the map.
-    fn strike_ground(&self, mark: shooter_sim::Vec2) -> Option<Vec3> {
-        let mut space = self
-            .base()
-            .get_world_3d()
-            .and_then(|world| world.get_direct_space_state())?;
-        let top = Vector3::new(mark.x, 150.0, mark.y);
-        world_hit(&mut space, top, top - Vector3::UP * 300.0).map(to_sim)
-    }
-
-    /// A bot's Airstrike marks: its living enemies, nearest first.
-    fn bot_strike_marks(&self, bot: &Avatar) -> Vec<shooter_sim::Vec2> {
-        let mut enemies: Vec<&Avatar> = self
-            .avatars
-            .iter()
-            .filter(|a| a.predicted.state.alive() && self.hostile(bot, a))
-            .collect();
-        let from = bot.predicted.position;
-        enemies.sort_by(|a, b| {
-            a.predicted
-                .position
-                .distance(from)
-                .total_cmp(&b.predicted.position.distance(from))
-        });
-        enemies
-            .iter()
-            .take(streak::AIRSTRIKE_TARGETS)
-            .map(|a| shooter_sim::Vec2::new(a.predicted.position.x, a.predicted.position.z))
-            .collect()
-    }
-
-    /// Sets off the Airstrike strikes due this tick. Their kills score as
-    /// usual but count nothing toward the caller's streaks (Black Ops 2).
-    fn update_strikes(&mut self) {
-        for strike in self.strikes.due(self.tick) {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::Strike {
-                owner: strike.owner,
-                at: strike.at,
-            }));
-            let blast = PropExplosion {
-                position: strike.at + Vec3::Y * 0.3,
-                radius: streak::STRIKE_RADIUS,
-                damage: streak::STRIKE_DAMAGE,
-                outer_damage: streak::STRIKE_OUTER_DAMAGE,
-                attacker: Some(strike.owner),
-                weapon: None,
-            };
-            self.streak_blast(&blast, Streak::Airstrike);
-        }
-    }
-
-    /// A scorestreak's blast: hurts as any explosion does, its kills shown
-    /// as `streak`'s, and the score it earns its owner counts nothing toward
-    /// their streaks (Black Ops 2).
-    fn streak_blast(&mut self, blast: &PropExplosion, streak: Streak) {
-        let owner = blast.attacker;
-        let before = self
-            .avatars
-            .iter()
-            .find(|a| Some(a.id) == owner)
-            .map(|a| a.score.score);
-        self.resolve_explosion(blast, protocol::KillCause::Streak(streak));
-        if let (Some(before), Some(avatar)) = (
-            before,
-            self.avatars.iter_mut().find(|a| Some(a.id) == owner),
-        ) {
-            avatar.streak_seen += avatar.score.score.saturating_sub(before);
-        }
-    }
-
-    /// Where `avatar`'s Guided Missile dives: the ground 38 m ahead of them
-    /// (Black Ops 2's 1500 units), or a bot's nearest enemy within reach.
-    /// Returns the point, the yaw it comes in along, and the bot's target.
-    fn missile_target(&self, avatar: &Avatar) -> Option<(Vec3, f32, Option<u8>)> {
-        let feet = avatar.predicted.position;
-        // Bots fly theirs themselves; passive test bots are flown by tests.
-        if avatar.brain.as_ref().is_some_and(|b| !b.passive) {
-            let enemy = self
-                .avatars
-                .iter()
-                .filter(|a| a.predicted.state.alive() && self.hostile(avatar, a))
-                .min_by(|a, b| {
-                    a.predicted
-                        .position
-                        .distance(feet)
-                        .total_cmp(&b.predicted.position.distance(feet))
-                })
-                .filter(|a| a.predicted.position.distance(feet) <= BOT_MISSILE_REACH)?;
-            let at = enemy.predicted.position;
-            let ground = self.strike_ground(shooter_sim::Vec2::new(at.x, at.z))?;
-            let yaw = shooter_sim::look::bearing(feet, at).x;
-            return Some((ground, yaw, Some(enemy.id)));
-        }
-        let forward = Vec3::new(-avatar.yaw.sin(), 0.0, -avatar.yaw.cos());
-        let ahead = feet + forward * missile::TARGET_AHEAD;
-        let ground = self.strike_ground(shooter_sim::Vec2::new(ahead.x, ahead.z))?;
-        Some((ground, avatar.yaw, None))
-    }
-
-    /// Flies the Guided Missiles and their bomblets one tick. A missile
-    /// steers where its pilot looks (a bot's at its target) and boosts
-    /// while they ask; splitting it fires the cluster (`missile::Missile::
-    /// split`). Missile and bomblets go off on the map or an enemy they
-    /// meet, the missile also when its time is up. The pilot's camera
-    /// stays until a second after the first bomblet lands (Black Ops 2), or
-    /// half a second after an unsplit missile goes off.
-    fn update_missiles(&mut self) {
-        if self.missiles.is_empty() && self.bomblets.is_empty() {
-            return;
-        }
-        let tick = self.tick;
-        let Some(mut space) = self
-            .base()
-            .get_world_3d()
-            .and_then(|world| world.get_direct_space_state())
-        else {
-            return;
-        };
-        let bodies: Vec<(u8, u8, Vec3)> = self
-            .avatars
-            .iter()
-            .filter(|a| a.predicted.state.alive())
-            .map(|a| (a.id, self.side(a), a.predicted.position))
-            .collect();
-        let mut blasts: Vec<(u16, u8, Vec3, bool)> = Vec::new();
-        for i in 0..self.missiles.len() {
-            let mut flight = self.missiles[i];
-            if flight.exploded {
-                continue;
-            }
-            let mut m = flight.missile;
-            let owner = self.avatars.iter().find(|a| a.id == m.owner);
-            let pilot = owner
-                .filter(|a| a.predicted.state.alive())
-                .and_then(|a| a.pilot)
-                .filter(|p| p.missile == m.id);
-            let (steer, boost, split) = match (flight.bot_target, pilot) {
-                (Some(target), Some(_)) => {
-                    let goal = bodies
-                        .iter()
-                        .find(|(id, _, _)| *id == target)
-                        .map_or(m.view, |(_, _, feet)| {
-                            shooter_sim::look::bearing(m.position, *feet)
-                        });
-                    (goal, false, flight.bot_split.is_some_and(|at| tick >= at))
-                }
-                (None, Some(p)) => (p.view, p.boost, p.split),
-                _ => (m.view, false, false),
-            };
-            if split && !m.split {
-                let dir = m.direction();
-                let ahead = to_godot(m.position + dir * 400.0);
-                let aim = world_hit(&mut space, to_godot(m.position), ahead)
-                    .map_or(m.position + dir * 200.0, to_sim);
-                // Cold-Blooded players get no bomblet of their own (Black
-                // Ops 2's `specialty_nokillstreakreticle`).
-                let unmarked: Vec<u8> = self
-                    .avatars
-                    .iter()
-                    .filter(|a| a.predicted.state.perks.has(Perk::ColdBlooded))
-                    .map(|a| a.id)
-                    .collect();
-                let targets: Vec<Vec3> = bodies
-                    .iter()
-                    .filter(|(id, side, _)| *side != m.side && !unmarked.contains(id))
-                    .map(|(_, _, feet)| *feet)
-                    .collect();
-                let seed = rng::hash(u32::from(m.id), tick);
-                let bomblets = m.split(aim, &targets, tick, seed);
-                self.broadcast_event(&GameEvent::Streak(StreakEvent::Cluster {
-                    id: m.id,
-                    from: m.position,
-                    bomblets: bomblets.iter().map(|b| (b.to, b.fire_at)).collect(),
-                }));
-                self.bomblets.extend(bomblets);
-            }
-            let (from, to) = m.step(steer, boost);
-            let hit = self.first_meeting(&mut space, &bodies, m.side, from, to);
-            if hit.is_some() || m.spent(tick) {
-                let at = hit.unwrap_or(m.position);
-                m.position = at;
-                flight.exploded = true;
-                blasts.push((m.id, m.owner, at, false));
-                if !m.split {
-                    flight.pilot_until =
-                        Some(tick + streak::seconds_to_ticks(MISSILE_CAMERA_AFTER_BLAST));
-                }
-            }
-            flight.missile = m;
-            self.missiles[i] = flight;
-            if (tick + u32::from(m.id)).is_multiple_of(MISSILE_STATE_TICKS) {
-                self.broadcast_event(&missile_event(&m, false));
-            }
-        }
-        // The bomblets: each flies straight from its firing; it goes off on
-        // what it meets, at its point, or (the straight one) on the map.
-        let mut kept = Vec::with_capacity(self.bomblets.len());
-        for b in std::mem::take(&mut self.bomblets) {
-            if tick < b.fire_at {
-                kept.push(b);
-                continue;
-            }
-            let from = b.at(f64::from(tick - 1)).unwrap_or(b.from);
-            let reached = tick >= b.lands_at();
-            let to = if reached {
-                b.to
-            } else {
-                b.at(f64::from(tick)).unwrap_or(b.to)
-            };
-            let hit = self.first_meeting(&mut space, &bodies, b.side, from, to);
-            let lost = tick > b.fire_at + streak::seconds_to_ticks(4.0);
-            match hit {
-                Some(at) => blasts.push((b.missile, b.owner, at, true)),
-                None if reached && !lost => blasts.push((b.missile, b.owner, b.to, true)),
-                None if lost => {}
-                None => kept.push(b),
-            }
-        }
-        self.bomblets = kept;
-        for (id, owner, at, bomblet) in blasts {
-            self.broadcast_event(&GameEvent::Streak(StreakEvent::MissileBlast {
-                at,
-                bomblet,
-            }));
-            let (radius, damage, outer) = if bomblet {
-                (
-                    missile::BOMBLET_RADIUS,
-                    missile::BOMBLET_DAMAGE,
-                    missile::BOMBLET_OUTER_DAMAGE,
-                )
-            } else {
-                (
-                    missile::BLAST_RADIUS,
-                    missile::BLAST_DAMAGE,
-                    missile::BLAST_OUTER_DAMAGE,
-                )
-            };
-            let blast = PropExplosion {
-                position: at + Vec3::Y * 0.3,
-                radius,
-                damage,
-                outer_damage: outer,
-                attacker: Some(owner),
-                weapon: None,
-            };
-            self.streak_blast(&blast, Streak::GuidedMissile);
-            if bomblet
-                && let Some(flight) = self.missiles.iter_mut().find(|f| f.missile.id == id)
-                && flight.pilot_until.is_none()
-            {
-                flight.pilot_until =
-                    Some(tick + streak::seconds_to_ticks(missile::CAMERA_LINGER_SECONDS));
-            }
-        }
-        // Pilots whose camera time is up, or who died, come back; flights
-        // that are over go.
-        let mut ended = Vec::new();
-        for flight in &mut self.missiles {
-            let m = flight.missile;
-            let pilot_dead = self
-                .avatars
-                .iter()
-                .find(|a| a.id == m.owner)
-                .is_none_or(|a| !a.predicted.state.alive());
-            let done = flight.pilot_until.is_some_and(|at| tick >= at)
-                || (flight.exploded && !m.split && flight.pilot_until.is_none())
-                || pilot_dead;
-            if done && !ended.iter().any(|(id, _)| *id == m.id) {
-                ended.push((m.id, m.owner));
-            }
-        }
-        for (id, owner) in &ended {
-            let Some(flight) = self.missiles.iter().find(|f| f.missile.id == *id).copied() else {
-                continue;
-            };
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == *owner)
-                && avatar.pilot.is_some_and(|p| p.missile == *id)
-            {
-                avatar.pilot = None;
-                self.broadcast_event(&missile_event(&flight.missile, true));
-            }
-        }
-        let piloted: Vec<u16> = self
-            .avatars
-            .iter()
-            .filter_map(|a| a.pilot.map(|p| p.missile))
-            .collect();
-        let bomblets_out: Vec<u16> = self.bomblets.iter().map(|b| b.missile).collect();
-        self.missiles.retain(|f| {
-            !(f.exploded
-                && !piloted.contains(&f.missile.id)
-                && !bomblets_out.contains(&f.missile.id))
-        });
-    }
-
-    /// Player `by` hit Guided Missile `id`: it goes off where it is (Black
-    /// Ops 2's `handledamage` detonates it on any damage), its pilot's view
-    /// comes back half a second later, and `by` scores for it.
-    fn shoot_down_missile(&mut self, id: u16, by: u8, shot: u32) {
-        let tick = self.tick;
-        let Some(flight) = self
-            .missiles
-            .iter_mut()
-            .find(|f| f.missile.id == id && !f.exploded)
-        else {
-            return;
-        };
-        flight.exploded = true;
-        if flight.pilot_until.is_none() {
-            flight.pilot_until = Some(tick + streak::seconds_to_ticks(MISSILE_CAMERA_AFTER_BLAST));
-        }
-        let m = flight.missile;
-        godot_print!(
-            "server: player {by} shot down player {}'s Guided Missile",
-            m.owner
-        );
-        self.send_event(
-            by,
-            GameEvent::Hit {
-                victim: u8::MAX,
-                shot,
-                damage: 1.0,
-                headshot: false,
-                killed: false,
-            },
-        );
-        self.broadcast_event(&GameEvent::Streak(StreakEvent::MissileBlast {
-            at: m.position,
-            bomblet: false,
-        }));
-        let blast = PropExplosion {
-            position: m.position,
-            radius: missile::BLAST_RADIUS,
-            damage: missile::BLAST_DAMAGE,
-            outer_damage: missile::BLAST_OUTER_DAMAGE,
-            attacker: Some(m.owner),
-            weapon: None,
-        };
-        self.streak_blast(&blast, Streak::GuidedMissile);
-        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
-            let scored = avatar.score.award(
-                Award::ShotDown(Streak::GuidedMissile),
-                missile::SHOT_DOWN_POINTS,
-            );
-            let totals = avatar.score.totals();
-            self.send_event(
-                by,
-                GameEvent::Score {
-                    awards: vec![scored],
-                    totals,
-                },
-            );
-        }
-    }
-
-    /// Where the move `from` to `to` first meets the map or the body of
-    /// anyone not on `side` (`bodies`: id, side, feet), if it does.
-    fn first_meeting(
-        &self,
-        space: &mut Gd<PhysicsDirectSpaceState3D>,
-        bodies: &[(u8, u8, Vec3)],
-        side: u8,
-        from: Vec3,
-        to: Vec3,
-    ) -> Option<Vec3> {
-        let wall = world_hit(space, to_godot(from), to_godot(to)).map(to_sim);
-        let wall_t = wall.map_or(f32::INFINITY, |w| from.distance(w));
-        let body = bodies
-            .iter()
-            .filter(|(_, s, _)| *s != side)
-            .filter_map(|(_, _, feet)| {
-                equipment::segment_hits_body(
-                    from,
-                    to,
-                    *feet,
-                    equipment::ROCKET_BODY_HEIGHT,
-                    equipment::ROCKET_BODY_RADIUS,
-                )
-            })
-            .map(|t| from.lerp(to, t))
-            .min_by(|a, b| from.distance(*a).total_cmp(&from.distance(*b)));
-        match body {
-            Some(b) if from.distance(b) < wall_t => Some(b),
-            _ => wall,
-        }
     }
 
     /// Where `avatar`'s Care Package lands: the floor where they aim, up to
@@ -9160,10 +5329,9 @@ impl NetServer {
     }
 
     /// What `viewer`'s minimap shows of the enemy: only the dots their radar
-    /// has, so a client learns nothing more (`shooter_sim::radar`). Zombies
-    /// has no minimap.
+    /// has, so a client learns nothing more (`shooter_sim::radar`).
     fn radar_view(&self, viewer: &Avatar) -> RadarView {
-        if self.horde.is_some() || self.custom.radar == custom::Radar::Off {
+        if self.custom.radar == custom::Radar::Off {
             return RadarView::default();
         }
         let hostile = |id: u8| {
@@ -9365,13 +5533,12 @@ impl NetServer {
         let planter = self
             .charge_planter
             .filter(|id| self.avatars.iter().any(|a| a.id == *id));
-        let blast = PropExplosion {
+        let blast = Blast {
             position: at + Vec3::Y * 0.3,
             radius: CHARGE_BLAST_RADIUS,
             damage: CHARGE_BLAST_DAMAGE,
             outer_damage: CHARGE_BLAST_EDGE_DAMAGE,
             attacker: planter,
-            weapon: None,
         };
         self.resolve_explosion(&blast, protocol::KillCause::Charge);
     }
@@ -10023,99 +6190,15 @@ impl NetServer {
 
     /// Queues an event for one player's client (bots have none).
     fn send_event(&mut self, id: u8, event: GameEvent) {
-        if self.recording_stats() {
-            self.record_sent(id, &event);
-        }
         if let Some(client) = self.clients.iter_mut().find(|c| c.player == Some(id)) {
             client.outbox.push(event);
         }
     }
 
     fn broadcast_event(&mut self, event: &GameEvent) {
-        // Every kill with a gun in a match counts toward the killer's
-        // attachments on their account (as the game's kill feed counts them).
-        if let GameEvent::Kill {
-            killer,
-            victim,
-            weapon,
-            cause: protocol::KillCause::Weapon,
-            ..
-        } = event
-            && killer != victim
-            && self.match_state.phase == Phase::Playing
-            && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == *killer)
-        {
-            avatar.share.add_kill(*weapon);
-        }
-        if let GameEvent::Kill {
-            killer,
-            victim,
-            weapon,
-            headshot,
-            cause,
-        } = *event
-            && self.recording_stats()
-        {
-            self.record_kill(killer, victim, weapon, headshot, cause);
-        }
         for client in &mut self.clients {
             if client.player.is_some() {
                 client.outbox.push(event.clone());
-            }
-        }
-    }
-
-    /// Whether players' stats count now: while a match is played, outside
-    /// Zombies (Call of Duty keeps Zombies' stats apart).
-    fn recording_stats(&self) -> bool {
-        self.match_state.phase == Phase::Playing && self.game != Mode::Zombies
-    }
-
-    /// Counts what an event to player `id` says about their match: their
-    /// hits, and the awards a score event paid.
-    fn record_sent(&mut self, id: u8, event: &GameEvent) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id && !a.bot) else {
-            return;
-        };
-        match event {
-            GameEvent::Hit {
-                victim,
-                damage,
-                killed,
-                ..
-            } if *victim != id => {
-                let held = avatar.predicted.state.combat.weapon().id;
-                avatar.share.stats.hit(held, *victim, *damage, *killed);
-            }
-            GameEvent::Score { awards, .. } => avatar.share.stats.awards(awards),
-            _ => {}
-        }
-    }
-
-    /// Counts a kill toward the killer's and the victim's stats.
-    fn record_kill(
-        &mut self,
-        killer: u8,
-        victim: u8,
-        weapon: WeaponId,
-        headshot: bool,
-        cause: protocol::KillCause,
-    ) {
-        for avatar in &mut self.avatars {
-            if avatar.bot {
-                continue;
-            }
-            if avatar.id == victim {
-                let held = avatar.predicted.state.combat.weapon().id;
-                avatar.share.stats.died(killer, victim, held);
-            } else if avatar.id == killer {
-                avatar.share.stats.kill(stats::KillFacts {
-                    victim,
-                    weapon,
-                    cause,
-                    headshot,
-                    perkless: avatar.class.perks.is_empty(),
-                });
             }
         }
     }
@@ -10206,10 +6289,6 @@ impl NetServer {
         self.history.insert_with_own(self.tick, views.clone(), owns);
         self.lag.record(self.tick, views.clone());
         let tick = self.tick;
-        let zombie_views = self.horde.as_mut().and_then(|h| h.views_for(tick));
-        if let Some(zombies) = &zombie_views {
-            self.history.insert_zombies(tick, zombies.clone());
-        }
         self.radar.expire(tick);
         let radars: Vec<(u8, RadarView)> = self
             .avatars
@@ -10222,23 +6301,17 @@ impl NetServer {
             views: &views,
             grenades: &grenade_views,
             smokes: &smoke_views,
-            zombies: zombie_views.as_ref(),
             radars: &radars,
         };
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
-            if client.spectator {
-                let outgoing = parts.for_spectator(&self.history, client.ack);
-                transport::send_unreliable(&mut client.peer, &outgoing.encode());
-                continue;
-            }
             let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
                 continue;
             };
             let outgoing = parts.for_player(
                 &self.history,
                 avatar,
-                (client.ack, client.zombie_ack),
+                client.ack,
                 client.inputs.last_applied(),
             );
             transport::send_unreliable(&mut client.peer, &outgoing.encode());
@@ -10249,9 +6322,7 @@ impl NetServer {
             for avatar in self.avatars.iter().filter(|a| a.bot) {
                 let last_input = probe.last_input(avatar.id, tick);
                 // The probe's client receives every snapshot.
-                let zombie_ack = ack.and_then(|t| self.history.zombies_by(t)).map(|(t, _)| t);
-                let mut outgoing =
-                    parts.for_player(&self.history, avatar, (ack, zombie_ack), last_input);
+                let mut outgoing = parts.for_player(&self.history, avatar, ack, last_input);
                 let bytes = outgoing.encode().len();
                 let own = outgoing.snapshot.own.take();
                 let without_own = outgoing.encode().len();
@@ -10269,46 +6340,20 @@ struct SnapshotParts<'a> {
     views: &'a [PlayerView],
     grenades: &'a [protocol::GrenadeView],
     smokes: &'a [protocol::SmokeView],
-    zombies: Option<&'a Vec<protocol::ZombieView>>,
     /// Each player's minimap of the enemy, by player id.
     radars: &'a [(u8, RadarView)],
 }
 
 impl SnapshotParts<'_> {
-    /// The snapshot for a spectator: every player, no own state, and no
-    /// minimap dots (a caster sees the players themselves).
-    fn for_spectator(&self, history: &SnapshotHistory, ack: Option<Tick>) -> Outgoing {
-        let baseline: Option<(Tick, Vec<PlayerView>)> =
-            ack.and_then(|tick| Some((tick, history.get(tick)?.to_vec())));
-        Outgoing {
-            snapshot: Snapshot {
-                tick: self.tick,
-                baseline: baseline.as_ref().map(|(tick, _)| *tick),
-                own: None,
-                players: self.views.to_vec(),
-                grenades: self.grenades.to_vec(),
-                smokes: self.smokes.to_vec(),
-                zombies: self.zombies.cloned(),
-                radar: RadarView::default(),
-            },
-            base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
-            base_own: None,
-            // Spectators get the horde whole each time.
-            base_zombies: None,
-        }
-    }
-
     /// The snapshot for `avatar`'s client, delta-encoded against what it
-    /// acknowledged (`acks`: its newest snapshot, and its newest that
-    /// carried the horde) if the server still has it.
+    /// acknowledged (`ack`) if the server still has it.
     fn for_player(
         &self,
         history: &SnapshotHistory,
         avatar: &Avatar,
-        acks: (Option<Tick>, Option<Tick>),
+        ack: Option<Tick>,
         last_input: u32,
     ) -> Outgoing {
-        let (ack, zombie_ack) = acks;
         let id = avatar.id;
         let others: Vec<PlayerView> = self.views.iter().filter(|v| v.id != id).copied().collect();
         let baseline: Option<(Tick, Vec<PlayerView>)> = ack.and_then(|tick| {
@@ -10330,7 +6375,6 @@ impl SnapshotParts<'_> {
                 players: others,
                 grenades: self.grenades.to_vec(),
                 smokes: self.smokes.to_vec(),
-                zombies: self.zombies.cloned(),
                 radar: self
                     .radars
                     .iter()
@@ -10340,7 +6384,6 @@ impl SnapshotParts<'_> {
             },
             base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
             base_own,
-            base_zombies: zombie_ack.and_then(|tick| Some((tick, history.zombies(tick)?.to_vec()))),
         }
     }
 }
@@ -10350,7 +6393,6 @@ struct Outgoing {
     snapshot: Snapshot,
     base_players: Vec<PlayerView>,
     base_own: Option<Predicted>,
-    base_zombies: Option<(Tick, Vec<protocol::ZombieView>)>,
 }
 
 impl Outgoing {
@@ -10359,10 +6401,6 @@ impl Outgoing {
         ServerMessage::Snapshot(self.snapshot.clone()).encode_with(Baseline {
             players: &self.base_players,
             own: self.base_own.as_ref(),
-            zombies: self
-                .base_zombies
-                .as_ref()
-                .map(|(tick, zombies)| (*tick, zombies.as_slice())),
         })
     }
 }
@@ -10406,24 +6444,6 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
         ..Default::default()
     }
     .quantized()
-}
-
-/// The damageable prop a collider belongs to, from `prop_id` metadata on it
-/// or any of its ancestors.
-fn prop_id_of(collider: Option<&Gd<Node>>) -> Option<u16> {
-    let mut node = collider.cloned();
-    while let Some(current) = node {
-        // Reading a missing key logs an error, so check first.
-        if current.has_meta("prop_id") {
-            return current
-                .get_meta("prop_id")
-                .try_to::<i32>()
-                .ok()
-                .and_then(|id| u16::try_from(id).ok());
-        }
-        node = current.get_parent();
-    }
-    None
 }
 
 /// Where a ray from `from` to `to` first meets the map, if it does. Players
@@ -10473,28 +6493,7 @@ fn lunge_backed(
         })
 }
 
-/// True if the weapon rack the input claims is really under this player's
-/// crosshair and within reach, as the client saw it before the move. Without
-/// this check, a tampered client could take any weapon from anywhere.
-/// Zombies: the teammate down in last stand whom this player, standing,
-/// is close enough to revive ([`laststand::REVIVE_RADIUS`]), nearest first.
-fn revive_target(avatar: &Avatar, downed: &[(u8, Vec3)]) -> Option<u8> {
-    let state = &avatar.predicted.state;
-    if !state.alive() || state.downed {
-        return None;
-    }
-    let here = avatar.predicted.position;
-    downed
-        .iter()
-        .filter(|(id, _)| *id != avatar.id)
-        .map(|(id, feet)| (*id, feet.distance(here)))
-        .filter(|(_, distance)| *distance <= laststand::REVIVE_RADIUS)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(id, _)| id)
-}
-
-/// The collider the player is looking at within reach (a rack, a door, a
-/// window's barrier), if any.
+/// The collider the player is looking at within reach (a rack), if any.
 fn looked_at(avatar: &Avatar, input: &PlayerInput, params: &PlayerParams) -> Option<Gd<Node>> {
     let p = &avatar.predicted;
     if !p.state.alive() {
@@ -10519,103 +6518,26 @@ fn looked_at(avatar: &Avatar, input: &PlayerInput, params: &PlayerParams) -> Opt
         .ok()
 }
 
-/// The price of the rack holding `weapon` that the player is looking at
-/// within reach, if they are (0 for a free rack).
+/// Whether the player is looking at the rack holding `weapon`, within reach.
 fn pickup_in_reach(
     avatar: &Avatar,
     input: &PlayerInput,
     weapon: WeaponId,
     params: &PlayerParams,
-) -> Option<i64> {
-    let pickup = looked_at(avatar, input, params)?
-        .try_cast::<WeaponPickup>()
-        .ok()?;
-    let pickup = pickup.bind();
-    (pickup.weapon_id() == Some(weapon)).then(|| pickup.price())
+) -> bool {
+    looked_at(avatar, input, params)
+        .and_then(|node| node.try_cast::<WeaponPickup>().ok())
+        .is_some_and(|pickup| pickup.bind().weapon_id() == Some(weapon))
 }
 
-/// The scorestreaks bots bring.
-/// The streaks bot `id` brings: a UAV and two of the dearer ones, varied
-/// between bots so each kind turns up (Black Ops 2's bots bring theirs from
-/// the unlocked list, `_bot_loadout.gsc`).
-fn bot_streaks(id: u8) -> Loadout {
-    const SETS: [[Streak; 2]; 6] = [
-        [Streak::CarePackage, Streak::Airstrike],
-        [Streak::Airstrike, Streak::SentryGun],
-        [Streak::CarePackage, Streak::SentryGun],
-        [Streak::GuidedMissile, Streak::SentryGun],
-        [Streak::CarePackage, Streak::GuidedMissile],
-        [Streak::GuidedMissile, Streak::AttackChopper],
-    ];
-    let [a, b] = SETS[usize::from(id) % SETS.len()];
-    Loadout([Some(Streak::Uav), Some(a), Some(b)]).sorted()
-}
-
-/// A Guided Missile in the air, the server's side: the missile, whether it
-/// has gone off, when its pilot's camera goes back to them, and a bot
-/// pilot's target and when it splits it.
-#[derive(Clone, Copy, Debug)]
-struct Flight {
-    missile: Missile,
-    exploded: bool,
-    pilot_until: Option<Tick>,
-    bot_target: Option<u8>,
-    bot_split: Option<Tick>,
-}
-
-/// A Guided Missile's pilot: which missile, and their latest steering.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Pilot {
-    missile: u16,
-    view: shooter_sim::Vec2,
-    boost: bool,
-    split: bool,
-}
-
-/// Ticks between a Guided Missile's states to everyone (twenty a second).
-const MISSILE_STATE_TICKS: Tick = 6;
-/// Seconds a pilot's camera stays after an unsplit missile goes off.
-const MISSILE_CAMERA_AFTER_BLAST: f32 = 0.5;
-/// Black Ops 2's bots press fire a second and a half into the missile
-/// (`bot_update_killstreak`), and ours aim it at an enemy this near.
-const BOT_MISSILE_SPLIT_SECONDS: f32 = 1.5;
-const BOT_MISSILE_REACH: f32 = 80.0;
-
-fn missile_event(m: &Missile, ended: bool) -> GameEvent {
-    GameEvent::Streak(StreakEvent::Missile(protocol::MissileView {
-        id: m.id,
-        owner: m.owner,
-        side: m.side,
-        at: m.position,
-        view: m.view,
-        boosting: m.boosting,
-        split: m.split,
-        ended,
-    }))
-}
-
-fn chopper_event(c: &Chopper) -> GameEvent {
-    GameEvent::Streak(StreakEvent::Chopper(protocol::ChopperView {
-        id: c.id,
-        owner: c.owner,
-        side: c.side,
-        guard: c.guard,
-        called: c.called,
-        seed: c.seed,
-    }))
-}
-
-fn turret_event(t: &Turret) -> GameEvent {
-    GameEvent::Streak(StreakEvent::Turret(protocol::TurretView {
-        id: t.id,
-        owner: t.owner,
-        side: t.side,
-        at: t.at,
-        facing: t.facing,
-        placed: t.placed,
-        until: t.until,
-    }))
-}
+/// The streaks bots bring: all three there are, the UAV, the Counter-UAV,
+/// and the Care Package (Black Ops 2's bots bring theirs from the unlocked
+/// list, `_bot_loadout.gsc`).
+const BOT_STREAKS: Loadout = Loadout([
+    Some(Streak::Uav),
+    Some(Streak::CounterUav),
+    Some(Streak::CarePackage),
+]);
 
 fn crate_incoming(c: &care_package::Crate) -> GameEvent {
     GameEvent::Streak(StreakEvent::CrateIncoming {
@@ -10635,15 +6557,6 @@ fn joined_event(avatar: &Avatar) -> GameEvent {
         name: avatar.name.clone(),
         team: avatar.team,
         bot: avatar.bot,
-    }
-}
-
-/// A prop state as the reliable event clients apply.
-fn prop_event(state: &PropSnapshot) -> GameEvent {
-    GameEvent::PropState {
-        id: state.id,
-        stage: state.stage,
-        impulse: state.impulse,
     }
 }
 
@@ -10986,7 +6899,7 @@ fn site_letter(index: usize) -> String {
 }
 
 /// Two sites for maps without `ChargeSites`: on the defenders' side (side 1)
-/// of the middle, one to each flank, so the testing area and Nuketown play.
+/// of the middle, one to each flank, so the testing area plays.
 fn fallback_charge_sites(spawns: &[SpawnPoint]) -> Vec<(String, Site)> {
     let side = |team: Team| {
         let points: Vec<Vec3> = spawns
@@ -11042,19 +6955,4 @@ fn fallback_zones(spawns: &[SpawnPoint]) -> Vec<Zone> {
         center: center + Vec3::new(0.0, 1.5, 0.0),
         half_extents: Vec3::new(5.0, 2.0, 5.0),
     }]
-}
-
-/// What a bot shows: a low prestige and one of the career calling cards,
-/// fixed by its id, as Call of Duty's bots wear ranks and cards of their own.
-fn bot_cosmetics(id: u8) -> Cosmetics {
-    let roll = rng::hash(u32::from(id), 0xCA2D);
-    let cards = shooter_sim::card::Card::all()
-        .filter(|c| !c.key().starts_with("prestige_"))
-        .take(14)
-        .collect::<Vec<_>>();
-    Cosmetics {
-        prestige: (roll % 4) as u8,
-        card: cards[(roll / 4) as usize % cards.len()],
-        camos: Vec::new(),
-    }
 }

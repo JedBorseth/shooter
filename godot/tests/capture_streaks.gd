@@ -1,12 +1,10 @@
 extends SceneTree
 ## Captures scorestreaks on screen: a server runs in this process on
-## Slamcity with bots, and we join it, earn every streak through the
+## Breakwater with bots, and we join it, earn every streak through the
 ## server's debug hooks, and capture the streak column with a held UAV, a
-## UAV's sweep on the minimap, an enemy Counter-UAV's static, the Airstrike's
-## target picker with its marks, a Care Package on its way down and
-## landed, each drone circling overhead, a Sentry Gun set down, the
-## Guided Missile's camera, and an Attack Chopper. Needs
-## a GPU and a display (or Xvfb):
+## UAV's sweep on the minimap, an enemy Counter-UAV's static, a Care Package
+## on its way down and landed, and each drone circling overhead. Needs a GPU
+## and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_streaks.gd
 
@@ -28,8 +26,8 @@ func _run() -> void:
 		return
 	DirAccess.make_dir_recursive_absolute(_out)
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS
@@ -39,7 +37,7 @@ func _run() -> void:
 	# The server's own copy of the map stays out of sight.
 	_server.visible = false
 	var net := root.get_node("Net")
-	net.join("127.0.0.1:%d" % _port, {"map": "slamcity", "name": "Local"})
+	net.join("127.0.0.1:%d" % _port, {"map": "breakwater", "name": "Local"})
 	var client: NetClient = null
 	for i in 1800:
 		client = net.client()
@@ -58,7 +56,7 @@ func _run() -> void:
 	hud.call("_set_menu_open", false)
 
 	_server.debug_give_streak(me, "uav")
-	_server.debug_give_streak(me, "airstrike")
+	_server.debug_give_streak(me, "counter_uav")
 	_server.debug_score(me, 300)
 	await _frames(30)
 	await _shot("01_streaks_held")
@@ -67,17 +65,6 @@ func _run() -> void:
 	await _frames(40)
 	await _shot("02_uav_sweep")
 	await _aircraft_shots("uav", "07")
-
-	var picker := current_scene.get_node("AirstrikeView")
-	picker.call("open_picker")
-	await _frames(10)
-	var rect: Rect2 = picker.call("_plan_rect")
-	for uv: Vector2 in [Vector2(0.3, 0.35), Vector2(0.55, 0.5)]:
-		picker.call("_mark", rect.position + rect.size * uv)
-	picker.set("_cursor", rect.position + rect.size * Vector2(0.7, 0.62))
-	await _frames(10)
-	await _shot("03_airstrike_picker")
-	picker.call("close_picker")
 
 	_server.debug_give_streak(me, "care_package")
 	_server.debug_use_streak(me, "care_package")
@@ -95,46 +82,6 @@ func _run() -> void:
 	await _shot("06_jammed")
 	await _aircraft_shots("counter_uav", "08")
 
-	_server.debug_give_streak(me, "sentry_gun")
-	_server.debug_use_streak(me, "sentry_gun")
-	await _frames(60 * 2)
-	var guns := _server.turrets()
-	if not guns.is_empty():
-		var camera := Camera3D.new()
-		camera.fov = 55.0
-		current_scene.add_child(camera)
-		camera.make_current()
-		var centre: Vector3 = guns[0].centre
-		camera.look_at_from_position(centre + Vector3(2.2, 0.6, 2.4), centre)
-		await _frames(3)
-		await _shot("09_sentry_gun")
-		camera.queue_free()
-
-	_server.debug_give_streak(me, "guided_missile")
-	_server.debug_use_streak(me, "guided_missile")
-	await _frames(70)
-	await _shot("10_guided_missile")
-	await _frames(60 * 8)
-
-	# A teammate's Attack Chopper, guarding a point near an enemy.
-	for id in client.remote_ids():
-		if client.team_of(id) == client.team_of(me):
-			_server.debug_give_streak(id, "attack_chopper")
-			_server.debug_use_streak(id, "attack_chopper")
-			break
-	await _frames(60 * 6)
-	var choppers := _server.choppers()
-	if not choppers.is_empty():
-		var camera := Camera3D.new()
-		camera.fov = 55.0
-		current_scene.add_child(camera)
-		camera.make_current()
-		for i in 3:
-			var at: Vector3 = _server.choppers()[0].position
-			camera.look_at_from_position(at + Vector3(9.0, -6.0, 9.0), at)
-			await _frames(1)
-		await _shot("11_attack_chopper")
-		camera.queue_free()
 	_server.queue_free()
 	quit(0)
 

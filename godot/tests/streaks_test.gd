@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of scorestreaks (`shooter_sim::streak`) on a Team
-## Deathmatch server in this process on Slamcity with four passive bots:
+## Deathmatch server in this process on Breakwater with four passive bots:
 ## score in one life earns each streak at its cost, a UAV
 ## sweeps both enemies onto its team's radars (a standing Ghost included),
 ## a Counter-UAV jams the other team's minimaps but not a Hard Wired
@@ -21,8 +21,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS
@@ -67,8 +67,8 @@ func _run() -> void:
 		)
 	_check(_server.radar_ids(blues[0]).is_empty(), "the enemy's radar shows nobody")
 
-	# With the UAV, the Care Package, and the Airstrike chosen.
-	_server.debug_set_streaks(blues[1], PackedStringArray(["uav", "care_package", "airstrike"]))
+	# With the UAV and the Care Package chosen.
+	_server.debug_set_streaks(blues[1], PackedStringArray(["uav", "care_package"]))
 	_server.debug_score(blues[1], 560)
 	await _ticks(2)
 	_check(

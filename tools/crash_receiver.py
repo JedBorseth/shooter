@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Private crash inbox on the master host, behind its HTTPS reverse proxy.
+"""Private crash inbox on the public host, behind its HTTPS reverse proxy.
 
 Bind only to a private interface; the proxy must allow only POST /shooter/crashes,
 buffer requests with a 2 MiB + 512 byte limit, and enforce a request timeout.

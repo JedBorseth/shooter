@@ -1,7 +1,6 @@
 extends SceneTree
 ## The horizon strips (tools/build_horizon.py): the Testing Area's country
-## (shaders/day_sky.gdshader) and the Zombies arena's night skyline
-## (shaders/night_sky.gdshader). For each: the sky carries the rendered strip
+## (shaders/day_sky.gdshader). For each: the sky carries the rendered strip
 ## and its depth, the shader's strip size matches the images, the strip turns
 ## with the sky, nothing in the render was cut off at the top, and land fills
 ## its bottom row (the shader repeats that row below the strip).
@@ -17,14 +16,6 @@ const STRIPS := [
 		&"horizon_depth",
 		"res://assets/skies/testing_horizon.png",
 		"res://assets/skies/testing_horizon_depth.png",
-	],
-	[
-		"res://scenes/zombies_arena.tscn",
-		"night_sky.gdshader",
-		&"skyline",
-		&"skyline_depth",
-		"res://assets/skies/zombies_horizon.png",
-		"res://assets/skies/zombies_horizon_depth.png",
 	],
 ]
 
@@ -67,8 +58,7 @@ func _check_strip(spec: Array) -> void:
 	var depth := material.get_shader_parameter(spec[3]) as Texture2D
 	_check(strip != null and strip.resource_path == spec[4], "%s: the sky has its strip" % name)
 	_check(depth != null and depth.resource_path == spec[5], "%s: the sky has its depth" % name)
-	# The day sky is turned (sky_rotation) and corrects for it; the night sky
-	# is not turned.
+	# The day sky is turned (sky_rotation) and corrects for it.
 	var turn: Variant = material.get_shader_parameter(&"sky_turn")
 	var turned := 0.0 if turn == null else float(turn)
 	var turns := absf(turned - env.sky_rotation.y) < 1e-3

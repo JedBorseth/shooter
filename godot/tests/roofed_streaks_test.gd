@@ -1,8 +1,8 @@
 extends SceneTree
-## Headless test of the streaks a roofed map leaves out
+## Headless test of the streak a roofed map leaves out
 ## (`shooter_sim::streak::Streak::usable`): Warehouse is roofed over (its
-## root's `roofed` metadata), so a Care Package or an Airstrike cannot be
-## called in there and stays held, while a UAV still goes up.
+## root's `roofed` metadata), so a Care Package cannot be called in there
+## and stays held, while a UAV still goes up.
 ## godot --headless --path godot --script res://tests/roofed_streaks_test.gd
 
 const BOTS := 2
@@ -39,11 +39,6 @@ func _run() -> void:
 	await _ticks(2)
 	_check(_server.crates().is_empty(), "no Care Package comes under the roof")
 	_check("care_package" in _server.streaks_held(caller), "and it stays held")
-
-	_server.debug_give_streak(caller, "airstrike")
-	_server.debug_airstrike(caller, PackedVector3Array([Vector3(10, 0, 0), Vector3(0, 0, 10)]))
-	await _ticks(2)
-	_check("airstrike" in _server.streaks_held(caller), "an Airstrike stays held too")
 
 	_server.debug_give_streak(caller, "uav")
 	_server.debug_use_streak(caller, "uav")

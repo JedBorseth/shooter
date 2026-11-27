@@ -49,8 +49,8 @@ func _run() -> void:
 	_check(roam != null and roam.get("mode") == "freeroam", "Free Roam opens its map card")
 	if roam != null:
 		var roam_maps: HBoxContainer = roam.get("_map")
-		_check(roam_maps.get_child_count() == 4, "Free Roam offers the four multiplayer maps")
-		(roam_maps.get_child(2) as Button).pressed.emit()
+		_check(roam_maps.get_child_count() == 2, "Free Roam offers the two multiplayer maps")
+		(roam_maps.get_child(1) as Button).pressed.emit()
 		_check(
 			roam.options() == {"mode": "freeroam", "map": "warehouse"},
 			"Free Roam starts the chosen map, got %s" % roam.options()
@@ -58,8 +58,7 @@ func _run() -> void:
 		roam.emit_signal("back_requested")
 		await process_frame
 	_check(free_roam.has_focus(), "closing the Free Roam card refocuses its route")
-	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
-	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
+	_check(not (menu.get_node("JoinServer") as Button).disabled, "Join Server is available")
 	var options_button := title.get_node("%Options") as Button
 	_check(not options_button.disabled, "Options is available on the main menu")
 	options_button.pressed.emit()
@@ -94,7 +93,7 @@ func _run() -> void:
 				options
 				== {
 					"mode": "tdm",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 11,
 					"bot_skill": "normal",
 					"team_bots": "5,6",
@@ -103,23 +102,21 @@ func _run() -> void:
 					"time_limit": 10
 				}
 			),
-			"the default local match is 6v6 Slamcity with normal bots, got %s" % options
+			"the default local match is 6v6 Breakwater with normal bots, got %s" % options
 		)
 		var maps: HBoxContainer = setup.get("_map")
 		(maps.get_child(1) as Button).pressed.emit()
-		_check(setup.options()["map"] == "nuketown", "Nuketown selection starts the Nuketown map")
-		_check(
-			(setup.get("_map_title") as Label).text == "Nuketown", "the card shows the chosen map"
-		)
-		(maps.get_child(2) as Button).pressed.emit()
 		_check(
 			setup.options()["map"] == "warehouse", "Warehouse selection starts the Warehouse map"
+		)
+		_check(
+			(setup.get("_map_title") as Label).text == "Warehouse", "the card shows the chosen map"
 		)
 		_check(
 			(setup.get("_picture") as TextureRect).texture != null,
 			"the card shows Warehouse's picture"
 		)
-		(maps.get_child(3) as Button).pressed.emit()
+		(maps.get_child(0) as Button).pressed.emit()
 		_check(
 			setup.options()["map"] == "breakwater", "Breakwater selection starts the Breakwater map"
 		)
@@ -127,7 +124,7 @@ func _run() -> void:
 			(setup.get("_picture") as TextureRect).texture != null,
 			"the card shows Breakwater's picture"
 		)
-		maps.call("select", 4)
+		maps.call("select", 2)
 		_check(setup.options()["map"] == "arena", "select() chooses a map like an OptionButton")
 		setup.back_requested.emit()
 		await process_frame
@@ -160,14 +157,14 @@ func _run() -> void:
 				options
 				== {
 					"mode": "gungame",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 7,
 					"bot_skill": "normal",
 					"kills_per_weapon": 2,
 					"time_limit": 10
 				}
 			),
-			"the default Gun Game is eight players on Slamcity, got %s" % options
+			"the default Gun Game is eight players on Breakwater, got %s" % options
 		)
 		setup.back_requested.emit()
 		await process_frame
@@ -185,7 +182,7 @@ func _run() -> void:
 				options
 				== {
 					"mode": "ffa",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 7,
 					"bot_skill": "normal",
 					"score_limit": 30,
@@ -209,7 +206,7 @@ func _run() -> void:
 				options
 				== {
 					"mode": "ctf",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 11,
 					"bot_skill": "normal",
 					"team_bots": "5,6",
@@ -218,7 +215,7 @@ func _run() -> void:
 					"time_limit": 10
 				}
 			),
-			"the default Capture the Flag is 6v6 on Slamcity to 3 captures, got %s" % options
+			"the default Capture the Flag is 6v6 on Breakwater to 3 captures, got %s" % options
 		)
 		setup.back_requested.emit()
 		await process_frame
@@ -251,7 +248,7 @@ func _run() -> void:
 				options
 				== {
 					"mode": "dom",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 11,
 					"bot_skill": "normal",
 					"team_bots": "5,6",
@@ -260,7 +257,7 @@ func _run() -> void:
 					"time_limit": 10
 				}
 			),
-			"the default Domination is 6v6 on Slamcity to 200 points, got %s" % options
+			"the default Domination is 6v6 on Breakwater to 200 points, got %s" % options
 		)
 		setup.back_requested.emit()
 		await process_frame
@@ -278,7 +275,7 @@ func _run() -> void:
 				options
 				== {
 					"mode": "snd",
-					"map": "slamcity",
+					"map": "breakwater",
 					"bots": 11,
 					"bot_skill": "normal",
 					"team_bots": "5,6",
@@ -286,7 +283,7 @@ func _run() -> void:
 					"rounds_to_win": 6
 				}
 			),
-			"the default Search and Destroy is 6v6 to six rounds on Slamcity, got %s" % options
+			"the default Search and Destroy is 6v6 to six rounds on Breakwater, got %s" % options
 		)
 		setup.back_requested.emit()
 		await process_frame
@@ -303,12 +300,9 @@ func _run() -> void:
 		"res://scenes/player.tscn",
 		"res://scenes/props/target_dummy.tscn",
 		"res://scenes/weapons/m4_view.tscn",
-		"res://scenes/slamcity.tscn",
-		"res://scenes/nuketown.tscn",
-		"res://assets/maps/nuketown/generated/nuketown_world.scn",
-		"res://scenes/zombies_menu.tscn",
-		"res://scenes/server_browser.tscn",
-		"res://assets/zombies/textures/globe_zm.jpg"
+		"res://scenes/breakwater.tscn",
+		"res://scenes/warehouse.tscn",
+		"res://scenes/join_server.tscn",
 	]:
 		_check(not ResourceLoader.has_cached(path), "menu does not load %s" % path)
 	_check(

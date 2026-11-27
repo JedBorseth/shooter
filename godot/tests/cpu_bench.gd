@@ -4,14 +4,14 @@ extends SceneTree
 ## background process (profiled through `SHOOTER_CPU_PROFILE`), joins it,
 ## plays for a while standing at the spawn, and prints each system's time per
 ## frame (client) and per tick (server). Needs a GPU and a display (or Xvfb):
-##   tools/cpu_bench.sh [--map slamcity] [--mode tdm] [--bots 11] [--seconds 20]
+##   tools/cpu_bench.sh [--map breakwater] [--mode tdm] [--bots 11] [--seconds 20]
 ## or directly:
 ##   godot --path godot --resolution 1920x1080 --audio-driver Dummy \
-##     --script res://tests/cpu_bench.gd -- --map slamcity --bots 11 --out cpu.json
+##     --script res://tests/cpu_bench.gd -- --map breakwater --bots 11 --out cpu.json
 ##
 ## Options (after `--`):
-##   --map      a map id as `Net` takes it (default slamcity).
-##   --mode     tdm, dom, ..., or zombies (default tdm; zombies on the zombies map).
+##   --map      a map id as `Net` takes it (default breakwater).
+##   --mode     tdm, dom, ... (default tdm).
 ##   --bots     bots on the server (default 11: a 6v6 with this client).
 ##   --seconds  seconds measured once the match is playing (default 20).
 ##   --warmup   seconds played before measuring (default 5).
@@ -31,14 +31,12 @@ extends SceneTree
 const PHYSICS_SYSTEMS := [
 	"client/net",
 	"player (physics)",
-	"zombies (physics)",
-	"zombie director",
 	"ragdolls",
 	"sentry",
 ]
 
 var _options := {
-	"map": "slamcity",
+	"map": "breakwater",
 	"mode": "tdm",
 	"bots": "11",
 	"seconds": "20",

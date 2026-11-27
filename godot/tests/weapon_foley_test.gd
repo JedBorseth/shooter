@@ -11,7 +11,7 @@ extends SceneTree
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/weapon_foley_test.gd
 
-const WEAPONS := ["m4", "br3", "ak47", "lsw6", "pdw9", "m1911", "m870", "m40", "laser"]
+const WEAPONS := ["m4", "br3", "ak47", "lsw6", "pdw9", "m1911", "m870", "m40"]
 
 var _failures: PackedStringArray = []
 var _player: FpsPlayer
@@ -58,7 +58,6 @@ func _check_files() -> void:
 		"m1911": ["mag_out", "mag_in", "bolt_release", "dry"],
 		"m870": ["pump_back", "pump_forward", "shell_in", "dry"],
 		"m40": ["bolt_up", "bolt_back", "bolt_forward", "bolt_down", "mag_out", "mag_in", "dry"],
-		"laser": ["mag_out", "mag_in", "dry"],
 	}
 	for weapon: String in need:
 		for event: String in need[weapon]:

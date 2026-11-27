@@ -28,8 +28,7 @@
 //!
 //! The server checks every class it is sent with [`Class::validate`] and
 //! never trusts the client's arithmetic. Level unlocks are checked by the
-//! client only until accounts exist (Phase 5): the server cannot know a
-//! player's level yet.
+//! client only: the server cannot know a player's level.
 
 use crate::equipment;
 pub use crate::perk::{Perk, Perks, Tier};
@@ -50,7 +49,7 @@ pub const TACTICALS: u8 = 2;
 /// Perks a tier's slot takes, and with that tier's Perk Greed.
 pub const PERKS_PER_TIER: u8 = 1;
 pub const GREED_PERKS_PER_TIER: u8 = 2;
-/// Custom class slots a player has (Black Ops 2's five, before prestige).
+/// Custom class slots a player has (Black Ops 2's five).
 pub const CUSTOM_CLASSES: usize = 5;
 
 /// A wildcard: a point spent to bend one slot's rule.
@@ -213,7 +212,7 @@ pub enum ClassError {
     /// It carries no gun at all.
     NoGun,
     /// The primary slot holds something that is not a plain primary weapon
-    /// players may pick (the laser is secret, variants come from attachments).
+    /// players may pick (variants come from attachments).
     NotAPrimary,
     /// The secondary slot holds something that is not a plain secondary, or
     /// a primary without Two Primaries.
@@ -367,10 +366,10 @@ fn check_attachments(gun: Gun, limit: u8) -> Result<(), ClassError> {
 }
 
 /// Whether a class may put this weapon in `slot`: a plain weapon of that
-/// slot, and not the secret laser.
+/// slot.
 pub fn is_class_weapon(id: WeaponId, slot: Slot) -> bool {
     let def = id.def();
-    def.slot == slot && def.plain() && !def.beam
+    def.slot == slot && def.plain()
 }
 
 /// The plain weapons a class may carry in `slot`, in table order.
@@ -659,14 +658,12 @@ mod tests {
     }
 
     #[test]
-    fn a_class_needs_a_gun_and_no_variants_or_secrets() {
+    fn a_class_needs_a_gun_and_no_variants() {
         let mut c = class(None);
         assert_eq!(c.validate(), Ok(()), "a sidearm alone is a class");
         c.secondary = None;
         assert_eq!(c.validate(), Err(ClassError::NoGun));
         let c = class(Some(Gun::plain(WeaponId::expect("m4+grip"))));
-        assert_eq!(c.validate(), Err(ClassError::NotAPrimary));
-        let c = class(Some(Gun::plain(WeaponId::expect("laser"))));
         assert_eq!(c.validate(), Err(ClassError::NotAPrimary));
         let c = class(Some(Gun::plain(WeaponId::expect("m1911"))));
         assert_eq!(c.validate(), Err(ClassError::NotAPrimary));

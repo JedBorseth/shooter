@@ -2,9 +2,9 @@
 //!
 //! A collider (or any ancestor) tagged with `surface` metadata says so
 //! directly. Untagged geometry is judged from the material drawn on the hit
-//! triangle: imported maps such as Nuketown carry descriptive material names
-//! (`nt_2020_astroturf_01`, `nt_2020_carpet_yellow`, `plastic_floor_tiles_*`),
-//! so their grass, carpet, and tile sound right without hand tagging. The hit
+//! triangle: maps and props carry descriptive material names (`gravel_0`,
+//! `planks_1`, `tread_plate_0`), so their gravel, wood, and metal sound right
+//! without hand tagging. The hit
 //! triangle comes from the ray's `face_index` (enabled in the project's Jolt
 //! settings) and is mapped back to the mesh surface it was built from.
 //!

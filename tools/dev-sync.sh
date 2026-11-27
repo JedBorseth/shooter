@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Brings a source checkout up to date and starts the game: pulls the current
-# branch, fetches the Git LFS assets, rebuilds the Rust extension and the
-# master server, reimports changed assets, then runs the game. Anything after
+# branch, fetches the Git LFS assets, rebuilds the Rust extension, reimports
+# changed assets, then runs the game. Anything after
 # the options goes to the game, as after `godot --path godot`.
 #
 #   tools/dev-sync.sh                     # update and play
@@ -32,8 +32,8 @@ if [[ $pull == 1 ]]; then
   git lfs pull
 fi
 
-echo "==> Building the Rust extension and master server"
-(cd rust && cargo build -p shooter-game -p shooter-master)
+echo "==> Building the Rust extension"
+(cd rust && cargo build -p shooter-game)
 
 echo "==> Importing assets"
 "$godot" --headless --editor --path godot --import

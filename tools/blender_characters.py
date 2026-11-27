@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,7 +19,7 @@ from pathlib import Path
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Matrix, Vector
 
 from bl_ext.user_default.mpfb.services.humanservice import HumanService  # noqa: E402
 from bl_ext.user_default.mpfb.services.targetservice import TargetService  # noqa: E402
@@ -685,7 +684,7 @@ def source_images(obj) -> dict[str, bpy.types.Image]:
     return found
 
 
-def bake_material(obj, role: str, role_index: int, settings: dict, decay: dict | None = None) -> bpy.types.Material:
+def bake_material(obj, role: str, role_index: int, settings: dict) -> bpy.types.Material:
     """One material per part for baking: its own textures through its own UVs
     (unless `use_diffuse` is off), plus procedural relief and colour variation,
     on a Principled BSDF whose emission is the albedo (for EMIT bakes). Nodes
@@ -737,11 +736,6 @@ def bake_material(obj, role: str, role_index: int, settings: dict, decay: dict |
     rough = None
     if detail:
         normal, base, rough = add_detail(nt, detail, normal, base, settings.get("roughness", 0.8))
-    if decay and role != "eyes":
-        if rough is None:
-            rough = nodes.new("ShaderNodeValue").outputs[0]
-            rough.default_value = settings.get("roughness", 0.8)
-        base, normal, rough = add_decay(nt, decay, role == "skin", base, normal, rough)
     links.new(base, bsdf.inputs["Base Color"])
     links.new(base, bsdf.inputs["Emission Color"])
     bsdf.inputs["Emission Strength"].default_value = 1.0
@@ -863,141 +857,6 @@ def add_detail(nt, detail: dict, normal, base, roughness: float):
     nt.links.new(val.outputs[0], mix.inputs[7])
     rough = n.math("ADD", roughness, n.math("MULTIPLY", n.math("SUBTRACT", fine, 0.5), 0.12), clamp=True)
     return bump.outputs[0], mix.outputs[2], rough
-
-
-def add_decay(nt, decay: dict, skin: bool, base, normal, rough):
-    """A zombie's decay, painted into its bake (object space, metres, the
-    rest pose): grime over everything and mud rising from the hems; wounds
-    (`decay["wounds"]`, each [x, y, z, radius]) with blood soaked out round
-    them and run down below; a bloody mouth and chin (`decay["mouth"]`, placed
-    from the eyes in `main`); rips
-    in the cloth (`decay["tears"]`, [x, y, z, length]); and on skin, bruising
-    and veins. Returns (base colour, normal, roughness)."""
-    n = Nodes(nt)
-    coord = n.coord
-    x, y, z = n.axis(0), n.axis(1), n.axis(2)
-    seed = float(decay.get("seed", 0))
-
-    def vec(v):
-        node = n.new("ShaderNodeCombineXYZ", X=v[0], Y=v[1], Z=v[2])
-        return node.outputs[0]
-
-    def vmath(op, a, b):
-        node = nt.nodes.new("ShaderNodeVectorMath")
-        node.operation = op
-        n.set(node.inputs[0], a)
-        n.set(node.inputs[1], b)
-        return node.outputs["Value"] if op in ("DISTANCE", "LENGTH", "DOT_PRODUCT") else node.outputs["Vector"]
-
-    def stretched_noise(scale, stretch, detail=3.0):
-        mp = n.new("ShaderNodeMapping")
-        mp.inputs["Scale"].default_value = stretch
-        mp.inputs["Location"].default_value = (seed * 1.7, seed * 0.3, seed * 2.9)
-        nt.links.new(coord, mp.inputs["Vector"])
-        return n.noise(scale, detail, mp.outputs[0])
-
-    def smooth(e0, e1, v):
-        node = nt.nodes.new("ShaderNodeMapRange")
-        node.interpolation_type = "SMOOTHSTEP"
-        for name, value in (("Value", v), ("From Min", e0), ("From Max", e1), ("To Min", 0.0), ("To Max", 1.0)):
-            n.set(node.inputs[name], value)
-        return node.outputs[0]
-
-    wobble = n.math("SUBTRACT", stretched_noise(14.0, (1.0, 1.0, 1.0), 4.0), 0.5)
-    ragged = n.math("SUBTRACT", stretched_noise(60.0, (1.0, 1.0, 1.0), 3.0), 0.5)
-    blood = 0.0
-    wound = 0.0
-    crust = 0.0
-    for wx, wy, wz, r in decay.get("wounds", []) + ([decay["mouth"]] if decay.get("mouth") else []):
-        d = vmath("DISTANCE", coord, vec((wx, wy, wz)))
-        # A ragged stain: the distance field broken up at two scales, cut
-        # with a hard-ish edge where the cloth or skin stopped soaking.
-        field = n.math("SUBTRACT", 1.0, n.math("DIVIDE", d, r * 3.0))
-        field = n.math("ADD", field, n.math("ADD", n.math("MULTIPLY", wobble, 0.55), n.math("MULTIPLY", ragged, 0.3)))
-        soak = smooth(0.18, 0.32, field)
-        blood = n.math("MAXIMUM", blood, soak)
-        # Runs down the body below the wound, in streaks.
-        dx = n.math("SQRT", n.math("ADD", n.math("POWER", n.math("SUBTRACT", x, wx), 2.0), n.math("POWER", n.math("SUBTRACT", y, wy), 2.0)))
-        below = n.math("SUBTRACT", wz, z)
-        streaks = smooth(0.52, 0.6, stretched_noise(30.0, (1.0, 1.0, 0.12), 2.0))
-        run = n.math("MULTIPLY", n.math("MULTIPLY", smooth(r * 1.8, r * 0.5, dx), smooth(-0.01, 0.02, below)),
-                     n.math("MULTIPLY", smooth(r * 9.0, r * 2.0, below), streaks))
-        blood = n.math("MAXIMUM", blood, run)
-        if [wx, wy, wz, r] != decay.get("mouth"):
-            core = n.math("ADD", n.math("SUBTRACT", 1.0, n.math("DIVIDE", d, r)), n.math("MULTIPLY", ragged, 0.5))
-            wound = n.math("MAXIMUM", wound, smooth(0.15, 0.35, core))
-            crust = n.math("MAXIMUM", crust, n.math("MULTIPLY", smooth(-0.6, -0.1, core), smooth(0.35, 0.1, core)))
-    rip = 0.0
-    for tx, ty, tz, length in decay.get("tears", []):
-        # A slit, longer across than down, with a frayed edge.
-        mp = n.new("ShaderNodeMapping")
-        mp.inputs["Location"].default_value = (-tx, -ty, -tz)
-        nt.links.new(coord, mp.inputs["Vector"])
-        sc = n.new("ShaderNodeMapping")
-        sc.inputs["Scale"].default_value = (1.0 / length, 1.0 / length, 4.0 / length)
-        nt.links.new(mp.outputs[0], sc.inputs["Vector"])
-        d = vmath("LENGTH", sc.outputs[0], (0.0, 0.0, 0.0))
-        fray = n.math("MULTIPLY", n.math("SUBTRACT", stretched_noise(220.0, (1.0, 1.0, 1.0), 2.0), 0.5), 0.5)
-        rip = n.math("MAXIMUM", rip, smooth(1.0, 0.75, n.math("ADD", d, fray)))
-    # Grime: blotches everywhere, mud from the ground up to the knees.
-    blotch = smooth(0.36, 0.66, stretched_noise(5.0, (1.0, 1.0, 1.0), 4.0))
-    mud = n.math("MULTIPLY", smooth(0.65, 0.1, z), smooth(0.3, 0.55, stretched_noise(11.0, (1.0, 1.0, 0.6), 3.0)))
-    grime = n.math("ADD", n.math("MULTIPLY", blotch, decay.get("grime", 0.5)), n.math("MULTIPLY", mud, 0.9), clamp=True)
-
-    def mix_rgb(a, b, fac):
-        mix = n.new("ShaderNodeMix")
-        mix.data_type = "RGBA"
-        n.set(mix.inputs["Factor"], fac)
-        n.set(mix.inputs[6], a)
-        n.set(mix.inputs[7], b)
-        return mix.outputs[2]
-
-    out = base
-    if not skin:
-        # Cloth dulls and yellows as it gets dirty.
-        dull = n.new("ShaderNodeHueSaturation", Saturation=0.72, Value=0.7)
-        n.set(dull.inputs["Color"], out)
-        n.set(dull.inputs["Fac"], 1.0)
-        out = dull.outputs[0]
-        # Worn for weeks: everything yellowed and greyed, then blotched.
-        out = mix_rgb(out, (0.32, 0.27, 0.2, 1.0), 0.18)
-        out = mix_rgb(out, (0.15, 0.12, 0.085, 1.0), n.math("MULTIPLY", grime, 0.85))
-    else:
-        # Bruising and veins under grey skin.
-        veins = n.new("ShaderNodeTexVoronoi", Scale=55.0)
-        veins.feature = "DISTANCE_TO_EDGE"
-        nt.links.new(coord, veins.inputs["Vector"])
-        vein = n.math("MULTIPLY", smooth(0.03, 0.0, veins.outputs["Distance"]), smooth(0.45, 0.7, stretched_noise(6.0, (1.0, 1.0, 1.0))))
-        out = mix_rgb(out, (0.28, 0.22, 0.3, 1.0), n.math("MULTIPLY", vein, 0.5))
-        bruise = smooth(0.55, 0.75, stretched_noise(7.0, (1.0, 1.0, 1.0), 3.0))
-        out = mix_rgb(out, (0.33, 0.27, 0.22, 1.0), n.math("MULTIPLY", bruise, 0.45))
-        out = mix_rgb(out, (0.24, 0.2, 0.16, 1.0), n.math("MULTIPLY", grime, 0.35))
-    # Blood: dark and drying at the edges, wet near wounds.
-    # Old blood is brown and dry; nearer a wound it is darker and still wet.
-    old = (0.05, 0.022, 0.014, 1.0)
-    fresh = (0.1, 0.006, 0.004, 1.0)
-    age = smooth(0.35, 0.65, n.math("ADD", stretched_noise(9.0, (1.0, 1.0, 1.0)), n.math("MULTIPLY", wound, 0.5)))
-    out = mix_rgb(out, mix_rgb(old, fresh, age), n.math("MULTIPLY", blood, 0.9))
-    if skin:
-        flesh = mix_rgb((0.16, 0.012, 0.01, 1.0), (0.32, 0.08, 0.07, 1.0), smooth(0.3, 0.8, stretched_noise(400.0, (1.0, 1.0, 1.0), 2.0)))
-        out = mix_rgb(out, flesh, wound)
-        out = mix_rgb(out, (0.035, 0.012, 0.008, 1.0), n.math("MULTIPLY", crust, 0.8))
-    else:
-        # The rip: dark inside, a lighter frayed lip.
-        lip = n.math("SUBTRACT", smooth(0.0, 0.5, rip), smooth(0.5, 1.0, rip))
-        out = mix_rgb(out, (0.35, 0.32, 0.28, 1.0), n.math("MULTIPLY", lip, 0.6))
-        out = mix_rgb(out, (0.03, 0.02, 0.02, 1.0), smooth(0.6, 0.95, rip))
-    wet = n.math("MULTIPLY", n.math("MULTIPLY", blood, age), 0.22)
-    rough = n.math("SUBTRACT", rough, wet, clamp=True)
-    rough = n.math("ADD", rough, n.math("MULTIPLY", grime, 0.05), clamp=True)
-    # Relief: torn flesh, the rip's hollow, crusted blood.
-    height = n.math("ADD", n.math("MULTIPLY", wound, stretched_noise(300.0, (1.0, 1.0, 1.0), 3.0)),
-                    n.math("MULTIPLY", rip, -1.0))
-    height = n.math("ADD", height, n.math("MULTIPLY", smooth(0.3, 0.6, blood), n.math("MULTIPLY", stretched_noise(500.0, (1.0, 1.0, 1.0)), 0.3)))
-    bump = n.new("ShaderNodeBump", Strength=0.6, Distance=0.002, Height=height)
-    if normal is not None:
-        nt.links.new(normal, bump.inputs["Normal"])
-    return out, bump.outputs[0], rough
 
 
 # --- Atlas and bakes --------------------------------------------------------------
@@ -1331,13 +1190,6 @@ def main():
     keep = spec.get("keep_body")
     if keep:
         keep_body_region(human, tuple(keep["bones"]), keep["threshold"])
-        if keep.get("uncovered"):
-            # Then everything the clothes cover goes, so the skin kept round a
-            # neckline meets the collar with no gap and never pokes through.
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            import blender_gear
-
-            blender_gear.remove_hidden(human, [o for o in clothes if o["role"] != "eyes"], keep["uncovered"])
     for o in parts:
         o["material"] = o.get("material", o["role"])
     decimate(human, spec.get("body_decimate", 1.0))
@@ -1377,20 +1229,9 @@ def main():
             keep_body_region(o, tuple(only["bones"]), only["threshold"])
         parts = [o for o in parts if len(o.data.polygons) > 0]
     roles = config["roles"]
-    decay = spec.get("decay")
-    if decay and decay.get("mouth"):
-        # The mouth's blood goes where this head's mouth is: below the eyes,
-        # on the front of the face.
-        eyes = next(o for o in clothes if o["role"] == "eyes")
-        eye_z = float(np.mean([(eyes.matrix_world @ v.co).z for v in eyes.data.vertices]))
-        hv = np.array([tuple(human.matrix_world @ v.co) for v in human.data.vertices])
-        lip = hv[(np.abs(hv[:, 0]) < 0.015) & (np.abs(hv[:, 2] - (eye_z - 0.07)) < 0.01)]
-        front = float(lip[:, 1].min()) if len(lip) else -0.09
-        decay["mouth"] = [0.0, front + 0.004, eye_z - 0.085, decay["mouth"][3]]
-        log(f"mouth blood at {decay['mouth']}")
     for o in parts:
         settings = config["materials"].get(o["material"], {})
-        m = bake_material(o, o["role"], roles.index(o["role"]), settings, spec.get("decay"))
+        m = bake_material(o, o["role"], roles.index(o["role"]), settings)
         o.data.materials.clear()
         o.data.materials.append(m)
     if ual.animation_data:

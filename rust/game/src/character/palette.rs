@@ -1,6 +1,6 @@
 //! Team colours and character materials.
 //!
-//! Every character kit (the soldier, the first-person arms, the zombies) is
+//! Every character kit (the soldier and the first-person arms) is
 //! one mesh with one baked texture atlas (`tools/build_character_assets.py`).
 //! Each vertex carries a palette role (`uniform`, `vest`, `accent`, ...). Cloth
 //! and gear roles are *tinted*: the atlas holds only their shading detail and
@@ -15,8 +15,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use godot::classes::base_material_3d::{Feature, ShadingMode};
-use godot::classes::{Shader, ShaderMaterial, StandardMaterial3D, Texture2D};
+use godot::classes::{Shader, ShaderMaterial, Texture2D};
 use godot::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -25,15 +24,12 @@ pub enum Team {
     Allies,
     /// The other side: charcoal and black, red-orange accents.
     Enemies,
-    /// The undead in Zombies: sickly skin, filthy civilian clothes, blood.
-    Zombies,
 }
 
 impl Team {
     pub fn from_index(index: i32) -> Self {
         match index {
             0 => Team::Allies,
-            2 => Team::Zombies,
             _ => Team::Enemies,
         }
     }
@@ -56,13 +52,7 @@ const TINTED: [&str; 9] = [
 pub enum Kit {
     Soldier,
     Arms,
-    /// One of the zombie bodies (0 to 4: `zombie`, `zombie_b`, ...). Zombie
-    /// kits keep their clothes' own colours: no role is tinted.
-    Zombie(u8),
 }
-
-/// The zombie kits' directories, in `Kit::Zombie` order.
-const ZOMBIE_KITS: [&str; 5] = ["zombie", "zombie_b", "zombie_c", "zombie_d", "zombie_e"];
 
 impl Kit {
     pub fn from_material_name(name: &str) -> Option<Self> {
@@ -70,11 +60,7 @@ impl Kit {
             // Models built before the atlas used a single `character` material.
             "character" | "character_soldier" => Some(Kit::Soldier),
             "character_arms" => Some(Kit::Arms),
-            _ => {
-                let dir = name.strip_prefix("character_")?;
-                let i = ZOMBIE_KITS.iter().position(|k| *k == dir)?;
-                Some(Kit::Zombie(i as u8))
-            }
+            _ => None,
         }
     }
 
@@ -82,7 +68,6 @@ impl Kit {
         match self {
             Kit::Soldier => "soldier",
             Kit::Arms => "arms",
-            Kit::Zombie(i) => ZOMBIE_KITS[usize::from(i).min(ZOMBIE_KITS.len() - 1)],
         }
     }
 }
@@ -97,14 +82,6 @@ fn role_index(role: &str) -> Option<usize> {
 pub fn colour(team: Team, role: &str) -> Color {
     let rgb = |r, g, b| Color::from_rgb(r, g, b);
     match (team, role) {
-        // Civilian clothes, filthy and faded: the zombie atlas carries their
-        // own colours in its detail, so these stay near neutral.
-        (Team::Zombies, "uniform") => rgb(0.5, 0.48, 0.44),
-        (Team::Zombies, "pants") => rgb(0.42, 0.42, 0.42),
-        (Team::Zombies, "boots") => rgb(0.36, 0.33, 0.3),
-        (Team::Zombies, "gloves" | "mask") => rgb(0.45, 0.43, 0.4),
-        (Team::Zombies, "vest" | "webbing" | "helmet") => rgb(0.3, 0.29, 0.25),
-        (Team::Zombies, "accent") => rgb(0.36, 0.03, 0.02),
         // Allies: tan combat shirt and trousers, coyote and ranger-green kit.
         (Team::Allies, "uniform") => rgb(0.6, 0.53, 0.4),
         (Team::Allies, "pants") => rgb(0.5, 0.45, 0.34),
@@ -131,18 +108,6 @@ pub fn colour(team: Team, role: &str) -> Color {
     }
 }
 
-/// Kit zombies have lost: the helmet, eye protection, face covering, plate
-/// carrier, belt, and pads, so they read as bodies, not soldiers (and a horde
-/// draws far fewer triangles). Their eyes glow instead (`SoldierRig` adds
-/// them).
-fn hidden(team: Team, role: &str) -> bool {
-    team == Team::Zombies
-        && matches!(
-            role,
-            "helmet" | "visor" | "mask" | "vest" | "webbing" | "metal" | "accent"
-        )
-}
-
 /// Part groups the soldier kit swaps per character (`tools/blender_gear.py`):
 /// two face coverings, and the skin each one replaces.
 const BALACLAVA: i32 = 1 << 1;
@@ -153,11 +118,7 @@ const UPPER_HEAD: i32 = 1 << 4;
 /// Which part groups a character does not wear, from a per-character seed: a
 /// balaclava, a neck gaiter over the nose, or a bare face, so a squad is not
 /// a row of clones. A covering hides the skin it covers.
-pub fn hidden_parts(seed: u64, team: Team) -> i32 {
-    if team == Team::Zombies {
-        // Bare heads: no coverings, every bit of skin shown.
-        return BALACLAVA | GAITER;
-    }
+pub fn hidden_parts(seed: u64) -> i32 {
     match seed % 3 {
         0 => BALACLAVA | LOWER_FACE,
         1 => GAITER | LOWER_FACE | UPPER_HEAD,
@@ -205,11 +166,8 @@ impl Face {
 }
 
 /// A soldier's face from a per-character seed, independent of the face
-/// covering. Zombies keep their own bodies' faces.
-pub fn face(seed: u64, team: Team) -> Option<Face> {
-    if team == Team::Zombies {
-        return None;
-    }
+/// covering.
+pub fn face(seed: u64) -> Face {
     // A different mix of the seed's bits than `hidden_parts` uses.
     let mut x = seed ^ 0x5DEE_CE66_D1CE_4E5B;
     x = (x ^ (x >> 33)).wrapping_mul(0xFF51_AFD7_ED55_8CCD);
@@ -217,11 +175,11 @@ pub fn face(seed: u64, team: Team) -> Option<Face> {
     x ^= x >> 33;
     let shape = (x % HEAD_TONES.len() as u64) as usize;
     let amount = 0.7 + 0.3 * ((x >> 16) % 1000) as f32 / 999.0;
-    Some(Face {
+    Face {
         shape,
         amount,
         tone: HEAD_TONES[shape],
-    })
+    }
 }
 
 thread_local! {
@@ -280,23 +238,19 @@ pub fn material_for(name: &str, team: Team, viewmodel: bool) -> Option<Gd<Shader
     Kit::from_material_name(name).map(|kit| character_material(team, kit, viewmodel))
 }
 
-/// Bit masks over [`ROLES`]: (tinted, hidden, emissive).
-pub fn role_masks(team: Team) -> (i32, i32, i32) {
+/// Bit masks over [`ROLES`]: (tinted, emissive).
+fn role_masks() -> (i32, i32) {
     let mut tinted = 0;
-    let mut hidden_mask = 0;
     let mut emissive = 0;
     for (i, role) in ROLES.iter().enumerate() {
         if TINTED.contains(role) {
             tinted |= 1 << i;
         }
-        if hidden(team, role) {
-            hidden_mask |= 1 << i;
-        }
-        if *role == "accent" && team != Team::Zombies {
+        if *role == "accent" {
             emissive |= 1 << i;
         }
     }
-    (tinted, hidden_mask, emissive)
+    (tinted, emissive)
 }
 
 fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> {
@@ -309,23 +263,16 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
     });
     let mut colours: PackedColorArray = ROLES.iter().map(|role| colour(team, role)).collect();
     colours.resize(16);
-    let (mut tinted, hidden_mask, emissive) = role_masks(team);
-    if matches!(kit, Kit::Zombie(_)) {
-        tinted = 0;
-    }
+    let (tinted, emissive) = role_masks();
     m.set_shader_parameter("palette", &colours.to_variant());
     m.set_shader_parameter("tinted_roles", &tinted.to_variant());
-    m.set_shader_parameter("hidden_roles", &hidden_mask.to_variant());
     m.set_shader_parameter("emissive_roles", &emissive.to_variant());
     m.set_shader_parameter("viewmodel", &viewmodel.to_variant());
-    let zombie = if team == Team::Zombies { 1.0 } else { 0.0 };
-    m.set_shader_parameter("zombie", &zombie.to_variant());
     // A faint rim in the team's accent, so a dark silhouette still separates
     // from a dark background at night and indoors.
     let (rim, energy) = match team {
         Team::Allies => (Color::from_rgb(0.55, 0.7, 0.9), 0.05),
         Team::Enemies => (Color::from_rgb(0.9, 0.45, 0.3), 0.07),
-        Team::Zombies => (Color::from_rgb(0.5, 0.55, 0.4), 0.03),
     };
     if !viewmodel {
         m.set_shader_parameter("rim_colour", &rim.to_variant());
@@ -342,17 +289,6 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
             m.set_shader_parameter(param, &texture.to_variant());
         }
     }
-    m
-}
-
-/// A zombie's glowing eyes: unshaded and bright enough to bloom.
-pub fn zombie_eye_material() -> Gd<StandardMaterial3D> {
-    let mut m = StandardMaterial3D::new_gd();
-    m.set_shading_mode(ShadingMode::UNSHADED);
-    m.set_albedo(Color::from_rgb(1.0, 0.62, 0.15));
-    m.set_feature(Feature::EMISSION, true);
-    m.set_emission(Color::from_rgb(1.0, 0.5, 0.08));
-    m.set_emission_energy_multiplier(6.0);
     m
 }
 
@@ -389,7 +325,7 @@ mod tests {
     #[test]
     fn every_character_wears_at_most_one_face_covering() {
         for seed in 0..9 {
-            let hidden = hidden_parts(seed, Team::Enemies);
+            let hidden = hidden_parts(seed);
             let worn = !hidden & (BALACLAVA | GAITER);
             assert!(worn.count_ones() <= 1, "seed {seed}");
             // Skin under a covering is hidden; bare skin is shown.
@@ -401,7 +337,7 @@ mod tests {
     fn every_face_turns_up_and_blends_one_shape() {
         let mut seen = [false; HEAD_TONES.len()];
         for seed in 0..200 {
-            let face = face(seed, Team::Allies).unwrap();
+            let face = face(seed);
             seen[face.shape] = true;
             assert!((0.7..=1.0).contains(&face.amount), "seed {seed}");
             let blended = (0..HEAD_TONES.len() - 1)
@@ -410,25 +346,5 @@ mod tests {
             assert_eq!(blended, usize::from(face.shape > 0), "seed {seed}");
         }
         assert!(seen.iter().all(|&s| s), "{seen:?}");
-        assert_eq!(face(7, Team::Zombies), None);
-    }
-
-    #[test]
-    fn every_zombie_kit_is_found_by_its_material() {
-        for (i, dir) in ZOMBIE_KITS.iter().enumerate() {
-            let kit = Kit::from_material_name(&format!("character_{dir}"));
-            assert_eq!(kit, Some(Kit::Zombie(i as u8)));
-            assert_eq!(kit.unwrap().dir(), *dir);
-        }
-        assert_eq!(Kit::from_material_name("character_zombie_z"), None);
-    }
-
-    #[test]
-    fn zombies_lose_their_helmets() {
-        let (_, hidden, emissive) = role_masks(Team::Zombies);
-        assert_ne!(hidden & (1 << role_index("helmet").unwrap()), 0);
-        assert_eq!(emissive, 0);
-        let (_, hidden, _) = role_masks(Team::Allies);
-        assert_eq!(hidden, 0);
     }
 }
