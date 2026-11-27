@@ -1,17 +1,42 @@
 extends Control
-## Centre-screen match announcements: the countdown, round and match results,
-## and calls (a new weapon in Gun Game), drawn as a title on a dark band with
-## thin wings in the call's colour reaching out either side, and a line of
-## detail under it. Below the death card sits a prompt hint ("[L] Change
-## loadout"). Mode HUDs set the fields each frame; a new title slides in.
+## Centre-screen match announcements, in Black Ops 3's grammar and our own
+## art. Mode HUDs set the fields each frame:
+##
+## - the countdown before a match or round: the mode (or round) in small
+##   tracked caps, the objective under it, and the seconds as a big squared
+##   number with the colour split, each popping in from 1.3x and fading out
+##   over its last 150 ms;
+## - the title banner: a long plate with pointed ends that opens from the
+##   middle, gapped leader lines drawn out from its points, and the word in big
+##   caps with the colour split settling as it appears. VICTORY sits on green,
+##   DEFEAT on crimson, round results and draws on steel grey. The detail
+##   ("Score limit reached") sits under it on a grey reason plate;
+## - after a match, the team strip across the middle (each team's mark, name
+##   plate, and score either side of a VS chip, sliding in from the edges as
+##   the scores count up) and the blue XP badge with the match bonus;
+## - smaller calls (halftime, flag plays) on a grey plate with leader lines in
+##   the call's colour;
+## - a prompt hint in the lower third ("[L] Choose class").
+##
+## Drawn at the 1600x900 design size and scaled to the screen.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-## The main banner, top third, and a smaller callout below it.
+## The word on VICTORY's green plate: white, a little green.
+const VICTORY_WORD := Color("ecf8c0")
+
+## The main banner, and a smaller callout below it.
 var title := ""
 var detail := ""
+## The leader lines' colour on a grey plate.
 var colour := UiTheme.TEXT
+## The title plate's fill; clear for the steel-grey plate.
+var plate := Color.TRANSPARENT
+## A small line under the detail ("Next match in 12").
+var footnote := ""
 var callout := ""
 var callout_detail := ""
 var callout_colour := UiTheme.TEXT
@@ -20,13 +45,25 @@ var callout_alpha := 1.0
 ## A prompt in the lower third: "[KEY] text", or empty.
 var hint := ""
 var hint_colour := UiTheme.TEXT
-## Where the main banner sits, as a share of the screen height.
-var banner_y := 0.2
+## Where the title banner's middle sits, as a share of the screen height
+## (one slot at the top for every result).
+var banner_y := 0.09
+## Seconds left on a countdown (0 for none), with the mode or round above
+## the number and the objective under it.
+var countdown := 0.0
+var countdown_mode := ""
+var countdown_objective := ""
+## The team strip after a match: {"left": side, "right": side}, each side
+## {"name", "score": int, "team": int, "colour"}; empty for none.
+var strip := {}
+## The match bonus under the strip, or -1 for none.
+var bonus := -1
 
 var _title_age := 0.0
 var _shown_title := ""
 var _callout_age := 0.0
 var _shown_callout := ""
+var _strip_age := 0.0
 
 
 func _process(delta: float) -> void:
@@ -38,6 +75,7 @@ func _process(delta: float) -> void:
 		_shown_callout = callout
 		_callout_age = 0.0
 	_callout_age += delta
+	_strip_age = _strip_age + delta if not strip.is_empty() else 0.0
 	queue_redraw()
 
 
@@ -46,16 +84,21 @@ func _draw() -> void:
 	# are see-through, so they would show through it.
 	if _under_board():
 		return
+	var scale := MatchPaint.design_scale(size)
+	draw_set_transform(MatchPaint.design_origin(size), 0.0, Vector2(scale, scale))
+	if countdown > 0.0:
+		_draw_countdown()
+	if not strip.is_empty():
+		_draw_strip()
+	if bonus >= 0:
+		_draw_bonus(Vector2(800, 731))
 	if title != "":
-		_draw_banner(title, detail, colour, size.y * banner_y, 46, _title_age, 1.0)
+		_draw_title()
 	if callout != "":
-		_draw_banner(
-			callout, callout_detail, callout_colour, size.y * 0.3, 34, _callout_age, callout_alpha
-		)
+		_draw_callout()
 	if hint != "":
-		Paint.prompt(
-			self, Paint.split_key(hint, hint_colour), size.x / 2.0, size.y * 0.68 + 92.0, 16
-		)
+		Paint.prompt(self, Paint.split_key(hint, hint_colour), 800.0, 704.0, 16)
+	draw_set_transform(Vector2.ZERO)
 
 
 func _under_board() -> bool:
@@ -67,45 +110,193 @@ func _under_board() -> bool:
 	return mine != null and theirs != null and mine.layer < theirs.layer
 
 
-func _draw_banner(
-	text: String, sub: String, accent: Color, y: float, text_size: int, age: float, alpha: float
-) -> void:
-	var intro := clampf(age / 0.3, 0.0, 1.0)
-	var eased := 1.0 - pow(1.0 - intro, 3.0)
-	alpha *= clampf(age / 0.12, 0.0, 1.0)
-	if alpha <= 0.0:
-		return
-	var centre := size.x / 2.0
-	var spacing := lerpf(10.0, 3.0, eased)
-	var title_w := Paint.text_width(Paint.DISPLAY, text, text_size, spacing)
-	var band_h := text_size + (34.0 if sub != "" else 18.0)
-	var band_w := maxf(title_w, Paint.text_width(Paint.LABEL, sub, 17)) + 160.0
-	Paint.band(self, Rect2(centre - band_w / 2.0, y - text_size - 6.0, band_w, band_h), 0.5 * alpha)
-
-	# Wings: thin lines in the accent colour from the title's ends outward.
-	var reach := 220.0 * eased
-	var wing_y := y - text_size * 0.36
-	for side: float in [-1.0, 1.0]:
-		var inner := centre + side * (title_w / 2.0 + 22.0)
-		var rect := Rect2(minf(inner, inner + side * reach), wing_y - 1.5, reach, 3.0)
-		Paint.fade(self, rect, Color(accent, 0.95 * alpha), side < 0.0)
-
-	Paint.text_centred(
-		self,
-		Paint.DISPLAY,
-		text,
-		Vector2(centre, y),
-		text_size,
-		Color(accent.lerp(Color.WHITE, 0.15), alpha),
-		spacing
+func _draw_title() -> void:
+	var y := MatchPaint.DESIGN.y * banner_y
+	var fill := plate if plate.a > 0.0 else UiTheme.BANNER
+	var word := VICTORY_WORD if plate == UiTheme.VICTORY else UiTheme.TEXT
+	var rect := MatchPaint.result_banner(
+		self, Vector2(800, y), title, fill, _lines(fill), _title_age, 46, word
 	)
-	if sub != "":
+	var below := rect.end.y + 10.0
+	if detail != "":
+		var alpha := clampf((_title_age - 0.37) / 0.15, 0.0, 1.0)
+		MatchPaint.reason_plate(self, Vector2(800, below), detail, alpha, colour)
+		below += 46.0
+	if footnote != "":
+		var alpha := clampf((_title_age - 0.5) / 0.15, 0.0, 1.0)
+		var text := footnote.to_upper()
+		var width := Paint.text_width(Paint.LABEL, text, 16, 2.0) + 28.0
+		draw_rect(Rect2(800.0 - width / 2.0, below, width, 26.0), Color(0, 0, 0, 0.6 * alpha))
 		Paint.text_centred(
 			self,
 			Paint.LABEL,
-			sub,
-			Vector2(centre, y + 26.0),
-			17,
-			Color(UiTheme.TEXT, 0.85 * alpha),
-			1.0
+			text,
+			Vector2(801, below + 19.0),
+			16,
+			Color(UiTheme.TEXT, 0.9 * alpha),
+			2.0
 		)
+
+
+## Leader lines take the plate's colour, lighter.
+func _lines(fill: Color) -> Color:
+	return Color(fill.lightened(0.3), 0.9)
+
+
+func _draw_callout() -> void:
+	var alpha := callout_alpha
+	if alpha <= 0.0:
+		return
+	var fill := Color(UiTheme.BANNER, UiTheme.BANNER.a * alpha)
+	var rect := MatchPaint.result_banner(
+		self,
+		Vector2(800, 190),
+		callout,
+		fill,
+		Color(_lines(UiTheme.BANNER), 0.9 * alpha),
+		_callout_age,
+		32,
+		Color(UiTheme.TEXT, alpha),
+		260.0
+	)
+	if callout_detail != "":
+		MatchPaint.reason_plate(
+			self,
+			Vector2(800, rect.end.y + 8.0),
+			callout_detail,
+			alpha * clampf((_callout_age - 0.3) / 0.15, 0.0, 1.0),
+			callout_colour
+		)
+
+
+func _draw_countdown() -> void:
+	var number := int(ceil(countdown))
+	# Time since this number came up, and how long it has left.
+	var shown := float(number) - countdown
+	var left := countdown - float(number - 1)
+	var alpha := clampf(left / 0.15, 0.0, 1.0)
+	var centre := Vector2(800, 300)
+	# One soft dark band behind the words and the number.
+	MatchPaint.soft_band(self, Rect2(centre.x - 340.0, centre.y - 96.0, 680.0, 236.0), 0.42)
+	if countdown_mode != "":
+		Paint.text_centred(
+			self,
+			Paint.LABEL,
+			countdown_mode.to_upper(),
+			Vector2(centre.x, centre.y - 46.0),
+			22,
+			Color(UiTheme.TEXT, 0.82),
+			3.0
+		)
+	if countdown_objective != "":
+		Paint.text_centred(
+			self,
+			Paint.LABEL_LIGHT,
+			countdown_objective,
+			Vector2(centre.x, centre.y - 18.0),
+			21,
+			UiTheme.TEXT
+		)
+	var pop := lerpf(1.3, 1.0, 1.0 - pow(1.0 - clampf(shown / 0.2, 0.0, 1.0), 3.0))
+	var pivot := centre + Vector2(0, 62)
+	var base := Transform2D(
+		0.0, Vector2.ONE * MatchPaint.design_scale(size), 0.0, MatchPaint.design_origin(size)
+	)
+	var local := Transform2D.IDENTITY.translated(-pivot).scaled(Vector2(pop, pop)).translated(pivot)
+	draw_set_transform_matrix(base * local)
+	Shapes.split_text_centred(
+		self,
+		Paint.DISPLAY,
+		str(number),
+		Vector2(centre.x, pivot.y + Paint.DISPLAY.get_ascent(124) * 0.36),
+		124,
+		Color(UiTheme.TEXT, alpha),
+		lerpf(5.0, 1.0, clampf(shown / 0.2, 0.0, 1.0))
+	)
+	draw_set_transform_matrix(base)
+
+
+## The team strip: our side on the left, theirs on the right.
+func _draw_strip() -> void:
+	var slide := 1.0 - pow(1.0 - clampf(_strip_age / 0.25, 0.0, 1.0), 3.0)
+	var count := 1.0 - pow(1.0 - clampf((_strip_age - 0.15) / 0.6, 0.0, 1.0), 3.0)
+	var top := 402.0
+	var height := 100.0
+	# The band: dark, darker in the middle, with a small notch at the top.
+	var band := PackedVector2Array(
+		[
+			Vector2(0, top),
+			Vector2(788, top),
+			Vector2(800, top + 10.0),
+			Vector2(812, top),
+			Vector2(1600, top),
+			Vector2(1600, top + height),
+			Vector2(0, top + height),
+		]
+	)
+	draw_colored_polygon(band, Color(0, 0, 0, 0.6 * slide))
+	Paint.fade(self, Rect2(560, top, 240, height), Color(0, 0, 0, 0.25 * slide), true)
+	Paint.fade(self, Rect2(800, top, 240, height), Color(0, 0, 0, 0.25 * slide))
+	var middle := top + height / 2.0
+	for side: float in [-1.0, 1.0]:
+		var entry: Dictionary = strip.get("left" if side < 0.0 else "right", {})
+		if entry.is_empty():
+			continue
+		var shift := side * (1.0 - slide) * 400.0
+		var team_colour: Color = entry.get("colour", UiTheme.TEXT)
+		var mark_x := (255.0 if side < 0.0 else 1345.0) + shift
+		MatchPaint.team_mark(
+			self, Vector2(mark_x, middle), 112.0, int(entry.get("team", 0)), team_colour
+		)
+		var name := String(entry.get("name", "")).to_upper()
+		if side < 0.0:
+			MatchPaint.label_plate(self, Vector2(340.0 + shift, middle - 18.0), name, 36.0)
+		else:
+			MatchPaint.label_plate_right(self, Vector2(1260.0 + shift, middle - 18.0), name, 36.0)
+		var score := str(roundi(float(entry.get("score", 0)) * count))
+		var baseline := middle + 17.0
+		if side < 0.0:
+			var width := Paint.text_width(Paint.DISPLAY, score, 50)
+			Shapes.split_text(
+				self, Paint.DISPLAY, score, Vector2(728.0 - width + shift, baseline), 50
+			)
+		else:
+			Shapes.split_text(self, Paint.DISPLAY, score, Vector2(872.0 + shift, baseline), 50)
+	MatchPaint.vs_chip(self, Vector2(800, middle + 2.0), slide)
+
+
+## The blue XP badge and the match's bonus XP under it.
+func _draw_bonus(centre: Vector2) -> void:
+	var alpha := clampf((_strip_age - 0.4) / 0.2, 0.0, 1.0) if not strip.is_empty() else 1.0
+	MatchPaint.xp_badge(self, centre, 54.0, alpha)
+	var label := "MATCH XP"
+	var label_w := Paint.text_width(Paint.LABEL, label, 18, 3.0) + 28.0
+	draw_rect(
+		Rect2(centre.x - label_w / 2.0, centre.y + 47.0, label_w, 27.0),
+		Color(0, 0, 0, 0.55 * alpha)
+	)
+	Paint.text_centred(
+		self,
+		Paint.LABEL,
+		label,
+		Vector2(centre.x + 1.5, centre.y + 67.0),
+		18,
+		Color(UiTheme.TEXT, alpha),
+		3.0
+	)
+	var value := str(bonus)
+	var value_w := maxf(Paint.text_width(Paint.DISPLAY, value, 22) + 26.0, 74.0)
+	draw_rect(
+		Rect2(centre.x - value_w / 2.0, centre.y + 80.0, value_w, 32.0),
+		Color(MatchPaint.XP_BOX, 0.92 * alpha)
+	)
+	Paint.text_centred(
+		self,
+		Paint.DISPLAY,
+		value,
+		Vector2(centre.x, centre.y + 104.0),
+		22,
+		Color(MatchPaint.XP_BOX_TEXT, alpha),
+		0.0,
+		false
+	)

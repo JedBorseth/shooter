@@ -1,27 +1,62 @@
 extends Control
 ## The scoreboard, held open with Tab (Back on a gamepad) and shown at the end
-## of a match: a title bar (the mode, or the result, and the clock), then a
-## section per team with a header in the team's colour and its score, column
-## headings, and a row per player on alternating plates. Our row is lighter
-## with a white keyline. `tdm_hud.gd` fills `title`, `clock`, and `sections`.
+## of a match, laid out as Black Ops 3's (in our own marks and names):
+##
+## - a header bar: the clock, the mode in tracked caps, and the column names;
+## - a block per team on the left: the team's name on a light label plate,
+##   its score in big squared numerals with the colour split, and the team's
+##   mark faint behind it, ours on top;
+## - a row per player, on see-through plates tinted with the team's colour
+##   (ours a dark teal, theirs a dark maroon at the default palette) so the
+##   game shows through, with every other number column banded lighter. Our
+##   row has orange rules along its top and bottom and pale yellow type;
+##   players out of the round (Search and Destroy) are faded with a skull.
+##   The last column is a ping meter;
+## - in Free-for-all and Gun Game, one list with each player's place.
+##
+## It fades in over 100 ms with its rows a beat apart. `tdm_hud.gd` fills
+## `title`, `clock`, `top`, and `sections`.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-const WIDTH := 820.0
-const ROW_H := 32.0
-const HEADER_H := 42.0
-const HEADINGS_H := 24.0
-## Width of each column after the name.
-const COLUMN_W := 84.0
+## The widest the panel gets at the 1600x900 design size; it narrows to
+## its columns, centred.
+const WIDTH := 1290.0
+## Room for the name, left of the number columns.
+const NAME_W := 330.0
+const HEADER_H := 38.0
+const TEAM_W := 250.0
+const ROW_H := 31.0
+const ROW_PITCH := 32.0
+## A team block never gets shorter than this, so its plate and score fit.
+const BLOCK_MIN := 98.0
+const COLUMN_W := 112.0
+const WIDE_COLUMN_W := 230.0
+const PING_W := 58.0
+## Where the panel's top sits when held open, and under the result banner.
+const TOP := 206.0
 
 var title := ""
 var title_colour := UiTheme.TEXT
 var clock := ""
-## Each section: {"name", "score" (String, may be empty), "colour",
-## "headings": Array[String] (the first is the name column), "rows": Array of
-## {"cells": Array[String], "me": bool, "faint": bool, "tag": String}}.
+## The panel's top at the design size (lower under the result banner).
+var top := TOP
+## Each section: {"name", "score" (String, may be empty), "colour", "team"
+## (0 or 1, for its mark), "headings": Array[String] (the first is the name
+## column, unused), "rows": Array of {"cells": Array[String], "me": bool,
+## "faint": bool (out of the round), "tag": String}}. One section with no
+## score is a free-for-all list.
 var sections: Array = []
+
+var _age := 0.0
+## This frame's panel bounds.
+var _left := 154.0
+var _width := WIDTH
+## The alpha the current row draws at (rows fade in one after another).
+var _alpha := 1.0
 
 
 ## "3 / 5 ready": the players (not bots) of `roster` ready for the match.
@@ -37,128 +72,214 @@ static func ready_count(roster: Array) -> String:
 	return "%d / %d ready" % [ready, humans]
 
 
-func _process(_delta: float) -> void:
+func _ready() -> void:
+	visibility_changed.connect(func() -> void: _age = 0.0)
+
+
+func _process(delta: float) -> void:
 	if visible:
+		_age += delta
 		queue_redraw()
 
 
 func _draw() -> void:
 	if sections.is_empty():
 		return
-	var height := 46.0
+	var scale := MatchPaint.design_scale(size)
+	draw_set_transform(MatchPaint.design_origin(size), 0.0, Vector2(scale, scale))
+	_alpha = clampf(_age / 0.1, 0.0, 1.0)
+	var ffa: bool = sections.size() == 1 and String(sections[0].get("score", "")) == ""
+	var headings: Array = sections[0].headings
+	_width = WIDTH
+	_left = 0.0
+	var columns := _columns(headings)
+	var used := WIDTH - float(columns[0][0]) + float(columns[0][1])
+	_width = clampf(used + NAME_W + (0.0 if ffa else TEAM_W), 900.0, WIDTH)
+	_left = (MatchPaint.DESIGN.x - _width) / 2.0
+	columns = _columns(headings)
+	_draw_header(headings, columns)
+	var y := top + HEADER_H + 2.0
+	var row_index := 0
 	for section: Dictionary in sections:
-		height += HEADER_H + HEADINGS_H + ROW_H * section.rows.size() + 14.0
-	var at := Vector2((size.x - WIDTH) / 2.0, maxf((size.y - height) / 2.0 - 30.0, 40.0))
-	draw_rect(Rect2(at, Vector2(WIDTH, height)), Color(0.04, 0.05, 0.06, 0.86))
-	draw_rect(Rect2(at, Vector2(WIDTH, 2.0)), Color(title_colour, 0.9))
+		var rows: Array = section.rows
+		var block_h := maxf(rows.size() * ROW_PITCH, BLOCK_MIN)
+		if ffa:
+			block_h = rows.size() * ROW_PITCH
+		else:
+			_draw_team_block(section, Rect2(_left, y, TEAM_W - 4.0, block_h - 1.0))
+		var rows_left := _left + (0.0 if ffa else TEAM_W)
+		for i in rows.size():
+			_alpha = clampf((_age - row_index * 0.015) / 0.1, 0.0, 1.0)
+			_draw_row(
+				rows[i],
+				section,
+				Rect2(rows_left, y + i * ROW_PITCH, _left + _width - rows_left, ROW_H),
+				columns,
+				i,
+				ffa
+			)
+			row_index += 1
+		y += block_h + 6.0
+	draw_set_transform(Vector2.ZERO)
 
-	var left := at.x + 20.0
-	var right := at.x + WIDTH - 20.0
-	Paint.text(self, Paint.DISPLAY, title, Vector2(left, at.y + 32.0), 20, title_colour, 3.0, false)
+
+## The right edge of every column after the name, and its width.
+func _columns(headings: Array) -> Array:
+	var out := []
+	var right := _left + _width - PING_W
+	for i in range(headings.size() - 1, 0, -1):
+		var heading := String(headings[i])
+		if heading.to_upper() == "PING":
+			out.push_front([_left + _width, PING_W])
+			continue
+		var width := WIDE_COLUMN_W if heading.to_upper() == "WEAPON" else COLUMN_W
+		out.push_front([right, width])
+		right -= width
+	return out
+
+
+func _a(colour: Color) -> Color:
+	return Color(colour, colour.a * _alpha)
+
+
+func _draw_header(headings: Array, columns: Array) -> void:
+	var bar := Rect2(_left, top, _width, HEADER_H)
+	draw_rect(bar, _a(Color(0, 0, 0, 0.72)))
+	draw_rect(Rect2(bar.position, Vector2(_width, 1)), _a(Color(1, 1, 1, 0.12)))
+	var baseline := top + 26.0
+	var x := _left + 14.0
 	if clock != "":
-		Paint.text_right(
-			self, Paint.DISPLAY, clock, Vector2(right, at.y + 32.0), 20, UiTheme.TEXT, 1.0, false
+		x += (
+			Paint.text(self, Paint.DISPLAY, clock, Vector2(x, baseline), 20, _a(UiTheme.TEXT))
+			+ 26.0
 		)
-	var y := at.y + 46.0
-	for section: Dictionary in sections:
-		y = _draw_section(section, left, right, y) + 14.0
-
-
-func _draw_section(section: Dictionary, left: float, right: float, y: float) -> float:
-	var colour: Color = section.colour
-	# Team header: a bar of the team's colour, the name, and the score.
-	var header := Rect2(left, y, right - left, HEADER_H - 6.0)
-	draw_rect(header, Color(colour, 0.14))
-	draw_rect(Rect2(header.position, Vector2(4.0, header.size.y)), colour)
 	Paint.text(
-		self, Paint.DISPLAY, section.name, Vector2(left + 16.0, y + 26.0), 20, colour, 2.0, false
+		self, Paint.LABEL, title.to_upper(), Vector2(x, baseline - 1.0), 18, _a(title_colour), 2.0
 	)
-	if section.get("score", "") != "":
+	for i in range(1, headings.size()):
+		var heading := String(headings[i])
+		var column: Array = columns[i - 1]
+		if heading.to_upper() == "PING":
+			continue
+		var centre := float(column[0]) - float(column[1]) / 2.0
+		Paint.text_centred(
+			self,
+			Paint.LABEL_LIGHT,
+			heading,
+			Vector2(centre, baseline - 1.0),
+			18,
+			_a(UiTheme.TEXT_DIM)
+		)
+
+
+func _draw_team_block(section: Dictionary, rect: Rect2) -> void:
+	var colour: Color = section.colour
+	draw_rect(rect, _a(Color(0, 0, 0, 0.5)))
+	draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)), _a(Color(colour, 0.85)))
+	# The team's mark, faint, behind the score on the right.
+	var mark := minf(rect.size.y - 6.0, 130.0)
+	MatchPaint.team_mark(
+		self,
+		Vector2(rect.end.x - mark * 0.55 - 6.0, rect.get_center().y),
+		mark,
+		int(section.get("team", 0)),
+		_a(Color(colour, 0.4))
+	)
+	MatchPaint.label_plate(
+		self, rect.position + Vector2(10, 8), String(section.name).to_upper(), 28.0
+	)
+	var score := String(section.get("score", ""))
+	if score != "":
+		Shapes.split_text(
+			self,
+			Paint.DISPLAY,
+			score,
+			Vector2(rect.position.x + 12.0, rect.position.y + 88.0),
+			52,
+			_a(UiTheme.TEXT),
+			1.5
+		)
+
+
+func _draw_row(
+	row: Dictionary, section: Dictionary, rect: Rect2, columns: Array, index: int, ffa: bool
+) -> void:
+	var colour: Color = section.colour
+	var me: bool = row.get("me", false)
+	var out: bool = row.get("faint", false)
+	# Team rows: the team colour pressed dark, see-through.
+	var fill := Color(colour.darkened(0.8), 0.85)
+	if ffa:
+		fill = Color(0.09, 0.1, 0.11, 0.85)
+	if out:
+		fill = Color(fill.darkened(0.3), 0.7)
+	draw_rect(rect, _a(fill))
+	draw_rect(Rect2(rect.position.x, rect.end.y, rect.size.x, 1), _a(Color(0, 0, 0, 0.5)))
+	# Banded columns: every other number column a little lighter.
+	for i in columns.size():
+		var column: Array = columns[i]
+		if i % 2 == 0 and float(column[1]) != PING_W:
+			draw_rect(
+				Rect2(float(column[0]) - float(column[1]), rect.position.y, column[1], rect.size.y),
+				_a(Color(1, 1, 1, 0.07))
+			)
+	if me:
+		Shapes.focus_rules(
+			self,
+			Rect2(rect.position - Vector2(0, 2), rect.size + Vector2(0, 4)),
+			_a(UiTheme.ACCENT_DIM),
+			3.0
+		)
+	var text_colour := MatchPaint.SELF_ROW if me else UiTheme.TEXT
+	if out:
+		text_colour = Color(text_colour, 0.5)
+	var baseline := rect.position.y + rect.size.y / 2.0 + 7.0
+	var cells: Array = row.cells
+	var name_x := rect.position.x + 40.0
+	if ffa:
+		# Place: the top three brighter.
+		var place_colour := UiTheme.TEXT if index < 3 else UiTheme.TEXT_DIM
 		Paint.text_right(
 			self,
 			Paint.DISPLAY,
-			section.score,
-			Vector2(right - 12.0, y + 28.0),
-			26,
-			colour,
-			0.0,
-			false
+			str(index + 1),
+			Vector2(rect.position.x + 32.0, baseline),
+			18,
+			_a(place_colour)
 		)
-	y += HEADER_H
-
+		name_x = rect.position.x + 48.0
+	elif out:
+		MatchPaint.skull(
+			self, Vector2(rect.position.x + 20.0, rect.get_center().y), 15.0, _a(UiTheme.TEXT_DIM)
+		)
+	var name_w := Paint.text(
+		self, Paint.LABEL_LIGHT, String(cells[0]), Vector2(name_x, baseline), 20, _a(text_colour)
+	)
+	var tag := String(row.get("tag", ""))
+	if tag != "":
+		Paint.text(
+			self,
+			Paint.LABEL,
+			tag,
+			Vector2(name_x + name_w + 10.0, baseline - 1.0),
+			12,
+			_a(UiTheme.TEXT_FAINT),
+			1.5
+		)
 	var headings: Array = section.headings
-	var columns := headings.size() - 1
-	for i in headings.size():
-		var heading: String = headings[i]
-		if i == 0:
-			Paint.text(
+	for i in range(1, cells.size()):
+		var column: Array = columns[i - 1]
+		var cell := String(cells[i])
+		if String(headings[i]).to_upper() == "PING":
+			var ping := int(cell) if cell.is_valid_int() else -1
+			MatchPaint.ping_bars(
 				self,
-				Paint.LABEL,
-				heading,
-				Vector2(left + 16.0, y + 15.0),
-				11,
-				UiTheme.TEXT_FAINT,
-				2.0,
-				false
+				Vector2(float(column[0]) - float(column[1]) / 2.0 - 10.0, baseline - 1.0),
+				ping,
+				_alpha * (0.5 if out else 1.0)
 			)
-		else:
-			var column_right := right - 12.0 - (columns - i) * COLUMN_W
-			Paint.text_right(
-				self,
-				Paint.LABEL,
-				heading,
-				Vector2(column_right, y + 15.0),
-				11,
-				UiTheme.TEXT_FAINT,
-				2.0,
-				false
-			)
-	y += HEADINGS_H
-
-	var index := 0
-	for row: Dictionary in section.rows:
-		var rect := Rect2(left, y, right - left, ROW_H - 2.0)
-		if row.get("me", false):
-			draw_rect(rect, Color(1, 1, 1, 0.14))
-			draw_rect(Rect2(rect.position, Vector2(2.0, rect.size.y)), UiTheme.TEXT)
-		elif index % 2 == 0:
-			draw_rect(rect, Color(1, 1, 1, 0.04))
-		var text_colour := UiTheme.TEXT if not row.get("faint", false) else UiTheme.TEXT_FAINT
-		var baseline := y + ROW_H / 2.0 + 5.0
-		var cells: Array = row.cells
-		for i in cells.size():
-			var cell := String(cells[i])
-			if i == 0:
-				var font := Paint.DISPLAY if row.get("me", false) else Paint.LABEL
-				var name_x := left + 16.0
-				var name_w := Paint.text(
-					self, font, cell, Vector2(name_x, baseline), 16, text_colour, 0.0, false
-				)
-				var tag: String = row.get("tag", "")
-				if tag != "":
-					Paint.text(
-						self,
-						Paint.LABEL,
-						tag,
-						Vector2(name_x + name_w + 10.0, baseline - 1.0),
-						11,
-						UiTheme.TEXT_FAINT,
-						1.5,
-						false
-					)
-			else:
-				var column_right := right - 12.0 - (columns - i) * COLUMN_W
-				var dim := i == cells.size() - 1
-				Paint.text_right(
-					self,
-					Paint.LABEL,
-					cell,
-					Vector2(column_right, baseline),
-					16,
-					UiTheme.TEXT_DIM if dim else text_colour,
-					0.0,
-					false
-				)
-		y += ROW_H
-		index += 1
-	return y
+			continue
+		var centre := float(column[0]) - float(column[1]) / 2.0
+		Paint.text_centred(
+			self, Paint.LABEL_LIGHT, cell, Vector2(centre, baseline), 20, _a(text_colour)
+		)

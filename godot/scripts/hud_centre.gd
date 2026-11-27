@@ -9,9 +9,13 @@ extends Control
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
 ## The legend wraps to rows no wider than this, between the corner clusters.
 const LEGEND_WIDTH := 760.0
+
+static var _death_vignette: GradientTexture2D
 
 ## Under the crosshair: {"text", "key", "colour"} or empty.
 var warning := {}
@@ -58,73 +62,101 @@ func _band(rect: Rect2, alpha: float) -> void:
 
 
 func _draw_death(at: Vector2) -> void:
-	var alpha := clampf(_dead_for / 0.35, 0.0, 1.0)
-	var rise := (1.0 - alpha) * 10.0
-	at.y += rise
-	_band(Rect2(at.x - 300.0, at.y - 62.0, 600.0, 118.0), 0.5 * alpha)
-
-	var headline := killer.to_upper() if killer != "" else "KILLED"
-	var headline_colour := killer_colour if killer != "" else UiTheme.TEXT
-	if killer != "":
-		var eyebrow := "KILLED BY"
+	var alpha := clampf(_dead_for / 0.3, 0.0, 1.0)
+	# The screen closes in, red-black at the edges, as Black Ops 3's does.
+	draw_texture_rect(_vignette(), Rect2(Vector2.ZERO, size), false, Color(1, 1, 1, alpha))
+	at.y += (1.0 - alpha) * 10.0
+	MatchPaint.soft_band(self, Rect2(at.x - 340.0, at.y - 74.0, 680.0, 160.0), 0.5 * alpha, 22.0)
+	var plate := Rect2(at.x - 150.0, at.y - 28.0, 300.0, 56.0)
+	if killer == "":
+		Shapes.split_text_centred(
+			self, Paint.DISPLAY, "KILLED", at + Vector2(0, 14), 40, Color(UiTheme.TEXT, alpha)
+		)
+	else:
+		# KILLED BY with short leader lines, then the killer's name plate: a
+		# dark plate with their colour on its edge, the name in big condensed
+		# type, and their weapon's silhouette (Black Ops 3's killer card,
+		# without a calling card).
 		var eyebrow_w := Paint.text_centred(
 			self,
 			Paint.LABEL,
-			eyebrow,
-			Vector2(at.x, at.y - 34.0),
-			14,
-			Color(UiTheme.TEXT_DIM, UiTheme.TEXT_DIM.a * alpha),
+			"KILLED BY",
+			Vector2(at.x, at.y - 40.0),
+			15,
+			Color(UiTheme.TEXT_DIM, alpha),
 			3.0
 		)
 		for side: float in [-1.0, 1.0]:
-			var inner := at.x + side * (eyebrow_w / 2.0 + 12.0)
-			var line := Rect2(minf(inner, inner + side * 70.0), at.y - 39.0, 70.0, 1.0)
-			Paint.fade(self, line, Color(UiTheme.TEXT, 0.35 * alpha), side < 0.0)
-	# The killer's name, with their weapon's silhouette beside it.
-	var name_size := 36
-	var name_w := Paint.text_width(Paint.DISPLAY, headline, name_size, 1.0)
-	var icon_w := 0.0
-	if killer_weapon != "" and Paint.weapon_icon(killer_weapon) != null:
-		var icon := Paint.weapon_icon(killer_weapon)
-		icon_w = icon.get_width() * (26.0 / icon.get_height()) + 16.0
-	var left := at.x - (name_w + icon_w) / 2.0
-	Paint.text(
-		self,
-		Paint.DISPLAY,
-		headline,
-		Vector2(left, at.y + 6.0),
-		name_size,
-		Color(headline_colour, alpha),
-		1.0
-	)
-	if icon_w > 0.0:
-		Paint.weapon(
-			self,
-			killer_weapon,
-			Vector2(left + name_w + icon_w, at.y - 7.0),
-			26.0,
-			Color(1, 1, 1, 0.85 * alpha)
-		)
-
-	# Respawn countdown and its bar.
-	if respawn_total > 0.0:
-		var label := "RESPAWN  %.1f" % maxf(respawn_left, 0.0)
-		Paint.text_centred(
+			Shapes.leader_lines(
+				self,
+				Vector2(at.x + side * (eyebrow_w / 2.0 + 4.0), at.y - 45.0),
+				side,
+				Color(killer_colour, 0.8 * alpha),
+				0.7
+			)
+		var name_w := Paint.text_width(Paint.LABEL, killer, 36, 0.5)
+		var icon_w := 0.0
+		var icon := Paint.weapon_icon(killer_weapon) if killer_weapon != "" else null
+		if icon != null:
+			icon_w = icon.get_width() * (24.0 / icon.get_height()) + 22.0
+		var width := maxf(name_w + icon_w + 56.0, 300.0)
+		plate = Rect2(at.x - width / 2.0, at.y - 28.0, width, 56.0)
+		draw_rect(plate, Color(0.06, 0.07, 0.08, 0.85 * alpha))
+		draw_rect(Rect2(plate.position, Vector2(4, plate.size.y)), Color(killer_colour, alpha))
+		var left := at.x - (name_w + icon_w) / 2.0 + 2.0
+		Paint.text(
 			self,
 			Paint.LABEL,
-			label,
-			Vector2(at.x, at.y + 34.0),
-			14,
-			Color(UiTheme.TEXT_DIM, UiTheme.TEXT_DIM.a * alpha),
-			2.0
+			killer,
+			Vector2(left, at.y + 13.0),
+			36,
+			Color(UiTheme.TEXT, alpha),
+			0.5
 		)
-		var bar := Rect2(at.x - 110.0, at.y + 44.0, 220.0, 3.0)
+		if icon != null:
+			Paint.weapon(
+				self,
+				killer_weapon,
+				Vector2(left + name_w + icon_w, at.y),
+				24.0,
+				Color(1, 1, 1, 0.9 * alpha)
+			)
+
+	# Respawn countdown, and a bar as wide as the plate filling toward it.
+	if respawn_total > 0.0:
+		var bar := Rect2(plate.position.x, plate.end.y + 6.0, plate.size.x, 3.0)
 		var progress := clampf(1.0 - respawn_left / respawn_total, 0.0, 1.0)
 		draw_rect(bar, Color(Paint.TRACK, Paint.TRACK.a * alpha))
 		draw_rect(
 			Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)),
 			Color(UiTheme.TEXT, 0.9 * alpha)
 		)
+		Paint.text_centred(
+			self,
+			Paint.LABEL,
+			"RESPAWN  %.1f" % maxf(respawn_left, 0.0),
+			Vector2(at.x, bar.end.y + 22.0),
+			16,
+			Color(UiTheme.TEXT, 0.85 * alpha),
+			2.0
+		)
+
+
+## A full-screen vignette: clear in the middle, red-black at the edges.
+static func _vignette() -> Texture2D:
+	if _death_vignette == null:
+		var gradient := Gradient.new()
+		gradient.set_color(0, Color(0, 0, 0, 0))
+		gradient.set_color(1, Color(0.16, 0.0, 0.01, 0.62))
+		gradient.add_point(0.55, Color(0.08, 0.0, 0.0, 0.12))
+		_death_vignette = GradientTexture2D.new()
+		_death_vignette.gradient = gradient
+		_death_vignette.fill = GradientTexture2D.FILL_RADIAL
+		_death_vignette.fill_from = Vector2(0.5, 0.5)
+		_death_vignette.fill_to = Vector2(1.08, 1.08)
+		_death_vignette.width = 256
+		_death_vignette.height = 144
+	return _death_vignette
 
 
 ## Key caps and actions along the bottom edge, wrapped into centred rows.

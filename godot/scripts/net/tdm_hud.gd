@@ -38,6 +38,7 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const ScoreBlock := preload("res://scripts/net/score_block.gd")
 const KillFeed := preload("res://scripts/net/kill_feed.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
+const MatchResults := preload("res://scripts/net/match_results.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const ClassMenu := preload("res://scripts/net/class_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
@@ -45,6 +46,8 @@ const XpSummary := preload("res://scripts/net/xp_summary.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 const CALLOUT_SECONDS := 2.2
+## Seconds the result banner shows with the team strip before the scoreboard.
+const STRIP_SECONDS := 5.0
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
 const CHAT_LINES := 6
@@ -69,6 +72,9 @@ var _match_xp: Node
 ## whether it has this match's summary.
 var _xp_card: PanelContainer
 var _xp_ready := false
+var _xp_bonus := 0
+## Seconds of results seen (outside the final killcam), for the team strip.
+var _results_age := 0.0
 var _ready_button: Button
 var _menu_status: Label
 var _menu_eyebrow: Label
@@ -192,14 +198,22 @@ func _process(delta: float) -> void:
 	var results := phase == "ended"
 	if not results:
 		_xp_ready = false
-	_xp_card.visible = results and _xp_ready and not _menu.visible
-	_board.visible = (results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible))
-	# The banner above says the result; the board keeps the mode, in its colour.
+		_results_age = 0.0
+	else:
+		_results_age += delta
+	# After a match: the result banner and the team strip first, then the
+	# scoreboard and the match report under the banner, as Black Ops 3 does.
+	var strip_stage := results and _results_age < STRIP_SECONDS
+	_xp_card.visible = results and not strip_stage and _xp_ready and not _menu.visible
+	var held := Input.is_action_pressed(&"scoreboard") and not _menu.visible
+	_board.visible = (results and not strip_stage) or held
 	_board.title = String(info.get("mode_name", "")).to_upper()
-	_board.title_colour = _result_colour(info) if results else MenuStyle.TEXT
+	_board.title_colour = MenuStyle.TEXT_DIM
 	_board.clock = _score.clock
-	# The banner says the result; the board sits under it.
-	_overlay.banner_y = 0.1 if results else 0.2
+	_board.top = 214.0 if results else Scoreboard.TOP
+
+	_overlay.strip = MatchResults.strip(info) if strip_stage and not held else {}
+	_overlay.bonus = _xp_bonus if strip_stage and not held and _xp_ready else -1
 
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
@@ -353,43 +367,10 @@ func _clock_text(phase: String, seconds_left: float) -> String:
 
 
 func _update_banner(phase: String, info: Dictionary) -> void:
-	_overlay.title = ""
-	_overlay.detail = ""
-	_overlay.colour = MenuStyle.TEXT
-	match phase:
-		"countdown":
-			_overlay.title = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
-			if info.mode == "ffa":
-				_overlay.detail = "Free-for-all  ·  first to %d kills" % info.score_limit
-			elif info.get("free_for_all", false):
-				var kills: int = info.get("kills_per_weapon", 1)
-				_overlay.detail = (
-					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
-					% [kills, "" if kills == 1 else "s", info.score_limit]
-				)
-			elif info.mode == "ctf":
-				_overlay.detail = (
-					"Capture the Flag  ·  first to %d captures  ·  two halves" % info.score_limit
-				)
-			elif info.mode == "hardpoint":
-				_overlay.detail = "Hardpoint  ·  first to %d points" % info.score_limit
-			elif info.mode == "dom":
-				_overlay.detail = "Domination  ·  first to %d points" % info.score_limit
-			elif info.mode == "snd":
-				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
-			else:
-				_overlay.detail = "Team Deathmatch  ·  first to %d kills" % info.score_limit
-		"ended":
-			_overlay.title = _results_title(info)
-			_overlay.detail = "Next match in %d" % int(ceil(info.seconds_left))
-			_overlay.colour = _result_colour(info)
-
-
-## Blue for a win, red for a loss, white for a draw.
-func _result_colour(info: Dictionary) -> Color:
-	if _we_won(info):
-		return TeamColours.ally
-	return TeamColours.enemy if info.winner >= 0 else MenuStyle.TEXT
+	var winner := int(info.winner)
+	MatchResults.fill(
+		_overlay, phase, info, _we_won(info), client.name_of(winner) if winner >= 0 else ""
+	)
 
 
 ## Whether the match's winner is our team, or in Gun Game us.
@@ -399,16 +380,6 @@ func _we_won(info: Dictionary) -> bool:
 	if info.get("free_for_all", false):
 		return info.winner == client.player_id()
 	return info.winner == info.my_team
-
-
-func _results_title(info: Dictionary) -> String:
-	if info.winner < 0:
-		return "DRAW"
-	if _we_won(info):
-		return "VICTORY"
-	if info.get("free_for_all", false):
-		return "%s WINS" % String(client.name_of(info.winner)).to_upper()
-	return "DEFEAT"
 
 
 # --- Kill feed ---------------------------------------------------------------
@@ -526,7 +497,7 @@ func _check_period(phase: String, info: Dictionary) -> void:
 		"second_half":
 			_show_callout("HALFTIME", "Switching sides", MenuStyle.TEXT)
 		"overtime":
-			_show_callout("OVERTIME", _overtime_detail(info), MenuStyle.ACCENT)
+			_show_callout("OVERTIME", _overtime_detail(info), MenuStyle.TEXT)
 
 
 func _overtime_detail(info: Dictionary) -> String:
@@ -574,16 +545,16 @@ func _refresh_board() -> void:
 	var hardpoint: bool = info.mode == "hardpoint"
 	var dom: bool = info.mode == "dom"
 	var snd: bool = info.mode == "snd"
-	var headings := ["NAME", "SCORE", "K", "D", "PING"]
+	var headings := ["Name", "Score", "Kills", "Deaths", "Ping"]
 	if ctf:
-		headings = ["NAME", "SCORE", "CAPS", "RET", "K", "D", "PING"]
+		headings = ["Name", "Score", "Captures", "Returns", "Kills", "Deaths", "Ping"]
 	if snd:
 		# Plants and defuses ride in the captures and returns columns.
-		headings = ["NAME", "SCORE", "PLANT", "DEF", "K", "D", "PING"]
+		headings = ["Name", "Score", "Plants", "Defuses", "Kills", "Deaths", "Ping"]
 	if hardpoint:
-		headings.insert(headings.size() - 1, "TIME")
+		headings.insert(headings.size() - 1, "Time")
 	if dom:
-		headings = ["NAME", "SCORE", "CAPS", "DEF", "K", "D", "PING"]
+		headings = ["Name", "Score", "Captures", "Defends", "Kills", "Deaths", "Ping"]
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = info.scores
@@ -622,9 +593,10 @@ func _refresh_board() -> void:
 			sections
 			. append(
 				{
-					"name": "YOUR TEAM" if team == my_team else "ENEMY",
+					"name": "Your team" if team == my_team else "Enemy",
 					"score": str(scores[team]) if scores.size() == 2 else "",
 					"colour": TeamColours.of(team == my_team),
+					"team": team,
 					"headings": headings,
 					"rows": rows,
 				}
@@ -682,7 +654,7 @@ func _refresh_ladder_board() -> void:
 			"name": "EVERY PLAYER FOR THEMSELVES",
 			"score": "",
 			"colour": MenuStyle.TEXT,
-			"headings": ["NAME", "WEAPON" if ladder else "SCORE", "K", "D", "PING"],
+			"headings": ["Name", "Weapon" if ladder else "Score", "Kills", "Deaths", "Ping"],
 			"rows": rows,
 		}
 	]
@@ -865,17 +837,19 @@ func _build_board() -> void:
 	_board.visible = false
 	_xp_card = XpSummary.new()
 	_xp_card.visible = false
-	# Right of the results scoreboard, clear of the ammo cluster.
-	_xp_card.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_xp_card.offset_left = -372.0
-	_xp_card.offset_right = -32.0
-	_xp_card.offset_top = 222.0
-	_xp_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	# Under the results scoreboard, between the HUD's bottom corners.
+	_xp_card.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_xp_card.offset_left = -XpSummary.WIDTH / 2.0
+	_xp_card.offset_right = XpSummary.WIDTH / 2.0
+	_xp_card.offset_top = -236.0
+	_xp_card.offset_bottom = -52.0
+	_xp_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_root.add_child(_xp_card)
 
 
 func _on_match_finished(summary: Dictionary) -> void:
 	_xp_card.show_summary(summary)
+	_xp_bonus = int(summary.get("bonus", 0))
 	_xp_ready = true
 
 

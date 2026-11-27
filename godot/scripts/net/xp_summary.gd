@@ -1,73 +1,101 @@
 extends PanelContainer
-## The end-of-match XP card, beside the results scoreboard: the score made,
-## the match bonus, the total, and the level bar filling from where the
-## match started to where it ended, as Call of Duty's after-match screen
-## does. A level reached says
-## so and lists what it unlocked; weapons used show how far their next
-## attachment is. Filled by `show_summary` with
-## `match_xp.gd`'s summary.
+## The match report under the results scoreboard, after Black Ops 3's After
+## Action Report XP bar: the score made, the match bonus, and the total in
+## big squared numerals; the level badge, the XP bar (the level's XP before
+## the match in grey, since orange means focus here) with this match's gain as
+## a yellow segment at its head filling from where the match started (ease
+## out over 1.2 s), and the next level's badge. A level reached flashes the
+## bar, pops the badge, and says LEVEL UP; under it, what the level unlocked
+## and how far each weapon used is from its next attachment. Filled by
+## `show_summary` with `match_xp.gd`'s summary; `tdm_hud.gd` places it.
 
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
 ## Seconds before the bar starts to fill, and how long it takes.
 const FILL_DELAY := 0.6
-const FILL_SECONDS := 1.6
+const FILL_SECONDS := 1.2
+## The report's width, clear of the HUD's bottom corners.
+const WIDTH := 1000.0
+## How far the bar starts in from its row (past the level badge).
+const BAR_INSET := 56.0
+## The bar's track, edge, and this match's gain.
+const TRACK := Color("1e1e1e")
+const TRACK_EDGE := Color("2e2e2e")
+const GAIN := Color("f0e000")
 
-var _rows: VBoxContainer
+var _rows: HBoxContainer
 var _level_label: Label
-var _bar: ProgressBar
+var _bar: Control
 var _xp_label: Label
+var _earned_label: Label
 var _level_up: Label
-var _extras: VBoxContainer
+var _extras: HBoxContainer
 var _from := 0
 var _to := 0
+var _shown := 0
 var _age := 0.0
+## Seconds since the last level reached, for the flash and the badge pop.
+var _since_level := 10.0
 
 
 func _ready() -> void:
-	add_theme_stylebox_override("panel", UiTheme.plate(UiTheme.PLATE_STRONG, 22.0, 18.0))
-	custom_minimum_size = Vector2(340, 0)
+	add_theme_stylebox_override(
+		"panel", UiTheme.outlined(Color(0.02, 0.025, 0.03, 0.86), UiTheme.LINE, 1, 22.0, 14.0)
+	)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 8)
 	add_child(layout)
-	var title := Label.new()
-	title.text = "MATCH XP"
-	title.add_theme_color_override("font_color", MenuStyle.TEXT_FAINT)
-	title.add_theme_font_size_override("font_size", 14)
-	layout.add_child(title)
-	_rows = VBoxContainer.new()
-	_rows.add_theme_constant_override("separation", 4)
-	layout.add_child(_rows)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 4)
-	layout.add_child(gap)
-	var level_row := HBoxContainer.new()
-	layout.add_child(level_row)
-	_level_label = Label.new()
-	_level_label.add_theme_font_size_override("font_size", 18)
-	_level_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	level_row.add_child(_level_label)
-	_level_up = Label.new()
-	_level_up.text = "LEVEL UP"
-	_level_up.add_theme_color_override("font_color", UiTheme.ROUTE_LIGHT)
-	_level_up.add_theme_font_size_override("font_size", 14)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	layout.add_child(head)
+	var title := _label("MATCH REPORT", UiTheme.TEXT_DIM, 15, UiTheme.tracked(UiTheme.LABEL, 3))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	_level_label = _label("", UiTheme.TEXT, 17, UiTheme.tracked(UiTheme.DISPLAY, 1))
+	head.add_child(_level_label)
+	_level_up = _label("LEVEL UP", UiTheme.LABEL_INK, 15, UiTheme.tracked(UiTheme.LABEL, 2))
+	_level_up.add_theme_stylebox_override("normal", UiTheme.plate(UiTheme.LEVEL_CYAN, 10.0, 1.0))
 	_level_up.visible = false
-	level_row.add_child(_level_up)
-	_bar = ProgressBar.new()
-	_bar.show_percentage = false
-	_bar.custom_minimum_size = Vector2(0, 5)
-	_bar.add_theme_stylebox_override("background", UiTheme.plate(UiTheme.HAIRLINE, 0, 0))
-	_bar.add_theme_stylebox_override("fill", UiTheme.plate(UiTheme.ROUTE_LIGHT, 0, 0))
-	layout.add_child(_bar)
-	_xp_label = Label.new()
-	_xp_label.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	_xp_label.add_theme_font_size_override("font_size", 14)
-	layout.add_child(_xp_label)
-	_extras = VBoxContainer.new()
-	_extras.add_theme_constant_override("separation", 4)
-	layout.add_child(_extras)
+	head.add_child(_level_up)
+
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 26)
+	layout.add_child(body)
+	_rows = HBoxContainer.new()
+	_rows.add_theme_constant_override("separation", 2)
+	_rows.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	body.add_child(_rows)
+	var progress := VBoxContainer.new()
+	progress.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progress.add_theme_constant_override("separation", 0)
+	body.add_child(progress)
+	# Above the bar: this match's XP over its start, what is left on the right.
+	var line := HBoxContainer.new()
+	progress.add_child(line)
+	var indent := Control.new()
+	indent.custom_minimum_size = Vector2(BAR_INSET, 0)
+	line.add_child(indent)
+	_earned_label = _label("", UiTheme.LEVEL, 16, UiTheme.font(UiTheme.LABEL))
+	_earned_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(_earned_label)
+	_xp_label = _label("", UiTheme.TEXT, 16, UiTheme.font(UiTheme.LABEL_LIGHT))
+	line.add_child(_xp_label)
+	var inset := Control.new()
+	inset.custom_minimum_size = Vector2(BAR_INSET, 0)
+	line.add_child(inset)
+	_bar = Control.new()
+	_bar.custom_minimum_size = Vector2(0, 44)
+	_bar.draw.connect(_draw_bar)
+	progress.add_child(_bar)
+	var under := MarginContainer.new()
+	under.add_theme_constant_override("margin_left", int(BAR_INSET))
+	progress.add_child(under)
+	_extras = HBoxContainer.new()
+	_extras.add_theme_constant_override("separation", 40)
+	under.add_child(_extras)
 	set_process(false)
 
 
@@ -80,21 +108,22 @@ func show_summary(summary: Dictionary) -> void:
 	var score := int(summary.get("score", 0))
 	var bonus := int(summary.get("bonus", 0))
 	var outcome := String(summary.get("outcome", "loss"))
-	_rows.add_child(_row("Score", _number(score), 17, MenuStyle.TEXT))
+	_rows.add_child(_stat("Score", _number(score), UiTheme.TEXT))
 	var bonus_name := "Match bonus  ·  win" if outcome == "win" else "Match bonus"
-	_rows.add_child(_row(bonus_name, "+" + _number(bonus), 17, MenuStyle.TEXT))
-	_rows.add_child(_row("Total", "+" + _number(score + bonus), 22, UiTheme.ROUTE_LIGHT))
+	_rows.add_child(_stat(bonus_name, "+" + _number(bonus), UiTheme.TEXT))
+	_rows.add_child(_stat("Total", "+" + _number(score + bonus), UiTheme.LEVEL))
+	_earned_label.text = "XP earned  +%s" % _number(score + bonus)
 
 	var unlocks: Array = summary.get("unlocks", [])
 	if not unlocks.is_empty():
-		_extras.add_child(_heading("UNLOCKED"))
+		var column := _column("UNLOCKED")
 		var names := []
 		for unlock: Dictionary in unlocks:
 			names.append(String(unlock.name))
-		_extras.add_child(_line(", ".join(names), MenuStyle.TEXT))
+		column.add_child(_line(", ".join(names), UiTheme.TEXT))
 	var kills: Dictionary = summary.get("kills", {})
 	if not kills.is_empty():
-		_extras.add_child(_heading("WEAPONS"))
+		var column := _column("WEAPONS")
 		var items := NetClient.class_items()
 		for weapon: Dictionary in items.primaries + items.secondaries:
 			var key := String(weapon.key)
@@ -104,11 +133,12 @@ func show_summary(summary: Dictionary) -> void:
 			var next := _next_attachment(weapon)
 			if next != "":
 				text += "  ·  " + next
-			_extras.add_child(_line(text, MenuStyle.TEXT_DIM))
+			column.add_child(_line(text, UiTheme.TEXT_DIM))
 
 	_from = int(summary.get("xp_before", 0))
 	_to = int(summary.get("xp_after", _from))
 	_age = 0.0
+	_since_level = 10.0
 	_level_up.visible = false
 	_show_xp(_from)
 	set_process(true)
@@ -116,30 +146,72 @@ func show_summary(summary: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	_age += delta
+	_since_level += delta
 	var t := clampf((_age - FILL_DELAY) / FILL_SECONDS, 0.0, 1.0)
 	# Ease out: quick at first, settling on the total.
 	var eased := 1.0 - pow(1.0 - t, 3.0)
 	_show_xp(roundi(lerpf(_from, _to, eased)))
-	if t >= 1.0:
+	_bar.queue_redraw()
+	if t >= 1.0 and _since_level > 0.4:
 		set_process(false)
 
 
 func _show_xp(xp: int) -> void:
+	var before := int(Progression.rank(_shown).level)
+	_shown = xp
 	var rank := Progression.rank(xp)
 	var level := int(rank.level)
+	if level > before and _age > 0.0:
+		_since_level = 0.0
 	_level_label.text = "LEVEL %d" % level
 	_level_up.visible = level > int(Progression.rank(_from).level)
 	var span := int(rank.level_span)
 	if span > 0:
-		_bar.max_value = span
-		_bar.value = int(rank.into_level)
 		_xp_label.text = (
 			"%s / %s XP to level %d" % [_number(int(rank.into_level)), _number(span), level + 1]
 		)
 	else:
-		_bar.max_value = 1
-		_bar.value = 1
 		_xp_label.text = "Top level"
+
+
+## The level badges and the bar between them: this level's XP from before
+## the match in orange, this match's gain in yellow at its head.
+func _draw_bar() -> void:
+	var width := _bar.size.x
+	var middle := _bar.size.y / 2.0
+	var rank := Progression.rank(_shown)
+	var level := int(rank.level)
+	var span := int(rank.level_span)
+	var pop := 1.0 + 0.4 * (1.0 - clampf(_since_level / 0.2, 0.0, 1.0))
+	_bar.draw_set_transform(Vector2(22, middle), 0.0, Vector2(pop, pop))
+	MatchPaint.level_badge(_bar, Vector2.ZERO, 40.0, level)
+	_bar.draw_set_transform(Vector2.ZERO)
+	if span > 0:
+		MatchPaint.level_badge(_bar, Vector2(width - 22.0, middle), 40.0, level + 1, false)
+	var track := Rect2(BAR_INSET, middle - 6.0, width - BAR_INSET * 2.0, 12.0)
+	_bar.draw_rect(track, TRACK)
+	var now := 1.0 if span <= 0 else float(rank.into_level) / span
+	# The match's start, on this level's bar (0 once a level was reached).
+	var start := 0.0
+	var from_rank := Progression.rank(_from)
+	if int(from_rank.level) == level and span > 0:
+		start = float(from_rank.into_level) / span
+	_bar.draw_rect(
+		Rect2(track.position, Vector2(track.size.x * start, track.size.y)), UiTheme.ACCENT
+	)
+	_bar.draw_rect(
+		Rect2(
+			track.position.x + track.size.x * start,
+			track.position.y,
+			track.size.x * maxf(now - start, 0.0),
+			track.size.y
+		),
+		GAIN
+	)
+	_bar.draw_rect(track, TRACK_EDGE, false, 1.0)
+	var flash := 1.0 - clampf(_since_level / 0.08, 0.0, 1.0)
+	if flash > 0.0:
+		_bar.draw_rect(track, Color(1, 1, 1, flash))
 
 
 ## The next attachment the weapon's kills will unlock, as "Grip in 8".
@@ -155,37 +227,40 @@ func _next_attachment(weapon: Dictionary) -> String:
 	return best
 
 
-func _row(label: String, value: String, size: int, colour: Color) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	var name := Label.new()
-	name.text = label
-	name.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	name.add_theme_font_size_override("font_size", 15)
-	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name.size_flags_vertical = Control.SIZE_SHRINK_END
-	row.add_child(name)
-	var number := Label.new()
-	number.text = value
-	number.add_theme_color_override("font_color", colour)
-	number.add_theme_font_size_override("font_size", size)
-	row.add_child(number)
-	return row
+## A figure: its name over the number, on a dark tile.
+func _stat(name: String, value: String, colour: Color) -> PanelContainer:
+	var tile := PanelContainer.new()
+	tile.add_theme_stylebox_override(
+		"panel", UiTheme.outlined(Color("0e100f"), Color("1b1d1f"), 1, 14.0, 6.0)
+	)
+	tile.custom_minimum_size = Vector2(128, 0)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", -4)
+	tile.add_child(box)
+	box.add_child(_label(name, UiTheme.TEXT_DIM, 16, UiTheme.font(UiTheme.LABEL_LIGHT)))
+	box.add_child(_label(value, colour, 30, UiTheme.font(UiTheme.DISPLAY)))
+	return tile
 
 
-func _heading(text: String) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", MenuStyle.TEXT_FAINT)
-	label.add_theme_font_size_override("font_size", 13)
-	return label
+## A column of the report's footer, under a small caps heading.
+func _column(heading: String) -> VBoxContainer:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 1)
+	_extras.add_child(column)
+	column.add_child(_label(heading, UiTheme.TEXT_FAINT, 13, UiTheme.tracked(UiTheme.LABEL, 2)))
+	return column
 
 
 func _line(text: String, colour: Color) -> Label:
+	return _label(text, colour, 16, UiTheme.font(UiTheme.LABEL_LIGHT))
+
+
+func _label(text: String, colour: Color, size: int, font: Font) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_override("font", font)
+	label.add_theme_font_size_override("font_size", size)
 	label.add_theme_color_override("font_color", colour)
-	label.add_theme_font_size_override("font_size", 15)
 	return label
 
 
