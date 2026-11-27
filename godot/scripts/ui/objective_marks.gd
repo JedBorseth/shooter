@@ -42,7 +42,7 @@ const DISTANCE_INK := Color("d8dce0")
 const ROW_TILT := 0.045
 ## While dead: the death card and the prompt under it (1600 x 900 units,
 ## centred on the screen).
-const DEATH_CARD := Rect2(-260, 140, 520, 230)
+const DEATH_CARD := Rect2(-270, 96, 540, 274)
 
 
 ## Draws a mode's markers. Each entry holds "world" (Vector3, the point the

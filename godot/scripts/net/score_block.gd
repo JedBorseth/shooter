@@ -36,6 +36,9 @@ var footer := ""
 ## The fewest digits the score cells are sized for, so the block does not
 ## widen as the score grows (the own-score block outside a match sets 4).
 var min_digits := 0
+## A clock that is not the match running out (a round's start countdown):
+## never red.
+var calm := false
 ## Unused since the block moved to the bottom left (the minimap used to push
 ## it down); kept so older callers still can set it.
 var top := 24.0
@@ -164,7 +167,7 @@ func _draw_mark(at: Vector2, r: float, team: int, colour: Color) -> void:
 ## last 30 seconds.
 func _draw_clock(disk: Vector2) -> void:
 	var seconds := _clock_seconds()
-	var urgent := seconds >= 0 and seconds < 30
+	var urgent := seconds >= 0 and seconds < 30 and not calm
 	var colour := UiTheme.ENEMY if urgent else UiTheme.TEXT
 	var text_size := 19
 	var width := maxf(70.0, Paint.text_width(Paint.DISPLAY, clock, text_size) + 22.0)
