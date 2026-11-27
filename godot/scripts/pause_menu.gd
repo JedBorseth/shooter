@@ -21,6 +21,8 @@ const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const OptionRow := preload("res://scripts/ui/option_row.gd")
 const OptionText := preload("res://scripts/ui/option_text.gd")
 const BindCells := preload("res://scripts/ui/bind_cells.gd")
+const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
@@ -120,6 +122,11 @@ func _ready() -> void:
 		[%QuitButton, "Close the game."],
 	]:
 		(entry[0] as Button).focus_entered.connect(_note_route.bind(entry[0], entry[1]))
+		(entry[0] as Button).focus_exited.connect(func() -> void: %Pointer.hide())
+	%Pointer.draw.connect(
+		func() -> void:
+			HudShapes.pointer(%Pointer, Vector2(6, 6), 10.0, Vector2.RIGHT, UiTheme.ACCENT)
+	)
 	# Black Ops menus have one cursor: the mouse over an item focuses it.
 	for button: Button in [
 		_resume_button, _settings_button, %LeaveButton, %QuitButton, %NoButton, %ResetButton
@@ -387,6 +394,17 @@ func _note_route(button: Button, note: String) -> void:
 			)
 		)
 	%RouteNote.text = note
+	# As on the title screen: the new plate flashes brighter for a moment, and
+	# a small orange pointer marks it.
+	button.self_modulate = Color(1.6, 1.6, 1.6)
+	create_tween().tween_property(button, ^"self_modulate", Color.WHITE, 0.1)
+	_place_pointer.call_deferred(button)
+
+
+func _place_pointer(button: Button) -> void:
+	if button.has_focus() and button.is_visible_in_tree():
+		%Pointer.position = Vector2(44.0, button.get_global_rect().get_center().y - 6.0)
+		%Pointer.show()
 
 
 ## Online: back to the Join screen. Offline: back to the title screen.

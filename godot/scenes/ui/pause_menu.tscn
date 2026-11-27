@@ -69,6 +69,14 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("4_card")
 
+[node name="Pointer" type="Control" parent="Root/MainPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_right = 12.0
+offset_bottom = 12.0
+mouse_filter = 2
+
 [node name="Menu" type="VBoxContainer" parent="Root/MainPage"]
 layout_mode = 0
 offset_left = 64.0
