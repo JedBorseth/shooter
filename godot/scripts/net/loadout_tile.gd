@@ -129,10 +129,10 @@ func _draw_row() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
 	var focused := _focused()
 	if focused:
-		# The glow: a few widening, fading copies of the plate.
-		for i in 4:
-			var grow := 2.0 + i * 3.0
-			draw_rect(rect.grow(grow), Color(UiTheme.ACCENT, 0.1 * _lit))
+		# The glow: many thin, widening, fading copies of the plate, so it
+		# ramps smoothly.
+		for i in 10:
+			draw_rect(rect.grow(1.0 + i * 1.2), Color(UiTheme.ACCENT, 0.045 * _lit))
 		draw_rect(rect, UiTheme.ACCENT)
 		draw_rect(Rect2(0, 0, size.x, 1), Color(UiTheme.ACCENT_HOT, 0.9))
 		Shapes.pointer(self, Vector2(-12, size.y / 2.0), 8.0, Vector2.RIGHT, UiTheme.ACCENT)
@@ -140,20 +140,25 @@ func _draw_row() -> void:
 		draw_rect(rect, Color(UiTheme.BG, 0.88 * (0.6 if disabled else 1.0)))
 		draw_rect(rect.grow(-0.5), UiTheme.LINE, false, 1.0)
 	var ink := UiTheme.ACCENT_INK if focused else UiTheme.TEXT
-	if disabled:
+	# A locked row fades, but not under focus, where it must read on orange.
+	if disabled and not focused:
 		ink = UiTheme.TEXT_FAINT
 	var baseline := size.y / 2.0 + 7.0
 	Paint.text(self, Paint.LABEL_LIGHT, title, Vector2(14, baseline), 20, ink, 0.0, false)
 	if lock != "":
 		var right := size.x - 12.0
-		_draw_lock(Vector2(right - 6.0, size.y / 2.0 - 1.0), Color(UiTheme.TEXT_DIM, 0.6))
+		var lock_ink := Color(UiTheme.ACCENT_INK, 0.8) if focused else UiTheme.TEXT_DIM
+		_draw_lock(
+			Vector2(right - 6.0, size.y / 2.0 - 1.0),
+			lock_ink if focused else Color(UiTheme.TEXT_DIM, 0.6)
+		)
 		Paint.text_right(
 			self,
 			Paint.LABEL,
 			lock.to_upper(),
 			Vector2(right - 18.0, baseline - 1.0),
 			13,
-			UiTheme.TEXT_DIM,
+			lock_ink,
 			1.2
 		)
 	elif chosen:
