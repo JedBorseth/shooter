@@ -28,6 +28,7 @@ sys.path.insert(0, str(repo / "tools"))
 
 import breakwater_checks as checks  # noqa: E402
 import breakwater_layout as L  # noqa: E402
+import prop_library  # noqa: E402
 
 L.build()
 
@@ -291,7 +292,8 @@ ext = [
 ]
 ext += [f'[ext_resource type="PackedScene" path="res://assets/models/charge_site_{k}/charge_site_{k}.gltf" '
         f'id="site_{k}"]' for k in ("a", "b")]
-ext += [f'[ext_resource type="PackedScene" path="res://assets/props/{n}/{n}.gltf" id="p_{n}"]'
+# A kit's pieces (gutters, fences) share their kit's folder.
+ext += [f'[ext_resource type="PackedScene" path="{prop_library.res_path(n)}" id="p_{n}"]'
         for n in sorted(props_used)]
 ext += [f'[ext_resource type="PackedScene" path="res://scenes/effects/{n}.tscn" id="fx_{n}"]'
         for n in sorted(effects_used)]

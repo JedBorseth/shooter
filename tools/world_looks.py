@@ -167,6 +167,10 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "wood_old": _t("planks", 2.0, (0.7, 0.6, 0.5), grime=0.0),
     "booth_wood": _t("wood_floor", 1.5, (0.75, 0.55, 0.42), grime=0.0),
     "pallet_wood": _t("planks", 1.2, (0.92, 0.82, 0.62), grime=0.0),
+    # Weathered pallet boards (sun-greyed, damp-darkened) and the blocks.
+    "pallet_wood_grey": _t("planks", 1.2, (0.7, 0.67, 0.6), grime=0.0),
+    "pallet_wood_dark": _t("planks", 1.2, (0.62, 0.5, 0.36), grime=0.0),
+    "pallet_block": _t("planks", 0.8, (0.8, 0.68, 0.5), grime=0.0),
     "plywood": _t("planks", 2.5, (1.0, 0.86, 0.66), grime=0.3),
     "timber": _t("planks", 1.5, (0.72, 0.56, 0.4), grime=0.2),
     "sleeper": _t("planks", 1.5, (0.36, 0.31, 0.27), grime=0.0),

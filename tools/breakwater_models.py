@@ -426,6 +426,19 @@ def drum_rack(b: Model, count=6):
 
 
 @model
+def spill_pallet(b: Model, count=4):
+    """A yellow polyethylene spill pallet for two rows of `count` drums: a
+    sump tub with a steel grating deck and forklift pockets in its ends. The
+    drums on it are library props (breakwater_layout.drums)."""
+    hl = 0.33 * count + 0.1
+    b.box(-hl, hl, 0.0, 0.13, -0.75, 0.75, "safety_yellow", bevel=0.03)
+    b.box(-hl + 0.06, hl - 0.06, 0.13, 0.15, -0.69, 0.69, "grate")
+    for x in (-hl * 0.45, hl * 0.45):
+        for z in (-0.765, 0.765):
+            b.box(x - 0.16, x + 0.16, 0.025, 0.095, z - 0.01, z + 0.01, "trim_black", detail=True)
+
+
+@model
 def workbench(b: Model, length=3.0):
     hl = length / 2
     b.box(-hl, hl, 0.86, 0.92, -0.4, 0.4, "booth_wood", bevel=0.01)
