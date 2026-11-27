@@ -90,7 +90,7 @@ Each map is lit by one directional light for its sun or moon and a sky that also
 | Map | Sky | Mood |
 | --- | --- | --- |
 | Testing Area | `range_day.hdr` (`kloofendal_48d_partly_cloudy_puresky`) and a rendered horizon of open country | Clear midday, high sun, light haze |
-| Breakwater | `breakwater_day.hdr` (`kloofendal_43d_clear_puresky`) | Clear day |
+| Breakwater | `breakwater_day.hdr` (`sunflowers_puresky`: fair-weather cumulus, its sun at the same 43° as the old clear sky, so the lightmap and shadows still match) | Late-morning harbour, hard sun, broken cloud |
 
 **Horizons.** `tools/build_horizon.py` renders the country beyond a map's walls in Blender from fixed seeds: the Testing Area's valley, fields, hedgerows, woods, and farms. Every tree is a real mesh lit by a sun at the map's elevation. Each writes a 360° strip storing the land premultiplied by its coverage, and a second image storing each pixel's distance, so the sky shader (`day_sky.gdshader`) fades the land into the map's haze as far as it really stands. It costs two texture reads on sky pixels near the horizon. Nothing stands near enough for the missing parallax to show. The sky's reflections and the lightmap see the plain sky. Rerun the tool after changing a map's sun elevation.
 
@@ -105,17 +105,18 @@ The baker can report success and still write a black lightmap when it loses the 
 
 ## The graded picture
 
-The final picture of a map is set in `godot/scripts/looks.gd`, not its scene, so a map that a tool regenerates keeps it. `GraphicsQuality.adopt` applies it as each map loads; a map not listed (Breakwater) keeps the look authored in its scene. For each listed map, `MAPS` holds:
+The final picture of a map is set in `godot/scripts/looks.gd`, not its scene, so a map that a tool regenerates keeps it. `GraphicsQuality.adopt` applies it as each map loads; a map not listed keeps the look authored in its scene (both maps are listed). For each listed map, `MAPS` holds:
 
-- **`env`**: overrides of the tone curve, exposure, haze, ambient occlusion, and bloom. The Testing Area uses the ACES curve for hard daylight; the other maps keep AgX, which holds the hue of neon and lamps. The Testing Area uses a tight contact occlusion (radius 0.5 m, a strong detail pass) that draws a crisp line where walls and boots meet the ground instead of a wide halo.
-- **`sun`**: the Testing Area's sun is 2.9 against its scene's 2.0, with less exposure, so sunlit ground nears white while shade goes dark; a little more sky light keeps soldiers and the first-person weapon readable in shade.
+- **`env`**: overrides of the tone curve, exposure, haze, ambient occlusion, and bloom. Both maps use the ACES curve for hard daylight (AgX, which a map's scene may author, holds the hue of neon and lamps better but flattens sun against shade). Both use a tight contact occlusion (radius 0.5 m, a strong detail pass) that draws a crisp line where walls and boots meet the ground instead of a wide halo.
+- **`sun`**: the Testing Area's sun is 2.9 against its scene's 2.0 and Breakwater's 4.0 against 2.1, each with less exposure, so sunlit ground nears white while shade goes dark (the baked bounce keeps its level, so the key-to-fill ratio rises); a little more sky light keeps soldiers and the first-person weapon readable in shade.
 - **`exposure`**: how far eye adaptation may move the exposure, below.
-- **`grade`**: an S-curve on brightness around a pivot, a toe that deepens the darkest shadows without clipping, a cool shadow tint and a warm highlight tint that both fade out at black and white, and a saturation. A colour that would leave the range is pulled toward its own grey, so it keeps its hue. `Looks.build_lut` turns the grade into a 32³ look-up table when the map loads, and the renderer samples it inside the tonemap pass, so a grade costs nothing per frame. The renderer reads the table at texel centres with no half-texel correction, so texel *i* holds the grade of input (*i* + 0.5) / 32 (`Looks.texel_input`). Tune a grade offline against a screenshot first: the maths is a few lines.
+- **`grade`**: an S-curve on brightness around a pivot, a `lift` (a gamma below 1 under the pivot) that opens up shade without greying black, a toe that deepens the darkest shadows without clipping, a cool shadow tint and a warm highlight tint that both fade out at black and white, and a saturation. A colour that would leave the range is pulled toward its own grey, so it keeps its hue. `Looks.build_lut` turns the grade into a 32³ look-up table when the map loads, and the renderer samples it inside the tonemap pass, so a grade costs nothing per frame. The renderer reads the table at texel centres with no half-texel correction, so texel *i* holds the grade of input (*i* + 0.5) / 32 (`Looks.texel_input`). Tune a grade offline against a screenshot first: the maths is a few lines.
 - **`flare`** and **`wetness`**: the sun flare's strength and how wet the map is.
 
 | Map | Grade |
 | --- | --- |
 | Testing Area | Hard midday: a filmic curve, a strong sun, deep shade, cool shadows, warm highlights, and a sun flare |
+| Breakwater | Late-morning harbour: a strong warm sun against a cool sea-air sky (sun 4.0, exposure 0.56), blue-grey sea haze that steps the far tanks back, cool shade opened up by `lift` so it stays readable, warm highlights, bloom only above 1.35 so sunlit white tanks stay crisp, lens dirt, and a sun flare |
 
 On top of that:
 

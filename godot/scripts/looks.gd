@@ -24,6 +24,9 @@ const LUT_SIZE := 32
 ##     balance    Where the two tints cross, as a brightness.
 ##     toe        Deepens the darkest shadows by up to this fraction, without
 ##                clipping them (0 = none).
+##     lift       Opens up the shade: a gamma of 1 / (1 + lift) on the range
+##                below `pivot`, so black stays black and the pivot stays put
+##                but shade keeps its detail (0 = none).
 ##   flare  How strongly the sun flares in the lens when it is in view and not
 ##          hidden (scripts/lens.gd); 0 or missing for none. The cover test
 ##          casts rays against the world's collision, so set it only on maps
@@ -89,6 +92,60 @@ const MAPS := {
 			"highlights": Color(1.04, 1.0, 0.95),
 			"balance": 0.5,
 			"toe": 0.12,
+		},
+		"flare": 1.0,
+	},
+	# Breakwater: a late-morning harbour under fair-weather cumulus. A hard,
+	# warm sun against a cool sea-air sky, bright concrete and steel, and
+	# shade that stays blue-grey and readable instead of going black.
+	"res://scenes/breakwater.tscn":
+	{
+		"env":
+		{
+			"tonemap_mode": Environment.TONE_MAPPER_ACES,
+			# The filmic curve the Testing Area uses: a real shoulder on
+			# sunlit concrete and white tanks, a toe that keeps shade dark.
+			"tonemap_white": 8.0,
+			"tonemap_exposure": 0.56,
+			# Sky light for what the lightmap does not light (soldiers, the
+			# first-person weapon, small props), so they keep fill in shade.
+			"ambient_light_energy": 1.5,
+			# Tight contact occlusion, as in the Testing Area.
+			"ssao_radius": 0.6,
+			"ssao_intensity": 2.4,
+			"ssao_power": 1.7,
+			"ssao_detail": 1.6,
+			"ssao_light_affect": 0.12,
+			# Sea haze: blue-grey, a little thicker than inland, glowing
+			# toward the sun, so the far tanks and the far shore step back.
+			"fog_light_color": Color(0.7, 0.79, 0.88),
+			"fog_light_energy": 1.0,
+			"fog_sun_scatter": 0.18,
+			"fog_density": 0.0026,
+			"fog_aerial_perspective": 0.8,
+			"fog_sky_affect": 0.25,
+			# Only the sun, lamps, and glints bloom: sunlit white tanks and
+			# concrete sit just under the threshold.
+			"glow_hdr_threshold": 1.35,
+			"glow_intensity": 0.35,
+			# The grade below replaces these.
+			"adjustment_contrast": 1.0,
+			"adjustment_saturation": 1.0,
+		},
+		# A stronger key against the sky: crisp shadows with a real
+		# key-to-fill ratio (the baked bounce is unchanged).
+		"sun": {"light_energy": 4.0, "light_color": Color(1.0, 0.95, 0.87)},
+		"exposure": {"reference": 1.0, "darker": 0.5, "brighter": 1.0},
+		"grade":
+		{
+			"contrast": 1.22,
+			"pivot": 0.42,
+			"saturation": 1.1,
+			"shadows": Color(0.93, 0.98, 1.07),
+			"highlights": Color(1.04, 1.0, 0.95),
+			"balance": 0.45,
+			"toe": 0.04,
+			"lift": 0.25,
 		},
 		"flare": 1.0,
 	},
@@ -237,6 +294,9 @@ static func graded(colour: Color, grade: Dictionary) -> Color:
 		curved = 1.0 - (1.0 - pivot) * pow((1.0 - luma) / (1.0 - pivot), contrast)
 	# A toe that deepens the darkest quarter of the range. It scales, so
 	# shadows keep their detail instead of clipping to black.
+	var lift: float = grade.get("lift", 0.0)
+	if lift > 0.0 and curved < pivot:
+		curved = pivot * pow(curved / pivot, 1.0 / (1.0 + lift))
 	var toe: float = grade.get("toe", 0.0)
 	curved *= 1.0 - toe + toe * smoothstep(0.0, 0.25, curved)
 	var scale := curved / luma if luma > 0.0001 else 0.0

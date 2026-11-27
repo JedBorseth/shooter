@@ -60,6 +60,15 @@ func _check_grades() -> void:
 	var grey := Color(0.4, 0.4, 0.4)
 	var same := Looks.graded(grey, {})
 	_check(same.is_equal_approx(grey), "an empty grade changes nothing")
+	var shade := Color(0.12, 0.12, 0.12)
+	var lifted := Looks.graded(shade, {"lift": 0.3})
+	_check(lifted.g > shade.g + 0.01, "lift opens up shade")
+	_check(
+		Looks.graded(Color(0.45, 0.45, 0.45), {"lift": 0.3}).is_equal_approx(
+			Color(0.45, 0.45, 0.45)
+		),
+		"lift leaves the pivot alone"
+	)
 	for scene: String in Looks.MAPS:
 		var grade: Dictionary = Looks.MAPS[scene].get("grade", {})
 		var black := Looks.graded(Color(0, 0, 0), grade)
