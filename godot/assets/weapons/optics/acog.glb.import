@@ -59,7 +59,6 @@ _subresources={
 },
 "Weapon": {
 "use_external/enabled": true,
-"use_external/fallback_path": "res://assets/weapons/optics/acog.tres",
 "use_external/path": "res://assets/weapons/optics/acog.tres"
 }
 }

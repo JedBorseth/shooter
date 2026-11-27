@@ -232,6 +232,10 @@ FINISH = {
     "unwrap": True,
     "wear_radius": 0.0035,
     "scratch_depth": 0.06,
+    # Rounded housings unwrap into many islands: their seams must not read
+    # as chips (weapon_finish `_refill_seams`), and islands sit apart.
+    "seam_fix": True,
+    "uv_margin": 6.0,
     "zones": [
         {"zone": "rubber", "parts": ["rubber"]},
         {"zone": "steel", "parts": ["bolt"]},

@@ -64,13 +64,16 @@ OBJECTS: dict = {}
 TEXTURE_SIZE = 1024
 
 
-def finish(name: str, bm: bmesh.types.BMesh, zones, smooth: bool = True):
+def finish(name: str, bm: bmesh.types.BMesh, zones, smooth: bool = True, convex: bool = False):
     """Links `bm` as an object on the painted material, each face in the
     zone its material index picks from `zones` (FINISHES names), smooth
     shaded with edges sharper than 40 degrees kept hard."""
     # Faces point out: the painted material culls back faces (the old
-    # flat colours were double-sided and hid lathes wound inward).
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # flat colours were double-sided and hid lathes wound inward). `lathe`
+    # turns its faces out itself (`convex`): Blender's guess goes wrong where
+    # the frag's collar meets the sphere.
+    if not convex:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.normal_update()
     layer = weapon_equipment.zone_layer(bm)
@@ -113,23 +116,35 @@ def lathe(bm, profile, sides, material_index=0, z_offset=0.0):
             ]
         )
     faces = []
-    for a, b in zip(rings, rings[1:]):
+    for i, (a, b) in enumerate(zip(rings, rings[1:])):
         if len(a) == 1 and len(b) == 1:
             continue
+        # The profile runs bottom to top round the outside, so its outward
+        # normal is its direction turned clockwise.
+        (r0, z0), (r1, z1) = profile[i], profile[i + 1]
+        nr, nz = z1 - z0, -(r1 - r0)
         for k in range(sides):
             n = (k + 1) % sides
             if len(a) == 1:
-                faces.append(bm.faces.new((a[0], b[k], b[n])))
+                face = bm.faces.new((a[0], b[k], b[n]))
             elif len(b) == 1:
-                faces.append(bm.faces.new((a[k], b[0], a[n])))
+                face = bm.faces.new((a[k], b[0], a[n]))
             else:
-                faces.append(bm.faces.new((a[k], b[k], b[n], a[n])))
+                face = bm.faces.new((a[k], b[k], b[n], a[n]))
+            angle = math.tau * (k + 0.5) / sides
+            face.normal_update()
+            if face.normal.dot(Vector((nr * math.cos(angle), nr * math.sin(angle), nz))) < 0.0:
+                face.normal_flip()
+            faces.append(face)
     for f in faces:
         f.material_index = material_index
-    if len(rings[0]) > 1:
-        bm.faces.new(tuple(reversed(rings[0]))).material_index = material_index
-    if len(rings[-1]) > 1:
-        bm.faces.new(tuple(rings[-1])).material_index = material_index
+    for ring, up in ((rings[0], -1.0), (rings[-1], 1.0)):
+        if len(ring) > 1:
+            cap = bm.faces.new(tuple(ring))
+            cap.normal_update()
+            if cap.normal.z * up < 0.0:
+                cap.normal_flip()
+            cap.material_index = material_index
     return faces
 
 
@@ -166,7 +181,7 @@ def body():
         2,
     )
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    return finish("Body", bm, ["od_paint", "yellow_paint", "zinc"])
+    return finish("Body", bm, ["od_paint", "yellow_paint", "zinc"], convex=True)
 
 
 def fuse():
@@ -195,7 +210,7 @@ def fuse():
             @ Matrix.Diagonal((0.006, 0.0022, 0.008, 1.0)),
             verts=lug,
         )
-    return finish("Fuse", bm, ["zinc"])
+    return finish("Fuse", bm, ["zinc"], convex=True)
 
 
 def spoon(cylinder=None):
@@ -325,7 +340,7 @@ def can(name, radius, length, zones, band_at, vents):
         if face.normal.z > 0.9:
             face.material_index = 2
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    finish(name, bm, zones)
+    finish(name, bm, zones, convex=True)
     if vents:
         # Ports: dark discs set into the wall.
         holes = bmesh.new()
