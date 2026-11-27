@@ -8,7 +8,22 @@ extends SceneTree
 ##     --script res://tests/capture_turntable.gd
 ## Optional: WEAPONS (for example `m4,ak47`).
 
-const WEAPONS := ["m4", "ak47", "pdw9", "cq10", "m870", "m40", "pistol", "lsw6", "br3"]
+const WEAPONS := [
+	"m4",
+	"ak47",
+	"kr12",
+	"pdw9",
+	"cq10",
+	"m870",
+	"sg12",
+	"dm7",
+	"m40",
+	"pistol",
+	"bp9",
+	"rl4",
+	"lsw6",
+	"br3",
+]
 ## (yaw, pitch) in degrees around the weapon, and a zoom (1 frames it whole).
 const ANGLES := [
 	["right", 90.0, 0.0, 1.0],
