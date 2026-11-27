@@ -219,7 +219,6 @@ func _draw_icons() -> void:
 	_icons.draw_set_transform_matrix(_tilt())
 	var my_team := client.team_of(client.player_id())
 	var teams := not bool(client.match_info().get("free_for_all", false))
-	_draw_objectives()
 	if _jam < 0.5:
 		for blip: Dictionary in client.radar_blips():
 			var p: Vector3 = blip.position
@@ -239,6 +238,8 @@ func _draw_icons() -> void:
 				var by_us := at.distance_to(WINDOW / 2.0) < 20.0
 				var colour := Color(TeamColours.ally, 0.5 if by_us else 1.0)
 				_chevron(at, window_angle(remote.view_angles().x), colour)
+	# Objectives over the player marks, so no dot covers a letter.
+	_draw_objectives()
 	_draw_crates()
 	if _arrow_shown():
 		_arrow(WINDOW / 2.0, window_angle(_yaw), SELF_ARROW)

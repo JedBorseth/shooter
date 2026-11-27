@@ -170,18 +170,23 @@ func _draw_glyph(kind: String, at: Vector2, alpha: float) -> void:
 	if kind == "frag":
 		Paint.grenade(self, mid, ICON_BOX.y + 2.0, colour)
 		return
+	# A long thin blade with a clipped point and a back edge, a cross guard,
+	# a ridged grip, and a pommel: a knife, not a round.
 	var blade := PackedVector2Array(
 		[
-			mid + Vector2(-3, -3.5),
-			mid + Vector2(13, -3.5),
-			mid + Vector2(18, -0.5),
-			mid + Vector2(12, 2.5),
-			mid + Vector2(-3, 2.5),
+			mid + Vector2(-2, -2.5),
+			mid + Vector2(14, -2.5),
+			mid + Vector2(20, -0.5),
+			mid + Vector2(16, 2.0),
+			mid + Vector2(-2, 2.0),
 		]
 	)
 	draw_colored_polygon(blade, colour)
-	draw_rect(Rect2(mid + Vector2(-6, -5.5), Vector2(3, 11)), colour)
-	draw_rect(Rect2(mid + Vector2(-17, -2.5), Vector2(11, 5)), colour)
+	draw_rect(Rect2(mid + Vector2(-5, -6), Vector2(2.5, 12)), colour)
+	draw_rect(Rect2(mid + Vector2(-16, -2.5), Vector2(11, 5)), colour)
+	for x: float in [-13.0, -10.0, -7.0]:
+		draw_line(mid + Vector2(x, -2.5), mid + Vector2(x, 2.5), Color(0, 0, 0, 0.55 * alpha), 1.0)
+	draw_circle(mid + Vector2(-17, 0), 2.6, colour, true, -1.0, true)
 
 
 ## A weapon's silhouette fitted into the fixed box at `at` (its top left),
