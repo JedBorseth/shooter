@@ -53,6 +53,8 @@ var _dead_time := 0.0
 var _controls_forced := false
 ## The longest respawn wait seen this death, to fill the respawn bar.
 var _respawn_total := 0.0
+## The layer the crosshair and damage arcs draw on, over objective markers.
+var _top: CanvasLayer
 
 ## Hit marker sounds by name, built on first use.
 var _markers := {}
@@ -88,6 +90,17 @@ func _ready() -> void:
 	Settings.fit_hud(_weapon)
 	Settings.fit_hud(_centre)
 	Settings.fit_hud(_score_feed)
+	# The health ring draws after the weapon cluster, so the cluster's corner
+	# shade does not dim its number.
+	move_child(_health, _weapon.get_index())
+	# The crosshair, hit markers, and damage arcs sit above everything else
+	# drawn over the world, objective markers included (they are on layer 4).
+	_top = CanvasLayer.new()
+	_top.name = "HudTop"
+	_top.layer = 5
+	add_child(_top)
+	_damage.reparent(_top)
+	_crosshair.reparent(_top)
 
 
 ## The grenade danger indicator round the crosshair (`ui/grenade_danger.gd`).
@@ -183,6 +196,7 @@ func _process(delta: float) -> void:
 	# The results screen clears the play HUD, as in Call of Duty; the final
 	# killcam before it still needs the scope.
 	visible = killcam or not _match_ended()
+	_top.visible = visible
 	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
 		piece.visible = not killcam
 	if killcam:

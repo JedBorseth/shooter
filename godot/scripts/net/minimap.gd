@@ -367,7 +367,7 @@ func _arrow(at: Vector2, angle: float, colour: Color) -> void:
 
 ## A teammate: an open chevron in their colour, with a dark rim.
 func _chevron(at: Vector2, angle: float, colour: Color) -> void:
-	var points := _arrow_points(at, angle, ARROW - 2.0)
+	var points := _arrow_points(at, angle, ARROW - 3.5)
 	_icons.draw_colored_polygon(points, Color(0, 0, 0, 0.45))
 	points.append(points[0])
 	_icons.draw_polyline(points, Color(0, 0, 0, 0.6), 3.6, true)
@@ -424,12 +424,7 @@ func _draw_objectives() -> void:
 	for flag: Dictionary in client.domination_info().get("flags", []):
 		var c: Vector3 = flag.center
 		marks.append(
-			[
-				_held(to_window(Vector2(c.x, c.z))),
-				String(flag.name),
-				_side_colour(flag.owner),
-				false
-			]
+			[_held(to_window(Vector2(c.x, c.z))), String(flag.name), _flag_colour(flag), false]
 		)
 	var charge := client.charge_info()
 	for site: Dictionary in charge.get("sites", []):
@@ -491,6 +486,15 @@ func _holder_colour(holder: String) -> Color:
 		"enemy":
 			return TeamColours.enemy
 	return UiTheme.NEUTRAL
+
+
+## A Domination flag's colour, as its marker and row show it: flashing
+## between the sides twice a second while contested.
+func _flag_colour(flag: Dictionary) -> Color:
+	if flag.get("contested", false):
+		var flash := fmod(Time.get_ticks_msec() / 500.0, 1.0) < 0.5
+		return TeamColours.ally if flash else TeamColours.enemy
+	return _side_colour(flag.owner)
 
 
 func _side_colour(side: String) -> Color:

@@ -73,19 +73,28 @@ static func draw_world(
 	var popup := Rect2(middle.x - 90.0 * ui, screen.y * 0.34 - 36.0 * ui, 180.0 * ui, 70.0 * ui)
 	for entry: Dictionary in placed:
 		var point: Vector2 = entry.point
-		var near := smoothstep(40.0 * ui, 90.0 * ui, point.distance_to(middle))
+		# From the marker's whole outline (its words reach 25 px above and
+		# below the hexagon), not only its middle.
+		var gap := (point - middle).abs() - Vector2(18.0, 40.0) * ui
+		var near := smoothstep(20.0 * ui, 70.0 * ui, maxf(gap.x, gap.y))
 		var fade := lerpf(0.35, 1.0, near)
 		if popup.has_point(point):
 			fade = minf(fade, 0.5)
 		entry.alpha = float(entry.get("alpha", 1.0)) * fade
+		entry.quiet = fade < 0.9
 	_spread(placed, PITCH * ui)
+	for entry: Dictionary in placed:
+		if entry.edge:
+			# Spreading can slide a held marker back onto a cluster.
+			entry.point = _keep_clear(entry.point, screen, dead)
 	# Words: none on held markers; a farther marker drops its words when they
 	# would cross a nearer marker or its words.
 	var taken: Array[Rect2] = []
 	for entry: Dictionary in placed:
 		var hex := Rect2(entry.point - Vector2.ONE * RADIUS * ui, Vector2.ONE * RADIUS * 2.0 * ui)
 		var words := _word_rects(entry, ui)
-		var clear: bool = not entry.edge
+		# Faded near the crosshair, a marker keeps quiet too.
+		var clear: bool = not entry.edge and not entry.quiet
 		for rect in words:
 			for other in taken:
 				if rect.intersects(other):

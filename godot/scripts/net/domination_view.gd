@@ -392,7 +392,9 @@ func _eye(camera: Camera3D) -> Vector3:
 func _marker(flag: Dictionary) -> Dictionary:
 	var fill := side_colour(flag.owner) if flag.owner != "neutral" else UiTheme.NEUTRAL
 	if flag.contested:
-		fill = TeamColours.ally if fmod(_time * 2.0, 1.0) < 0.5 else TeamColours.enemy
+		# On the wall clock, so the minimap's flash keeps in step.
+		var flash := fmod(Time.get_ticks_msec() / 500.0, 1.0) < 0.5
+		fill = TeamColours.ally if flash else TeamColours.enemy
 	var marker := {"fill": fill, "letter": String(flag.name)}
 	var progress: float = flag.progress
 	if progress > 0.0 and flag.claim != "neutral":
