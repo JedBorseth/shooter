@@ -6,13 +6,15 @@ extends Control
 ## - a block per team on the left: the team's name on a light label plate,
 ##   its score in big squared numerals with the colour split, and the team's
 ##   mark faint behind it, ours on top;
-## - a row per player, on see-through plates tinted with the team's colour
-##   (ours a dark teal, theirs a dark maroon at the default palette) so the
-##   game shows through, with every other number column banded lighter. Our
+## - a row per player, on near-solid plates tinted with the team's colour
+##   (ours a dark teal, theirs a dark maroon at the default palette), with
+##   every other number column banded lighter. Our
 ##   row has orange rules along its top and bottom and pale yellow type;
 ##   players out of the round (Search and Destroy) are faded with a skull.
 ##   The last column is a ping meter;
-## - in Free-for-all and Gun Game, one list with each player's place.
+## - in Free-for-all and Gun Game, one list with each player's place, the
+##   top three in gold, silver, and bronze, and the goal under the list when
+##   the header has no room for it.
 ##
 ## It fades in over 100 ms with its rows a beat apart. `tdm_hud.gd` fills
 ## `title`, `clock`, `top`, and `sections`.
@@ -270,7 +272,7 @@ func _draw_row(
 	if ffa:
 		fill = Color(0.09, 0.1, 0.11, 0.9)
 	if out:
-		fill = Color(fill.darkened(0.3), 0.7)
+		fill = Color(fill.darkened(0.45), fill.a)
 	draw_rect(rect, _a(fill))
 	draw_rect(Rect2(rect.position.x, rect.end.y, rect.size.x, 1), _a(Color(0, 0, 0, 0.5)))
 	# Banded columns: every other number column a little lighter.

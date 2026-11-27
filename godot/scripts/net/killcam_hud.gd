@@ -187,8 +187,9 @@ func _draw_title(alpha: float) -> void:
 	)
 
 
-## At an end, under the title: WINNERS in the reward yellow, the killer's
-## side's mark, and its name on a light plate.
+## At an end, under the title on a dark strip: the killer's side's mark,
+## WINNERS (in the reward yellow when it is our side), and the side's name on
+## a light plate.
 func _draw_winners(alpha: float) -> void:
 	var killer := int(_info.get("killer", -1))
 	var team := _team_of(killer)
@@ -199,13 +200,18 @@ func _draw_winners(alpha: float) -> void:
 	name = name.to_upper()
 	var label_w := Paint.text_width(Paint.LABEL, "WINNERS", 15, 2.5)
 	var plate_w := Paint.text_width(Paint.LABEL, name, 19, 3.0) + 16.0
-	var left := 800.0 - (40.0 + 12.0 + label_w + 14.0 + plate_w) / 2.0
+	var row_w := 40.0 + 12.0 + label_w + 14.0 + plate_w
+	var left := 800.0 - row_w / 2.0
+	# A dark strip behind the row, so it reads on a bright sky.
+	_canvas.draw_rect(Rect2(left - 10.0, 112, row_w + 16.0, 44), Color(0, 0, 0, 0.72 * alpha))
 	MatchPaint.team_mark(
 		_canvas, Vector2(left + 20.0, 134), 40.0, maxi(team, 0), Color(colour, alpha)
 	)
 	left += 52.0
-	var ready := Color(UiTheme.READY, alpha)
-	Paint.text(_canvas, Paint.LABEL, "WINNERS", Vector2(left, 140), 15, ready, 2.5)
+	# Yellow is a reward: our side's win only. Theirs is plain grey.
+	var ours := colour == TeamColours.ally and team >= 0
+	var ink := Color(UiTheme.READY if ours else UiTheme.TEXT_DIM, alpha)
+	Paint.text(_canvas, Paint.LABEL, "WINNERS", Vector2(left, 140), 15, ink, 2.5)
 	var plate := Rect2(left + label_w + 14.0, 120, plate_w, 28)
 	_canvas.draw_rect(plate, Color(UiTheme.LABEL_BOX, alpha))
 	Paint.text(

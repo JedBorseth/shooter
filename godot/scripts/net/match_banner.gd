@@ -11,11 +11,13 @@ extends Control
 ##   caps with the colour split settling as it appears. VICTORY sits on green,
 ##   DEFEAT on crimson, round results and draws on steel grey. The detail
 ##   ("Score limit reached") sits under it on a grey reason plate;
-## - after a match, the team strip across the middle (each team's mark, name
-##   plate, and score either side of a VS chip, sliding in from the edges as
-##   the scores count up) and the match's XP on a plate with the blue badge;
-## - smaller calls (halftime, flag plays) on a grey plate with leader lines in
-##   the call's colour;
+## - after a round or match, the team strip across the middle, built as the
+##   loading screen's VS band (each side's name plate, mark, and score either
+##   side of the hexagon VS chip, the goal under it, the halves sliding in as
+##   the scores count up), and after a match the match's XP on a plate with
+##   our XP mark;
+## - smaller calls (halftime, flag plays) on a smaller grey plate in the
+##   result's slot (under the result while one shows);
 ## - a prompt hint in the lower third ("[L] Choose class").
 ##
 ## Drawn at the 1600x900 design size and scaled to the screen.
