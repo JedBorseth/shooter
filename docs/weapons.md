@@ -413,9 +413,14 @@ action.
   back up over the sprint-out.
 - **Stance and movement.** Crouching eases the weapon down, in, and right
   (Black Ops 2's `vDuckedOfs`/`vDuckedRot` at `posMoveRate` 6). Walking pulls
-  it back a touch and tips it (`vStandMove`/`vStandRot`). Strafing leans it
-  into the move by up to 5° (`vStrafeRot` is 6). Prone, the crawl rolls the
-  weapon onto its side ([movement.md](movement.md)).
+  it back a touch and tips it by 1° (half of `vStandMove`/`vStandRot`).
+  Walking and strafing keep the weapon steady in the frame, as Modern Warfare
+  (2019 on) and Black Ops 6 hold it: the walking bob is about 4 mm and a third
+  of a degree (`WALK_BOB_POS`/`WALK_BOB_ROT`), a strafe leans it 1.5°
+  (`STRAFE_ROLL`; Black Ops 2's `vStrafeRot` is 6), and starting or stopping
+  shoves it at most 1 cm (`MOVE_SHOVE`). The camera's head bob carries most of
+  the walking motion; sprinting keeps its full running loop. Prone, the crawl
+  rolls the weapon onto its side ([movement.md](movement.md)).
 - **Damage kick.** A hit knocks the weapon away from the attacker, out over
   100 ms and back over 400 ms (Black Ops 2's `DamageKickAngles`), up to about
   4° for a rifle round. Unlike Black Ops 2, it is mostly at the hip: aimed,
