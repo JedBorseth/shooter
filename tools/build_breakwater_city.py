@@ -68,6 +68,15 @@ def chunk_of(centre, part) -> str:
 class Materials(B.Materials):
     def _material(self, name: str) -> str | None:
         spec = BM.LOOKS.get(name, {})
+        if spec.get("special") == "sea_shore":
+            return "\n".join([
+                '[gd_resource type="ShaderMaterial" format=3]', "",
+                '[ext_resource type="Shader" path="res://shaders/sea_shore.gdshader" id="1_shader"]', "",
+                '[sub_resource type="FastNoiseLite" id="Noise1"]', "frequency = 0.03", "fractal_octaves = 4", "",
+                '[sub_resource type="NoiseTexture2D" id="Wave1"]', "width = 256", "height = 256", "seamless = true",
+                "as_normal_map = true", "bump_strength = 6.0", 'noise = SubResource("Noise1")', "",
+                "[resource]", "render_priority = 1", 'shader = ExtResource("1_shader")',
+                'shader_parameter/chop = SubResource("Wave1")']) + "\n"
         if spec.get("special") == "sea":
             # Swell and chop: seamless noise baked to normal maps at load.
             subs = []
@@ -94,13 +103,25 @@ def main():
     mats = Materials()
 
     see_through = {"glow", "sea"} | {k for k, v in BM.LOOKS.items()
-                                     if v.get("special") in ("glass", "chainlink", "leaves", "beacon", "sea")}
+                                     if v.get("special") in ("glass", "chainlink", "leaves", "beacon", "sea", "sea_shore")}
+
+    def shade(default, mix):
+        """Per-vertex colours for a `shaded` part: the look's tint (and its
+        roughness in alpha) blended toward each vertex's colour by its weight."""
+        out = []
+        for r, g, b, w, rough in mix:
+            target = (B.linear(r), B.linear(g), B.linear(b))
+            out.append(tuple(d + (t - d) * w for d, t in zip(default[:3], target))
+                       + (default[3] * (1.0 + (rough - 1.0) * w),))
+        return out
 
     def emit(geo: B.Geo, chunk: str):
         for look, verts, faces, smooth, uvs, color in geo.pieces:
             if not faces:
                 continue
             name, default = mats.resolve(look)
+            if isinstance(color, tuple) and color and color[0] == "mix":
+                color = shade(default, color[1])
             accs.setdefault((chunk, name), B.Acc()).add(verts, faces, smooth, uvs, color or default)
             # Shadow proxies: the opaque pieces at least SHADOW_MIN across.
             # Pipes, rails, and fittings cast their shadows in the lightmap

@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 
 import world_looks as W
-from slamcity_models import Model, model
+from slamcity_models import Model, loft, model
 
 PI = math.pi
 
@@ -80,110 +80,356 @@ LOOKS: dict[str, dict] = {
     "container_green": _t("container", 2.5, (0.2, 0.38, 0.25), metal=0.6, grime=0.2),
     "container_orange": _t("container", 2.5, (0.78, 0.4, 0.1), metal=0.6, grime=0.2),
     "container_grey": _t("container", 2.5, (0.56, 0.57, 0.57), metal=0.6, grime=0.2),
-    "hull_red": _t("rusty_paint", 6.0, (0.52, 0.2, 0.15), grime=0.0),
+    # Antifouling red below the waterline band: paint, its rust and weed are
+    # stains and streaks laid over it (layout `basin`).
+    "hull_red": _t("painted_metal", 4.0, (0.42, 0.11, 0.08), metal=0.3, grime=0.0),
     "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.4, grime=0.0),
     "ship_white": _t("painted_metal", 3.0, (0.86, 0.86, 0.84), metal=0.3, grime=0.0),
     "deck_green": _t("painted_metal", 3.0, (0.3, 0.42, 0.34), metal=0.3, grime=0.0),
     # Paint and signs.
     "hazard_red": _p((0.75, 0.1, 0.06), 0.6),
+    # Road tanker: a polished aluminium barrel (plain metal, smudged by the
+    # shared wear map, so no texture seams round its curves), amber lenses,
+    # and the orange ADR plates.
+    "tank_alu": _p((0.8, 0.81, 0.82), 0.3, 1),
+    "lens_amber": _p((0.85, 0.42, 0.05), 0.1),
+    "adr_orange": _p((0.95, 0.45, 0.05), 0.6),
     "sign_blue": _p((0.12, 0.28, 0.58), 0.5),
     "sign_green": _p((0.1, 0.42, 0.26), 0.5),
     "lamp_day": _g((1.0, 0.95, 0.85), 1.5),
     # The sea: its own shader (shaders/sea.gdshader).
     "sea": {"special": "sea"},
+    # The foam and churned water along the walls the sea meets (layout `shore`).
+    "sea_shore": {"special": "sea_shore"},
 }
 
 
 # --- Vehicles -------------------------------------------------------------------------------
-def _cab(b: Model, z0, z1, look, hw=1.25):
-    """A truck's forward-control cab from z0 (back) to z1 (front)."""
-    b.box(-hw, hw, 0.95, 2.95, z0, z1 - 0.15, look, bevel=0.06)
-    b.hull([(s * (hw - 0.02), y, z) for s in (-1, 1) for y, z in ((1.6, z1 - 0.15), (2.9, z1 - 0.35), (1.6, z1),
-                                                                     (2.6, z1 - 0.02))], look)
-    b.box(-hw + 0.08, hw - 0.08, 1.85, 2.75, z1 - 0.3, z1 - 0.05, "glass_car")
+# Built as Slamcity's cars are: bodies from cross-section cages (`loft`)
+# smoothed by subdivision, so panels have rolled edges; fittings as bevelled
+# boxes, tubes, and lathed wheels. A rigid road tanker (6x2, cab-over, an
+# oval aluminium barrel) after a European fuel distribution truck, and a
+# double-cab site pickup.
+
+
+def _ring(cx, cy, z, hw, hh, n=24, square=0.0):
+    """An oval cross-section ring at z: half-width hw, half-height hh; `square`
+    (0 to 1) pushes it toward a rounded rectangle (a road tanker's barrel)."""
+    pts = []
+    for i in range(n):
+        t = 2 * PI * (i + 0.5) / n
+        c, s = math.cos(t), math.sin(t)
+        k = 1.0 - square * 0.5
+        sx = math.copysign(abs(c) ** k, c)
+        sy = math.copysign(abs(s) ** k, s)
+        pts.append((cx + sx * hw, cy + sy * hh, z))
+    return pts
+
+
+def truck_wheel(b: Model, x, y, z, r, w, dual=False, rim="steel_grey"):
+    """A truck tyre on a steel wheel, axle across x, centred at (x, y, z): a
+    rounded tyre with tread blocks, a dished rim, ten wheel nuts and a hub.
+    `dual` sets a second tyre inboard."""
+    out = 1 if x > 0 else -1
+    for k in range(2 if dual else 1):
+        xc = x - out * k * (w + 0.03)
+        b.cyl("x", xc - w / 2, xc + w / 2, (y, z), r * 0.94, "rubber", sides=28)
+        b.cyl("x", xc - w / 2 + 0.03, xc + w / 2 - 0.03, (y, z), r, "rubber", sides=28)
+        # Tread: blocks round the crown.
+        for i in range(28):
+            t = 2 * PI * (i + 0.5) / 28
+            cy_, cz_ = y + math.cos(t) * r, z + math.sin(t) * r
+            ny, nz = math.cos(t), math.sin(t)
+            for side in (-1, 1):
+                x0, x1 = xc + side * 0.015, xc + side * (w / 2 - 0.035)
+                pts = []
+                for xx in (x0, x1):
+                    for dt in (-0.045, 0.045):
+                        for h in (0.0, 0.012):
+                            yy = cy_ + ny * h + (-nz) * dt
+                            zz = cz_ + nz * h + ny * dt
+                            pts.append((xx, yy, zz))
+                b.hull(pts, "rubber", detail=True)
+    face = x + out * w / 2
+    # The rim's dish, its ring, the nuts, and the hub.
+    b.cyl("x", *sorted((face - out * 0.06, face + out * 0.004)), (y, z), r * 0.6, rim, sides=20, detail=True)
+    b.cyl("x", *sorted((face - out * 0.012, face + out * 0.008)), (y, z), r * 0.4, "steel_dark", sides=16,
+          detail=True)
+    for i in range(10):
+        t = 2 * PI * i / 10
+        b.cyl("x", *sorted((face, face + out * 0.025)), (y + math.cos(t) * r * 0.3, z + math.sin(t) * r * 0.3),
+              0.018, "steel_galv", sides=6, detail=True)
+    b.cyl("x", *sorted((face, face + out * 0.05)), (y, z), r * 0.16, "steel_galv", sides=12, detail=True)
+
+
+def _mudguard(b: Model, x0, x1, y, z, r, look="rubber"):
+    """A quarter-round mudguard over a wheel at (y, z), across x0..x1."""
+    n = 6
+    for i in range(n):
+        a0, a1 = PI * 0.15 + PI * 0.7 * i / n, PI * 0.15 + PI * 0.7 * (i + 1) / n
+        pts = []
+        for a in (a0, a1):
+            for rr in (r + 0.07, r + 0.13):
+                pts += [(xx, y + math.sin(a) * rr, z + math.cos(a) * rr) for xx in (x0, x1)]
+        b.hull(pts, look)
+
+
+def _cab_over(b: Model, z0, z1, look, hw=1.24, floor=0.95, top=3.15):
+    """A cab-over truck cab from z0 (back) to z1 (front): a rolled-edge
+    shell, a raked windscreen in a black surround, side glass in its doors,
+    door seams and handles, a grille, a bumper with lamps, steps, mirrors on
+    arms, a sun visor, and a roof beacon."""
+
+    def section(z, yb, yt, ws=1.0, tw=1.0):
+        w = hw * ws
+        return [(-0.96 * w, yb, z), (0.96 * w, yb, z), (w, yb + 0.1, z), (w, yt - 0.25, z),
+                (0.92 * w * tw, yt, z), (-0.92 * w * tw, yt, z), (-w, yt - 0.25, z), (-w, yb + 0.1, z)]
+
+    rake = 0.22
+    stations = [(z0, floor, top - 0.05, 0.97, 0.96), (z0 + 0.06, floor, top, 1.0, 1.0), (z1 - rake - 0.12, floor, top, 1.0, 1.0),
+                (z1 - rake * 0.3, floor, top - 0.55, 1.0, 0.99), (z1 - 0.04, floor, 1.9, 1.0, 1.0),
+                (z1, floor + 0.05, 1.8, 0.98, 0.98)]
+    verts, faces = loft([section(*st) for st in stations])
+    b.smooth(verts, faces, look, levels=2)
+    # The windscreen and its black surround, following the rake.
+    zs, ys = z1 - 0.02, 1.88
+    ze, ye = z1 - rake * 0.86, top - 0.2
+    for k, (look_, inset, proud) in enumerate((("trim_black", 0.0, 0.012), ("glass_car", 0.07, 0.02))):
+        b.hull([(s * (hw - 0.06 - inset), yy, zz + proud) for s in (-1, 1)
+                for yy, zz in ((ys + inset, zs - (inset * rake / (ye - ys))), (ye - inset, ze + (inset * rake / (ye - ys))))]
+               + [(s * (hw - 0.06 - inset), yy, zz) for s in (-1, 1)
+                  for yy, zz in ((ys + inset, zs - 0.03), (ye - inset, ze - 0.03))], look_, detail=k == 1)
+    b.box(-hw + 0.1, hw - 0.1, top - 0.14, top - 0.05, z1 - rake - 0.02, z1 - 0.05, "trim_black", bevel=0.02)
+    # Wipers parked along the screen's foot.
+    for x in (-0.55, 0.35):
+        b.tube([(x, ys + 0.04, zs + 0.03), (x + 0.6, ys + 0.08, zs + 0.02)], 0.01, "trim_black", sides=4)
+    # Doors: seams, side glass, handles, and the steps under them.
+    zd0, zd1 = z0 + 0.35, z1 - 0.55
     for s in (-1, 1):
-        b.box(s * hw - 0.02, s * hw + 0.02, 1.85, 2.6, z0 + 0.5, z1 - 0.5, "glass_car", detail=True)
-        b.box(s * (hw + 0.05) - 0.05, s * (hw + 0.05) + 0.05, 1.7, 2.4, z1 - 0.1, z1 + 0.05, "trim_black",
+        x = s * (hw + 0.004)
+        for zz in (zd0, zd1):
+            b.box(x - 0.004, x + 0.004, floor + 0.15, top - 0.3, zz - 0.006, zz + 0.006, "trim_black", detail=True)
+        b.box(x - 0.004, x + 0.004, floor + 0.15, floor + 0.162, zd0, zd1, "trim_black", detail=True)
+        b.box(x - 0.01, x + 0.01, 1.85, top - 0.35, zd0 + 0.08, zd1 - 0.12, "trim_black", detail=True)
+        b.box(x - 0.015, x + 0.015, 1.9, top - 0.4, zd0 + 0.12, zd1 - 0.16, "glass_car", detail=True)
+        b.box(x - 0.03 * (1 if s < 0 else -1), x + 0.0, 1.55, 1.6, zd0 + 0.12, zd0 + 0.32, "chrome", detail=True)
+        for k, y in enumerate((0.42, 0.72)):
+            b.box(s * (hw - 0.3 + k * 0.08), s * (hw - 0.02), y - 0.03, y, zd0 + 0.1, zd1 - 0.1, "tread_plate",
+                  bevel=0.01)
+        # Mirror arms from the A-pillar and the mirror heads.
+        b.tube([(s * (hw - 0.02), 2.4, z1 - 0.35), (s * (hw + 0.32), 2.55, z1 - 0.2)], 0.018, "trim_black", sides=5,
+               detail=False)
+        b.box(s * (hw + 0.26) - 0.09, s * (hw + 0.26) + 0.09, 2.15, 2.62, z1 - 0.26, z1 - 0.16, "trim_black",
+              bevel=0.02)
+        b.box(s * (hw + 0.26) - 0.075, s * (hw + 0.26) + 0.075, 2.18, 2.59, z1 - 0.27, z1 - 0.265, "chrome",
               detail=True)
-        b.box(s * (hw - 0.35) - 0.2, s * (hw - 0.35) + 0.2, 1.0, 1.15, z1, z1 + 0.04, "light_lens", detail=True)
-    b.box(-hw + 0.1, hw - 0.1, 0.85, 1.05, z1 - 0.05, z1 + 0.15, "trim_black", bevel=0.03)
-    b.box(-0.7, 0.7, 1.15, 1.6, z1, z1 + 0.03, "trim_black", detail=True)
-    b.box(-hw + 0.1, hw - 0.1, 2.95, 3.25, z0 + 0.2, z1 - 0.6, look, bevel=0.05)
+        # Headlamps and indicators in the bumper corners.
+        b.box(s * (hw - 0.42) - 0.24, s * (hw - 0.42) + 0.24, 0.98, 1.16, z1 + 0.06, z1 + 0.1, "chrome", detail=True)
+        b.box(s * (hw - 0.42) - 0.21, s * (hw - 0.42) + 0.21, 1.0, 1.14, z1 + 0.1, z1 + 0.11, "light_lens",
+              detail=True)
+        b.box(s * (hw - 0.12) - 0.07, s * (hw - 0.12) + 0.07, 1.0, 1.14, z1 + 0.06, z1 + 0.1, "lens_amber",
+              detail=True)
+    # Grille: a black panel with slats under the screen.
+    b.box(-0.8, 0.8, 1.2, 1.78, z1 - 0.01, z1 + 0.025, "trim_black", bevel=0.01)
+    for k in range(6):
+        y = 1.26 + k * 0.085
+        b.box(-0.76, 0.76, y, y + 0.03, z1 + 0.025, z1 + 0.04, "steel_dark", detail=True)
+    b.box(-hw + 0.02, hw - 0.02, 0.6, 0.98, z1 - 0.15, z1 + 0.12, "steel_dark", bevel=0.04)
+    b.box(-0.25, 0.25, 0.68, 0.8, z1 + 0.12, z1 + 0.13, "plate", detail=True)
+    # Roof: an amber beacon bar and a clearance lamp row.
+    b.box(-0.5, 0.5, top, top + 0.06, z0 + 0.6, z0 + 0.8, "trim_black")
+    for x in (-0.38, 0.38):
+        b.cyl("y", top + 0.06, top + 0.2, (x, z0 + 0.7), 0.07, "lens_amber", sides=10, detail=True)
+    for x in (-0.6, -0.2, 0.2, 0.6):
+        b.box(x - 0.04, x + 0.04, top - 0.03, top + 0.02, z1 - rake - 0.1, z1 - rake - 0.04, "lens_amber",
+              detail=True)
+
+
+def _adr_plate(b: Model, z, facing, y=1.5, upper="33", lower="1203"):
+    """An orange ADR hazard plate (Kemler code over UN number)."""
+    b.box(-0.2, 0.2, y - 0.15, y + 0.15, z - 0.008, z + 0.008, "adr_orange", detail=True)
+    b.box(-0.2, 0.2, y - 0.005, y + 0.005, *sorted((z, z + facing * 0.012)), "trim_black", detail=True)
+    yaw = 0.0 if facing > 0 else PI
+    for body, yy in ((upper, y + 0.03), (lower, y - 0.12)):
+        if body:
+            b.text(body, 0.0, yy, z + facing * 0.012, yaw, 0.09, "trim_black", depth=0.002)
 
 
 @model
 def tanker_truck(b: Model, livery=0):
-    """A fuel tanker: a cab at the front (+z) and a tank on its chassis, 10 m
-    long and 2.5 m wide; hose lockers, a ladder, and a rail along the top."""
+    """A rigid fuel tanker, 10.2 m long and 2.5 m wide, its cab at +z: a
+    cab-over cab, an oval aluminium (or painted) barrel in five compartments
+    on a chassis with two rear axles, a walkway with a folding rail and the
+    compartment lids on top, the bottom-loading cabinet and hose tubes along
+    the sides, side guards, mudguards, a rear frame with lamps and ladder,
+    and ADR plates."""
     cab_look = ("truck_white", "car_red", "car_blue")[livery % 3]
+    barrel = "tank_alu" if livery != 1 else "truck_white"
     hw = 1.25
-    b.box(-0.55, 0.55, 0.45, 0.95, -4.9, 4.6, "steel_dark")
-    _cab(b, 2.4, 5.0, cab_look)
-    # The tank: an oval barrel along z, its heads dished.
-    tank = "tank_silver" if livery != 1 else "tank_white"
-    b.cyl("z", -4.8, 1.9, (0.0, 2.15), 1.18, tank, sides=20)
-    for z, d in ((-4.8, -0.18), (1.9, 0.18)):
-        b.cyl("z", *sorted((z, z + d)), (0.0, 2.15), 1.05, tank, sides=20)
-    for z in (-3.6, -1.6, 0.4):
-        b.cyl("z", z - 0.04, z + 0.04, (0.0, 2.15), 1.21, "steel_grey", sides=20, detail=True)
-    # Hatches and the walkway rail on top.
-    for z in (-3.8, -1.5, 0.8):
-        b.cyl("y", 3.3, 3.45, (0.0, z), 0.3, "steel_grey", sides=10)
+    # Chassis rails, cross members, the fuel tank, air tanks, battery box.
+    for x in (-0.45, 0.45):
+        b.box(x - 0.05, x + 0.05, 0.72, 1.0, -4.95, 4.5, "steel_dark")
+    for z in (-4.6, -3.5, -1.0, 1.5, 3.0):
+        b.box(-0.45, 0.45, 0.78, 0.94, z - 0.05, z + 0.05, "steel_dark", detail=True)
+    b.cyl("z", 1.6, 2.5, (0.85, 0.9), 0.32, "steel_galv", sides=16)
+    b.box(-1.18, -0.6, 0.6, 1.15, 1.7, 2.4, "steel_dark", bevel=0.03)
+    for z in (0.2, -1.2):
+        b.cyl("z", z - 0.45, z + 0.45, (0.85, 0.7), 0.13, "steel_grey", sides=12, detail=True)
+    _cab_over(b, 2.55, 5.05, cab_look, hw=hw)
+    # The barrel: an oval, nearly rectangular section with rolled heads,
+    # compartment bands, and a white or aluminium finish.
+    cy, bh = 2.3, 0.98
+    rings = [_ring(0.0, cy, z, hw * k, bh * k, square=0.55) for z, k in
+             ((-4.98, 0.7), (-4.9, 0.94), (-4.78, 1.0), (2.18, 1.0), (2.3, 0.94), (2.38, 0.7))]
+    verts, faces = loft(rings)
+    b.smooth(verts, faces, barrel, levels=2)
+    for z in (-3.4, -2.0, -0.6, 0.8):
+        rv, rf = loft([_ring(0.0, cy, z + dz, hw * 1.012, bh * 1.015, square=0.55) for dz in (-0.03, 0.03)])
+        b.smooth(rv, rf, "steel_galv", levels=1, detail=True)
+    # Walkway, lids, the vapour line, and the folding rail on top.
+    top = cy + bh
+    b.box(-0.32, 0.32, top - 0.02, top + 0.03, -4.7, 2.1, "tread_plate")
+    for z in (-4.1, -2.7, -1.3, 0.1, 1.5):
+        b.cyl("y", top + 0.03, top + 0.13, (0.0, z), 0.28, "steel_galv", sides=16)
+        b.cyl("y", top + 0.13, top + 0.16, (0.0, z), 0.2, "steel_grey", sides=14, detail=True)
+        for k in range(4):
+            t = PI / 4 + k * PI / 2
+            b.box(math.cos(t) * 0.25 - 0.02, math.cos(t) * 0.25 + 0.02, top + 0.1, top + 0.18,
+                  z + math.sin(t) * 0.25 - 0.02, z + math.sin(t) * 0.25 + 0.02, "steel_dark", detail=True)
+    b.tube([(0.45, top + 0.02, -4.7), (0.45, top + 0.02, 2.05)], 0.05, "steel_galv", sides=8, detail=False)
     for s in (-1, 1):
-        b.tube([(s * 0.45, 3.35, -4.6), (s * 0.45, 3.75, -4.4), (s * 0.45, 3.75, 1.6), (s * 0.45, 3.35, 1.8)],
-               0.025, "pipe_silver", sides=5)
-    b.box(-0.3, 0.3, 3.3, 3.36, -4.5, 1.5, "tread_plate", detail=True)
-    # Lockers along the sides, and the ladder at the back.
-    for s in (-1, 1):
-        b.box(s * hw - 0.4 * s, s * hw, 0.6, 1.25, -2.6, 0.9, "steel_grey", bevel=0.02)
-        b.box(s * hw - 0.02, s * hw + 0.01, 0.95, 1.0, -2.5, 0.8, "trim_black", detail=True)
-        b.box(s * 1.0, s * 1.0 + s * 0.02, 0.5, 0.95, -4.85, 1.8, "steel_dark", detail=True)
-    for k in range(6):
-        b.box(-0.25, 0.25, 0.6 + k * 0.45, 0.64 + k * 0.45, -5.08, -5.02, "pipe_silver", detail=True)
-    for s in (-1, 1):
-        b.box(s * 0.27 - 0.025, s * 0.27 + 0.025, 0.5, 3.4, -5.1, -5.0, "pipe_silver", detail=True)
-    b.box(-hw + 0.05, hw - 0.05, 0.36, 0.5, -5.1, -4.85, "tread_plate", bevel=0.01)
-    # Hazard plates.
-    b.box(-0.35, 0.35, 1.6, 2.0, -5.0, -4.97, "safety_yellow", detail=True)
-    b.box(-0.35, 0.35, 1.25, 2.95, 5.02, 5.04, "trim_black", detail=True)
-    # Wheels: one front axle, two rear.
-    for z in (3.9, -2.9, -4.1):
-        for s in (-1, 1):
-            b.wheel(s * (hw - 0.15), 0.5, z, 0.5, 0.36)
-    for z in (-3.5,):
-        for s in (-1, 1):
-            b.box(s * (hw - 0.02) - 0.05 * s, s * (hw + 0.03), 1.0, 1.06, z - 1.1, z + 1.1, "trim_black",
+        b.tube([(s * 0.62, top + 0.02, -4.6), (s * 0.62, top + 0.12, -4.5), (s * 0.62, top + 0.12, 1.9),
+                (s * 0.62, top + 0.02, 2.0)], 0.022, "safety_yellow", sides=6, detail=False)
+        for z in (-3.5, -1.5, 0.5):
+            b.box(s * 0.62 - 0.015, s * 0.62 + 0.015, top + 0.02, top + 0.12, z - 0.015, z + 0.015, "safety_yellow",
                   detail=True)
+    # The bottom-loading cabinet behind the cab on the near side: its doors,
+    # API couplers in a row, and the vapour coupler.
+    for s in (-1, 1):
+        x = s * hw
+        b.box(*sorted((x, x - s * 0.5)), 0.6, 1.35, -1.6, 1.2, "steel_grey", bevel=0.02)
+        b.box(*sorted((x, x + s * 0.006)), 0.65, 1.3, -0.2, -0.19, "trim_black", detail=True)
+        b.box(*sorted((x, x + s * 0.006)), 0.95, 1.0, -1.55, 1.15, "trim_black", detail=True)
+        for k in range(5):
+            z = -1.35 + k * 0.5
+            b.cyl("x", *sorted((x, x + s * 0.07)), (0.85, z), 0.05, "steel_galv", sides=12, detail=True)
+            b.cyl("x", *sorted((x + s * 0.07, x + s * 0.09)), (0.85, z), 0.058,
+                  ("steel_dark", "steel_red", "steel_green", "steel_dark", "steel_blue")[k], sides=12, detail=True)
+        # Hose tubes along the sides under the barrel.
+        b.cyl("z", -4.6, -1.8, (s * (hw - 0.14), 1.2), 0.11, "steel_galv", sides=12)
+        b.cyl("z", -1.82, -1.75, (s * (hw - 0.14), 1.2), 0.12, "steel_dark", sides=12, detail=True)
+        # Side guard rails between the axles.
+        for y in (0.55, 0.85):
+            b.box(*sorted((x - s * 0.03, x - s * 0.08)), y - 0.04, y + 0.04, -2.3, -1.75, "steel_grey", bevel=0.01)
+        # Marker lamps along the side.
+        for z in (-4.4, -2.0, 0.4, 2.2):
+            b.box(*sorted((x, x + s * 0.02)), 0.95, 1.0, z - 0.05, z + 0.05, "lens_amber", detail=True)
+    # Wheels: the steered front axle, the driven and the tag axle behind.
+    truck_wheel(b, -hw + 0.18, 0.52, 3.85, 0.52, 0.32)
+    truck_wheel(b, hw - 0.18, 0.52, 3.85, 0.52, 0.32)
+    for z in (-2.8, -4.05):
+        truck_wheel(b, -hw + 0.18, 0.52, z, 0.52, 0.28, dual=True)
+        truck_wheel(b, hw - 0.18, 0.52, z, 0.52, 0.28, dual=True)
+    for s in (-1, 1):
+        _mudguard(b, *sorted((s * (hw - 0.02), s * (hw - 0.62))), 0.52, -3.42, 0.95)
+        b.box(*sorted((s * (hw - 0.05), s * (hw - 0.6))), 0.2, 0.75, -4.75, -4.72, "rubber", detail=True)
+    # The rear frame: bumper, lamp clusters, the ladder, and the plate.
+    b.box(-hw + 0.05, hw - 0.05, 0.45, 0.62, -5.12, -4.95, "steel_dark", bevel=0.02)
+    for s in (-1, 1):
+        x = s * (hw - 0.3)
+        b.box(x - 0.24, x + 0.24, 0.66, 0.84, -5.08, -4.98, "trim_black", bevel=0.01)
+        for k, lk in enumerate(("tail_lens", "lens_amber", "tail_lens", "light_lens")):
+            b.box(x - 0.22 + k * 0.11, x - 0.13 + k * 0.11, 0.69, 0.81, -5.1, -5.08, lk, detail=True)
+    for s in (-1, 1):
+        b.box(s * 0.27 - 0.022, s * 0.27 + 0.022, 0.62, top + 0.9, -5.12, -5.07, "pipe_silver")
+    for k in range(int((top + 0.3 - 0.8) / 0.32)):
+        y = 0.8 + k * 0.32
+        b.cyl("x", -0.25, 0.25, (y, -5.095), 0.016, "pipe_silver", sides=6, detail=True)
+    b.box(-0.26, 0.26, 0.3, 0.42, -5.13, -5.12, "plate", detail=True)
+    _adr_plate(b, -5.14, -1, y=1.05)
+    _adr_plate(b, 5.19, 1, y=0.68, upper="", lower="")
 
 
 @model
 def pickup(b: Model, color=0):
-    """A site pickup: a cab and an open bed, 5.2 m long."""
+    """A double-cab site pickup, 5.3 m long: a smoothed body with wheel
+    arches, a glasshouse and roof, an open bed with its tailgate and a load
+    of pipe offcuts, chunky tyres, a light bar, mirrors, and lamps."""
     look = ("car_white", "car_red", "car_grey")[color % 3]
-    hl, hw = 2.6, 0.95
-    b.box(-hw, hw, 0.45, 1.0, -hl, hl, look, bevel=0.06)
-    b.hull([(s * (hw - 0.02), y, z) for s in (-1, 1) for y, z in ((1.0, 2.3), (1.0, hl), (1.05, hl - 0.05),
-                                                                    (1.08, 1.4))], look)
-    b.hull([(s * (hw - 0.06), y, z) for s in (-1, 1) for y, z in ((1.0, 1.45), (1.0, -0.6), (1.75, -0.45),
-                                                                    (1.75, 0.65), (1.0, 2.15))], look)
-    b.hull([(s * (hw - 0.02), y, z) for s in (-1, 1) for y, z in ((1.05, 1.42), (1.7, 0.62), (1.05, 2.1),
-                                                                    (1.7, 0.7))], "glass_car")
+    hl, hw = 2.65, 0.95
+    rw, fw = -1.6, 1.65
+
+    def section(z, yb, yt, ws=1.0):
+        w = hw * ws
+        lo = yb + min(0.12, (yt - yb) * 0.25)
+        hi = yt - min(0.08, (yt - yb) * 0.25)
+        return [(-0.92 * w, yb, z), (0.92 * w, yb, z), (w, lo, z), (w, hi, z),
+                (0.9 * w, yt, z), (-0.9 * w, yt, z), (-w, hi, z), (-w, lo, z)]
+
+    # The cab and bonnet (from behind the cab to the front bumper).
+    stations = [(-0.62, 0.48, 1.05, 0.98), (-0.55, 0.42, 1.08, 1.0), (0.0, 0.42, 1.1, 1.0),
+                (fw - 0.62, 0.42, 1.12, 1.0), (fw - 0.42, 0.72, 1.12, 1.0), (fw, 0.92, 1.12, 1.0),
+                (fw + 0.42, 0.72, 1.1, 1.0), (fw + 0.62, 0.48, 1.06, 0.99), (hl - 0.1, 0.48, 1.0, 0.95),
+                (hl, 0.52, 0.92, 0.88)]
+    verts, faces = loft([section(*st) for st in stations])
+    b.smooth(verts, faces, look, levels=2)
+    # The glasshouse (two rows of doors), its pillars, and the roof.
+    gl = [(-0.58, 1.1), (-0.5, 1.78), (0.95, 1.78), (1.55, 1.1)]
+    b.hull([(s * (hw - 0.06 if y < 1.2 else hw - 0.17), y, z) for z, y in gl for s in (-1, 1)], "glass_tint")
+    rw_ = hw - 0.15
+    roof = [[(k * rw_, y, z) for k, y in ((1.0, 1.74), (-1.0, 1.74), (-0.92, 1.85), (0.92, 1.85))]
+            for z in (-0.56, -0.48, 0.9, 1.0)]
+    rv, rf = loft(roof)
+    b.smooth(rv, rf, look, levels=2)
     for s in (-1, 1):
-        b.box(s * (hw - 0.04) - 0.02, s * (hw - 0.04) + 0.02, 1.08, 1.6, -0.4, 0.55, "glass_car", detail=True)
-    # The bed's walls and a load of pipe offcuts.
-    b.box(-hw, hw, 1.0, 1.3, -hl, -0.65, look)
-    b.box(-hw + 0.08, hw - 0.08, 0.95, 1.31, -hl + 0.08, -0.73, "steel_dark")
+        for (za, ya), (zb, yb) in (((0.95, 1.78), (1.55, 1.12)), ((0.25, 1.78), (0.25, 1.12)),
+                                   ((-0.5, 1.78), (-0.58, 1.12))):
+            b.tube([(s * (hw - 0.17), ya, za), (s * (hw - 0.07), yb, zb)], 0.05, look, sides=6, detail=False)
+        # Door seams and handles.
+        for zz in (-0.56, 0.25, 1.5):
+            b.box(s * (hw + 0.003) - 0.004, s * (hw + 0.003) + 0.004, 0.5, 1.08, zz - 0.005, zz + 0.005,
+                  "trim_black", detail=True)
+        for zz in (-0.3, 0.5):
+            b.box(s * (hw + 0.012) - 0.01, s * (hw + 0.012) + 0.01, 0.98, 1.02, zz, zz + 0.16, "chrome", detail=True)
+        # Mirrors.
+        b.box(s * (hw + 0.14) - 0.1, s * (hw + 0.14) + 0.1, 1.15, 1.35, 1.42, 1.5, "trim_black", bevel=0.02)
+        b.tube([(s * hw, 1.2, 1.45), (s * (hw + 0.06), 1.22, 1.46)], 0.015, "trim_black", sides=4)
+        # Side steps.
+        b.box(s * (hw - 0.05), s * (hw + 0.08), 0.36, 0.42, -0.5, 1.0, "trim_black", bevel=0.01)
+        # Headlamps, indicators, and tail lamps.
+        b.box(s * 0.62 - 0.19, s * 0.62 + 0.19, 0.84, 0.98, hl - 0.12, hl + 0.005, "light_lens", detail=True)
+        b.box(s * 0.84 - 0.06, s * 0.84 + 0.06, 0.84, 0.98, hl - 0.16, hl - 0.01, "lens_amber", detail=True)
+        b.box(s * (hw - 0.04) - 0.05, s * (hw - 0.04) + 0.05, 0.8, 1.2, -hl - 0.01, -hl + 0.04, "tail_lens",
+              detail=True)
+    # Grille and bumpers.
+    b.box(-0.45, 0.45, 0.7, 0.98, hl - 0.04, hl + 0.01, "trim_black", bevel=0.01)
+    for k in range(4):
+        y = 0.73 + k * 0.065
+        b.box(-0.42, 0.42, y, y + 0.025, hl + 0.01, hl + 0.02, "steel_dark", detail=True)
+    b.box(-hw, hw, 0.38, 0.6, hl - 0.05, hl + 0.12, "trim_black", bevel=0.04)
+    b.box(-hw, hw, 0.4, 0.58, -hl - 0.12, -hl + 0.05, "chrome", bevel=0.03)
+    b.box(-0.26, 0.26, 0.45, 0.56, hl + 0.12, hl + 0.13, "plate", detail=True)
+    # The bed: floor, sides, headboard, tailgate, and a load of offcuts.
+    b.box(-hw + 0.02, hw - 0.02, 0.5, 0.62, -hl, -0.66, "steel_dark")
+    for s in (-1, 1):
+        b.box(s * (hw - 0.06), s * hw, 0.62, 1.12, -hl, -0.66, look, bevel=0.02)
+        b.box(s * (hw - 0.07), s * (hw + 0.005), 1.1, 1.14, -hl, -0.66, "trim_black", bevel=0.01)
+        b.box(s * (hw - 0.09) - 0.03, s * (hw - 0.09) + 0.03, 0.62, 1.1, -hl + 0.02, -hl + 0.08, "steel_dark",
+              detail=True)
+    b.box(-hw, hw, 0.62, 1.12, -0.7, -0.62, look, bevel=0.02)
+    b.box(-hw + 0.02, hw - 0.02, 0.55, 1.1, -hl - 0.03, -hl + 0.05, look, bevel=0.02)
+    b.box(-0.2, 0.2, 0.98, 1.04, -hl - 0.035, -hl - 0.03, "chrome", detail=True)
     for k in range(3):
-        b.cyl("z", -hl + 0.2, -1.0, (-0.4 + k * 0.35, 1.15), 0.12, "pipe_grey", sides=8, detail=True)
-    for z in (1.65, -1.55):
+        b.cyl("z", -hl + 0.2, -1.0, (-0.4 + k * 0.35, 0.74), 0.12, "pipe_grey", sides=10, detail=True)
+    # A rack over the bed with an amber light bar on the cab roof.
+    b.box(-0.55, 0.55, 1.85, 1.92, 0.2, 0.32, "trim_black")
+    for x in (-0.4, 0.0, 0.4):
+        b.box(x - 0.11, x + 0.11, 1.86, 1.95, 0.19, 0.33, "lens_amber", detail=True)
+    # Wheels: all-terrain tyres on painted rims, and dark wells behind them.
+    for z in (rw, fw):
+        b.box(-hw + 0.3, hw - 0.3, 0.25, 0.85, z - 0.42, z + 0.42, "rubber")
         for s in (-1, 1):
-            b.wheel(s * (hw - 0.1), 0.38, z, 0.38, 0.28)
-    b.box(-hw, hw, 0.35, 0.55, hl - 0.05, hl + 0.08, "trim_black", bevel=0.03)
-    b.box(-hw, hw, 0.35, 0.55, -hl - 0.08, -hl + 0.05, "chrome", bevel=0.03)
-    for s in (-1, 1):
-        b.box(s * 0.62 - 0.15, s * 0.62 + 0.15, 0.7, 0.85, hl - 0.02, hl + 0.01, "light_lens", detail=True)
-        b.box(s * 0.75 - 0.1, s * 0.75 + 0.1, 0.8, 1.05, -hl - 0.01, -hl + 0.02, "tail_lens", detail=True)
-    b.box(-1.0, 1.0, 1.72, 1.78, 0.6, 0.65, "led_amber", detail=True)
+            truck_wheel(b, s * (hw - 0.13), 0.4, z, 0.4, 0.26, rim="steel_dark")
 
 
 @model
@@ -587,7 +833,7 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
             (-hl + 6.0, free, -hb), (-hl + 2.0, -2.0, hb - 2.0), (-hl + 2.0, -2.0, -hb + 2.0),
             (-hl + 6.0, -2.0, hb), (-hl + 6.0, -2.0, -hb)], "hull_black")
     # The boot-topping: red at the waterline.
-    b.box(-hl + 6.0, hl - 12.0, -0.2, 1.8, -hb - 0.02, hb + 0.02, "hull_red")
+    b.box(-hl + 6.0, hl - 10.0, -0.2, 1.8, -hb - 0.02, hb + 0.02, "hull_red")
     b.box(-hl + 6.0, hl - 10.0, free - 0.05, free + 0.05, -hb + 0.1, hb - 0.1, "deck_green", detail=False)
     # Deck: the pipe runs, the manifold amidships, a catwalk.
     for z in (-2.5, -1.8, 1.8, 2.5):

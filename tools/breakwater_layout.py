@@ -220,10 +220,11 @@ def drums(x, z, yaw, count, m, base=STREET):
             prop(rng.choice(BARRELS), px, base + 0.15, pz, rng.uniform(0.0, 2 * PI), m)
 
 
-def downpipe(x, z, yaw, top, m, base=STREET):
+def downpipe(x, z, yaw, top, m, base=STREET, ground=None):
     """A library downpipe on a wall: the wall's face at (x, z), facing `yaw`
     (0 faces +z). A shoe at the foot, 1 m lengths up to a hopper head under a
-    scupper through the parapet at `top`, and a bracket every other length."""
+    scupper through the parapet at `top`, and a bracket every other length.
+    `ground` is the look under the shoe, which gets a damp patch."""
     out = 0.17
     px, pz = local(x, z, yaw, 0.0, out)
     n = int(top - base - 0.4 - 0.363 - 0.25)
@@ -237,6 +238,9 @@ def downpipe(x, z, yaw, top, m, base=STREET):
     prop("drainpipe_funnel", px, head, pz, yaw, m)
     cx, cz = local(x, z, yaw, 0.0, 0.16)
     turned_box(cx, cz, 0.09, 0.16, yaw, head + 0.4, head + 0.52, "steel_galv", None, m, detail=True)
+    if ground:
+        sx, sz = local(x, z, yaw, 0.0, 0.5)
+        stain(sx, sz, 0.38, ground, m, y=base, color=DAMP, w=0.45, rough=0.7, stretch=1.3, yaw=yaw + PI / 2)
 
 
 def fence_run(x, z0, z1, m):
@@ -253,6 +257,152 @@ def fence_run(x, z0, z1, m):
 def extinguisher(x, z, yaw, m, base=WALK):
     """A library fire extinguisher stood on the floor against a wall."""
     prop("fire_extinguisher", x, base, z, yaw, m)
+
+
+# --- Weathering: stains, streaks, and tide lines in the surface's own material -------
+# Each is a few faces laid a few millimetres over a surface, in that surface's
+# look, whose vertex colours blend its tint toward a stain colour: dark in the
+# middle, the plain surface at the rim, so the edges melt into it. They bake
+# into the lightmap with the surface and cost nothing per pixel (no decals).
+RUST = (0.42, 0.2, 0.09)
+STAIN_GAIN = 1.45
+DIRT = (0.2, 0.19, 0.17)
+OIL = (0.025, 0.025, 0.022)
+WEED = (0.07, 0.085, 0.05)
+DAMP = (0.3, 0.3, 0.29)
+
+
+def _wound(verts, face, normal):
+    a, b, c = (verts[i] for i in face[:3])
+    u = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    v = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+    return n[0] * normal[0] + n[1] * normal[1] + n[2] * normal[2] >= 0
+
+
+def shaded(look, verts, faces, mix, normal, m, chunk=None, uvs=None):
+    """Faces over Blue's half (turned for Red's) whose vertex `mix` blends the
+    look's tint: (r, g, b, weight, roughness scale) per vertex."""
+    out_faces, out_uvs = [], []
+    for i, face in enumerate(faces):
+        keep = _wound(verts, face, normal)
+        out_faces.append(tuple(face) if keep else tuple(reversed(face)))
+        if uvs:
+            out_uvs.append(list(uvs[i]) if keep else list(reversed(uvs[i])))
+    # Weights are authored for the look's tint in sRGB; blending happens in
+    # linear colour, where they read weaker, so they are lifted here.
+    mix = [(r, g, b, min(0.95, w * STAIN_GAIN), rough) for r, g, b, w, rough in mix]
+    part = {"kind": "shaded", "look": look, "verts": [t3(*v, m) for v in verts], "faces": out_faces, "mix": mix}
+    if uvs:
+        part["uvs"] = out_uvs
+    if chunk:
+        part["chunk"] = chunk
+    PARTS.append(part)
+
+
+def stain(x, z, r, look, m, y=STREET, color=OIL, w=0.6, rough=0.45, seed=0, stretch=1.0, yaw=0.0):
+    """A blotch on the ground (oil under a truck, damp under a downpipe): an
+    irregular disc `r` across, darkest in the middle; `rough` < 1 is glossier."""
+    rng = random.Random(seed * 7919 + round(x * 31 + z * 17))
+    n = 14
+    radii = [r * rng.uniform(0.65, 1.2) for _ in range(n)]
+    radii = [(radii[k - 1] + 2 * radii[k] + radii[(k + 1) % n]) / 4 for k in range(n)]
+    c, s = math.cos(yaw), math.sin(yaw)
+    yy = y + 0.003 + (seed % 4) * 0.0004
+    verts, mix = [(x, yy, z)], [(*color, w, rough)]
+    rings = ((0.45, 0.9), (0.8, 0.45), (1.0, 0.0))
+    for t, k_w in rings:
+        for k in range(n):
+            a = 2 * PI * k / n
+            lx, lz = math.cos(a) * radii[k] * t * stretch, math.sin(a) * radii[k] * t
+            verts.append((x + lx * c + lz * s, yy, z - lx * s + lz * c))
+            mix.append((*color, w * k_w * rng.uniform(0.75, 1.0), rough))
+    faces = [(0, 1 + k, 1 + (k + 1) % n) for k in range(n)]
+    for ring in range(len(rings) - 1):
+        o = 1 + ring * n
+        faces += [(o + k, o + (k + 1) % n, o + n + (k + 1) % n, o + n + k) for k in range(n)]
+    shaded(look, verts, faces, mix, (0.0, 1.0, 0.0), m)
+
+
+def streak(x, y, z, yaw, width, length, look, m, color=RUST, w=0.55, rough=1.15, seed=0, out=0.004):
+    """A run-off streak down a wall from (x, y, z) on its face, which faces
+    `yaw` (0 faces +z): strongest just under its source, widening and fading
+    as it runs down."""
+    rng = random.Random(seed * 104729 + round(x * 13 + y * 7 + z * 5))
+    nx, nz = math.sin(yaw), math.cos(yaw)
+    ux, uz = math.cos(yaw), -math.sin(yaw)
+    cols = ((-0.5, 0.0), (-0.2, 0.75), (0.0, 1.0), (0.2, 0.75), (0.5, 0.0))
+    rows = ((0.0, 0.7, 0.8), (0.1, 1.0, 1.0), (0.45, 0.6, 1.2), (1.0, 0.0, 1.45))
+    verts, mix = [], []
+    wob = 0.0
+    for fr, rp, sp in rows:
+        wob += rng.uniform(-0.05, 0.05) * width
+        for cf, cp in cols:
+            lx = cf * width * sp + wob
+            verts.append((x + ux * lx + nx * out, y - fr * length, z + uz * lx + nz * out))
+            mix.append((*color, w * cp * rp * rng.uniform(0.8, 1.0), rough))
+    nc = len(cols)
+    faces = [(i * nc + j, i * nc + j + 1, (i + 1) * nc + j + 1, (i + 1) * nc + j)
+             for i in range(len(rows) - 1) for j in range(nc - 1)]
+    shaded(look, verts, faces, mix, (nx, 0.0, nz), m)
+
+
+def band(a, b, yaw, y0, y1, look, m, color=WEED, w=0.85, fade=0.4, rough=0.8, step=0.6, seed=0, out=0.004,
+         chunk=None):
+    """A tide line or grime band along a wall's face from a to b ((x, z)
+    points on it, facing `yaw`): solid from y0 up to y1 - fade, then fading to
+    nothing by an uneven top edge round y1."""
+    rng = random.Random(seed * 15485863 + round(a[0] * 3 + b[1] * 5))
+    nx, nz = math.sin(yaw), math.cos(yaw)
+    n = max(1, math.ceil(math.dist(a, b) / step))
+    jit = [rng.uniform(-0.5, 0.5) * fade for _ in range(n + 1)]
+    jit = [(jit[max(k - 1, 0)] + 2 * jit[k] + jit[min(k + 1, n)]) / 4 for k in range(n + 1)]
+    verts, mix = [], []
+    for k in range(n + 1):
+        t = k / n
+        px, pz = a[0] + (b[0] - a[0]) * t + nx * out, a[1] + (b[1] - a[1]) * t + nz * out
+        for yy, ww in ((y0, w), (y1 - fade + jit[k], w * rng.uniform(0.8, 1.0)), (y1 + jit[k] * 0.6, 0.0)):
+            verts.append((px, yy, pz))
+            mix.append((*color, ww, rough))
+    faces = [(k * 3 + r, k * 3 + r + 1, (k + 1) * 3 + r + 1, (k + 1) * 3 + r) for k in range(n) for r in range(2)]
+    shaded(look, verts, faces, mix, (nx, 0.0, nz), m, chunk=chunk)
+
+
+def tank_streak(cx, cz, r, ang, y, length, width, look, m, color=RUST, w=0.5, seed=0):
+    """A streak down a round tank's shell from height y at angle `ang`."""
+    rng = random.Random(seed * 7 + round(ang * 100))
+    rr = r + 0.005
+    cols = ((-0.5, 0.0), (-0.2, 0.75), (0.0, 1.0), (0.2, 0.75), (0.5, 0.0))
+    rows = ((0.0, 0.8, 0.8), (0.12, 1.0, 1.0), (0.5, 0.55, 1.2), (1.0, 0.0, 1.4))
+    verts, mix = [], []
+    for fr, rp, sp in rows:
+        for cf, cp in cols:
+            a = ang + cf * width * sp / rr
+            verts.append((cx + math.cos(a) * rr, y - fr * length, cz + math.sin(a) * rr))
+            mix.append((*color, w * cp * rp * rng.uniform(0.8, 1.0), 1.15))
+    nc = len(cols)
+    faces = [(i * nc + j, i * nc + j + 1, (i + 1) * nc + j + 1, (i + 1) * nc + j)
+             for i in range(len(rows) - 1) for j in range(nc - 1)]
+    shaded(look, verts, faces, mix, (math.cos(ang), 0.0, math.sin(ang)), m)
+
+
+def shore(a, b, toward, width, m, step=2.0):
+    """Foam and churned water on the sea along a waterline from a to b ((x, z)),
+    reaching `width` metres out along `toward` (a unit (dx, dz))."""
+    n = max(1, math.ceil(math.dist(a, b) / step))
+    y = SEA + 0.01
+    verts, uvs, faces = [], [], []
+    for k in range(n + 1):
+        t = k / n
+        px, pz = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        verts += [(px, y, pz), (px + toward[0] * width, y, pz + toward[1] * width)]
+    length = math.dist(a, b)
+    for k in range(n):
+        u0, u1 = length * k / n / 10.0, length * (k + 1) / n / 10.0
+        faces.append((2 * k, 2 * k + 2, 2 * k + 3, 2 * k + 1))
+        uvs.append([(u0, 0.0), (u1, 0.0), (u1, 1.0), (u0, 1.0)])
+    shaded("sea_shore", verts, faces, [(1.0, 1.0, 1.0, 0.0, 1.0)] * len(verts), (0.0, 1.0, 0.0), m, chunk="far",
+           uvs=uvs)
 
 
 # --- Ground ---------------------------------------------------------------------------
@@ -504,7 +654,7 @@ def control_house(side: Side):
     deco(-30.6, -27.8, 2.5, 2.62, z1, z1 + 1.2, "steel_grey", m, bevel=0.02)
     name_board(side.control, -24.0, 6.6, z1 + 0.06, 0.0, m, size=0.45, look="sign_blue" if not m else "sign_green")
     for x in (x0 + 0.3, x1 - 0.3):
-        downpipe(x, z1, 0.0, top, m)
+        downpipe(x, z1, 0.0, top, m, ground="road")
     # Inside, downstairs: the switch room (north) and the mess (south).
     for x, z, tint in ((-27.0, -20.0, TUBE), (-27.0, -8.0, TUBE)):
         place("ceiling_tube", x, ceil, z, 0.0, m)
@@ -962,12 +1112,12 @@ def dressing(side: Side):
     m = side.m
     # Downpipes: the garage row, the workshop, the pump house, the meter shed.
     for z in (-22.3, -13.1):
-        downpipe(-35.0, z, -PI / 2, 4.0, m)
-    downpipe(-32.6, 6.0, PI, ROOF_DECK + 1.05, m)
-    downpipe(-21.0, 20.6, PI / 2, ROOF_DECK + 1.05, m)
-    downpipe(-5.6, -27.0, 0.0, PUMP_TOP, m)
-    downpipe(8.6, -22.0, 0.0, PUMP_TOP, m)
-    downpipe(-13.0, -12.6, PI / 2, 3.6, m)
+        downpipe(-35.0, z, -PI / 2, 4.0, m, ground="road")
+    downpipe(-32.6, 6.0, PI, ROOF_DECK + 1.05, m, ground="road")
+    downpipe(-33.0, 20.6, -PI / 2, ROOF_DECK + 1.05, m, ground="road")
+    downpipe(-5.6, -27.0, 0.0, PUMP_TOP, m, ground="slab")
+    downpipe(8.6, -22.0, 0.0, PUMP_TOP, m, ground="slab")
+    downpipe(-13.0, -12.6, PI / 2, 3.6, m, ground="slab")
     # Flood lights over the garage doors and the pump house doors, and
     # isolator boxes beside them.
     for k in range(4):
@@ -1010,6 +1160,90 @@ def dressing(side: Side):
     blocker(-20.6, -20.0, WALK, WALK + 1.9, 11.94, 12.86, m)
 
 
+def weathering(side: Side):
+    """Oil and drips on the ground, rust and dirt run down the walls, rust on
+    the tanks, the tide line on the quay face, and the moored tanker's weed
+    line and rust runs (Blue's half; Red's is its twin)."""
+    m = side.m
+    rng = random.Random(41)
+    # Oil under the parked and loading tankers, the pickup, the bowser, at the
+    # garage doors, by the manifolds and pumps; drips along the main road.
+    for x, z, r, look, y, w in ((-39.4, 8.2, 0.6, "road", STREET, 0.6), (-39.3, 4.6, 0.45, "road", STREET, 0.5),
+                                (-39.5, 1.6, 0.55, "road", STREET, 0.55), (-24.2, 2.7, 0.42, "road", STREET, 0.5),
+                                (-29.0, 0.8, 0.3, "road", STREET, 0.45), (-19.5, 3.4, 0.32, "road", STREET, 0.45),
+                                (-16.0, 1.1, 0.5, "road", STREET, 0.3), (-36.0, -15.3, 0.45, "road", STREET, 0.45),
+                                (-36.3, -24.6, 0.55, "road", STREET, 0.5), (-35.8, 17.9, 0.42, "road", STREET, 0.55),
+                                (-27.0, -32.5, 0.75, "quay", STREET, 0.45), (-14.5, -29.9, 0.5, "quay", STREET, 0.4),
+                                (-6.0, -16.4, 0.5, "slab", STREET, 0.45), (5.2, -31.5, 0.6, "slab_old", WALK, 0.55),
+                                (-27.0, 14.6, 0.5, "floor_epoxy_grey", WALK, 0.45),
+                                (-30.8, 7.3, 0.32, "floor_epoxy_grey", WALK, 0.4)):
+        stain(x, z, r, look, m, y=y, w=w, stretch=rng.uniform(0.9, 1.4), yaw=rng.uniform(0, PI))
+    # Under the loading tankers in the rack's bays (both halves: the bay band
+    # is 4 mm proud of the slab).
+    for u, v, r in ((-10.0, 3.1, 0.55), (-6.5, 2.8, 0.7), (-3.4, 3.2, 0.45)):
+        x, z = along(u, v)
+        stain(x, z, r, "slab_old", m, y=STREET + 0.004, w=0.55, stretch=1.3, yaw=RACK_YAW)
+    # Rust run from the roller doors' hoods down the garage row.
+    for k, dz in ((0, -1.6), (1, 1.6), (2, -1.6), (3, 1.6), (3, -1.6)):
+        zc = -27.0 + 2.4 + k * 4.6
+        streak(-35.0, 3.2, zc + dz, -PI / 2, 0.22, rng.uniform(0.9, 1.6), "block_grey", m, seed=k)
+    # Dirt run from the control house's sills, rust from its clad band.
+    up = (UPPER + 0.95, UPPER + 2.25)
+    for zf, yaw, wins in ((-2.0, 0.0, ((-26.0, -22.0, 0.95), (-31.6, -30.0, up[0]), (-27.6, -25.6, up[0]),
+                                        (-24.6, -22.6, up[0]))),
+                          (-27.0, PI, ((-31.0, -29.6, up[0]), (-25.0, -23.6, up[0])))):
+        for a0, a1, y0 in wins:
+            for x in (a0 + 0.1, a1 - 0.1):
+                streak(x, y0 - 0.09, zf, yaw, 0.18, rng.uniform(0.5, 1.2) if y0 < 2 else rng.uniform(0.9, 1.7),
+                       side.block, m, color=DIRT, w=0.35, rough=1.0)
+        for x in (-30.4, -25.0, -22.0):
+            streak(x + rng.uniform(-0.6, 0.6), UPPER - 0.2, zf, yaw, 0.25, rng.uniform(0.8, 1.6), side.block, m,
+                   w=0.4)
+    # Rust from the pump house's louvres and the substation's grilles.
+    for x in (-4.0, 0.0, 4.0, 7.0):
+        zf = -27.0 if x < 1.5 else -22.0
+        for dx in (-0.6, 0.55):
+            streak(x + dx, 3.55, zf, 0.0, 0.2, rng.uniform(1.0, 2.0), side.block, m, w=0.5)
+    for z in (-24.0, -19.0):
+        streak(-13.0, 2.0, z + rng.uniform(-0.5, 0.5), PI / 2, 0.3, 1.4, side.block, m, w=0.45)
+    # Rust down the storage tanks from under the roof's edge and the rings.
+    for i, (x, z) in enumerate(TANKS):
+        for k in range(8):
+            a = -PI + k * 2 * PI / 8 + rng.uniform(-0.25, 0.25)
+            if abs(a - PI / 2) < 0.45:
+                continue
+            tank_streak(x, z, TANK_R, a, TANK_H - 0.25, rng.uniform(1.2, 4.0), rng.uniform(0.25, 0.5), side.tank,
+                        m, w=rng.uniform(0.35, 0.55), seed=i)
+    # The quay face: a weed-black tide line, a paler wet band over it, and
+    # rust run from the bollards and down behind the ladders.
+    band((-42.0, -37.6), (-4.0, -37.6), PI, SEA - 0.6, SEA + 0.7, "quay_edge", m, color=WEED, w=0.88, fade=0.45,
+         chunk="far")
+    band((-42.0, -37.6), (-4.0, -37.6), PI, SEA + 0.4, SEA + 1.5, "quay_edge", m, color=DIRT, w=0.3, fade=0.5,
+         out=0.008, seed=1, chunk="far")
+    for x in (-39.0, -33.0, -21.5, -15.0, -9.0):
+        streak(x + rng.uniform(-0.2, 0.2), STREET, -37.6, PI, 0.3, rng.uniform(0.9, 1.5), "quay_edge", m, w=0.5,
+               out=0.012)
+    for x in (-36.0, -18.0):
+        for dx in (-0.22, 0.22):
+            streak(x + dx, STREET - 0.1, -37.6, PI, 0.16, 2.0, "quay_edge", m, w=0.45, out=0.012)
+    # The moored tanker: weed on the antifouling at the waterline, rust run
+    # down the black topsides from the deck edge and the fairleads.
+    band((-98.0, -40.48), (-18.0, -40.48), 0.0, SEA - 0.2, SEA + 0.45, "hull_red", m, color=WEED, w=0.8, fade=0.3,
+         step=1.5, chunk="far")
+    x = -96.0
+    while x < -22.0:
+        streak(x, SEA + 7.45, -40.5, 0.0, rng.uniform(0.25, 0.6), rng.uniform(1.5, 4.5), "hull_black", m,
+               w=rng.uniform(0.35, 0.6))
+        x += rng.uniform(4.0, 9.0)
+    for x in (-44.0, -24.0):
+        streak(x, SEA + 7.2, -40.5, 0.0, 0.7, 4.2, "hull_black", m, w=0.65, seed=3)
+    # Foam and churned water where the sea meets the quay, the hull, and the
+    # rock revetment.
+    shore((-42.0, -37.6), (-4.0, -37.6), (0.0, -1.0), 1.3, m)
+    shore((-98.0, -40.47), (-18.0, -40.47), (0.0, 1.0), 1.3, m)
+    shore((-5.3, -37.6), (-5.3, -72.0), (-1.0, 0.0), 1.6, m)
+
+
 def litter_pass():
     """Litter on the ground in the open."""
     rng = random.Random(7)
@@ -1048,6 +1282,7 @@ def build():
         tank_farm(side)
         rack_corners(side)
         dressing(side)
+        weathering(side)
     rack()
     litter_pass()
 
