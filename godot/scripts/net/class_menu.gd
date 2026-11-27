@@ -34,8 +34,8 @@ const PERK_ICON := "res://assets/ui/perks/%s.svg"
 const LOADOUT_ICON := "res://assets/ui/loadout/%s.svg"
 ## The hero silhouette, a little below white so the title stays brightest.
 const HERO_TINT := Color("c8ccd2")
-## In the detail beside the list: where the stat bars and the note start.
-const HERO_STATS_Y := 424.0
+## The detail beside the list: its width, and where Edit Class sits in it.
+const HERO_W := 380.0
 const HERO_NOTE_Y := 574.0
 ## Seconds to dim or light a region as focus moves between grid and items.
 const DIM_SECONDS := 0.12
@@ -479,16 +479,30 @@ func _draw_hero() -> void:
 	)
 	y += 82.0
 	var role := String(WEAPON_ROLES.get(key, ""))
-	if role != "":
-		Paint.text(_hero, Paint.BODY, role, Vector2(0, y), 17, UiTheme.TEXT)
-		y += 28.0
+	for line in _wrapped(role, Paint.BODY, 17, HERO_W):
+		Paint.text(_hero, Paint.BODY, line, Vector2(0, y), 17, UiTheme.TEXT)
+		y += 24.0
+	y += 4.0
 	var fitted := _rules.attachment_names(key, _shown.get("primary_attachments", []))
 	if fitted != "":
 		Paint.text(_hero, Paint.LABEL_LIGHT, fitted, Vector2(0, y), 19, UiTheme.TEXT_DIM)
 		y += 28.0
+	# The primary's stat bars, as the editor shows them, under its name.
+	var stats := WeaponStats.bars(key) if key != "" else []
+	y += 6.0
+	for stat: Array in stats:
+		Paint.text(
+			_hero, Paint.LABEL, String(stat[0]), Vector2(0, y + 11.0), 14, UiTheme.TEXT_DIM, 1.2
+		)
+		var bar := Rect2(110, y + 2.0, 220, 6.0)
+		_hero.draw_rect(bar, Color("3a3e44"))
+		_hero.draw_rect(
+			Rect2(bar.position, Vector2(bar.size.x * float(stat[1]), 6.0)), UiTheme.TEXT
+		)
+		y += 22.0
 	var secondary := String(_shown.get("secondary", ""))
 	if secondary != "":
-		y += 14.0
+		y += 22.0
 		Paint.text(_hero, Paint.LABEL, "SECONDARY", Vector2(0, y), 14, UiTheme.TEXT_DIM, 1.2)
 		Paint.text(
 			_hero,
@@ -507,21 +521,26 @@ func _draw_hero() -> void:
 		)
 	elif not _shown_id.begins_with("custom"):
 		note = "Default classes cannot be changed."
-	# The primary's stat bars, as the editor shows them.
-	var stats := WeaponStats.bars(key) if key != "" else []
-	y = HERO_STATS_Y
-	for stat: Array in stats:
-		Paint.text(
-			_hero, Paint.LABEL, String(stat[0]), Vector2(0, y + 11.0), 14, UiTheme.TEXT_DIM, 1.2
-		)
-		var bar := Rect2(110, y + 2.0, 220, 6.0)
-		_hero.draw_rect(bar, Color("3a3e44"))
-		_hero.draw_rect(
-			Rect2(bar.position, Vector2(bar.size.x * float(stat[1]), 6.0)), UiTheme.TEXT
-		)
+	y += 18.0
+	for line in _wrapped(note, Paint.BODY, 16, HERO_W):
+		Paint.text(_hero, Paint.BODY, line, Vector2(0, y), 16, UiTheme.TEXT_DIM)
 		y += 22.0
-	if note != "":
-		Paint.text(_hero, Paint.BODY, note, Vector2(0, HERO_NOTE_Y), 16, UiTheme.TEXT_DIM)
+
+
+## `text` broken into lines no wider than `width` at `font_size`.
+static func _wrapped(text: String, font: Font, font_size: int, width: float) -> PackedStringArray:
+	var lines := PackedStringArray()
+	var line := ""
+	for word in text.split(" ", false):
+		var next := word if line == "" else line + " " + word
+		if Paint.text_width(font, next, font_size) > width and line != "":
+			lines.append(line)
+			line = word
+		else:
+			line = next
+	if line != "":
+		lines.append(line)
+	return lines
 
 
 ## Pick 10's points, top right: ten pips (spent ones solid) and "N / 10",

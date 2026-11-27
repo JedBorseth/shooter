@@ -88,6 +88,20 @@ static func _read(text: String) -> Dictionary:
 		var found := regex.search(text)
 		if found != null:
 			out[field] = float(found.get_string(1))
+	# Fire rate as fired: a bolt or pump's cycle caps it, and a burst gun's
+	# pause after each burst slows it.
+	if out.has("rpm"):
+		var cycle := RegEx.create_from_string("cycle_time:\\s*([0-9.]+)").search(text)
+		if cycle != null and float(cycle.get_string(1)) > 0.0:
+			out.rpm = minf(float(out.rpm), 60.0 / float(cycle.get_string(1)))
+		var burst := (
+			RegEx
+			. create_from_string("Burst\\(rounds:\\s*([0-9]+),\\s*delay:\\s*([0-9.]+)")
+			. search(text)
+		)
+		if burst != null:
+			var rounds := float(burst.get_string(1))
+			out.rpm = rounds * 60.0 / (rounds * 60.0 / float(out.rpm) + float(burst.get_string(2)))
 	# Pellet guns state damage per pellet: count the pellets in.
 	var pellets := RegEx.create_from_string("pellets:\\s*([0-9]+)").search(text)
 	if pellets != null and out.has("damage"):
