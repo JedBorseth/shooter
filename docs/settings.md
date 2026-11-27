@@ -1,13 +1,14 @@
 # Settings
 
-The settings menu (Options on the title screen, or Settings in the pause menu)
+The Options screen (Options on the title screen, or in the pause menu)
 follows the options Call of Duty exposes on PC, Black Ops 6 and Modern Warfare
 III first, and offers only what the engine honours. It has five tabs:
 Controls, Keybinds, Graphics, Audio, and General (LB and RB, or Page Up and
 Page Down, step between them). Picking a setting shows what it does in the
 pane beside the list. Every change applies at once and saves itself shortly
-after (0.75 s) to `user://settings.cfg`; Reset to defaults puts every setting
-and keybind back.
+after (0.75 s) to `user://settings.cfg`; Reset to Default (R, or Y on a
+controller) asks first, then puts every setting and keybind back. Its look
+is in [art-direction.md](art-direction.md#pause-menu-and-options).
 
 The settings live in `godot/scripts/settings.gd` (autoload `Settings`: the
 defaults, allowed ranges, and how each applies), and the menu is
