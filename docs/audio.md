@@ -291,7 +291,7 @@ except the medal chime.
 
 ## Equipment and streaks
 
-Frags, the Search and Destroy charge, and downed UAVs play the distant
+Frags and downed UAVs play the distant
 explosion takes up close on Effects; a flashbang plays one of them as its
 bang, and a smoke grenade hisses with a wind gust. None of them has a recording of its own. Scavenger pickups
 play the pouch sound.
