@@ -338,7 +338,8 @@ FINISHES = {
         "bare": ((0.47, 0.3, 0.17), 0.42, 0.0),
         "wear": 0.55,
         "grime": 0.7,
-        "bump": 0.00003,
+        # Open-pored walnut: the oil leaves its pores as a fine texture.
+        "bump": 0.0001,
         "tint": 0.02,
         "wood": True,
     },
@@ -551,6 +552,10 @@ def _normal_material(n: Nodes, scratch_depth: float):
         term = n.math("MULTIPLY", n.math("MULTIPLY", texture, mask), finish["bump"] / 0.0001)
         height = term if height == 0.0 else n.math("ADD", height, term)
     # Scratches cut into every coated metal surface a little.
+    # Walnut: its pores open along the grain's dark lines.
+    walnut = _zone_is(n, FINISHES["walnut"]["id"])
+    pores = n.math("MULTIPLY", _wood_bands(n), n.math("MULTIPLY", walnut, -FINISHES["walnut"]["bump"] / 0.0001))
+    height = n.math("ADD", height, pores)
     # (Not into moulded polymer or leather.)
     soft = n.math("ADD", _zone_is(n, FINISHES["polymer"]["id"]), _zone_is(n, FINISHES["leather"]["id"]))
     cut = n.math("MULTIPLY", n.math("MULTIPLY", _scratches(n), n.math("SUBTRACT", 1.0, soft)), -scratch_depth)
@@ -584,17 +589,22 @@ def _noise_material(n: Nodes):
     _emit(n, (grain, blotch, _scratches(n)))
 
 
-def _wood_material(n: Nodes):
-    """R: the grain, bands a few millimetres apart running along the gun
-    (+Y) and warped by noise, G: the figure, slow light and dark across the
-    blank."""
+def _wood_bands(n: Nodes):
+    """Walnut's grain: bands a few millimetres apart running along the gun
+    (+Y), warped by noise."""
     wave = n.new("ShaderNodeTexWave", Vector=_position(n, (60.0, 25.0, 380.0)), Scale=1.0, Distortion=7.0,
                  Detail=3.0, **{"Detail Scale": 1.5})
     wave.wave_type = "BANDS"
     wave.bands_direction = "Z"
     wave.wave_profile = "SIN"
+    return wave.outputs["Fac"]
+
+
+def _wood_material(n: Nodes):
+    """R: the grain (`_wood_bands`), G: the figure, slow light and dark
+    across the blank."""
     figure = _noise(n, (35.0, 9.0, 35.0), detail=3.0, roughness=0.55, w=9.1)
-    _emit(n, (wave.outputs["Fac"], figure, 0.0))
+    _emit(n, (_wood_bands(n), figure, 0.0))
 
 
 def _new_image(name: str, size: int, fill=(0.0, 0.0, 0.0, 1.0)):
