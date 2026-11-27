@@ -71,6 +71,8 @@ var _ffa := false
 ## The goal ("FIRST TO 30 KILLS") when it does not fit in the header: drawn
 ## under the board's right end instead.
 var _goal_below := ""
+## Your row's rect this frame, for its rules drawn over every row.
+var _me_rect := Rect2()
 
 
 ## "3 / 5 ready": the players (not bots) of `roster` ready for the match.
@@ -105,6 +107,7 @@ func _draw() -> void:
 	var ffa: bool = sections.size() == 1 and String(sections[0].get("score", "")) == ""
 	_ffa = ffa
 	var headings: Array = sections[0].headings
+	_me_rect = Rect2()
 	_width = WIDTH
 	_left = 0.0
 	var columns := _columns(headings)
@@ -146,6 +149,9 @@ func _draw() -> void:
 			)
 			row_index += 1
 		y += block_h + 6.0
+	if _me_rect.has_area():
+		# Your row: yellow rules ("you"; orange is only ever focus).
+		Shapes.focus_rules(self, _me_rect, _a(Color(UiTheme.READY, 0.9)), 2.0)
 	if _goal_below != "":
 		# On a dark tab under the board's right end, so it reads on any scene.
 		var goal_w := Paint.text_width(Paint.LABEL, _goal_below, 14, 2.5) + 28.0
@@ -311,13 +317,8 @@ func _draw_row(
 				_a(Color(1, 1, 1, 0.07))
 			)
 	if me:
-		# Your row: yellow rules ("you"; orange is only ever focus).
-		Shapes.focus_rules(
-			self,
-			Rect2(rect.position - Vector2(0, 2), rect.size + Vector2(0, 4)),
-			_a(Color(UiTheme.READY, 0.9)),
-			2.0
-		)
+		# Drawn once every row is down, so the row under it cannot cover it.
+		_me_rect = Rect2(rect.position - Vector2(0, 2), rect.size + Vector2(0, 4))
 	var text_colour := MatchPaint.SELF_ROW if me else UiTheme.TEXT
 	if out:
 		text_colour = Color(text_colour, 0.5)

@@ -41,7 +41,9 @@ var _fog: ColorRect
 
 func _ready() -> void:
 	var layer := CanvasLayer.new()
-	layer.layer = 30
+	# Over the 3D world but under every UI layer: inside a cloud the scene
+	# greys out, never the HUD, scoreboard, death card, or killcam.
+	layer.layer = -1
 	_fog = ColorRect.new()
 	_fog.color = Color(FOG, 0.0)
 	_fog.visible = false
