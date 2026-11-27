@@ -145,7 +145,7 @@ func _draw_killed() -> void:
 	if legend_alpha > 0.01 and not legend.is_empty():
 		bottom = minf(bottom, _legend_top - 20.0)
 	# The plate hugs the name.
-	var plate_w := maxf(name_w + 44.0, 64.0)
+	var plate_w := maxf(name_w + 48.0, 64.0)
 	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
 	Paint.text(
 		self,
@@ -163,7 +163,7 @@ func _draw_killed() -> void:
 		self,
 		Paint.LABEL,
 		_victim,
-		plate.position + Vector2(20.0, 28.0),
+		plate.position + Vector2(26.0, 28.0),
 		22,
 		Color(_victim_colour.lerp(Color.WHITE, 0.25), alpha)
 	)

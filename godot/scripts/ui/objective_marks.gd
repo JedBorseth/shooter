@@ -32,7 +32,8 @@ const HOLD_BOTTOM := 690.0
 ## the minimap with its rows, the kill feed with the score block, and the
 ## scorestreak column with the ammo.
 const KEEP_CLEAR: Array[Rect2] = [
-	Rect2(0, 0, 410, 400),
+	Rect2(0, 0, 400, 262),
+	Rect2(0, 240, 250, 160),
 	Rect2(0, 560, 390, 340),
 	Rect2(1230, 520, 370, 380),
 ]
@@ -66,6 +67,17 @@ static func draw_world(
 		entry.range = eye.distance_to(mark.world)
 		placed.append(entry)
 	placed.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.range < b.range)
+	# Quiet near the crosshair and the points popup over it, so neither is
+	# covered (Black Ops 3 fades its markers as the crosshair nears them).
+	var middle := screen / 2.0
+	var popup := Rect2(middle.x - 90.0 * ui, screen.y * 0.34 - 36.0 * ui, 180.0 * ui, 70.0 * ui)
+	for entry: Dictionary in placed:
+		var point: Vector2 = entry.point
+		var near := smoothstep(40.0 * ui, 90.0 * ui, point.distance_to(middle))
+		var fade := lerpf(0.35, 1.0, near)
+		if popup.has_point(point):
+			fade = minf(fade, 0.5)
+		entry.alpha = float(entry.get("alpha", 1.0)) * fade
 	_spread(placed, PITCH * ui)
 	# Words: none on held markers; a farther marker drops its words when they
 	# would cross a nearer marker or its words.

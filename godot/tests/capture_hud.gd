@@ -82,6 +82,9 @@ func _run() -> void:
 	var self_colour := UiTheme.SELF
 	tdm_hud.call("add_feed_line", [[names[0], enemy], {"icon": "ak47"}, [names[1], ally]])
 	tdm_hud.call(
+		"add_feed_line", [[names[1], ally], {"icon": "", "name": "KNIFE"}, [names[0], enemy]]
+	)
+	tdm_hud.call(
 		"add_feed_line", [[names[2], ally], {"icon": "m4"}, {"headshot": true}, [names[3], enemy]]
 	)
 	tdm_hud.call(

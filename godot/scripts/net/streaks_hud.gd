@@ -227,7 +227,7 @@ func _draw_slot(rect: Rect2, key: String, count: int, selected: bool) -> void:
 				UiTheme.READY
 			)
 	else:
-		Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.62))
+		Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.66))
 		Shapes.smooth_rect(self, rect, Color(1, 1, 1, 0.32), false, 1.0)
 	var colour := UiTheme.TEXT if earned else Color(UiTheme.TEXT, 0.55)
 	_draw_icon(key, rect.get_center(), colour)
@@ -244,7 +244,6 @@ func _draw_rail(slots: Array[Rect2], loadout: PackedStringArray, progress: float
 	var x := slots[0].position.x - 8.0
 	var foot := slots[0].end.y
 	var head := slots[loadout.size() - 1].get_center().y
-	draw_line(Vector2(x, head), Vector2(x, foot), Color(1, 1, 1, 0.2), 2.0, true)
 	var fill_y := foot
 	var below := 0.0
 	var next_cost := -1
@@ -263,6 +262,8 @@ func _draw_rail(slots: Array[Rect2], loadout: PackedStringArray, progress: float
 			break
 		below = cost
 		from_y = to_y
+	# The track runs up to the next streak (all the way once all are earned).
+	draw_line(Vector2(x, next_y), Vector2(x, foot), Color(1, 1, 1, 0.2), 2.0, true)
 	if fill_y < foot:
 		draw_line(Vector2(x, fill_y), Vector2(x, foot), Color(UiTheme.TEXT, 0.92), 2.0, true)
 	if next_cost < 0:

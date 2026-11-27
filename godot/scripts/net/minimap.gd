@@ -45,7 +45,8 @@ const COMPASS_H := 20.0
 const COMPASS_SPAN := 180.0
 ## Scale: pixels per metre (the window shows about 73 by 41 metres).
 const PIXELS_PER_METRE := 4.4
-const ARROW := 7.5
+## Our arrow's half length; teammates' chevrons are smaller.
+const ARROW := 9.5
 ## Your arrow: the game's one "you" yellow.
 const SELF_ARROW := UiTheme.SELF
 const FRAME := Color(0.78, 0.82, 0.84, 0.42)
@@ -366,7 +367,7 @@ func _arrow(at: Vector2, angle: float, colour: Color) -> void:
 
 ## A teammate: an open chevron in their colour, with a dark rim.
 func _chevron(at: Vector2, angle: float, colour: Color) -> void:
-	var points := _arrow_points(at, angle, ARROW - 0.5)
+	var points := _arrow_points(at, angle, ARROW - 2.0)
 	_icons.draw_colored_polygon(points, Color(0, 0, 0, 0.45))
 	points.append(points[0])
 	_icons.draw_polyline(points, Color(0, 0, 0, 0.6), 3.6, true)
@@ -446,13 +447,16 @@ func _draw_objectives() -> void:
 			ring.append(ring[0])
 			_icons.draw_polyline(ring, Color(0, 0, 0, 0.6), 4.0, true)
 			_icons.draw_polyline(ring, mark[2], 2.0, true)
+			# What it is, in a small tag at the ring's top right: its letter,
+			# or a flag's or zone's glyph.
+			var tag := WINDOW / 2.0 + Vector2(13.0, -13.0)
+			_icons.draw_circle(tag, 7.0, Color(0, 0, 0, 0.75), true, -1.0, true)
 			if mark[1] != "":
-				# Its letter in a small tag at the ring's top right.
-				var tag := WINDOW / 2.0 + Vector2(13.0, -13.0)
-				_icons.draw_circle(tag, 6.5, Color(0, 0, 0, 0.7), true, -1.0, true)
 				Paint.text_centred(
 					_icons, Paint.LABEL, mark[1], tag + Vector2(0, 4.0), 11, mark[2], 0.0, false
 				)
+			else:
+				Marks.glyph(_icons, "flag" if mark[3] else "zone", tag, 0.55, mark[2])
 			continue
 		_hex(mark[0], mark[1], mark[2], mark[3])
 	if charge.get("has_position", false) and String(charge.status) != "carried":
