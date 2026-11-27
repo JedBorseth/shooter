@@ -29,7 +29,7 @@ USER_AGENT = "shooter-asset-pipeline"
 
 SKIES = {
     "range_day": "kloofendal_48d_partly_cloudy_puresky",
-    "breakwater_day": "kloofendal_43d_clear_puresky",
+    "breakwater_day": "sunflowers_puresky",
 }
 
 
