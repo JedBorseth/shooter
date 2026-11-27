@@ -37,6 +37,10 @@ var respawn_total := 0.0
 var legend: Array = []
 var legend_alpha := 0.0
 
+## The top of the "Killed" plate's caption while it shows (INF otherwise),
+## so the scorestreak READY plate can sit above it.
+var killed_top := INF
+
 var _dead_for := 0.0
 var _time := 0.0
 ## The last player we killed, for the "Killed" plate, and its time left.
@@ -84,6 +88,8 @@ func _draw() -> void:
 		_draw_death(Vector2(centre.x, size.y * 0.68))
 	elif _victim_left > 0.0 and _victim != "":
 		_draw_killed()
+	if dead or _victim_left <= 0.0 or _victim == "":
+		killed_top = INF
 
 
 ## One prompt row, centred on a dark plate that hugs it: an optional key
@@ -145,8 +151,9 @@ func _draw_killed() -> void:
 	if legend_alpha > 0.01 and not legend.is_empty():
 		bottom = minf(bottom, _legend_top - 20.0)
 	# The plate hugs the name.
-	var plate_w := maxf(name_w + 44.0, 64.0)
+	var plate_w := maxf(name_w + 48.0, 64.0)
 	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
+	killed_top = plate.position.y - 20.0
 	Paint.text(
 		self,
 		Paint.LABEL,
@@ -163,7 +170,7 @@ func _draw_killed() -> void:
 		self,
 		Paint.LABEL,
 		_victim,
-		plate.position + Vector2(20.0, 28.0),
+		plate.position + Vector2(26.0, 28.0),
 		22,
 		Color(_victim_colour.lerp(Color.WHITE, 0.25), alpha)
 	)

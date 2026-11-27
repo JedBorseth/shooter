@@ -75,7 +75,11 @@ func _draw() -> void:
 	var cross := centre + Vector2(0, -24.0)
 	draw_line(cross - Vector2(4.5, 0), cross + Vector2(4.5, 0), Color(colour, 0.5), 2.0, true)
 	draw_line(cross - Vector2(0, 4.5), cross + Vector2(0, 4.5), Color(colour, 0.5), 2.0, true)
+	var number := str(ceili(player.health()))
+	Paint.text_centred(self, Paint.DISPLAY, number, centre + Vector2(0, 16.0), 36, colour)
+	# Again without its shadow: under the cluster's slant the strokes blur a
+	# little, and the second pass brings them to full white.
 	Paint.text_centred(
-		self, Paint.DISPLAY, str(ceili(player.health())), centre + Vector2(0, 16.0), 36, colour
+		self, Paint.DISPLAY, number, centre + Vector2(0, 16.0), 36, colour, 0.0, false
 	)
 	draw_set_transform_matrix(Transform2D.IDENTITY)

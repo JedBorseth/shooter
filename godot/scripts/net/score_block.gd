@@ -220,7 +220,7 @@ func _draw_rows(at: Vector2) -> void:
 		var ours: bool = row.get("ours", false)
 		var h: float = heights[mini(i, 1)]
 		var cell := Rect2(at.x, y, cell_w, h)
-		Shapes.smooth_rect(self, cell, Color(0, 0, 0, 0.68))
+		Shapes.smooth_rect(self, cell, Color(0, 0, 0, 0.72))
 		draw_line(cell.position, cell.position + Vector2(0, h), Color(1, 1, 1, 0.3), 1.0, true)
 		var value_colour := (
 			TeamColours.ally.lerp(Color.WHITE, 0.55) if ours else Color(UiTheme.TEXT, 0.82)

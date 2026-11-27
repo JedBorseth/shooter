@@ -32,7 +32,8 @@ const HOLD_BOTTOM := 690.0
 ## the minimap with its rows, the kill feed with the score block, and the
 ## scorestreak column with the ammo.
 const KEEP_CLEAR: Array[Rect2] = [
-	Rect2(0, 0, 410, 400),
+	Rect2(0, 0, 400, 262),
+	Rect2(0, 240, 250, 160),
 	Rect2(0, 560, 390, 340),
 	Rect2(1230, 520, 370, 380),
 ]
@@ -66,14 +67,34 @@ static func draw_world(
 		entry.range = eye.distance_to(mark.world)
 		placed.append(entry)
 	placed.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.range < b.range)
+	# Quiet near the crosshair and the points popup over it, so neither is
+	# covered (Black Ops 3 fades its markers as the crosshair nears them).
+	var middle := screen / 2.0
+	var popup := Rect2(middle.x - 90.0 * ui, screen.y * 0.34 - 36.0 * ui, 180.0 * ui, 70.0 * ui)
+	for entry: Dictionary in placed:
+		var point: Vector2 = entry.point
+		# From the marker's whole outline (its words reach 25 px above and
+		# below the hexagon), not only its middle.
+		var gap := (point - middle).abs() - Vector2(18.0, 40.0) * ui
+		var near := smoothstep(20.0 * ui, 70.0 * ui, maxf(gap.x, gap.y))
+		var fade := lerpf(0.35, 1.0, near)
+		if popup.has_point(point):
+			fade = minf(fade, 0.5)
+		entry.alpha = float(entry.get("alpha", 1.0)) * fade
+		entry.quiet = fade < 0.9
 	_spread(placed, PITCH * ui)
+	for entry: Dictionary in placed:
+		if entry.edge:
+			# Spreading can slide a held marker back onto a cluster.
+			entry.point = _keep_clear(entry.point, screen, dead)
 	# Words: none on held markers; a farther marker drops its words when they
 	# would cross a nearer marker or its words.
 	var taken: Array[Rect2] = []
 	for entry: Dictionary in placed:
 		var hex := Rect2(entry.point - Vector2.ONE * RADIUS * ui, Vector2.ONE * RADIUS * 2.0 * ui)
 		var words := _word_rects(entry, ui)
-		var clear: bool = not entry.edge
+		# Faded near the crosshair, a marker keeps quiet too.
+		var clear: bool = not entry.edge and not entry.quiet
 		for rect in words:
 			for other in taken:
 				if rect.intersects(other):
@@ -178,10 +199,21 @@ static func glyph(item: CanvasItem, kind: String, at: Vector2, scale: float, col
 				colour
 			)
 		"charge":
-			var case := Rect2(at - Vector2(7.0, 4.5) * scale, Vector2(14.0, 9.0) * scale)
+			# A charge: a case with a dark timer window, a red lamp, and a
+			# short antenna (not a box with a red dot, which reads as first aid).
+			var case := Rect2(at - Vector2(7.5, 3.5) * scale, Vector2(15.0, 9.0) * scale)
 			item.draw_rect(case, colour)
+			var window := Rect2(at + Vector2(-5.5, -1.5) * scale, Vector2(7.0, 4.0) * scale)
+			item.draw_rect(window, Color(0, 0, 0, 0.75 * colour.a))
 			item.draw_circle(
-				at + Vector2(3.5, -1.0) * scale, 1.8 * scale, Color(UiTheme.HARM, colour.a)
+				at + Vector2(4.2, 0.5) * scale, 1.4 * scale, Color(UiTheme.HARM, colour.a)
+			)
+			item.draw_line(
+				at + Vector2(5.0, -3.5) * scale,
+				at + Vector2(7.5, -8.0) * scale,
+				colour,
+				1.4 * scale,
+				true
 			)
 		"zone":
 			for i in 2:
@@ -338,7 +370,8 @@ static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vecto
 			options.append(Vector2(rect.end.x, point.y))
 		if rect.position.y > 1.0:
 			options.append(Vector2(point.x, rect.position.y))
-		if rect.end.y < screen.y - 1.0:
+		if rect.end.y < minf(screen.y - 1.0, HOLD_BOTTOM * ui):
+			# Never down into the bottom clusters and the controls legend.
 			options.append(Vector2(point.x, rect.end.y))
 		var best := point
 		var best_d := INF

@@ -82,6 +82,9 @@ func _run() -> void:
 	var self_colour := UiTheme.SELF
 	tdm_hud.call("add_feed_line", [[names[0], enemy], {"icon": "ak47"}, [names[1], ally]])
 	tdm_hud.call(
+		"add_feed_line", [[names[1], ally], {"icon": "", "name": "KNIFE"}, [names[0], enemy]]
+	)
+	tdm_hud.call(
 		"add_feed_line", [[names[2], ally], {"icon": "m4"}, {"headshot": true}, [names[3], enemy]]
 	)
 	tdm_hud.call(
@@ -103,6 +106,8 @@ func _run() -> void:
 
 	# A streak earned: the column lights and the ready plate shows.
 	_server.debug_score(me, 450)
+	# The kill that earned it: its plate and the ready plate together.
+	hud.show_victim(names[2], enemy)
 	await _frames(20)
 	await _shot("05_streak_ready")
 	await _seconds(3.5)
