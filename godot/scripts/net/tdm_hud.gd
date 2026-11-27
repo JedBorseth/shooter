@@ -45,7 +45,7 @@ const XpSummary := preload("res://scripts/net/xp_summary.gd")
 
 const CALLOUT_SECONDS := 2.2
 ## Seconds the result banner shows with the team strip before the scoreboard.
-const STRIP_SECONDS := 5.0
+const STRIP_SECONDS := 3.0
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
 const CHAT_LINES := 6
@@ -72,8 +72,6 @@ var _xp_ready := false
 var _xp_bonus := 0
 ## Seconds of results seen (outside the final killcam), for the team strip.
 var _results_age := 0.0
-## The final killcam has played: the strip has had its moment.
-var _final_killcam_seen := false
 var _ready_button: Button
 var _ladder_marked := -1
 var _callout_left := 0.0
@@ -138,8 +136,6 @@ func _process(delta: float) -> void:
 	# A killcam has its own overlay; the match HUD comes back after it (the
 	# results board after the final killcam, as in Call of Duty).
 	_root.visible = _joined() and not client.in_killcam()
-	if _joined() and client.in_killcam() and client.match_info().phase == "ended":
-		_final_killcam_seen = true
 	if not _root.visible:
 		return
 	var info := client.match_info()
@@ -192,13 +188,13 @@ func _process(delta: float) -> void:
 	if not results:
 		_xp_ready = false
 		_results_age = 0.0
-		_final_killcam_seen = false
 	else:
 		_results_age += delta
-	# After a match: the result banner and the team strip first, then the
-	# final killcam, then the scoreboard and the match report under the
-	# banner, as Black Ops 3 does.
-	var strip_stage := results and _results_age < STRIP_SECONDS and not _final_killcam_seen
+	# After a match: the result banner and the team strip first (before the
+	# final killcam, as Black Ops 3 does, and after it if it came at once),
+	# then the scoreboard and the match report under the banner. The age only
+	# runs while the results are on screen.
+	var strip_stage := results and _results_age < STRIP_SECONDS
 	_xp_card.visible = results and not strip_stage and _xp_ready and not _menu.visible
 	var held := Input.is_action_pressed(&"scoreboard") and not _menu.visible
 	_board.visible = (results and not strip_stage) or held
