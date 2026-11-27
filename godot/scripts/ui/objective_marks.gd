@@ -32,7 +32,7 @@ const HOLD_BOTTOM := 690.0
 ## the minimap with its rows, the kill feed with the score block, and the
 ## scorestreak column with the ammo.
 const KEEP_CLEAR: Array[Rect2] = [
-	Rect2(0, 0, 410, 350),
+	Rect2(0, 0, 410, 400),
 	Rect2(0, 560, 390, 340),
 	Rect2(1230, 520, 370, 380),
 ]
@@ -402,3 +402,11 @@ static func _ring(
 static func row_slope(ui: float) -> Transform2D:
 	var pivot := 44.0 * ui
 	return Transform2D(Vector2(1, ROW_TILT), Vector2(0, 1), Vector2(0, -ROW_TILT * pivot))
+
+
+## Whether the mode rows under the minimap show: with the minimap, so a
+## killcam (which hides it) hides them too.
+static func rows_shown(item: CanvasItem) -> bool:
+	var scene := item.get_tree().current_scene if item.is_inside_tree() else null
+	var minimap := scene.get_node_or_null(^"TdmHud/Minimap") as CanvasItem if scene else null
+	return minimap == null or minimap.is_visible_in_tree()

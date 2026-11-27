@@ -69,7 +69,8 @@ func _draw() -> void:
 		var newest := i == _lines.size() - 1
 		var alpha := clampf(line.left / FADE, 0.0, 1.0)
 		if newest:
-			alpha *= clampf(line.age / SHIFT, 0.0, 1.0)
+			# In once the rows above have slid clear, so none overlap.
+			alpha *= clampf((line.age - SHIFT) / 0.1, 0.0, 1.0)
 		y -= LINE_H
 		_draw_line(line, Vector2(0.0, y - (_shift if newest else 0.0)), alpha)
 		y -= 2.0
@@ -93,8 +94,11 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 		if part is Dictionary:
 			if part.has("icon"):
 				var icon := Paint.weapon_icon(part.icon)
+				var box := Vector2(x, at.y + (LINE_H - ICON_BOX.y) / 2.0)
 				if icon != null:
-					_draw_icon(icon, Vector2(x, at.y + (LINE_H - ICON_BOX.y) / 2.0), alpha)
+					_draw_icon(icon, box, alpha)
+				elif _glyph(part) != "":
+					_draw_glyph(_glyph(part), box, alpha)
 				else:
 					Paint.text(
 						self,
@@ -132,7 +136,7 @@ func _part_width(part: Variant) -> float:
 	if part is Dictionary:
 		if part.has("icon"):
 			var icon := Paint.weapon_icon(part.icon)
-			if icon == null:
+			if icon == null and _glyph(part) == "":
 				return Paint.text_width(Paint.LABEL_LIGHT, part.get("name", ""), SMALL_SIZE)
 			return ICON_BOX.x
 		return 15.0
@@ -145,6 +149,39 @@ func _part_width(part: Variant) -> float:
 func _words(part: Array) -> String:
 	var small: bool = part.size() > 2 and part[2]
 	return String(part[0]).to_lower() if small else String(part[0])
+
+
+## A drawn mark for a kill without a gun's silhouette: "knife" or "frag",
+## or "".
+func _glyph(part: Dictionary) -> String:
+	var name := String(part.get("name", "")).to_lower()
+	if name.contains("knife") or name.contains("melee"):
+		return "knife"
+	if name.contains("frag") or name.contains("grenade"):
+		return "frag"
+	return ""
+
+
+## A knife (blade and grip, pointing right) or a frag, in the icon box at
+## `at`, in white.
+func _draw_glyph(kind: String, at: Vector2, alpha: float) -> void:
+	var colour := Color(UiTheme.TEXT, alpha)
+	var mid := at + ICON_BOX / 2.0
+	if kind == "frag":
+		Paint.grenade(self, mid, ICON_BOX.y + 2.0, colour)
+		return
+	var blade := PackedVector2Array(
+		[
+			mid + Vector2(-3, -3.5),
+			mid + Vector2(13, -3.5),
+			mid + Vector2(18, -0.5),
+			mid + Vector2(12, 2.5),
+			mid + Vector2(-3, 2.5),
+		]
+	)
+	draw_colored_polygon(blade, colour)
+	draw_rect(Rect2(mid + Vector2(-6, -5.5), Vector2(3, 11)), colour)
+	draw_rect(Rect2(mid + Vector2(-17, -2.5), Vector2(11, 5)), colour)
 
 
 ## A weapon's silhouette fitted into the fixed box at `at` (its top left),

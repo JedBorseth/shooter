@@ -369,7 +369,7 @@ func _draw_overlay() -> void:
 			mark.distance = int(round(_eye(camera).distance_to(world)))
 			marks.append(mark)
 		Marks.draw_world(_overlay, camera, marks, size, _eye(camera), _dead())
-	if _row_shown():
+	if Marks.rows_shown(_overlay):
 		_draw_row(flags, size, ui)
 	if here >= 0:
 		_draw_capture_bar(flags[here], size, ui)
@@ -384,12 +384,6 @@ func _eye(camera: Camera3D) -> Vector3:
 	if player != null and is_instance_valid(player):
 		return player.global_position
 	return camera.global_position
-
-
-## The row of letters shows with the minimap (hidden in a killcam).
-func _row_shown() -> bool:
-	var minimap := get_tree().current_scene.get_node_or_null("TdmHud/Minimap") as CanvasItem
-	return minimap == null or minimap.is_visible_in_tree()
 
 
 ## A flag's hexagon: its letter, its owner's colour (sand while neutral,
