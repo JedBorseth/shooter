@@ -41,7 +41,7 @@ var _since_level := 10.0
 
 func _ready() -> void:
 	add_theme_stylebox_override(
-		"panel", UiTheme.outlined(Color(0.02, 0.025, 0.03, 0.86), UiTheme.LINE, 1, 22.0, 14.0)
+		"panel", UiTheme.outlined(Color(0.02, 0.025, 0.03, 0.92), UiTheme.LINE, 1, 22.0, 14.0)
 	)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var layout := VBoxContainer.new()

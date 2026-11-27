@@ -106,7 +106,9 @@ func _process(delta: float) -> void:
 	# A custom game's radar off, or hardcore's bare HUD, takes it away.
 	var info := client.match_info()
 	var off: bool = info.get("radar_off", false) or info.get("hardcore", false)
-	visible = has_plan() and not off and not client.in_killcam() and not ended
+	# Held scoreboard: the board takes the screen, as in Black Ops 3.
+	var board := Input.is_action_pressed(&"scoreboard")
+	visible = has_plan() and not off and not client.in_killcam() and not ended and not board
 	if not visible:
 		return
 	var feet := player.global_position

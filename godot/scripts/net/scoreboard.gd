@@ -185,7 +185,7 @@ func _a(colour: Color) -> Color:
 
 func _draw_header(headings: Array, columns: Array) -> void:
 	var bar := Rect2(_left, top, _width, HEADER_H)
-	draw_rect(bar, _a(Color(0, 0, 0, 0.72)))
+	draw_rect(bar, _a(Color(0, 0, 0, 0.82)))
 	draw_rect(Rect2(bar.position, Vector2(_width, 1)), _a(Color(1, 1, 1, 0.12)))
 	var baseline := top + 26.0
 	var x := _left + 14.0
@@ -244,8 +244,22 @@ func _draw_team_block(section: Dictionary, rect: Rect2) -> void:
 		int(section.get("team", 0)),
 		_a(Color(colour, 0.3))
 	)
-	MatchPaint.label_plate(
-		self, rect.position + Vector2(10, 8), String(section.name).to_upper(), 28.0
+	# The team's name on a light plate, as on the result strip.
+	var name := String(section.name).to_upper()
+	var plate := Rect2(
+		rect.position + Vector2(10, 8),
+		Vector2(Paint.text_width(Paint.LABEL, name, 19, 3.0) + 16.0, 28.0)
+	)
+	draw_rect(plate, _a(UiTheme.LABEL_BOX))
+	Paint.text(
+		self,
+		Paint.LABEL,
+		name,
+		plate.position + Vector2(8.0, 21.0),
+		19,
+		_a(UiTheme.LABEL_INK),
+		3.0,
+		false
 	)
 	var score := String(section.get("score", ""))
 	if score != "":
@@ -297,11 +311,12 @@ func _draw_row(
 				_a(Color(1, 1, 1, 0.07))
 			)
 	if me:
+		# Your row: yellow rules ("you"; orange is only ever focus).
 		Shapes.focus_rules(
 			self,
 			Rect2(rect.position - Vector2(0, 2), rect.size + Vector2(0, 4)),
-			_a(UiTheme.ACCENT_DIM),
-			3.0
+			_a(Color(UiTheme.READY, 0.9)),
+			2.0
 		)
 	var text_colour := MatchPaint.SELF_ROW if me else UiTheme.TEXT
 	if out:
