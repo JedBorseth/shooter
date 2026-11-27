@@ -3,6 +3,7 @@
 Goal: a modern-military, Call-of-Duty-style multiplayer FPS. Fast, responsive
 movement and gunplay, and 6v6 matches on dedicated servers, played to
 Call of Duty's rules ([cod-design](../.agents/skills/cod-design/SKILL.md)).
+[SCOPE.md](../SCOPE.md) lists what is in the game and what was cut.
 
 ## Decisions
 

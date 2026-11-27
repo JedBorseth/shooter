@@ -1,6 +1,6 @@
 ---
 name: cod-design
-description: Design every feature the way Call of Duty does it. Use before building or changing any player-facing feature or the system behind it (movement, gunplay, weapons, equipment, health, modes, spawns, scoring, medals, streaks, bots, HUD, menus, settings, controls, audio, graphics and visual quality, netcode feel, progression), without being asked. Finds the Call of Duty precedent, pins down its rules, numbers, inputs, and edge cases, follows it unless the user or a recorded project decision says otherwise, and records the reference in docs and the PR.
+description: Design every in-scope feature the way Call of Duty does it (SCOPE.md lists what is in). Use before building or changing any in-scope player-facing feature or the system behind it (movement, gunplay, weapons, equipment, health, modes, spawns, scoring, medals, streaks, bots, HUD, menus, settings, controls, audio, graphics and visual quality, netcode feel, progression), without being asked. Finds the Call of Duty precedent, pins down its rules, numbers, inputs, and edge cases, follows it unless the user or a recorded project decision says otherwise, and records the reference in docs and the PR.
 ---
 
 # Design it like Call of Duty
@@ -11,8 +11,12 @@ of Call of Duty muscle memory, and the user wants every feature to meet it.
 not only the obvious ones: a settings slider, a kill feed line, a reload cancel,
 a lobby countdown, and a sound cue all have a Call of Duty answer.
 
-Use this skill before you write code for any feature or behaviour change a
-player can see, hear, or feel, and for the systems behind them. Skip it only
+Use this skill before you write code for any in-scope feature or behaviour
+change a player can see, hear, or feel, and for the systems behind them. It
+tells you how a feature should work, not which features to add: check
+[SCOPE.md](../../../SCOPE.md) first, and do not build a Call of Duty feature
+the scope leaves out (or cut on purpose) unless the user asks for it. Never
+copy Call of Duty's maps, names, art, or audio; match its rules and feel. Skip it only
 for work no player touches: CI, build scripts, refactors that keep behaviour,
 and tooling. When unsure, use it.
 

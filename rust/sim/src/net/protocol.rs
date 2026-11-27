@@ -213,7 +213,12 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 92 added spectators: `ClientMessage::Hello`'s `spectate`, the
 // welcome's `spectator`, and `GameEvent::Caster`.
 // Version 93 added `ClientMessage::SwitchTeam`.
-pub const PROTOCOL_VERSION: u16 = 93;
+// Version 94 cut the game down to its core: Zombies, accounts and ranked
+// servers, Nuketown's damageable props, the Airstrike, Sentry Gun, Guided
+// Missile and Attack Chopper, spectators, and cosmetics are gone, with their
+// messages, events, and snapshot fields (their ids are left unused). The
+// player view's flags lost `downed`.
+pub const PROTOCOL_VERSION: u16 = 94;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).

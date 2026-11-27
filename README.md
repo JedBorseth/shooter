@@ -4,7 +4,7 @@
 
 A multiplayer first-person shooter in the style of Call of Duty, built on Godot 4.7 (Forward+, Jolt physics) with the gameplay written in Rust. Matches run on dedicated servers at a 120 Hz simulation, against bots or other players: Team Deathmatch, objective modes, and Search and Destroy, with Black Ops 2's Create-a-Class, scorestreaks, and progression. Each feature follows a named Call of Duty game, and its docs page records which.
 
-The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
+What is in the game, and what was cut on purpose, is in [SCOPE.md](SCOPE.md). The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
 
 ![Breakwater from above, and at eye level: the control building, the truck loading rack, the tank farm, and the walkways](docs/media/breakwater.jpg)
 
