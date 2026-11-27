@@ -63,7 +63,7 @@ func _answer(yes: bool) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.72))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.8))
 	var band := _band()
 	draw_rect(band, Color(0.01, 0.012, 0.016, 0.96))
 	for y: float in [band.position.y, band.end.y - 1.0]:

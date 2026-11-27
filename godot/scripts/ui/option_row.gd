@@ -38,10 +38,11 @@ const RULE := 3.0
 ## How long the focus rules take to grow from the middle to full width.
 const GROW_TIME := 0.09
 ## A locked row's name, and how faint its value and slider draw.
-const MUTED := Color("5a5c62")
-const MUTED_ALPHA := 0.4
+const MUTED := Color("6e7076")
 ## Space left of the items in a drop-down's list.
-const LIST_INSET := 10.0
+const LIST_INSET := 0.0
+## How far right of the list's edge an item's text starts.
+const LIST_TEXT_X := 15.0
 const VALUE_FONT: Font = preload("res://assets/fonts/BarlowCondensed-Medium.ttf")
 
 var kind := Kind.SLIDER
@@ -156,11 +157,11 @@ func _draw_box() -> void:
 	var on := (control as BaseButton).button_pressed
 	var ink := UiTheme.ACCENT if is_lit() else UiTheme.TEXT
 	if muted and not is_lit():
-		ink = Color(ink, MUTED_ALPHA)
+		ink = MUTED
 	draw_rect(box, Color(0, 0, 0, 0.6))
 	draw_rect(box.grow(-0.5), ink, false, 1.0)
 	if on:
-		draw_rect(box.grow(-4.0), Color(UiTheme.TEXT, ink.a))
+		draw_rect(box.grow(-4.0), ink if muted and not is_lit() else UiTheme.TEXT)
 
 
 ## The key in grey caps, centred in its cell; white on the focused row. While
@@ -181,13 +182,15 @@ func _draw_binding() -> void:
 func _set_lit(on: bool) -> void:
 	if _tween != null:
 		_tween.kill()
-	_colour_name()
 	if value_label != null:
 		value_label.add_theme_color_override(
 			&"font_color", UiTheme.TEXT if on else UiTheme.TEXT_VALUE
 		)
 	if kind == Kind.TEXT:
 		control.add_theme_color_override(&"font_color", UiTheme.TEXT if on else UiTheme.TEXT_VALUE)
+		if on:
+			(control as LineEdit).caret_column = (control as LineEdit).text.length()
+	_colour_name()
 	if not on:
 		_lit = 0.0
 		queue_redraw()
@@ -208,11 +211,15 @@ func _colour_name() -> void:
 		return
 	var dim := muted and not is_lit()
 	name_label.add_theme_color_override(&"font_color", MUTED if dim else UiTheme.TEXT)
-	var fade := Color(1, 1, 1, MUTED_ALPHA if dim else 1.0)
-	if kind == Kind.SLIDER or kind == Kind.CHOICE:
-		control.modulate = fade
-	if value_label != null:
-		value_label.modulate = fade
+	# One grey for everything on a locked row: white drawn through it reads
+	# as that grey.
+	if kind == Kind.SLIDER:
+		control.modulate = MUTED if dim else Color.WHITE
+	elif kind == Kind.CHOICE:
+		control.modulate = MUTED if dim else Color.WHITE
+		control.add_theme_color_override(&"font_color", Color.WHITE if dim else UiTheme.TEXT_VALUE)
+	if value_label != null and dim:
+		value_label.add_theme_color_override(&"font_color", MUTED)
 	queue_redraw()
 
 
@@ -267,6 +274,8 @@ func _quiet_control() -> void:
 			control.add_theme_color_override(&"font_color", UiTheme.TEXT_VALUE)
 			control.add_theme_font_override(&"font", VALUE_FONT)
 			control.add_theme_font_size_override(&"font_size", 20)
+			control.add_theme_color_override(&"caret_color", UiTheme.TEXT)
+			control.add_theme_constant_override(&"caret_width", 2)
 
 
 func _no_styles(none: StyleBox) -> void:
@@ -285,7 +294,7 @@ func _quiet_list(popup: PopupMenu) -> void:
 	popup.add_theme_constant_override(&"item_start_padding", 0)
 	popup.add_theme_constant_override(&"h_separation", 0)
 	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color(UiTheme.INK, 0.97)
+	panel.bg_color = UiTheme.BG
 	panel.border_color = UiTheme.LINE
 	panel.set_border_width_all(1)
 	panel.content_margin_left = LIST_INSET
@@ -293,6 +302,10 @@ func _quiet_list(popup: PopupMenu) -> void:
 	panel.content_margin_top = 4.0
 	panel.content_margin_bottom = 4.0
 	popup.add_theme_stylebox_override(&"panel", panel)
+	var lit := StyleBoxFlat.new()
+	lit.bg_color = UiTheme.ACCENT
+	popup.add_theme_stylebox_override(&"hover", lit)
+	popup.add_theme_constant_override(&"v_separation", 14)
 	popup.visibility_changed.connect(_place_list.bind(popup))
 
 
@@ -301,8 +314,6 @@ func _place_list(popup: PopupMenu) -> void:
 		return
 	var scale := get_global_transform_with_canvas().get_scale().x
 	# The items' text lines up with the value on the row.
-	var left := int(
-		get_global_transform_with_canvas().origin.x + (VALUE_X - LIST_INSET - 2) * scale
-	)
+	var left := int(get_global_transform_with_canvas().origin.x + (VALUE_X - LIST_TEXT_X) * scale)
 	popup.position.x = left
-	popup.size.x = int((size.x - VALUE_X + LIST_INSET + 2) * scale)
+	popup.size.x = int((size.x - VALUE_X + LIST_TEXT_X) * scale)

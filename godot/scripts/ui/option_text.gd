@@ -10,7 +10,7 @@ const TAB_INTROS: Array[String] = [
 		"What you play with, and how it aims. The device you don't pick is locked out"
 		+ " of play until you pick it here."
 	),
-	"Choose a binding, then press a key or mouse button. A key used by another action swaps with it.",
+	"Every action's key or mouse button. Controller buttons are fixed; they show on the right.",
 	"Display and quality. Every change applies right away.",
 	"Volume for each kind of sound, and how it is mixed.",
 	"Your name, and what the screen shows while you play.",

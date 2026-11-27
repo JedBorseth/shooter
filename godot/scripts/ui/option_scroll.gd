@@ -42,7 +42,7 @@ func _process(_delta: float) -> void:
 	var rect := get_global_rect()
 	var width := rect.size.x - bar.size.x - 4.0
 	_fade_top.global_position = rect.position
-	_fade_top.size = Vector2(width, FADE * 0.6)
+	_fade_top.size = Vector2(width, FADE)
 	_fade_bottom.global_position = Vector2(rect.position.x, rect.end.y - FADE)
 	_fade_bottom.size = Vector2(width, FADE)
 	_fade_top.visible = scroll_vertical > 2
@@ -56,6 +56,35 @@ func _keep_in_view(control: Control) -> void:
 	var top := row.get_global_rect().position.y - get_global_rect().position.y
 	var bottom := top + row.size.y
 	if top < MARGIN:
-		scroll_vertical = int(scroll_vertical + top - MARGIN)
+		scroll_vertical = _snap(scroll_vertical + top - MARGIN, false)
 	elif bottom > size.y - MARGIN:
-		scroll_vertical = int(scroll_vertical + bottom - size.y + MARGIN)
+		scroll_vertical = _snap(scroll_vertical + bottom - size.y + MARGIN, true)
+
+
+## The scroll nearest `wanted` that puts the top edge just above a row or a
+## heading, so nothing is cut through its letters there: the next one down
+## when scrolling down, the next one up when scrolling up.
+func _snap(wanted: float, down: bool) -> int:
+	var origin := get_global_rect().position.y - scroll_vertical
+	var best := wanted
+	var found := false
+	for row: Control in _rows():
+		var at := row.get_global_rect().position.y - origin - 4.0
+		if down and at >= wanted and (not found or at < best):
+			best = at
+			found = true
+		elif not down and at <= wanted and (not found or at > best):
+			best = at
+			found = true
+	return maxi(int(best), 0)
+
+
+## The rows and headings of the tab on show.
+func _rows() -> Array[Control]:
+	var rows: Array[Control] = []
+	for section: Node in get_child(0).get_child(0).get_children():
+		if section is Control and (section as Control).visible:
+			for child: Node in section.get_children():
+				if child is Control:
+					rows.append(child)
+	return rows

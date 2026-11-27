@@ -265,12 +265,12 @@ offset_top = -52.0
 offset_right = -40.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="SelectGroup" type="HBoxContainer" parent="Root/Footer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 10
 
 [node name="SelectKey" type="Label" parent="Root/Footer/SelectGroup"]
 custom_minimum_size = Vector2(24, 24)
@@ -290,7 +290,7 @@ theme_override_colors/font_color = Color(0.956863, 0.964706, 0.972549, 0.9)
 text = "Select"
 
 [node name="SelectGap" type="Control" parent="Root/Footer/SelectGroup"]
-custom_minimum_size = Vector2(20, 0)
+custom_minimum_size = Vector2(16, 0)
 layout_mode = 2
 
 [node name="BackKey" type="Label" parent="Root/Footer"]
@@ -314,10 +314,10 @@ text = "Resume"
 [node name="ResetGroup" type="HBoxContainer" parent="Root/Footer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="ResetGap" type="Control" parent="Root/Footer/ResetGroup"]
-custom_minimum_size = Vector2(12, 0)
+custom_minimum_size = Vector2(16, 0)
 layout_mode = 2
 
 [node name="ResetKey" type="Label" parent="Root/Footer/ResetGroup"]

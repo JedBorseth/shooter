@@ -14,6 +14,12 @@ const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
 const CARD := Rect2(1040, 150, 496, 0)
+## The map's picture across the card's top.
+const PICTURE_HEIGHT := 168.0
+const PICTURES := {
+	"breakwater": "res://assets/ui/maps/breakwater.jpg",
+	"arena": "res://assets/ui/maps/arena.jpg",
+}
 const PAD := 24.0
 const TAG_RIGHT := 1536.0
 
@@ -41,6 +47,7 @@ func refresh() -> void:
 
 func _read() -> Dictionary:
 	var map := _map_name()
+	var picture := _picture()
 	var client: NetClient = Net.client() if Net.is_online() else null
 	if client == null or not is_instance_valid(client) or not client.is_joined():
 		return {
@@ -48,12 +55,14 @@ func _read() -> Dictionary:
 			"mode": "FREE ROAM",
 			"map": map,
 			"note": "Practice on your own. No score, no clock.",
+			"picture": picture,
 		}
 	var match_info := client.match_info()
 	var data := {
 		"context": "LOCAL MATCH" if Net.is_local_match() else "ONLINE MATCH",
 		"mode": String(match_info.get("mode_name", "Match")).to_upper(),
 		"map": map,
+		"picture": picture,
 		"note":
 		(
 			"The match is paused."
@@ -107,14 +116,25 @@ func _clock(seconds: float) -> String:
 	return "%d:%02d" % [whole / 60, whole % 60]
 
 
-## The map's name, from the scene that holds this menu.
-func _map_name() -> String:
+## The map's picture, from the scene that holds this menu.
+func _picture() -> Texture2D:
+	var path: String = PICTURES.get(_map_key(), "")
+	return load(path) as Texture2D if path != "" and ResourceLoader.exists(path) else null
+
+
+func _map_key() -> String:
 	var scene := get_tree().current_scene
 	var path := scene.scene_file_path if scene != null else ""
 	for key: String in Net.MAP_SCENES:
 		if Net.MAP_SCENES[key] == path:
-			return "TESTING AREA" if key == "arena" else String(Net.MAP_NAMES[key]).to_upper()
-	return "TESTING AREA"
+			return key
+	return "arena"
+
+
+## The map's name, from the scene that holds this menu.
+func _map_name() -> String:
+	var key := _map_key()
+	return "TESTING AREA" if key == "arena" else String(Net.MAP_NAMES[key]).to_upper()
 
 
 func _draw() -> void:
@@ -123,14 +143,18 @@ func _draw() -> void:
 	_draw_tag()
 	var team := info.has("scores")
 	var ffa := info.has("score")
-	var height := 196.0 + (176.0 if team or ffa else 0.0)
+	var picture: Texture2D = info.get("picture")
+	var top := PICTURE_HEIGHT if picture != null else 0.0
+	var height := top + 196.0 + (176.0 if team or ffa else 0.0)
 	var card := Rect2(CARD.position, Vector2(CARD.size.x, height))
-	draw_rect(card, Color(UiTheme.BG, 0.88))
+	draw_rect(card, Color(UiTheme.BG, 0.9))
+	if picture != null:
+		_draw_picture(picture, Rect2(card.position, Vector2(card.size.x, top)))
 	draw_rect(card.grow(-0.5), UiTheme.LINE, false, 1.0)
 	draw_rect(Rect2(card.position, Vector2(card.size.x, 2)), UiTheme.LINE_HI)
 	var left := card.position.x + PAD
 	var right := card.end.x - PAD
-	var y := card.position.y
+	var y := card.position.y + top
 	HudPaint.text(
 		self, HudPaint.LABEL, String(info.context), Vector2(left, y + 34), 15, UiTheme.TEXT_DIM, 2.0
 	)
@@ -170,6 +194,23 @@ func _draw() -> void:
 		0.0,
 		false
 	)
+
+
+## The map's picture, cropped to fill `rect` and fading into the card at
+## its foot.
+func _draw_picture(picture: Texture2D, rect: Rect2) -> void:
+	var source := Vector2(picture.get_size())
+	var crop := Vector2(source.x, source.x * rect.size.y / rect.size.x)
+	if crop.y > source.y:
+		crop = Vector2(source.y * rect.size.x / rect.size.y, source.y)
+	var region := Rect2((source - crop) / 2.0, crop)
+	draw_texture_rect_region(picture, rect, region, Color(0.78, 0.8, 0.84))
+	var steps := 12
+	for i in steps:
+		var band := Rect2(
+			rect.position.x, rect.end.y - 64.0 + 64.0 * i / steps, rect.size.x, 64.0 / steps + 1.0
+		)
+		draw_rect(band, Color(UiTheme.BG, 0.9 * (i + 1) / steps))
 
 
 ## Your name in the header's top right, on a dark plate with a light edge,
@@ -227,14 +268,11 @@ func _draw_scores(rect: Rect2) -> void:
 		var plate := Rect2(rect.position.x + (width + 12.0) * i, rect.position.y + 8, width, 112)
 		_score_plate(plate, "YOUR TEAM" if ours else "ENEMY", str(scores[i]), TeamColours.of(ours))
 	var state := "TIED"
-	var state_colour := UiTheme.TEXT
 	if scores[0] > scores[1]:
 		state = "LEADING"
-		state_colour = TeamColours.ally
 	elif scores[0] < scores[1]:
 		state = "TRAILING"
-		state_colour = TeamColours.enemy
-	_draw_footer(rect, state, state_colour)
+	_draw_footer(rect, state, UiTheme.TEXT)
 
 
 ## Free-for-all: your score, on a plate in your colour, and your place.
@@ -262,8 +300,14 @@ func _score_plate(plate: Rect2, title: String, score: String, colour: Color) -> 
 	draw_rect(Rect2(plate.position, Vector2(4, plate.size.y)), colour)
 	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1)), Color(colour, 0.5))
 	HudPaint.text(self, HudPaint.LABEL, title, plate.position + Vector2(18, 28), 15, colour, 2.0)
-	HudPaint.text(
-		self, HudPaint.DISPLAY, score, plate.position + Vector2(16, 92), 54, UiTheme.TEXT, 1.0
+	HudPaint.text_centred(
+		self,
+		HudPaint.DISPLAY,
+		score,
+		Vector2(plate.get_center().x + 2.0, plate.position.y + 94),
+		54,
+		UiTheme.TEXT,
+		1.0
 	)
 
 

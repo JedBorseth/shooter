@@ -449,7 +449,7 @@ func _build_settings() -> void:
 		&"ads_sensitivity",
 		"Aim sensitivity",
 		0.05,
-		func(v: float) -> String: return "%.2f×" % v
+		func(v: float) -> String: return "%.2f" % v
 	)
 	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
 	_mouse_rows.assign(_collect)
