@@ -12,8 +12,8 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 const ClassMenu := preload("res://scripts/net/class_menu.gd")
 const LobbyTeams := preload("res://scripts/net/lobby_teams.gd")
-const Glyphs := preload("res://scripts/ui/glyphs.gd")
-const Paint := preload("res://scripts/ui/hud_paint.gd")
+const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
+const BLUR: Shader = preload("res://shaders/menu_blur.gdshader")
 
 var client: NetClient
 ## Gun Game: the ladder instead of classes.
@@ -34,14 +34,19 @@ var _stage: Control
 var _ladder_box: VBoxContainer
 var _status_label: Label
 var _close: Button
-var _footer: Control
+var _footer: HBoxContainer
+var _select_hint: Label
+var _back_group: HBoxContainer
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# The game behind dims a little first, so the HUD under the menu recedes.
+	# As behind the pause menu: the game (and the HUD over it) blurred and
+	# darkened toward ink, so nothing under the menu competes with it.
 	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.01, 0.015, 0.02, 0.45)
+	var blur := ShaderMaterial.new()
+	blur.shader = BLUR
+	backdrop.material = blur
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
 	_frame = ScreenFrame.new()
@@ -80,19 +85,7 @@ func _ready() -> void:
 	ready_button.position = Vector2(1300, 782)
 	ready_button.size = Vector2(260, 48)
 	_stage.add_child(ready_button)
-	_close = Button.new()
-	_close.theme_type_variation = &"QuietButton"
-	Glyphs.key_button(_close, "Close", Settings.prompt_key(&"loadout"))
-	_close.position = Vector2(48, 856)
-	_close.size = Vector2(140, 36)
-	_stage.add_child(_close)
-	_footer = Control.new()
-	_footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_footer.position = Vector2(0, 848)
-	_footer.size = Vector2(1600, 52)
-	_footer.draw.connect(_draw_footer)
-	_stage.add_child(_footer)
-
+	_build_footer()
 
 ## Close was pressed: connect to it as to a Button's `pressed`.
 func close_pressed() -> Signal:
@@ -116,25 +109,63 @@ func _process(_delta: float) -> void:
 	_status_label.text = status
 	_status_label.visible = not picking
 	ready_button.visible = ready_allowed and not picking
-	_close.visible = not editing
-	_footer.queue_redraw()
+	_close.get_parent().visible = not editing
+	_select_hint.text = "Select" if class_menu.editing() else "Equip"
+	_select_hint.get_parent().visible = class_menu.editing() or not ladder
+	_back_group.visible = class_menu.editing()
 
 
-## Button prompts along the footer band, after Close.
-func _draw_footer() -> void:
-	var prompts := []
-	if class_menu.editing():
-		prompts = [[&"ui_accept", "Select"], [&"ui_cancel", "Back"]]
-	elif not ladder:
-		prompts = [[&"ui_accept", "Equip"]]
-	var x := 210.0 if _close.visible else 48.0
-	for prompt: Array in prompts:
-		var key := Settings.key_label(prompt[0], Settings.menu_controller)
-		x += Paint.key_cap(_footer, key, Vector2(x, 14), 24.0) + 8.0
-		x += (
-			Paint.text(_footer, Paint.LABEL_LIGHT, prompt[1], Vector2(x, 33), 18, UiTheme.TEXT)
-			+ 24.0
-		)
+## The footer band's prompts, as on the pause menu: a key cap, then what it
+## does. Close comes first; the others follow what is open.
+func _build_footer() -> void:
+	_footer = HBoxContainer.new()
+	_footer.position = Vector2(ScreenFrame.MARGIN_X, 900.0 - ScreenFrame.FOOTER_HEIGHT)
+	_footer.size = Vector2(1000, ScreenFrame.FOOTER_HEIGHT)
+	_footer.add_theme_constant_override("separation", 6)
+	_stage.add_child(_footer)
+	var keys := FooterKeys.new()
+	add_child(keys)
+	var close_group := _prompt_group(keys, &"loadout")
+	_close = Button.new()
+	_close.name = "Close"
+	_close.text = "Close"
+	_close.focus_mode = Control.FOCUS_NONE
+	_close.theme_type_variation = &"PromptButton"
+	_close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	close_group.add_child(_close)
+	var select_group := _prompt_group(keys, &"ui_accept")
+	_select_hint = Label.new()
+	_select_hint.theme_type_variation = &"OptionNote"
+	_select_hint.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.9))
+	_select_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	select_group.add_child(_select_hint)
+	_back_group = _prompt_group(keys, &"ui_cancel")
+	var back := Label.new()
+	back.text = "Back"
+	back.theme_type_variation = &"OptionNote"
+	back.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.9))
+	back.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_back_group.add_child(back)
+
+
+## A footer group holding `action`'s key cap; the caller adds what it does.
+func _prompt_group(keys: Node, action: StringName) -> HBoxContainer:
+	var group := HBoxContainer.new()
+	group.add_theme_constant_override("separation", 10)
+	if _footer.get_child_count() > 0:
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(16, 0)
+		group.add_child(gap)
+	_footer.add_child(group)
+	var cap := Label.new()
+	cap.custom_minimum_size = Vector2(24, 24)
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cap.theme_type_variation = &"KeyCap"
+	cap.add_theme_font_size_override("font_size", 16)
+	cap.text = Settings.key_label(action, false).to_upper()
+	group.add_child(cap)
+	keys.bind(cap, action)
+	return group
 
 
 ## Gun Game's ladder, top to bottom, with our weapon marked as it changes.
