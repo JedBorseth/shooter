@@ -81,7 +81,7 @@ impl Mode {
         }
     }
 
-    /// The name players see, as in server browsers.
+    /// The name players see in menus and on the HUD.
     pub fn label(&self) -> &'static str {
         match self {
             Self::TeamDeathmatch => "Team Deathmatch",

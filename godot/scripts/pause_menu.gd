@@ -395,7 +395,7 @@ func _describe(title: String, text: String, default: String) -> void:
 	_info_default.visible = default != ""
 
 
-## Online: back to the server browser. Offline: back to the title screen.
+## Online: back to the Join screen. Offline: back to the title screen.
 func _leave() -> void:
 	_release_pause()
 	Settings.flush()

@@ -1,9 +1,9 @@
-# The headless dedicated server: the "Linux Server" Godot export, the Rust
-# game extension, and shooter-query for the health check.
+# The headless dedicated server: the "Linux Server" Godot export and the Rust
+# game extension.
 #
 # The exported server comes in as the named build context `server`: a
-# directory holding what CI zips as shooter-<build>-server-linux-x86_64.zip
-# plus shooter-query. From the repository root:
+# directory holding what CI zips as shooter-<build>-server-linux-x86_64.zip.
+# From the repository root:
 #
 #   docker build --build-context server=builds/server -t shooter-server docker/server
 #
@@ -22,7 +22,7 @@ RUN apt-get update \
     && useradd --system --create-home --home-dir /home/shooter --uid 10001 shooter
 
 WORKDIR /opt/shooter
-COPY --from=server --chmod=755 shooter-server.x86_64 shooter-query ./
+COPY --from=server --chmod=755 shooter-server.x86_64 ./
 COPY --from=server --chmod=644 shooter-server.pck libshooter_game.so ./
 COPY --chmod=755 entrypoint.sh /usr/local/bin/shooter-entrypoint
 

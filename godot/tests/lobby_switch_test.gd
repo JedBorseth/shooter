@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless lobby team swap test (docs/custom-games.md, private matches):
+## Headless lobby team swap test (docs/custom-games.md):
 ## starts a dedicated server process that waits in its lobby with bots, joins
 ## it, switches team, and checks that we land on the other team while the
 ## teams stay even (a bot makes way).

@@ -157,20 +157,7 @@ func options() -> Dictionary:
 			chosen["custom"] = custom
 		if _spectate != null and _spectate.button_pressed:
 			chosen["spectate"] = true
-		if _party_private():
-			chosen["private"] = true
 	return chosen
-
-
-## Leading a party of friends: Start makes a private match for the party on
-## a server of its own (`Matchmaking.start_private`), not a local one.
-func _party_private() -> bool:
-	return (
-		Online.is_signed_in()
-		and Matchmaking.is_in_party()
-		and Matchmaking.is_leader()
-		and Matchmaking.members.size() > 1
-	)
 
 
 ## Whether this mode takes custom game settings (not Free Roam).
@@ -372,8 +359,6 @@ func _build() -> void:
 		return
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
-	# Signed in, the account's name is the player's name.
-	_name.editable = not Online.is_signed_in()
 	_name.max_length = 16
 	_name.placeholder_text = "Player"
 	_name.custom_minimum_size = Vector2(0, 38)
@@ -513,8 +498,6 @@ func _build_actions(layout: VBoxContainer) -> void:
 	_start = Button.new()
 	_start.name = "Start"
 	_start.text = "START" if _free_roam() else "START MATCH"
-	if _has_custom() and _party_private():
-		_start.text = "START PRIVATE MATCH"
 	_start.theme_type_variation = &"PrimaryButton"
 	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
@@ -533,11 +516,6 @@ func _build_actions(layout: VBoxContainer) -> void:
 func _detail() -> String:
 	if _free_roam():
 		return DETAILS[mode]
-	if _party_private():
-		return (
-			DETAILS.get(mode, DETAILS.tdm)
-			+ " Your party plays it on a server of its own: pick teams and ready up in the lobby."
-		)
 	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 

@@ -46,7 +46,6 @@ use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::killcam::{self, Killcam, OwnRecorder, Tape};
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
-use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
@@ -55,6 +54,7 @@ use shooter_sim::net::protocol::{
     MAX_BUILD_BYTES, PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage,
     Snapshot, StreakEvent, ZoneView,
 };
+use shooter_sim::net::query::clean_text;
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
 use shooter_sim::perk::{Perk, Perks};
@@ -95,8 +95,6 @@ enum Status {
     Connecting,
     Joined,
     Rejected,
-    /// The server turned us away (`denied_reason`).
-    Denied,
     Disconnected,
 }
 
@@ -114,10 +112,6 @@ pub struct NetClient {
     /// The name other players see.
     #[export]
     player_name: GString,
-    /// Our account session token (`Online.session_token()`), or empty when
-    /// not signed in. A server that checks accounts needs it.
-    #[export]
-    account_token: GString,
     /// Primary weapon to ask for when joining (a weapon key, attachment
     /// variants included), or empty for the default class's. Ignored once a
     /// whole class is set (`set_class`).
@@ -201,8 +195,6 @@ pub struct NetClient {
     mode: Mode,
     /// The server's build, from its welcome.
     server_build: String,
-    /// The server reports our match XP to our account (its welcome).
-    ranked: bool,
     /// The server's custom game settings (`shooter_sim::custom`).
     custom: custom::Settings,
     /// The server let us in as a spectator.
@@ -219,8 +211,6 @@ pub struct NetClient {
     /// As a spectator: every player's class and scorestreaks
     /// (`GameEvent::Caster`).
     caster: Vec<protocol::CasterRow>,
-    /// Why the server turned us away.
-    denied_reason: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
     /// server tick it moves on.
     zones: Vec<ZoneView>,
@@ -434,7 +424,6 @@ impl INode for NetClient {
                     let hello = ClientMessage::Hello {
                         version: PROTOCOL_VERSION,
                         name: self.player_name.to_string(),
-                        account: self.account_token.to_string(),
                         spectate: self.spectate,
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
@@ -1767,19 +1756,11 @@ impl NetClient {
         self.server_build.as_str().into()
     }
 
-    /// Whether the server reports our match XP to our account itself
-    /// (so the game must not report it too).
-    #[func]
-    fn is_ranked(&self) -> bool {
-        self.ranked
-    }
-
     /// The server's custom game settings, for the HUD and menus:
     /// `custom` (any differ from the normal rules), `text` (the text form),
     /// `hardcore`, `health` (percent), `regen`, `friendly_fire`, `killcam`,
     /// `radar` ("normal", "constant", or "off"), `streaks`, and `loadouts`.
-    /// In the lobby: asks to move to the other team (a private match's team
-    /// swap). The roster shows the move once the server makes it.
+    /// In the lobby: asks to move to the other team. The roster shows the move once the server makes it.
     #[func]
     fn switch_team(&mut self) {
         if !self.spectator {
@@ -1932,12 +1913,12 @@ impl NetClient {
     /// change, and once more as the match ends.
     #[func]
     fn match_stats(&self) -> VarDictionary {
-        super::accounts::counts_dictionary(&self.match_stats)
+        crate::progression::counts_dictionary(&self.match_stats)
     }
 
     /// Asks to show `cosmetics`: `prestige`, `card` (a calling card key),
-    /// and `camos` (plain weapon key to camo key). The server checks it on a
-    /// ranked server; what it allows comes back as `cosmetics_changed`.
+    /// and `camos` (plain weapon key to camo key). The server checks it;
+    /// what it allows comes back as `cosmetics_changed`.
     #[func]
     fn set_cosmetics(&mut self, cosmetics: VarDictionary) {
         self.cosmetics_wanted = cosmetics_from_dict(&cosmetics);
@@ -1955,12 +1936,6 @@ impl NetClient {
         self.cosmetics
             .get(&id)
             .map_or_else(VarDictionary::new, cosmetics_to_dict)
-    }
-
-    /// Why the server turned us away, or "".
-    #[func]
-    fn denied_reason(&self) -> GString {
-        self.denied_reason.as_str().into()
     }
 
     /// True once the server accepted us.
@@ -1997,7 +1972,6 @@ impl NetClient {
             Status::Connecting => "connecting",
             Status::Joined => "joined",
             Status::Rejected => "rejected (version mismatch)",
-            Status::Denied => "denied",
             Status::Disconnected => "disconnected",
         };
         d.set("status", status);
@@ -2063,7 +2037,6 @@ impl NetClient {
                 snapshot_interval,
                 mode,
                 server_build,
-                ranked,
                 custom,
                 spectator,
                 ..
@@ -2071,7 +2044,6 @@ impl NetClient {
                 if self.status != Status::Connecting {
                     return;
                 }
-                self.ranked = ranked;
                 self.custom = custom;
                 self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
                 godot_print!(
@@ -2111,14 +2083,6 @@ impl NetClient {
                     "net client: server speaks protocol {server_version}, this client {PROTOCOL_VERSION}"
                 );
                 self.status = Status::Rejected;
-                if let Some(server) = &mut self.server {
-                    server.peer_disconnect();
-                }
-            }
-            ServerMessage::Denied { reason } => {
-                godot_print!("net client: the server turned us away: {reason}");
-                self.denied_reason = clean_text(&reason, protocol::MAX_DENIED_BYTES);
-                self.status = Status::Denied;
                 if let Some(server) = &mut self.server {
                     server.peer_disconnect();
                 }
@@ -3377,7 +3341,7 @@ impl NetClient {
     }
 
     fn on_disconnected(&mut self) {
-        if !matches!(self.status, Status::Rejected | Status::Denied) {
+        if self.status != Status::Rejected {
             godot_warn!("net client: disconnected from the server");
             self.status = Status::Disconnected;
         }

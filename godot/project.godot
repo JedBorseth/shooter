@@ -23,9 +23,6 @@ UiThemeLoader="*res://scripts/ui/ui_theme_loader.gd"
 MenuFocus="*res://scripts/ui/menu_focus.gd"
 Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net/bootstrap.gd"
-Nakama="*res://addons/com.heroiclabs.nakama/Nakama.gd"
-Online="*res://scripts/online.gd"
-Matchmaking="*res://scripts/matchmaking.gd"
 
 [debug]
 

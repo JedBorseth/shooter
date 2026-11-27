@@ -7,7 +7,7 @@ godot := env("GODOT", "godot")
 default:
     @just --list
 
-# Build the Rust extension (and the master server).
+# Build the Rust extension and the launcher.
 build:
     cd rust && cargo build
 

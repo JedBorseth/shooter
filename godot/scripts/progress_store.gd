@@ -6,12 +6,6 @@ extends RefCounted
 ## challenges, camos, and calling cards follow (`rust/sim/src/stats.rs`,
 ## `rust/sim/src/challenge.rs`). The rules are `Progression`, from
 ## `rust/sim/src/progression.rs`.
-##
-## Signed out, progress lives in this file. Signed in (`Online`), the
-## account on the Nakama server keeps it: the store then reads a cache of
-## the account's totals (`use_account`), and each `add` is reported to the
-## account through `on_added`, whose answer replaces the totals (the server
-## caps what a game may award itself).
 
 const PATH := "user://progress.cfg"
 const HEADLESS_PATH := "user://headless_progress.cfg"
@@ -30,9 +24,6 @@ static var _prestige := 0
 static var _tokens := 0
 static var _permanent := PackedStringArray()
 static var _loaded := false
-## Called with (xp, kills, stats) after each `add` while signed in, to
-## report it to the account.
-static var on_added := Callable()
 
 
 static func xp() -> int:
@@ -68,8 +59,7 @@ static func tokens() -> int:
 	return _tokens
 
 
-## Prestiges here, signed out (`Progression.prestige_up`); signed in, the
-## account does it (`Online.prestige_up`). "" when done, otherwise why not.
+## Prestiges (`Progression.prestige_up`). "" when done, otherwise why not.
 static func prestige_up() -> String:
 	var block := String(Progression.prestige_block(totals()))
 	if block != "":
@@ -78,8 +68,7 @@ static func prestige_up() -> String:
 	return ""
 
 
-## Spends a token on an item, signed out (`Online.unlock_permanent` signed
-## in). "" when done, otherwise why not.
+## Spends a token on an item. "" when done, otherwise why not.
 static func unlock_permanent(kind: String, key: String) -> String:
 	var result := Progression.unlock_permanent(totals(), kind, key)
 	if String(result.error) == "":
@@ -89,34 +78,26 @@ static func unlock_permanent(kind: String, key: String) -> String:
 
 ## Adds a match: XP (score and bonus), weapon kills (plain weapon key to
 ## count), and stats (stat key to count), then the XP of the challenges it
-## completed (`Progression.add_match`), and saves. Signed in, `report`
-## sends it to the account (`on_added`); a ranked server reports the match
-## itself, so its matches pass false. Returns `challenge_xp` and
-## `challenges` (the ids of those completed).
-static func add(
-	xp_gained: int, kills: Dictionary = {}, report := true, stats: Dictionary = {}
-) -> Dictionary:
+## completed (`Progression.add_match`), and saves. Returns `challenge_xp`
+## and `challenges` (the ids of those completed).
+static func add(xp_gained: int, kills: Dictionary = {}, stats: Dictionary = {}) -> Dictionary:
 	_load()
 	var gain: Dictionary = Progression.add_match(totals(), maxi(xp_gained, 0), kills, stats)
 	_apply(gain.totals)
 	save()
-	var total_xp := maxi(xp_gained, 0) + int(gain.challenge_xp)
-	if report and on_added.is_valid():
-		on_added.call(total_xp, kills.duplicate(), stats.duplicate())
 	return {"challenge_xp": int(gain.challenge_xp), "challenges": Array(gain.challenges)}
 
 
-## Replaces the totals with the account's (`xp`, `prestige`,
-## `weapon_kills`, `stats`) and saves them to the file in use (the
-## account's cache).
+## Replaces the totals (`xp`, `prestige`, `weapon_kills`, `stats`) and
+## saves them to the file in use.
 static func set_totals(progress: Dictionary) -> void:
 	_loaded = true
 	_apply(progress)
 	save()
 
 
-## Totals as the account server keeps them: `xp`, `prestige`,
-## `weapon_kills`, and `stats`.
+## The totals: `xp`, `prestige`, `tokens`, `permanent`, `weapon_kills`,
+## and `stats`.
 static func totals() -> Dictionary:
 	_load()
 	return {
@@ -147,7 +128,7 @@ static func _strings(value: Variant) -> PackedStringArray:
 	return out
 
 
-## Whole counts by string key from a stored or received dictionary.
+## Whole counts by string key from a stored dictionary.
 static func _counts(value: Variant) -> Dictionary:
 	var out := {}
 	if not value is Dictionary:

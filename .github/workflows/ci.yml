@@ -203,13 +203,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      # The account server (docker/online) for online_test.gd and the Nakama
-      # module tests. It starts in the background while everything builds.
-      # Nakama calls a stand-in allocator that matchmaking_test.gd serves.
-      - name: Start the online services
-        env:
-          ALLOCATOR_URL: http://host.docker.internal:7499
-        run: docker compose -f docker/online/compose.yml up -d nakama
       - uses: ./.github/actions/lfs-pull
         with:
           save: ${{ env.SAVE_CACHE }}
@@ -218,9 +211,9 @@ jobs:
         with:
           workspaces: rust
           save-if: ${{ env.SAVE_CACHE }}
-      - name: Build the GDExtension and the master server
+      - name: Build the GDExtension
         working-directory: rust
-        run: cargo build --locked -p shooter-game -p shooter-master
+        run: cargo build --locked -p shooter-game
       - uses: ./.github/actions/setup-godot
         with:
           version: ${{ env.GODOT_VERSION }}
@@ -228,22 +221,12 @@ jobs:
         with:
           version: ${{ env.GODOT_VERSION }}
           save: ${{ env.SAVE_CACHE }}
-      - name: Nakama module tests
-        run: |
-          ALLOCATOR_URL=http://host.docker.internal:7499 \
-            docker compose -f docker/online/compose.yml up -d --wait nakama
-          python3 tools/test_online.py
       - name: Run Godot tests
         env:
           # Three fixed-rate tests at a time on the four-CPU runner, beside
           # the two real-time lanes, which spend most of their time waiting.
           GODOT_TEST_JOBS: "3"
-          NAKAMA_URL: http://127.0.0.1:7350
-          MATCHMAKING_TEST: "1"
         run: .github/scripts/godot-tests.sh
-      - name: Online services log
-        if: failure()
-        run: docker compose -f docker/online/compose.yml logs --tail 200 nakama
 
   # Starts with the other jobs: it prepares Godot, the LFS files, and the import
   # while the libraries build, then picks up each library as soon as its job
@@ -275,11 +258,9 @@ jobs:
           # shooter.gdextension loads target/release for exports. The editor loads
           # the debug entry, so point that at the same Linux build: scenes that
           # use Rust classes must load during import and export.
-          mkdir -p rust/target/release rust/target/debug master
+          mkdir -p rust/target/release rust/target/debug
           cp libs/libshooter_game.so rust/target/release/
           cp libs/libshooter_game.so rust/target/debug/
-          install -m 755 libs/shooter-master master/shooter-master
-          install -m 755 libs/shooter-query master/shooter-query
       - uses: ./.github/actions/godot-import
         with:
           version: ${{ env.GODOT_VERSION }}
@@ -311,7 +292,6 @@ jobs:
           # audio, and its pack carries placeholders instead of textures.
           python3 tools/server_export_filter.py
           export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
-          cp master/shooter-master master/shooter-query builds/server/
           (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .) & pids+=($!)
           .github/scripts/wait-for-artifact.sh lib-windows "Windows (tests, library)" libs
           cp libs/shooter_game.dll rust/target/release/
@@ -335,12 +315,6 @@ jobs:
           NAME: ${{ steps.meta.outputs.name }}
           PUSH: ${{ github.ref_type == 'tag' && 'release' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'nightly' || '' }}
         run: .github/scripts/server-image.sh builds/server "${NAME#shooter-}"
-      # The allocator that starts servers for matchmaking (docker/online).
-      - name: Allocator image
-        env:
-          NAME: ${{ steps.meta.outputs.name }}
-          PUSH: ${{ github.ref_type == 'tag' && 'release' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'nightly' || '' }}
-        run: .github/scripts/allocator-image.sh "${NAME#shooter-}"
       - name: Write manifest
         run: .github/scripts/write-manifest.sh dist "${{ steps.meta.outputs.name }}"
       - uses: actions/upload-artifact@v7

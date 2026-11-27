@@ -46,7 +46,7 @@ The launcher updates itself as well (set `SHOOTER_LAUNCHER_NO_SELF_UPDATE` to st
 | `-- ARGS` | Pass the rest to the game: `shooter-launcher -- --connect 10.0.0.5 --map slamcity`. |
 | `serve [--check-minutes N] -- ARGS` | Run a dedicated server (Linux x86_64) and keep it on the latest build: it downloads each new build while the old one runs and swaps when no human player is connected (every 5 minutes by default). |
 
-A server on a newer build turns older games away, and the server browser marks it **Newer version**. Restart the launcher to update.
+A server on a newer build turns older games away, and Join Server says so. Restart the launcher to update.
 
 ## Build from source
 
@@ -78,7 +78,7 @@ godot=~/Applications/Godot.app/Contents/MacOS/Godot
 
 Cargo builds the extension for your Mac's architecture. The first build and import take a few minutes. Rebuild with `cargo build` after changing Rust code; the editor reloads the extension.
 
-`tools/dev-sync.sh` does a whole update in one step: it pulls, fetches LFS, builds the extension and master server, imports assets, and starts the game (`--no-run` to stop before playing, `--no-pull` to skip the pull, `-- ARGS` for the game).
+`tools/dev-sync.sh` does a whole update in one step: it pulls, fetches LFS, builds the extension, imports assets, and starts the game (`--no-run` to stop before playing, `--no-pull` to skip the pull, `-- ARGS` for the game).
 
 `just` lists every recipe:
 
@@ -98,7 +98,7 @@ Cargo builds the extension for your Mac's architecture. The first build and impo
 The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 
 - **Vs bots:** Team Deathmatch, Gun Game, Free-for-all, Capture the Flag, Hardpoint, Domination, and Search and Destroy. Each opens a setup card (map, team size or player count, bot skill, limits, and custom game rules), then starts a dedicated server in the background and joins it.
-- **Online:** Quick Play (matchmaking, alone or with a party) and Server Browser.
+- **Online:** Join Server (a dedicated server, by its address).
 - **Practice:** Testing Area (the training range) and Free Roam (walk any multiplayer map alone).
 - **Career** (challenges, camos, combat record), **Options**, and **Quit**.
 
@@ -137,7 +137,7 @@ Search and Destroy plays on Slamcity and Breakwater. Each map's layout, objectiv
 
 ### Online
 
-The server browser lists servers on your LAN and on the public directory at `borseth.ddns.net:27010`, plus favorites and direct connect. Accounts, parties, Quick Play, ranked servers, and private matches run on a self-hosted Nakama stack with an allocator that starts a server per match; everything online is optional ([docs/online.md](docs/online.md)). The netcode (prediction, interpolation, server-side hit detection with lag compensation) is in [docs/netcode.md](docs/netcode.md).
+Join Server takes a dedicated server's address (HOST or HOST:PORT), asks the server for its map and version, and joins; it keeps the last few addresses. There are no accounts, server lists, or matchmaking: progress stays on the machine ([docs/multiplayer.md](docs/multiplayer.md)). The netcode (prediction, interpolation, server-side hit detection with lag compensation) is in [docs/netcode.md](docs/netcode.md).
 
 ## Quick multiplayer
 
@@ -148,9 +148,9 @@ godot --headless --path godot -- --server --map slamcity --mode tdm --bots 6 --b
 godot --path godot -- --connect 127.0.0.1 --map slamcity    # HOST or HOST:PORT
 ```
 
-The server listens on UDP 27015 (`--port N`) and answers server browsers on the next port, 27016 (`--query-port N`). Each player who joins takes a bot's place. `--name NAME` sets what browsers show, and `--master HOST[:PORT]` lists the server on a master server. To play over the internet, forward both ports to the server or share a VPN. A client can add `--lag MS --jitter MS --loss PERCENT` to simulate a link. Every server and client option, the server browser, the master server, and the launcher's `serve` are in [docs/multiplayer.md](docs/multiplayer.md).
+The server listens on UDP 27015 (`--port N`) and answers queries on the next port, 27016 (`--query-port N`), which Join Server asks for the map and version before joining. Each player who joins takes a bot's place. `--name NAME` sets the name joining players see. To play over the internet, forward both ports to the server or share a VPN. A client can add `--lag MS --jitter MS --loss PERCENT` to simulate a link. Every server and client option, Join Server, and the launcher's `serve` are in [docs/multiplayer.md](docs/multiplayer.md).
 
-The server also ships as a Linux zip (with `shooter-master` and `shooter-query`), as `shooter-launcher serve`, and as a Docker image, `ghcr.io/jedborseth/shooter-server` ([docs/server.md](docs/server.md)).
+The server also ships as a Linux zip, as `shooter-launcher serve`, and as a Docker image, `ghcr.io/jedborseth/shooter-server` ([docs/server.md](docs/server.md)).
 
 ## Controls
 
@@ -234,7 +234,7 @@ Each fitted combination is its own weapon variant (`m4+reddot+grip`), so predict
 
 `just ci` runs what CI checks, except the exports: `cargo fmt --check`, `clippy -D warnings`, and `cargo test` over the Rust workspace; gdformat and gdlint; and every headless Godot test. Python unit tests for the tools (`tools/test_*.py`) run in CI too.
 
-- **Godot tests:** every `godot/tests/*_test.gd` runs headless through `.github/scripts/godot-tests.sh`, so a new test file needs no workflow change. `just test smoke_test bots_test` runs some; `just test-one net_test` runs one directly. Tests that start a server or master process run in real time; the script's header explains the lanes. [docs/ci.md](docs/ci.md) covers the pipeline and running tests locally.
+- **Godot tests:** every `godot/tests/*_test.gd` runs headless through `.github/scripts/godot-tests.sh`, so a new test file needs no workflow change. `just test smoke_test bots_test` runs some; `just test-one net_test` runs one directly. Tests that start a server process run in real time; the script's header explains the lanes. [docs/ci.md](docs/ci.md) covers the pipeline and running tests locally.
 - **GDScript style:** gdtoolkit 4.5.0, as CI runs it:
 
   ```sh
@@ -250,12 +250,10 @@ Each fitted combination is its own weapon variant (`m4+reddot+grip`), so predict
 - `rust/`: the Cargo workspace.
   - `sim/` (`shooter-sim`): the engine-free, deterministic simulation that client and server share: movement, weapons, health, equipment, hit zones, every mode's rules, classes, streaks, progression, bots' decisions, and the netcode core in `src/net/`.
   - `game/` (`shooter-game`): the GDExtension that puts the simulation in Godot: the player, characters, weapons' views, sound, and the dedicated server and client (`src/net/`).
-  - `master/` (`shooter-master`, `shooter-query`): the master server behind the browser's Internet tab, and a query tool.
   - `launcher/` (`shooter-launcher`): installs, updates, and starts the game or a dedicated server.
-  - `allocator/` (`shooter-allocator`): starts a dedicated server for each matchmade match.
-- `godot/`: the Godot project: `scenes/` (maps, the player, menus), `scripts/` (menus, HUD, settings, and the `Net` autoload in `scripts/net/`), `data/weapons/`, `assets/` (in LFS), `shaders/`, `tests/` (headless tests and capture scripts), and `addons/` (editor and Nakama plugins).
+- `godot/`: the Godot project: `scenes/` (maps, the player, menus), `scripts/` (menus, HUD, settings, and the `Net` autoload in `scripts/net/`), `data/weapons/`, `assets/` (in LFS), `shaders/`, `tests/` (headless tests and capture scripts), and `addons/` (editor plugins).
 - `tools/`: asset builders (weapons, characters, maps, props, textures, audio), map layout and blockout tools (`map_blockout/`), benchmarks, and service units.
-- `docker/`: the dedicated server image (`server/`), the allocator image, and the online stack's Compose file (`online/`).
+- `docker/`: the dedicated server image (`server/`).
 - `docs/`: design and reference pages (below); `docs/media/` holds their screenshots.
 - `.github/`: the CI workflow and its scripts; `.agents/skills/`: the project's agent skills.
 
@@ -282,9 +280,8 @@ Modes:
 
 Online and servers:
 
-- [multiplayer.md](docs/multiplayer.md): running and joining servers, server flags, the browser, and the master server.
+- [multiplayer.md](docs/multiplayer.md): running and joining servers, server flags, Join Server, and the launcher's `serve`.
 - [netcode.md](docs/netcode.md): prediction, interpolation, lag compensation, bandwidth, and what the server checks.
-- [online.md](docs/online.md): accounts, parties, Quick Play, ranked servers, and the self-hosted Nakama stack.
 - [server.md](docs/server.md): the dedicated server's Docker image, its tags, and its options.
 - [crash-reports.md](docs/crash-reports.md): client logs and the crash collector.
 

@@ -4,16 +4,12 @@
 //! (`GameEvent::Cosmetics`) for the scoreboard, kill feed, killcam card, and
 //! the weapons in their hands.
 //!
-//! A server that checks accounts takes the prestige from the account and
-//! drops a card or camo the player has not unlocked, as Call of Duty's
-//! servers show only what the player's stats earned. Other servers pass on
-//! what the game sends (a modified game could show a camo it never earned,
-//! on its own server only).
+//! Servers pass on what the game sends (a modified game could show a camo it
+//! never earned).
 
 use crate::camo::Camo;
 use crate::card::Card;
-use crate::challenge;
-use crate::progression::{Earned, MAX_PRESTIGE};
+use crate::progression::MAX_PRESTIGE;
 use crate::weapon::WeaponId;
 
 /// Most weapons one player's camos cover: a class's two, with room for a
@@ -39,29 +35,24 @@ impl Cosmetics {
             .map_or(Camo::NONE, |(_, camo)| *camo)
     }
 
-    /// The cosmetics a server lets the player show: with `earned` (the
-    /// account's), the account's prestige and only what it has unlocked;
-    /// without, what was sent, within range.
-    pub fn checked(&self, earned: Option<&Earned>) -> Cosmetics {
+    /// The cosmetics a server lets the player show: what was sent, within
+    /// range.
+    pub fn checked(&self) -> Cosmetics {
         let mut camos: Vec<(WeaponId, Camo)> = Vec::new();
         for (weapon, camo) in &self.camos {
             let weapon = weapon.plain();
-            let allowed = *camo != Camo::NONE
-                && Camo::from_code(camo.0).is_some()
-                && earned.is_none_or(|earned| challenge::camo_unlocked(earned, weapon, *camo));
+            let allowed = *camo != Camo::NONE && Camo::from_code(camo.0).is_some();
             if allowed && camos.len() < MAX_CAMOS && !camos.iter().any(|(w, _)| *w == weapon) {
                 camos.push((weapon, *camo));
             }
         }
-        let card = match earned {
-            Some(earned) if !challenge::card_unlocked(earned, self.card) => Card::DEFAULT,
-            _ if Card::from_code(self.card.0).is_none() => Card::DEFAULT,
-            _ => self.card,
+        let card = if Card::from_code(self.card.0).is_some() {
+            self.card
+        } else {
+            Card::DEFAULT
         };
         Cosmetics {
-            prestige: earned
-                .map_or(self.prestige, |e| e.prestige)
-                .min(MAX_PRESTIGE),
+            prestige: self.prestige.min(MAX_PRESTIGE),
             card,
             camos,
         }
@@ -73,30 +64,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_account_shows_only_what_it_earned() {
+    fn what_was_sent_stands_within_range() {
         let m4 = WeaponId::expect("m4");
-        let ak = WeaponId::expect("ak47");
-        let sent = Cosmetics {
-            prestige: 9,
-            card: Card::by_key("veteran").expect("a card"),
-            camos: vec![(m4, Camo::rung(0)), (ak, Camo::GOLD)],
-        };
-        let mut earned = Earned::default();
-        earned.stats.insert("w.m4.hs".to_owned(), 5);
-        earned.prestige = 2;
-        let shown = sent.checked(Some(&earned));
-        assert_eq!(shown.prestige, 2);
-        assert_eq!(shown.card, Card::DEFAULT);
-        assert_eq!(shown.camos, vec![(m4, Camo::rung(0))]);
-        // Any variant of the M4A1 wears it.
         let variant = WeaponId::all()
             .find(|w| w.plain() == m4 && *w != m4)
             .expect("a variant");
-        assert_eq!(shown.camo_for(variant), Camo::rung(0));
-        assert_eq!(shown.camo_for(ak), Camo::NONE);
-        // Without an account, what was sent stands.
-        let trusted = sent.checked(None);
-        assert_eq!(trusted.prestige, 9);
-        assert_eq!(trusted.camos.len(), 2);
+        let sent = Cosmetics {
+            prestige: MAX_PRESTIGE + 5,
+            card: Card::by_key("veteran").expect("a card"),
+            camos: vec![(variant, Camo::GOLD), (m4, Camo::rung(0))],
+        };
+        let shown = sent.checked();
+        assert_eq!(shown.prestige, MAX_PRESTIGE);
+        assert_eq!(shown.card, sent.card);
+        // Kept once, for the plain weapon, which any variant wears.
+        assert_eq!(shown.camos, vec![(m4, Camo::GOLD)]);
+        assert_eq!(shown.camo_for(variant), Camo::GOLD);
     }
 }

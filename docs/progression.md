@@ -2,12 +2,7 @@
 
 Black Ops 2's long-term progression: XP and levels, career stats, challenges that pay XP, weapon camos, calling cards, prestige, and a combat record. What each level and weapon kill unlocks (weapons, attachments, perks, wildcards, scorestreaks) is in [create-a-class.md](create-a-class.md).
 
-Where progress is kept ([online.md](online.md)):
-
-- **Signed in:** the account keeps it (`docker/online/nakama/modules/progress.lua`), and a ranked server reports matches to it.
-- **Signed out:** the game keeps it in `user://progress.cfg` (`godot/scripts/progress_store.gd`).
-
-On the first sign-in, the game's local progress is imported once into an account that has none, prestige included, with no more unlock tokens than prestiges.
+The game keeps progress on the machine, in `user://progress.cfg` (`godot/scripts/progress_store.gd`).
 
 ## XP and levels
 
@@ -42,21 +37,20 @@ How the stats move:
 
 1. The server sends each player their match's stats (`GameEvent::Stats`) at most every two seconds while they change, and once more when the match ends.
 2. The game adds them to the player's totals with the match's XP (`ProgressStore.add`, which calls `Progression.add_match`).
-3. On a ranked server, the server reports them to the account itself (`server_progress_add`).
 
 The server does not count:
 
 - bots;
 - time outside play: the lobby, the countdown, and the results.
 
-A player who leaves mid-match keeps their stats. A ranked server reports what they had; elsewhere the game keeps the stats it was last sent, at most two seconds old.
+A player who leaves mid-match keeps their stats: the game keeps the stats it was last sent, at most two seconds old.
 
 ## Challenges
 
 A challenge is a target on a stat (`rust/sim/src/challenge.rs`).
 
 - It completes in the match that takes the stat past the target, and pays its XP in that match.
-- Completion is never stored: it is worked out from the totals, so the game, the ranked server, and the account always agree, and each challenge pays once.
+- Completion is never stored: it is worked out from the totals, so each challenge pays once.
 - During a match, each challenge is announced the moment it is done, as Black Ops 2 does: a quiet "CHALLENGE COMPLETE" plate near the top of the screen with its name, XP, and reward (`godot/scripts/net/challenge_popup.gd`). Plates show one at a time for 3.2 s; at most four wait, and older ones are dropped. `match_xp.gd` works them out from the stats the server sends, as the match would pay them if it ended then.
 - The end-of-match XP card shows the challenges' XP on its own line and lists the challenges completed, with the camo or card each awarded.
 
@@ -134,7 +128,7 @@ Each weapon has 14 ladder camos, Gold, Mastery, and Nebula, our own designs (`ru
   - The game sends its cosmetics with its class (`ClientMessage::Cosmetics`): the prestige, the calling card, and the camo on each weapon (`rust/sim/src/cosmetics.rs`). The server passes them to everyone (`GameEvent::Cosmetics`).
   - Other players' third-person weapons wear the camo.
   - In a killcam, the first-person weapon wears the killer's camo.
-  - A ranked server takes the prestige from the account and drops any card or camo the account has not unlocked (`Cosmetics::checked`). Other servers pass on what the game sends.
+  - Servers pass on what the game sends, within range (`Cosmetics::checked`).
 
 ![The M4A1 in Gold, in first person](media/camo-gold-first-person.jpg)
 
@@ -157,10 +151,7 @@ Black Ops 2's prestige (`rust/sim/src/progression.rs`):
 - **How many.** Ten prestiges, then **Master**, the last.
   - At Master every item unlocks for good, as Black Ops 2's Prestige Master does, and no token comes with it.
   - The level keeps counting XP to 55 and stays there.
-- **Where it is done.**
-  - Signed in, the account does it (`progress_prestige`, `progress_unlock`). It checks the level itself, so a game cannot prestige early.
-  - Signed out, the game does it (`ProgressStore.prestige_up`, `ProgressStore.unlock_permanent`).
-  - Ranked servers check classes against the account's level, prestige, and permanent unlocks (`Earned::check_class`).
+- **Where it is done.** The game does it (`ProgressStore.prestige_up`, `ProgressStore.unlock_permanent`).
 - **Emblems** (our own designs, drawn as vector shapes by `godot/scripts/ui/prestige_emblem.gd`):
   - A hexagonal badge whose metal climbs with the prestige: steel for 1 to 3, bronze 4 to 6, gold 7 to 9 (one to three chevrons in each band), platinum with a star for 10, and crimson with a ringed star for Master.
   - It shows beside the name on the scoreboard and in the kill feed, and on the career screen.
@@ -184,8 +175,7 @@ A calling card is the banner a player shows (`rust/sim/src/card.rs`). There are 
 - **Picking.** The career screen's Calling Cards tab (`godot/scripts/ui/cards_page.gd`) shows every card.
   - Earned cards can be picked; the one shown is outlined.
   - The rest are dim, with what earns them.
-  - The pick is kept with the classes (`ClassStore.set_card`), so it follows the account, and goes to the server with the class as part of the player's cosmetics.
-  - A ranked server shows only a card the account has earned.
+  - The pick is kept with the classes (`ClassStore.set_card`), and goes to the server with the class as part of the player's cosmetics.
 - **Where it shows:**
   - faint behind the player's name on the scoreboard;
   - under the killer's name card in a killcam, with their prestige emblem;
@@ -209,18 +199,6 @@ A calling card is the banner a player shows (`rust/sim/src/card.rs`). There are 
 ![The career screen's weapon challenges: the M4A1's camo ladder with its progress and rewards](media/career-weapons.jpg)
 
 ![The combat record: career totals and each weapon's line](media/career-record.jpg)
-
-## Account and caps
-
-The account stores `xp`, `weapon_kills`, `stats`, `prestige`, `tokens`, and `permanent` (`docker/online/nakama/modules/progress.lua`). A match's report already includes its challenges' XP: the game or the ranked server works it out from the totals, and the account only adds. Call of Duty keeps rank on its own servers, so a game cannot hand itself unlocks; matches the game reports itself are capped by time instead.
-
-| Report | Caps |
-| --- | --- |
-| Self-reported by the game (`progress_match`: local matches and servers that do not report to the account) | Per minute since the last award, counting at most 30 minutes: 1,500 XP, 20 weapon kills, and 600 of each stat (shots fired run fastest); `time` at most the time itself |
-| Ranked server (`server_progress_add`) | 100,000 XP, 500 kills a weapon, and 100,000 of each stat per report |
-| Kept on the account | At most 1,024 stat keys (192 in one report), each `a-z0-9_.` and up to 32 bytes |
-
-Whether private matches pay XP is covered in [custom-games.md](custom-games.md).
 
 ## Call of Duty reference
 

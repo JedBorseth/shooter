@@ -1,5 +1,5 @@
 extends PanelContainer
-## The lobby's two teams beside the match menu, for a private match's team swap:
+## The lobby's two teams beside the match menu, for the team swap:
 ## each player by team, ours first, marked once ready, and the bots, with
 ## Switch team and Ready buttons. Shown only in a team mode's lobby; refreshed twice a
 ## second while shown. (The match HUD hides its score block in hardcore, and

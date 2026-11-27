@@ -10,7 +10,7 @@
 //! whatever match that happens.
 //!
 //! Keys are short lowercase strings, at most [`MAX_KEY_LEN`] bytes of
-//! `a-z`, `0-9`, `_`, and `.`, so the account server can check them:
+//! `a-z`, `0-9`, `_`, and `.`, so they are safe to store and check:
 //!
 //! - career totals: `kills`, `deaths`, `headshots`, `shots`, `hits`,
 //!   `score`, `time` (seconds played), `matches`, `wins`, `losses`,

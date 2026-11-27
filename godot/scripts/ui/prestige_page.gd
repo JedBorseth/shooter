@@ -2,9 +2,9 @@ extends VBoxContainer
 ## The career screen's Prestige tab (docs/progression.md): the player's
 ## prestige and the emblems ahead, entering the next prestige at the top
 ## level (with a confirmation, since it sends them back to level 1), and
-## spending permanent unlock tokens on items still locked. Signed in, the
-## account does both (`Online.prestige_up`, `Online.unlock_permanent`).
-## Emits `changed` after either, so the screen rebuilds from the new totals.
+## spending permanent unlock tokens on items still locked
+## (`ProgressStore.prestige_up`, `ProgressStore.unlock_permanent`). Emits
+## `changed` after either, so the screen rebuilds from the new totals.
 
 signal changed
 
@@ -264,7 +264,7 @@ func _cancel() -> void:
 
 func _prestige() -> void:
 	_status.text = "Entering prestige…"
-	var error: String = await _online_call(&"prestige_up", [])
+	var error := ProgressStore.prestige_up()
 	if error != "":
 		_status.text = error
 		_cancel()
@@ -274,21 +274,8 @@ func _prestige() -> void:
 
 func _unlock(kind: String, key: String) -> void:
 	_status.text = ""
-	var error: String = await _online_call(&"unlock_permanent", [kind, key])
+	var error := ProgressStore.unlock_permanent(kind, key)
 	if error != "":
 		_status.text = error
 		return
 	changed.emit()
-
-
-## Calls `Online.<method>` (the account while signed in, local otherwise),
-## or the local store when there is no `Online` (tests).
-func _online_call(method: StringName, args: Array) -> String:
-	var online: Node = get_node_or_null(^"/root/Online")
-	if online != null and method == &"prestige_up":
-		return await online.prestige_up()
-	if online != null:
-		return await online.unlock_permanent(String(args[0]), String(args[1]))
-	if method == &"prestige_up":
-		return ProgressStore.prestige_up()
-	return ProgressStore.unlock_permanent(String(args[0]), String(args[1]))

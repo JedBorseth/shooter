@@ -125,7 +125,6 @@ These original game assets are not CC0 and keep their owners' rights; no separat
 
 | Add-on | Files | Source | License |
 | --- | --- | --- | --- |
-| nakama-godot by Heroic Labs (commit `6dc7b3951d`, unchanged): the account and progression client | `godot/addons/com.heroiclabs.nakama/` | [heroiclabs/nakama-godot](https://github.com/heroiclabs/nakama-godot) | Apache-2.0 |
 | ProtonScatter 4.0 by HungryProton (`ca624412c657d469147b4ce464cee290df738a40`) | `godot/addons/proton_scatter/` | [Release 4.0](https://github.com/HungryProton/scatter/releases/tag/4.0) | MIT |
 | FuncGodot 2025.12 by the func-godot contributors (`169f2dd1461c0f166c81bf7e8c4fd6bce8af3a8a`) | `godot/addons/func_godot/` | [Release 2025.12](https://github.com/func-godot/func_godot_plugin/releases/tag/2025.12) | MIT |
 | Cyclops Level Builder 1.5.2 by Mark McKay (editor only) | `godot/addons/cyclops_level_builder/` | [blackears/cyclopsLevelBuilder](https://github.com/blackears/cyclopsLevelBuilder) | MIT |

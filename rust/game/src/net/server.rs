@@ -50,9 +50,9 @@
 //! through the same inputs players send. Without one, bots are scripted
 //! targets for tests.
 //!
-//! It also answers server browser queries on its query port (the game port
-//! plus one) and, given a master server, keeps itself listed there
-//! (`super::discovery`).
+//! It also answers queries on its query port (the game port plus one), so a
+//! game joining by address can learn its map and version first
+//! (`super::query`).
 //!
 //! Started by `scripts/net/bootstrap.gd` with `-- --server`, or automatically
 //! in a dedicated server export.
@@ -83,7 +83,6 @@ use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
 use shooter_sim::missile::{self, Bomblet, Missile};
 use shooter_sim::net::bandwidth::Probe;
-use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::integrity::{self, Flag, PacketLimit, Verdict, Watch};
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
@@ -94,12 +93,13 @@ use shooter_sim::net::protocol::{
     PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot,
     StreakEvent, UseView, ZoneView,
 };
+use shooter_sim::net::query::{ServerInfo, query_port_for};
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::progression::{Earned, Outcome};
+use shooter_sim::progression::Outcome;
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -118,14 +118,14 @@ use shooter_sim::turret::{self, Turret, TurretHit, Turrets};
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
-use super::accounts::{self, AccountState, MatchShare};
 use super::bots::{
     BotAircraft, BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
     ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
 };
-use super::discovery::QueryResponder;
 use super::match_log::{MatchLog, RoundLog};
+use super::match_share::MatchShare;
 use super::props::{PropExplosion, PropSnapshot, PropsBridge};
+use super::query::QueryResponder;
 use super::snd_plan::{Intel, SndPlan};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -163,8 +163,6 @@ const FIRST_SPECTATOR_ID: u8 = 100;
 /// Most spectators a server takes (Black Ops 2's CODcaster lobbies take a
 /// few casters beside the twelve players).
 const MAX_SPECTATORS: u8 = 8;
-/// Why a ranked server turns a spectator away.
-const NO_RANKED_SPECTATORS: &str = "Spectating is off on ranked servers.";
 /// Seconds a death keeps nearby spawn points unattractive.
 const RECENT_DEATH_SECONDS: u32 = 5;
 /// Ticks between scoreboard updates when nothing scored.
@@ -255,22 +253,18 @@ pub struct NetServer {
     /// differently (the bot bench). 0 keeps the usual seeds.
     #[export]
     bot_seed: i32,
-    /// Name shown in server browsers.
+    /// Name a game joining this server shows.
     #[export]
     #[init(val = GString::from("Shooter server"))]
     server_name: GString,
-    /// Map name shown in server browsers.
+    /// Map name queries answer with; a joining game loads this map.
     #[export]
     #[init(val = GString::from("Arena"))]
     map_name: GString,
-    /// UDP port that answers server browser queries; 0 means `port + 1`, and
-    /// -1 turns queries off.
+    /// UDP port that answers queries; 0 means `port + 1`, and -1 turns
+    /// queries off.
     #[export]
     query_port: i32,
-    /// Master server (`host[:port]`) to stay listed on, or empty for LAN and
-    /// direct connects only.
-    #[export]
-    master_server: GString,
     /// Points a team needs to win: kills in Team Deathmatch, captures in
     /// Capture the Flag, points in Hardpoint and Domination. 0 uses the
     /// mode's usual limit.
@@ -284,15 +278,6 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
-    /// Check accounts (`accounts.rs`, docs/online.md): admit only signed-in
-    /// players the account server vouches for, refuse classes and streaks
-    /// they have not unlocked, and report their match XP. The account
-    /// server is asked through the `account_check` and `account_award`
-    /// signals.
-    #[export]
-    accounts: bool,
-    /// Numbers account checks, so a late answer finds its connection.
-    account_serial: i64,
     /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag),
     /// "hardpoint", "dom" (Domination), "gungame", or "snd" (Search and
     /// Destroy).
@@ -323,7 +308,7 @@ pub struct NetServer {
     bandwidth_probe_rtt_ms: f32,
     /// The host's custom game settings, in the text form
     /// `shooter_sim::custom::Settings::parse` reads ("hardcore=on,ff=reflect");
-    /// empty for the normal rules. Ranked servers (`accounts`) ignore them.
+    /// empty for the normal rules.
     #[export]
     custom_settings: GString,
     /// The custom settings in force, parsed from `custom_settings`.
@@ -501,15 +486,7 @@ struct ClientSlot {
     limit: PacketLimit,
     /// Disconnected for abuse: whatever it still sends is ignored.
     kicked: bool,
-    /// The account behind this connection, on a server with `accounts`.
-    account: AccountState,
-    /// The class and streaks last asked for, applied once the account is
-    /// known (`accounts`).
-    wanted_class: Option<Class>,
-    wanted_streaks: Option<Loadout>,
-    /// The cosmetics last asked for, and what the server lets them show
-    /// (`shooter_sim::cosmetics`).
-    wanted_cosmetics: Option<Cosmetics>,
+    /// What the server lets them show (`shooter_sim::cosmetics`).
     cosmetics: Cosmetics,
 }
 
@@ -565,7 +542,7 @@ struct Avatar {
     streak_seen: u32,
     /// Flying a Guided Missile: which, and the pilot's last steering.
     pilot: Option<Pilot>,
-    /// This match's playing time and weapon kills, for the account.
+    /// This match's playing time and stats.
     share: MatchShare,
 }
 
@@ -825,12 +802,6 @@ impl INode3D for NetServer {
         self.start_query_responder();
     }
 
-    fn exit_tree(&mut self) {
-        if let Some(responder) = &mut self.responder {
-            responder.goodbye();
-        }
-    }
-
     fn physics_process(&mut self, _delta: f64) {
         let Some(mut host) = self.host.clone() else {
             return;
@@ -911,10 +882,8 @@ impl INode3D for NetServer {
         }
 
         let players = self.clients.iter().filter(|c| c.playing()).count();
-        let bots = self.avatars.iter().filter(|a| a.bot).count();
         if let Some(responder) = &mut self.responder {
             responder.info.players = players.min(255) as u8;
-            responder.info.bots = bots.min(255) as u8;
             responder.poll();
         }
     }
@@ -922,14 +891,10 @@ impl INode3D for NetServer {
 
 impl NetServer {
     /// The custom settings this server runs: `custom_settings` parsed, or
-    /// the normal rules on a ranked server, or when they do not parse.
+    /// the normal rules when they do not parse.
     fn read_custom_settings(&self) -> custom::Settings {
         let text = self.custom_settings.to_string();
         if text.trim().is_empty() {
-            return custom::Settings::default();
-        }
-        if self.accounts {
-            godot_print!("server: ranked: custom settings ignored ({text})");
             return custom::Settings::default();
         }
         match custom::Settings::parse(&text) {
@@ -972,8 +937,7 @@ impl NetServer {
         }
     }
 
-    /// A player asks to change teams in the lobby (a private match's team
-    /// swap): they move to the other team and respawn there, and the bots
+    /// A player asks to change teams in the lobby: they move to the other team and respawn there, and the bots
     /// even out. Only before the countdown, and only in team modes.
     fn switch_team(&mut self, index: usize) {
         let client = &self.clients[index];
@@ -1030,67 +994,6 @@ impl NetServer {
 
 #[godot_api]
 impl NetServer {
-    /// `accounts`: a joining player's account session token, to be checked
-    /// with the account server; answer with `accept_account` or
-    /// `deny_account` and the same `serial`.
-    #[signal]
-    fn account_check(serial: i64, token: GString);
-
-    /// `accounts`: a player's match, to add to their account: `xp` (score,
-    /// bonus, and the challenges it completed), `weapon_kills` (plain weapon
-    /// key to count), and `stats` (stat key to count).
-    #[signal]
-    fn account_award(user_id: GString, award: VarDictionary);
-
-    /// The account server vouched for the player of check `serial`: their
-    /// account id, username (the name others see), and progress (`xp`,
-    /// `prestige`, `weapon_kills`, `stats`, as the account server keeps
-    /// them). Lets them in.
-    #[func]
-    fn accept_account(
-        &mut self,
-        serial: i64,
-        user_id: GString,
-        username: GString,
-        progress: VarDictionary,
-    ) {
-        let Some(index) = self.pending_account(serial) else {
-            return;
-        };
-        let user_id = user_id.to_string();
-        if self
-            .clients
-            .iter()
-            .any(|c| c.account.user_id() == Some(user_id.as_str()))
-        {
-            return self.deny(index, accounts::ALREADY_PLAYING);
-        }
-        let AccountState::Pending { name, .. } = std::mem::take(&mut self.clients[index].account)
-        else {
-            return;
-        };
-        let username = username.to_string();
-        let name = if username.is_empty() { name } else { username };
-        self.clients[index].account = AccountState::Verified {
-            user_id,
-            earned: accounts::earned_from(&progress),
-        };
-        // What they asked for while they waited, now that it can be checked.
-        self.apply_wanted_class(index);
-        self.apply_wanted_streaks(index);
-        self.apply_wanted_cosmetics(index);
-        self.admit(index, &name);
-    }
-
-    /// The account server refused the player of check `serial` (or could
-    /// not be reached): they are told `reason` and disconnected.
-    #[func]
-    fn deny_account(&mut self, serial: i64, reason: GString) {
-        if let Some(index) = self.pending_account(serial) {
-            self.deny(index, &reason.to_string());
-        }
-    }
-
     /// Bandwidth bench: starts counting from zero (after a warm-up).
     #[func]
     fn start_bandwidth_probe(&mut self) {
@@ -1159,12 +1062,6 @@ impl NetServer {
     #[func]
     fn player_count(&self) -> i32 {
         self.avatars.len() as i32
-    }
-
-    /// Connections from games, joined or still joining (no bots).
-    #[func]
-    fn connection_count(&self) -> i32 {
-        self.clients.len() as i32
     }
 
     #[func]
@@ -2007,30 +1904,25 @@ impl NetServer {
             },
         };
         let info = ServerInfo {
-            instance: QueryResponder::new_instance_id(),
             protocol: PROTOCOL_VERSION,
-            game_port,
             name: self.server_name.to_string(),
             map: self.map_name.to_string(),
-            mode: self.game.label().to_owned(),
             players: 0,
             max_players: MAX_PLAYERS as u8,
-            bots: 0,
             build: crate::build_info::BUILD.to_owned(),
         };
-        match QueryResponder::bind(query_port, info, &self.master_server.to_string()) {
+        match QueryResponder::bind(query_port, info) {
             Ok(responder) => {
                 godot_print!(
-                    "server: \"{}\" answers server browsers on UDP port {query_port}",
+                    "server: \"{}\" answers queries on UDP port {query_port}",
                     responder.info.name
                 );
                 self.responder = Some(responder);
             }
-            // The game still works without it; only browsers cannot see it.
+            // The game still works without it: a joining game cannot learn
+            // the map first, and joins on the arena.
             Err(error) => {
-                godot_warn!(
-                    "server: cannot answer server browsers on UDP port {query_port}: {error}"
-                );
+                godot_warn!("server: cannot answer queries on UDP port {query_port}: {error}");
             }
         }
     }
@@ -2077,8 +1969,8 @@ impl NetServer {
         map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
         // The map is the server's first child (`get_child(0)` finds it for
-        // the bots' navigation and the props), even when helpers such as the
-        // account link were added before the server entered the tree.
+        // the bots' navigation and the props), even when helpers were added
+        // before the server entered the tree.
         self.base_mut().move_child(&map, 0);
         // Groups register when a node enters the tree, so find the props
         // manager after the map is a child.
@@ -2111,10 +2003,6 @@ impl NetServer {
                     chat: ChatLimiter::default(),
                     limit: PacketLimit::new(self.tick),
                     kicked: false,
-                    account: AccountState::None,
-                    wanted_class: None,
-                    wanted_streaks: None,
-                    wanted_cosmetics: None,
                     cosmetics: Cosmetics::default(),
                 });
             }
@@ -2127,17 +2015,13 @@ impl NetServer {
                     godot_print!("server: spectator {id} left");
                 } else if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
-                    // Leaving mid-match keeps the score, without the bonus.
-                    if self.match_state.phase == Phase::Playing {
-                        if self.stats_on() {
-                            let tick = self.tick;
-                            let mode = self.game.key();
-                            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                                let seconds = avatar.share.seconds(tick);
-                                avatar.share.stats.finish(mode, seconds, None);
-                            }
+                    if self.match_state.phase == Phase::Playing && self.stats_on() {
+                        let tick = self.tick;
+                        let mode = self.game.key();
+                        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                            let seconds = avatar.share.seconds(tick);
+                            avatar.share.stats.finish(mode, seconds, None);
                         }
-                        self.award_account(&client.account, id, None);
                     }
                     self.despawn_avatar(id);
                     self.broadcast_event(&GameEvent::Left { id });
@@ -2222,15 +2106,8 @@ impl NetServer {
         );
     }
 
-    fn pending_account(&self, serial: i64) -> Option<usize> {
-        self.clients.iter().position(
-            |c| matches!(c.account, AccountState::Pending { serial: s, .. } if s == serial),
-        )
-    }
-
     /// Lets a connection in: a player id, the welcome, the state of the
-    /// game, and a spawn. The hello already passed; on a server with
-    /// `accounts`, the account server too.
+    /// game, and a spawn. The hello already passed.
     fn admit(&mut self, index: usize, name: &str) {
         self.admit_as(index, name, false);
     }
@@ -2269,7 +2146,6 @@ impl NetServer {
             snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
             mode: self.game,
             server_build: crate::build_info::BUILD.to_owned(),
-            ranked: self.accounts,
             custom: self.custom,
             spectator,
         };
@@ -2385,12 +2261,9 @@ impl NetServer {
             ClientMessage::Hello {
                 version,
                 name,
-                account,
                 spectate,
             } => {
-                if self.clients[index].player.is_some()
-                    || !matches!(self.clients[index].account, AccountState::None)
-                {
+                if self.clients[index].player.is_some() {
                     return;
                 }
                 let mut peer = self.clients[index].peer.clone();
@@ -2403,29 +2276,7 @@ impl NetServer {
                     return;
                 }
                 if spectate {
-                    // Ranked play has no spectators: a second client could
-                    // watch for its team.
-                    if self.accounts {
-                        return self.deny(index, NO_RANKED_SPECTATORS);
-                    }
                     return self.admit_as(index, &name, true);
-                }
-                if self.accounts {
-                    // Held until the account server vouches for the token.
-                    if account.is_empty() {
-                        return self.deny(index, accounts::NOT_SIGNED_IN);
-                    }
-                    self.account_serial += 1;
-                    let serial = self.account_serial;
-                    self.clients[index].account = AccountState::Pending {
-                        serial,
-                        name,
-                        since: self.tick,
-                    };
-                    self.signals()
-                        .account_check()
-                        .emit(serial, &GString::from(account.as_str()));
-                    return;
                 }
                 self.admit(index, &name);
             }
@@ -2459,13 +2310,9 @@ impl NetServer {
                     godot_warn!("server: refused a class ({error:?})");
                     return;
                 }
-                self.clients[index].wanted_class = Some(class);
-                self.apply_wanted_class(index);
+                self.apply_class(index, class);
             }
-            ClientMessage::Streaks(loadout) => {
-                self.clients[index].wanted_streaks = Some(loadout);
-                self.apply_wanted_streaks(index);
-            }
+            ClientMessage::Streaks(loadout) => self.apply_streaks(index, loadout),
             ClientMessage::UseStreak { streak, targets } => {
                 if let Some(id) = self.clients[index].player {
                     let _ = self.use_streak(id, streak, &targets);
@@ -2484,33 +2331,16 @@ impl NetServer {
                     pilot.split |= split;
                 }
             }
-            ClientMessage::Cosmetics(cosmetics) => {
-                self.clients[index].wanted_cosmetics = Some(cosmetics);
-                self.apply_wanted_cosmetics(index);
-            }
+            ClientMessage::Cosmetics(cosmetics) => self.apply_cosmetics(index, &cosmetics),
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
             ClientMessage::SwitchTeam => self.switch_team(index),
         }
     }
 
-    /// Applies the class the client last asked for (it passed the class
-    /// rules) from the next spawn on. On a server with `accounts`, only once
-    /// the account is known and only if everything in it is unlocked;
-    /// otherwise the player keeps the class they had.
-    fn apply_wanted_class(&mut self, index: usize) {
-        let Some(class) = self.clients[index].wanted_class else {
-            return;
-        };
-        if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            if let Err(locked) = earned.check_class(&class) {
-                godot_warn!("server: refused a class with something locked ({locked:?})");
-                return;
-            }
-        }
+    /// Applies the class the client asked for (it passed the class rules)
+    /// from the next spawn on.
+    fn apply_class(&mut self, index: usize, class: Class) {
         self.clients[index].class = class;
         let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
         let gun_game = matches!(self.game, Mode::GunGame(_));
@@ -2530,22 +2360,9 @@ impl NetServer {
         }
     }
 
-    /// Applies the scorestreaks the client last asked for: each streak
-    /// once, cheapest first, from the next spawn, as Black Ops 2's do. With
-    /// `accounts`, only unlocked ones.
-    fn apply_wanted_streaks(&mut self, index: usize) {
-        let Some(loadout) = self.clients[index].wanted_streaks else {
-            return;
-        };
-        if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            if let Err(locked) = earned.check_streaks(loadout) {
-                godot_warn!("server: refused streaks with one locked ({locked:?})");
-                return;
-            }
-        }
+    /// Applies the scorestreaks the client asked for: each streak once,
+    /// cheapest first, from the next spawn, as Black Ops 2's do.
+    fn apply_streaks(&mut self, index: usize, loadout: Loadout) {
         let loadout = loadout.sorted();
         self.clients[index].streaks = loadout;
         if let Some(id) = self.clients[index].player
@@ -2555,22 +2372,10 @@ impl NetServer {
         }
     }
 
-    /// Takes the cosmetics the client last asked for, as far as the server
-    /// allows them: on a server with `accounts`, once the account is known,
-    /// with its prestige and only what it has unlocked. Everyone hears of
-    /// them once the player is in.
-    fn apply_wanted_cosmetics(&mut self, index: usize) {
-        let Some(wanted) = &self.clients[index].wanted_cosmetics else {
-            return;
-        };
-        let checked = if self.accounts {
-            let Some(earned) = self.clients[index].account.earned() else {
-                return;
-            };
-            wanted.checked(Some(earned))
-        } else {
-            wanted.checked(None)
-        };
+    /// Takes the cosmetics the client asked for, as far as the server allows
+    /// them. Everyone hears of them once the player is in.
+    fn apply_cosmetics(&mut self, index: usize, wanted: &Cosmetics) {
+        let checked = wanted.checked();
         if checked == self.clients[index].cosmetics {
             return;
         }
@@ -2581,63 +2386,6 @@ impl NetServer {
                 cosmetics: checked,
             });
         }
-    }
-
-    /// Turns a connection away with a reason the player sees.
-    fn deny(&mut self, index: usize, reason: &str) {
-        let client = &mut self.clients[index];
-        godot_print!("server: turned a player away: {reason}");
-        client.account = AccountState::None;
-        client.kicked = true;
-        let denied = ServerMessage::Denied {
-            reason: reason.to_owned(),
-        };
-        transport::send_reliable(&mut client.peer, &denied.encode(&[]));
-        client.peer.peer_disconnect_later();
-    }
-
-    /// Reports a player's match to their account (`account_award`):
-    /// `outcome` when the match ended with them in it, `None` when they
-    /// left it early (score only). The XP includes the challenges the match
-    /// completed, worked out from what the account had; returns the
-    /// account's totals with the match added.
-    fn award_account(
-        &mut self,
-        account: &AccountState,
-        id: u8,
-        outcome: Option<Outcome>,
-    ) -> Option<Earned> {
-        let user_id = account.user_id()?;
-        let avatar = self.avatars.iter().find(|a| a.id == id)?;
-        let score = avatar.score.score;
-        if !avatar.share.earned_anything(score) && outcome.is_none() {
-            return None;
-        }
-        let mut earned = account.earned().cloned().unwrap_or_default();
-        let gain = earned.add_match(
-            avatar.share.xp(score, self.tick, outcome),
-            &avatar.share.weapon_kills,
-            avatar.share.stats.stats(),
-        );
-        let xp = gain.xp.saturating_add(gain.challenge_xp);
-        let mut award = VarDictionary::new();
-        award.set("xp", i64::from(xp));
-        award.set(
-            "weapon_kills",
-            &accounts::counts_dictionary(&avatar.share.weapon_kills),
-        );
-        award.set(
-            "stats",
-            &accounts::counts_dictionary(avatar.share.stats.stats()),
-        );
-        godot_print!(
-            "server: player {id} earned {xp} XP for their account ({} challenges)",
-            gain.challenges.len()
-        );
-        self.signals()
-            .account_award()
-            .emit(&GString::from(user_id), &award);
-        Some(earned)
     }
 
     /// How the match that `winner` won ended for player `id`.
@@ -2700,26 +2448,6 @@ impl NetServer {
         matches!(self.match_state.phase, Phase::Playing | Phase::Ended { .. })
     }
 
-    /// The match is over: every player with an account is paid for it.
-    fn award_accounts(&mut self, winner: Option<u8>) {
-        let players: Vec<(usize, u8)> = self
-            .clients
-            .iter()
-            .enumerate()
-            .filter_map(|(i, c)| c.player.map(|id| (i, id)))
-            .collect();
-        for (index, id) in players {
-            let account = self.clients[index].account.clone();
-            let outcome = self.outcome_for(id, winner);
-            if let Some(earned) = self.award_account(&account, id, Some(outcome))
-                && let AccountState::Verified { earned: kept, .. } =
-                    &mut self.clients[index].account
-            {
-                *kept = earned;
-            }
-        }
-    }
-
     /// The client skipped its killcam: it respawns as soon as the respawn
     /// delay allows, as in Call of Duty (`_killcam.gsc` ends the killcam on
     /// the use button, and the player spawns).
@@ -2774,20 +2502,8 @@ impl NetServer {
     /// A connection that never says hello would hold a player slot forever.
     fn drop_silent_peers(&mut self) {
         let tick = self.tick;
-        // A player the account server never vouched for is told so.
-        let unanswered: Vec<usize> = (0..self.clients.len())
-            .filter(|&i| {
-                matches!(self.clients[i].account, AccountState::Pending { since, .. }
-                    if tick.saturating_sub(since) > accounts::ACCOUNT_TIMEOUT_TICKS)
-            })
-            .collect();
-        for index in unanswered {
-            self.deny(index, accounts::NO_ANSWER);
-        }
         self.clients.retain_mut(|client| {
-            let waiting = matches!(client.account, AccountState::Pending { .. });
             let silent = client.player.is_none()
-                && !waiting
                 && !client.kicked
                 && tick.saturating_sub(client.connected_at) > HELLO_TIMEOUT_TICKS;
             if silent {
@@ -5543,9 +5259,6 @@ impl NetServer {
                     );
                 }
                 self.finish_stats(winner);
-                if self.accounts {
-                    self.award_accounts(winner);
-                }
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
                     client.ready = true;
@@ -8103,21 +7816,6 @@ impl NetServer {
     }
 
     fn broadcast_event(&mut self, event: &GameEvent) {
-        // Every kill with a gun in a match counts toward the killer's
-        // attachments on their account (as the game's kill feed counts them).
-        if let GameEvent::Kill {
-            killer,
-            victim,
-            weapon,
-            cause: protocol::KillCause::Weapon,
-            ..
-        } = event
-            && killer != victim
-            && self.match_state.phase == Phase::Playing
-            && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == *killer)
-        {
-            avatar.share.add_kill(*weapon);
-        }
         if let GameEvent::Kill {
             killer,
             victim,

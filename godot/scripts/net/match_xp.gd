@@ -79,9 +79,7 @@ func _process(_delta: float) -> void:
 func _exit_tree() -> void:
 	# Leaving mid-match: keep what we made, without the bonus.
 	if _playing_since >= 0.0 and (_score > 0 or not _kills.is_empty()):
-		ProgressStore.add(_score, _kills, not _ranked(), _match_stats())
-		if _ranked():
-			_refresh_account()
+		ProgressStore.add(_score, _kills, _match_stats())
 	_reset()
 
 
@@ -123,11 +121,7 @@ func _finish(info: Dictionary) -> void:
 	var bonus := Progression.match_bonus(seconds, outcome)
 	var before := ProgressStore.xp()
 	var level_before := ProgressStore.level()
-	# A ranked server reports the match to the account itself; the game
-	# shows the same sum now and takes the account's totals once it has.
-	var gain := ProgressStore.add(_score + bonus, _kills, not _ranked(), _match_stats())
-	if _ranked():
-		_refresh_account()
+	var gain := ProgressStore.add(_score + bonus, _kills, _match_stats())
 	var level_after := ProgressStore.level()
 	var unlocks := []
 	for level in range(level_before + 1, level_after + 1):
@@ -148,24 +142,11 @@ func _finish(info: Dictionary) -> void:
 	_reset()
 
 
-## Reads the account's totals once a ranked server has reported the match.
-## The autoload is reached by path: test scripts load this one without
-## autoload names.
-func _refresh_account() -> void:
-	var online := get_node_or_null(^"/root/Online")
-	if online != null:
-		online.call(&"refresh_progress_soon")
-
-
 ## Our stats this match, as the server counts them.
 func _match_stats() -> Dictionary:
 	if client == null or not is_instance_valid(client):
 		return {}
 	return client.match_stats()
-
-
-func _ranked() -> bool:
-	return client != null and is_instance_valid(client) and client.is_ranked()
 
 
 func _outcome(info: Dictionary) -> String:

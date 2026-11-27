@@ -63,7 +63,7 @@ func _build() -> void:
 	eyebrow.theme_type_variation = &"Eyebrow"
 	add_child(eyebrow)
 	var hint := Label.new()
-	hint.text = "Custom rules for this match. Ranked play always uses the standard rules."
+	hint.text = "Custom rules for this match."
 	hint.theme_type_variation = &"DimLabel"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(hint)

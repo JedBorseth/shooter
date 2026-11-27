@@ -4,21 +4,19 @@ extends Node
 ## From the command line, after `--`:
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
-##            [--name NAME] [--master HOST[:PORT]]
+##            [--name NAME]
 ##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|breakwater]
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
-##            [--accounts URL] [--custom SETTINGS]
+##            [--custom SETTINGS]
 ##            [--team-bots ALLIES,ENEMIES] [--team-bot-skill SKILL,SKILL]
-##            [--exit-when-empty SECONDS]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
 ##                                    it they are scripted targets, and --bot-damage
 ##                                    lets their bursts hurt players.
-##                                    Server browsers see NAME; with --master the
-##                                    server stays listed on that master server.
-##                                    Browsers query UDP port N+1 (or --query-port).
+##                                    Joining games see NAME, and ask UDP port
+##                                    N+1 (or --query-port) for the map first.
 ##                                    Team Deathmatch to N kills (75), Capture the
 ##                                    Flag to N captures (3), Hardpoint to N points
 ##                                    (250), Domination to N points (200), or
@@ -26,24 +24,12 @@ extends Node
 ##                                    kills per weapon (2), or Search and Destroy to
 ##                                    N rounds (6); --auto-start skips the
 ##                                    lobby's ready-up.
-##                                    --accounts URL admits only players signed
-##                                    in to that account server, checks their
-##                                    unlocks, and reports their match XP; the
-##                                    server's HTTP key comes from the
-##                                    SHOOTER_ACCOUNTS_KEY environment variable
-##                                    (docs/online.md).
 ##                                    --custom sets a custom game's rules, as
 ##                                    key=value pairs ("hardcore=on,ff=reflect";
-##                                    docs/custom-games.md); ranked servers
-##                                    ignore it.
+##                                    docs/custom-games.md).
 ##                                    --team-bots gives each team exactly that
 ##                                    many bots (players take no bot's place),
 ##                                    each at its --team-bot-skill.
-##                                    --exit-when-empty quits once nobody has
-##                                    been connected for SECONDS (servers an
-##                                    allocator starts for one match).
-##   --directory HOST[:PORT]          developer override for the Internet directory;
-##                                    not saved between launches
 ##   --connect HOST[:PORT] [--spectate] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server (as a spectator with
 ##                                    --spectate); lag, jitter, and loss are
@@ -52,8 +38,8 @@ extends Node
 ## A dedicated server export (feature "dedicated_server") always runs as a server.
 ## With no options the game starts at the title screen.
 ##
-## From the menus: the server browser calls `join`, and leaving a server or
-## losing the connection calls `leave`, which returns to the server browser.
+## From the menus: the Join screen calls `join`, and leaving a server or
+## losing the connection calls `leave`, which returns to the Join screen.
 ## The title screen's Team Deathmatch, Capture the Flag, Hardpoint,
 ## Domination, Gun Game, and Search and Destroy setups call `start_local_match`, which runs a
 ## dedicated server in a background process and joins it; leaving stops that
@@ -68,7 +54,7 @@ const MAP_SCENES := {
 	"warehouse": "res://scenes/warehouse.tscn",
 	"breakwater": "res://scenes/breakwater.tscn",
 }
-## Names server browsers show for each map.
+## The name queries answer with for each map; a joining game loads it.
 const MAP_NAMES := {
 	"arena": "Arena",
 	"nuketown": "Nuketown",
@@ -80,7 +66,6 @@ const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
-const ACCOUNT_LINK_SCRIPT := "res://scripts/net/account_link.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
@@ -105,10 +90,10 @@ const DEFAULT_PORT := 27015
 const LOCAL_PORT := 27035
 const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
 
-## Set by `leave`: the title screen opens the server browser and shows
-## `browser_message` (why we left), then clears both.
-var return_to_browser := false
-var browser_message := ""
+## Set by `leave`: the title screen opens the Join screen and shows
+## `join_message` (why we left), then clears both.
+var return_to_join := false
+var join_message := ""
 
 var _client: NetClient
 ## Process id of the server `start_local_match` started, or -1.
@@ -172,8 +157,7 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 		await tree.scene_changed
 		main = tree.current_scene
 	print("net join: scene ready; attaching client")
-	var token: String = await Online.fresh_session_token()
-	_attach_client(main, target, options, token)
+	_attach_client(main, target, options)
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
@@ -182,7 +166,7 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 ## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`, `name`,
 ## `auto_start` to skip the ready-up, `custom` for a custom game's settings in
 ## their text form, `spectate` to join as a spectator) and joins it. The server pauses with
-## the pause menu and does not answer server browsers.
+## the pause menu and answers no queries.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
@@ -239,7 +223,7 @@ func local_server_args(options: Dictionary, port: int, pause_file: String) -> Pa
 			]
 		)
 	)
-	# Nobody else can join it: it pauses, and hides from server browsers.
+	# Nobody else joins it: it pauses, and answers no queries.
 	args.append_array(["--query-port", "-1", "--pause-file", pause_file])
 	if bool(options.get("auto_start", false)):
 		args.append("--auto-start")
@@ -283,7 +267,7 @@ func _notification(what: int) -> void:
 		stop_local_server()
 
 
-## Leaves the server (if any) and returns to the server browser, which shows
+## Leaves the server (if any) and returns to the Join screen, which shows
 ## `message` (empty when the player left on purpose). A local match returns
 ## to the title screen instead, and its server stops.
 func leave(message := "") -> void:
@@ -293,14 +277,14 @@ func leave(message := "") -> void:
 	_client = null
 	var local := _local_server_pid > 0
 	stop_local_server()
-	return_to_browser = not local
-	browser_message = message
+	return_to_join = not local
+	join_message = message
 	Settings.flush()
 	get_tree().change_scene_to_file(TITLE_SCENE)
 
 
-## Only known local map scenes can be selected by a server listing.
-## Takes a map id ("breakwater") or the name browsers show ("Breakwater").
+## Only known local map scenes can be selected by a server's answer.
+## Takes a map id ("breakwater") or the name queries answer with ("Breakwater").
 static func map_path(map_name: String) -> String:
 	var key := map_name.to_lower()
 	for id: String in MAP_NAMES:
@@ -326,7 +310,6 @@ func _start_server(options: Dictionary) -> void:
 	server.bot_skill = String(options.get("bot-skill", ""))
 	if String(options.get("name", "")) != "":
 		server.server_name = options["name"]
-	server.master_server = options.get("master", "")
 	server.query_port = int(options.get("query-port", 0))
 	# 0 (or none) keeps the mode's usual limit.
 	if options.has("score-limit"):
@@ -342,17 +325,6 @@ func _start_server(options: Dictionary) -> void:
 	server.custom_settings = String(options.get("custom", ""))
 	server.team_bots = String(options.get("team-bots", ""))
 	server.team_bot_skill = String(options.get("team-bot-skill", ""))
-	var accounts := String(options.get("accounts", ""))
-	if not accounts.is_empty():
-		server.accounts = true
-		var link := Node.new()
-		link.name = "AccountLink"
-		link.set_script(load(ACCOUNT_LINK_SCRIPT))
-		link.set("server", server)
-		link.set("address", accounts)
-		server.add_child(link)
-	if options.has("exit-when-empty"):
-		_exit_when_empty(server, maxf(float(options["exit-when-empty"]), 5.0))
 	server.pause_file = String(options.get("pause-file", ""))
 	if not server.pause_file.is_empty():
 		server.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -363,25 +335,7 @@ func _start_server(options: Dictionary) -> void:
 		previous.queue_free()
 
 
-## Quits once `server` has had no connections for `seconds`: a server the
-## allocator started for one match (docs/online.md) stops when its players
-## have gone, or if they never come.
-func _exit_when_empty(server: NetServer, seconds: float) -> void:
-	var timer := Timer.new()
-	timer.wait_time = 1.0
-	timer.autostart = true
-	var empty_for := [0.0]
-	timer.timeout.connect(
-		func() -> void:
-			empty_for[0] = 0.0 if server.connection_count() > 0 else empty_for[0] + 1.0
-			if empty_for[0] >= seconds:
-				print("server: nobody connected for %d s; stopping" % int(seconds))
-				get_tree().quit()
-	)
-	server.add_child(timer)
-
-
-func _attach_client(main: Node, target: String, options: Dictionary, token := "") -> void:
+func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	var player := main.get_node_or_null("Player") as FpsPlayer
 	if player == null:
 		push_error("Net.join needs the arena's Player")
@@ -404,7 +358,6 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	client.player_path = player.get_path()
 	client.remote_player_scene = load(REMOTE_PLAYER_SCENE)
 	client.player_name = Settings.player_name
-	client.account_token = token
 	client.set_class(ClassStore.selected())
 	client.set_cosmetics(ClassStore.cosmetics())
 	client.latency_ms = float(options.get("lag", 0))

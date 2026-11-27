@@ -4,7 +4,7 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 
 ## Rules
 
-- **Choosing:** a player brings up to three streaks, chosen under the class list in the match menu (L), shared by every class. Black Ops 2's Scorestreaks menu is also separate from the classes. A new choice counts from the next spawn. New players bring the UAV and the Counter-UAV; the others unlock with level (below), and ranked servers refuse streaks a player has not unlocked ([create-a-class.md](create-a-class.md)).
+- **Choosing:** a player brings up to three streaks, chosen under the class list in the match menu (L), shared by every class. Black Ops 2's Scorestreaks menu is also separate from the classes. A new choice counts from the next spawn. New players bring the UAV and the Counter-UAV; the others unlock with level (below; [create-a-class.md](create-a-class.md)).
 - **Earning:** every point scored since the last spawn counts toward them, objective play included: kills and their bonuses, flag captures, Hardpoint time, plants and defuses. A streak is earned when the life's score reaches its cost. After the dearest one is earned, the count starts again from nothing, so a long life earns them all again. Points scored while dead do not count.
 - **Keeping:** earned streaks are held until used, through death, until the match ends. Up to 8 are held at once.
 - **Death** resets the count.

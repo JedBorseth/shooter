@@ -28,8 +28,7 @@
 //!
 //! The server checks every class it is sent with [`Class::validate`] and
 //! never trusts the client's arithmetic. Level unlocks are checked by the
-//! client only until accounts exist (Phase 5): the server cannot know a
-//! player's level yet.
+//! client only: the server cannot know a player's level.
 
 use crate::equipment;
 pub use crate::perk::{Perk, Perks, Tier};

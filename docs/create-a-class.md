@@ -199,8 +199,7 @@ allowed. Back leaves the editor without saving. Under the list sit the
 scorestreaks, up to three, shared by every class ([scorestreaks.md](scorestreaks.md)).
 
 Classes are saved in `user://classes.cfg` (`godot/scripts/class_store.gd`),
-with which one is equipped; signed in, the account keeps them too
-([online.md](online.md)). A custom slot starts as a copy of the default in
+with which one is equipped. A custom slot starts as a copy of the default in
 its place. A saved class that no longer passes the rules (a weapon removed,
 say) goes back to its default.
 
@@ -267,10 +266,8 @@ attachments (`rust/sim/src/progression.rs`).
 
 The client sends its whole class (`ClientMessage::Class`). The server checks
 it with `Class::validate` and ignores one that breaks a rule; the player keeps
-their previous class. A ranked server (`--accounts`, [server.md](server.md))
-also checks the player's account (`Earned::check_class`) and ignores a class
-with anything still locked; other servers cannot know a player's level and
-check only the class rules. A new class applies from the next spawn; in
+their previous class. The server cannot know a player's level, so it checks
+only the class rules; the game's menus never offer a locked item. A new class applies from the next spawn; in
 Search and Destroy it applies at once during a round's freeze. Gun Game
 ignores classes, and a custom game's loadout rule (default classes, pistols
 only, snipers only) can restrict them ([custom-games.md](custom-games.md)).

@@ -21,7 +21,7 @@ func _run() -> void:
 	await _lost_focus()
 	await _match_setup()
 	await _options()
-	await _server_browser()
+	await _join_server()
 	await _pause_menu()
 	await _captured_mouse()
 	_finish()
@@ -178,28 +178,24 @@ func _options() -> void:
 	_check(_focused() == options, "focus returns to Options")
 
 
-func _server_browser() -> void:
-	root.get_node("Settings").set("master_server", "")
-	load("res://scripts/server_browser.gd").storage_path = "user://controller_test_servers.cfg"
-	_route("Multiplayer").grab_focus()
+func _join_server() -> void:
+	var storage := "user://controller_test_servers.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(storage))
+	load("res://scripts/join_server.gd").storage_path = storage
+	_route("JoinServer").grab_focus()
 	await _press(JOY_BUTTON_A)
 	await _frames(2)
-	var browser := _title.get_node_or_null("ServerBrowser")
-	_check(browser != null, "A opens the server browser")
-	if browser == null:
+	var join := _title.get_node_or_null("JoinServer")
+	_check(join != null, "A opens Join Server")
+	if join == null:
 		return
-	_check(_name(_focused()) == "List", "the browser starts on the server list")
-	var tabs: Array = browser.get("_tabs")
-	await _press(JOY_BUTTON_RIGHT_SHOULDER)
-	_check(tabs[1].button_pressed, "RB opens the LAN tab")
-	await _press(JOY_BUTTON_LEFT_SHOULDER)
-	_check(tabs[0].button_pressed, "LB opens the Internet tab")
-	await _press(JOY_BUTTON_DPAD_UP)
-	_check(_focused() is Button, "up leaves the list for the toolbar")
+	_check(_name(_focused()) == "Address", "Join Server starts on the address")
+	await _press(JOY_BUTTON_DPAD_RIGHT)
+	_check(_name(_focused()) == "Connect", "right moves to Connect")
 	await _press(JOY_BUTTON_B)
 	await _frames(2)
-	_check(_title.get_node_or_null("ServerBrowser") == null, "B leaves the browser")
-	_check(_focused() == _route("Multiplayer"), "focus returns to Server Browser")
+	_check(_title.get_node_or_null("JoinServer") == null, "B leaves Join Server")
+	_check(_focused() == _route("JoinServer"), "focus returns to Join Server")
 
 
 ## The in-match pause menu, on its own: Menu opens it, B backs out of Settings

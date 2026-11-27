@@ -93,7 +93,7 @@ fn upload(path: &Path, endpoint: &str) -> Result<()> {
         bail!("collector did not accept report: {}", response.status());
     }
     fs::remove_file(path)?;
-    println!("Crash report delivered securely to the master host.");
+    println!("Crash report delivered securely to the public host.");
     Ok(())
 }
 

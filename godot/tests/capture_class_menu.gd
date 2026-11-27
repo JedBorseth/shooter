@@ -25,7 +25,7 @@ func _run() -> void:
 	ClassStore.use_file("user://capture_class_menu.cfg")
 	ProgressStore.use_file("user://capture_class_menu_progress.cfg")
 	# Camos earned on the M4A1: its headshot ladder and longshots.
-	ProgressStore.add(320000, {"m4": 60, "pdw9": 100}, false, {"w.m4.hs": 60, "w.m4.long": 12})
+	ProgressStore.add(320000, {"m4": 60, "pdw9": 100}, {"w.m4.hs": 60, "w.m4.long": 12})
 	ClassStore.reload()
 	var layer := CanvasLayer.new()
 	root.add_child(layer)

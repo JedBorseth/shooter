@@ -146,8 +146,8 @@ func _round_winning_kill(player: FpsPlayer, client: NetClient) -> void:
 	_check(length > 9.5, "round: it plays out, %.2f s after the kill" % length)
 
 
-## What we show goes through the server and back (an unranked server passes
-## it on as sent), and our first-person M4A1 wears its camo.
+## What we show goes through the server and back (the server passes it on
+## as sent), and our first-person M4A1 wears its camo.
 func _check_cosmetics(player: FpsPlayer, client: NetClient) -> void:
 	client.set_cosmetics({"prestige": 3, "card": "veteran", "camos": {"m4": "gold"}})
 	var id := client.player_id()

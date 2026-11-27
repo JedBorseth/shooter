@@ -3,7 +3,7 @@
 //! Every few minutes it reads the manifest. When a newer server build is out,
 //! it downloads and unpacks it while the old server keeps running, then waits
 //! until no human player is connected (asking the server through its query
-//! port, like the server browser does), stops the old server and starts the
+//! port, as a joining game does), stops the old server and starts the
 //! new one. A server that exits on its own is started again.
 
 use std::ffi::OsString;
@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
-use shooter_sim::net::discovery::{self, Packet};
+use shooter_sim::net::query::{self, Packet};
 
 use crate::platform::SERVER;
 use crate::store::{Installed, Store};
@@ -228,8 +228,8 @@ fn start(store: &Store, installed: &Installed, server_args: &[OsString]) -> Resu
         .with_context(|| format!("starting {}", exe.display()))
 }
 
-/// Asks the server to quit (so it can tell the master server it is going),
-/// then kills it if it has not gone after a few seconds.
+/// Asks the server to quit, then kills it if it has not gone after a few
+/// seconds.
 fn stop(child: &mut Child) {
     #[cfg(unix)]
     {
@@ -286,8 +286,8 @@ pub fn query_port(server_args: &[OsString]) -> u16 {
             .and_then(|v| v.parse::<u16>().ok())
     };
     value("--query-port")
-        .or_else(|| value("--port").map(discovery::query_port_for))
-        .unwrap_or(discovery::DEFAULT_QUERY_PORT)
+        .or_else(|| value("--port").map(query::query_port_for))
+        .unwrap_or(query::DEFAULT_QUERY_PORT)
 }
 
 /// Fails early, with a clear message, on a machine that cannot run servers.
@@ -329,16 +329,12 @@ mod tests {
             let Ok(Packet::Query { nonce }) = Packet::decode(&buffer[..len]) else {
                 panic!("expected a query");
             };
-            let info = discovery::ServerInfo {
-                instance: 1,
+            let info = query::ServerInfo {
                 protocol: 10,
-                game_port: port - 1,
                 name: "Test".into(),
                 map: "arena".into(),
-                mode: "tdm".into(),
                 players: 2,
                 max_players: 12,
-                bots: 3,
                 build: String::new(),
             };
             server

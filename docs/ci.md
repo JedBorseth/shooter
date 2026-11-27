@@ -9,10 +9,10 @@ fast when several runs share the free runners.
 
 | Job | Runs on | What it does |
 | --- | --- | --- |
-| Linux (lint, tests, library) | Ubuntu 24.04 | Builds the Linux game library, master server, `shooter-query`, and launcher (`.github/scripts/build-libs.sh`), and fails if any needs a glibc newer than 2.39. Then gdlint and gdformat; the Python tests in `tools/` (the Nuketown importer, textures, the crash inbox, the Slamcity and Breakwater layouts, the prop and decal catalogs, the server export filter, the Blender models); `cargo fmt`, clippy with `-D warnings`, and `cargo test` |
+| Linux (lint, tests, library) | Ubuntu 24.04 | Builds the Linux game library and launcher (`.github/scripts/build-libs.sh`), and fails if either needs a glibc newer than 2.39. Then gdlint and gdformat; the Python tests in `tools/` (the Nuketown importer, textures, the crash inbox, the Slamcity and Breakwater layouts, the prop and decal catalogs, the server export filter, the Blender models); `cargo fmt`, clippy with `-D warnings`, and `cargo test` |
 | Windows (tests, library), macOS (tests, library) | Windows, macOS | The game library and launcher for that platform (universal on macOS, both architectures in one `cargo` run), then `cargo test`, so the simulation behaves the same on every platform |
-| Godot tests (headless) | Ubuntu | Starts the account server, builds the extension and the master server, runs the Nakama module tests (`tools/test_online.py`), every `godot/tests/*_test.gd`, then the benchmark script without a GPU |
-| Export builds | Ubuntu | Linux, Windows, macOS, and dedicated server zips plus every platform's launcher and `latest.json`, uploaded as one artifact; builds the server and allocator Docker images and checks the server starts healthy; from `main`, publishes the `nightly` release and both images ([server.md](server.md)) |
+| Godot tests (headless) | Ubuntu | Builds the extension, runs every `godot/tests/*_test.gd`, then the benchmark script without a GPU |
+| Export builds | Ubuntu | Linux, Windows, macOS, and dedicated server zips plus every platform's launcher and `latest.json`, uploaded as one artifact; builds the server Docker image and checks it starts healthy; from `main`, publishes the `nightly` release and the image ([server.md](server.md)) |
 | CI passed | Ubuntu | Passes only when every other job passed or was skipped |
 
 `CI passed` is the one check branch protection needs, so jobs can be added,
@@ -31,8 +31,7 @@ Every run's artifact holds playable builds, so a pull request can be played
 before it merges: `shooter-<commit>-linux-x86_64.zip`,
 `-windows-x86_64.zip`, `-macos-universal.zip` (ad-hoc signed, not notarized,
 so macOS asks before opening it), and `-server-linux-x86_64.zip` (the
-headless server with `shooter-master` and `shooter-query`; its pack carries
-no textures, see [server.md](server.md)). `latest.json`
+headless server; its pack carries no textures, see [server.md](server.md)). `latest.json`
 (`.github/scripts/write-manifest.sh`) names the build's commit and protocol
 version and lists every file with its size and SHA-256.
 
@@ -76,8 +75,8 @@ and the editor-only addons.
   (`.github/scripts/wait-for-artifact.sh`).
 - **Godot tests run side by side.** Fixed-rate tests run three at a time on
   the four-CPU runner (`GODOT_TEST_JOBS`). Real-time tests run beside them in
-  two lanes: one for tests that share fixed ports, LAN discovery, or the
-  account server, and one for tests that use only a port of their own.
+  two lanes: one for tests that share fixed ports, and one for tests that use
+  only a port of their own.
 - **No double compression.** The export zips each build while Godot exports
   the next, and uploads the zips without compressing them again.
 
@@ -99,18 +98,15 @@ just test-one net_test          # one test, directly
 `just test` calls `.github/scripts/godot-tests.sh` (set `GODOT` to the Godot
 binary if it is not on `PATH`). The script runs fixed-rate tests half the
 CPUs at a time, at most three; set `GODOT_TEST_JOBS=1` to run them one at a
-time. Tests that need the account server read `NAKAMA_URL` and skip without
-it; start the stack as in [online.md](online.md). `just ci` runs the Rust
-and GDScript checks, every Godot test, and, on a machine with an NVIDIA GPU,
-the frame-time gate ([performance.md](performance.md)), which GitHub's
-runners cannot run.
+time. `just ci` runs the Rust and GDScript checks, every Godot test, and, on
+a machine with an NVIDIA GPU, the frame-time gate
+([performance.md](performance.md)), which GitHub's runners cannot run.
 
-A test that starts another process, such as a dedicated or master server,
-must run in real time, because that process keeps wall-clock time. Add it to
-`REALTIME` in `.github/scripts/godot-tests.sh`. If its server takes a port
-from the process id with no query port, and it uses no fixed port, LAN
-discovery, or account server, add it to `REALTIME_OWN_PORT` instead, so it
-runs in the second lane. That includes tests that call
+A test that starts another process, such as a dedicated server, must run in
+real time, because that process keeps wall-clock time. Add it to `REALTIME`
+in `.github/scripts/godot-tests.sh`. If its server takes a port from the
+process id with no query port, and it uses no fixed port, add it to
+`REALTIME_OWN_PORT` instead, so it runs in the second lane. That includes tests that call
 `Net.start_local_match`, which starts a child server. A test that needs
 several argument sets goes in `RUNS` in the same file. If a test fails at
 the fixed frame rate, the script runs it again in real time; when that

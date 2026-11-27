@@ -97,7 +97,7 @@ func _check_card() -> void:
 ## and unlock camos.
 func _check_challenges() -> void:
 	var before := ProgressStore.xp()
-	var gain := ProgressStore.add(0, {}, false, {"w.m4.hs": 6, "kills": 100})
+	var gain := ProgressStore.add(0, {}, {"w.m4.hs": 6, "kills": 100})
 	_check(
 		gain.challenges.has("w.m4.0") and gain.challenges.has("career.kills.0"),
 		"5 M4A1 headshots and 100 kills complete their challenges: %s" % [gain.challenges]
@@ -105,7 +105,7 @@ func _check_challenges() -> void:
 	_check(int(gain.challenge_xp) == 250 + 500, "they pay 750 XP, got %d" % gain.challenge_xp)
 	_check(ProgressStore.xp() == before + 750, "the XP is saved")
 	_check(ProgressStore.stat("w.m4.hs") == 6, "the stats are saved")
-	var again := ProgressStore.add(0, {}, false, {"w.m4.hs": 1})
+	var again := ProgressStore.add(0, {}, {"w.m4.hs": 1})
 	_check(int(again.challenge_xp) == 0, "a challenge pays once")
 	var totals := ProgressStore.totals()
 	_check(Progression.camo_unlocked(totals, "m4", "gravel"), "the first M4A1 camo is unlocked")

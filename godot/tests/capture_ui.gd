@@ -1,6 +1,6 @@
 extends SceneTree
 ## Captures every UI screen for design review: the title screen, Team
-## Deathmatch setup, server browser, the pause and settings menu, the
+## Deathmatch setup, Join Server, the pause and settings menu, the
 ## testing-arena HUD states, and a local Team Deathmatch match (connecting,
 ## the lobby's class menu and editor, countdown, in-match HUD, scoreboard,
 ## kill feed, results).
@@ -76,17 +76,14 @@ func _menus() -> void:
 	await _shot("menu_02b_options")
 	title.get_node("PauseMenu").call("close")
 	await _frames(5)
-	title.call("_open_multiplayer")
-	await _seconds(2.0)
-	await _shot("menu_03_server_browser_lan")
-	var browser := title.get_node("ServerBrowser")
-	browser.call("_set_tab", 0)
+	title.call("_open_join")
 	await _seconds(1.0)
-	await _shot("menu_04_server_browser_internet")
-	browser.call("show_error", "Lost connection to Local match: the server stopped responding.")
+	await _shot("menu_03_join_server")
+	var join := title.get_node("JoinServer")
+	join.call("show_error", "Lost connection to Local match: the server stopped responding.")
 	await _frames(5)
-	await _shot("menu_05_server_browser_error")
-	browser.emit_signal("back_requested")
+	await _shot("menu_04_join_server_error")
+	join.emit_signal("back_requested")
 	await _frames(5)
 
 

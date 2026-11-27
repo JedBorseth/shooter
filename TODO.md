@@ -37,10 +37,7 @@ The open work on this Call-of-Duty-style multiplayer FPS. The goal, the decision
 - [ ] Inputs at 60 Hz, two ticks a packet: halves packet headers (about 19 kbps up) for up to 8 ms more input delay on every other tick ([docs/netcode.md](docs/netcode.md)).
 - [ ] Warehouse is marked `roofed`, so the Care Package, Airstrike, Guided Missile, and Attack Chopper are left out there ("NO OPEN SKY"). Decide whether it gets a skylight or roof hatch so they can come back.
 - [ ] The SG-12 rebuilt with the reproducible shape helpers (`tools/weapon_shapes.py` `canonical`) has a coarser atlas: `weapon_models_test`'s colour-detail proxy reads 0.064 against its 0.08 threshold. Settle the unwrap or the threshold before committing the rebuilt model; until then it keeps its old, non-reproducible files.
-- [ ] Whether private matches pay XP (Black Ops 2's pay none; today they report XP capped as local matches are) ([docs/custom-games.md](docs/custom-games.md)).
-- [ ] Confirm two custom-game choices: hardcore hides the score block, and ranked servers turn spectators away.
-- [ ] Run the account stack on the public host behind TLS, so the default `borseth.ddns.net:7350` answers ([docs/online.md](docs/online.md)).
-- [ ] Confirm the account server's guards: the cap on self-reported match XP, the one-time import of pre-account progress, and quick play's 20 s fallback to a party-only match ([docs/online.md](docs/online.md)).
+- [ ] Confirm a custom-game choice: hardcore hides the score block.
 - [ ] A ladder on Slamcity (for example up to the diner terrace).
 - [ ] Pistol attachments: the BP-9's file lists Red Dot, Suppressor, and Ext. Mag, but the class rules give a sidearm none (`rust/sim/src/class.rs`), so the editor greys them out. Allow them (Black Ops 2 lets pistols take attachments) or drop them from the file.
 
@@ -94,7 +91,6 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - [ ] Bandwidth: code a packet's first input against the newest input the client saw acknowledged (about 6 kbps up), and send the own state as an "in sync" bit when it matches the client's prediction (about 13 kbps down, for 4 up).
 - [ ] Send each client only the enemies it could see or hear, against wallhacks (killcams and the minimap need a plan for the rest).
 - [ ] A way for an operator to see integrity flags without reading the server log.
-- [ ] Reach a hosted game behind a home router without forwarding its port (NAT punch-through through the directory).
 
 ## Killcam
 
@@ -121,18 +117,11 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 - [ ] Search and Destroy on Warehouse: on the old layout the bench had attackers winning 5 to 8 rounds of 28. Re-run `godot/tools/bot_bench.gd` on the reworked map and look at the sites' approaches if the defenders still win most rounds ([docs/bots.md](docs/bots.md)).
 
-## Online services
-- [ ] The game hard-codes the Nakama server key `defaultkey` (`godot/scripts/online.gd`, `godot/scripts/net/account_link.gd`) while `docker/online/.env.example` invites changing `NAKAMA_SERVER_KEY`. Read the key from settings or the command line, or document that it must stay `defaultkey`.
-
-- [ ] Party chat and a friends list (Nakama has both), and a party lobby that follows the leader into a server browser match.
-- [ ] Matchmaking by skill and ping (Nakama matchmaker properties), once there are enough players to choose from.
-
-## Custom games, spectating, and private matches
+## Custom games and spectating
 
 - [ ] Black Ops 2's teamkill punishment (`teamKillPunishCount`, `teamKillSpawnDelay`): a longer respawn after repeat teamkills, then a kick.
 - [ ] Grey out what a loadout rule (default classes, pistols only, snipers only) bars in the class menu, as Black Ops 2 shows restricted items; today the server applies the rule at spawn.
 - [ ] Spectating: a third-person follow camera and an overhead map view (Black Ops 2's CODcaster has both), and spectators by name on the scoreboard and in chat.
-- [ ] Private matches: the leader moving other players between teams, and a LAN-hosted private match without accounts.
 
 ## Create-a-Class and progression
 

@@ -36,17 +36,16 @@ format is tested without the engine.
 `rust/sim/src/net/protocol.rs` holds every message, bit-packed
 (`net::bits`).
 
-- **Client to server.** A hello (protocol version, name, account session
-  token, and whether to spectate), then one `InputPacket` a tick. Each packet carries every input the server has not acknowledged, up
+- **Client to server.** A hello (protocol version, name, and whether to
+  spectate), then one `InputPacket` a tick. Each packet carries every input the server has not acknowledged, up
   to 24 (200 ms), so a lost packet costs nothing while a later one arrives.
   Reliable messages cover ready-up, the class, streaks, and cosmetics,
   chat, skipping a killcam, steering a Guided Missile, and switching teams
-  in a private lobby.
+  in the lobby.
 - **Server to client.** A welcome (player id, tick, snapshot interval, the
-  mode and its rules, the server's build, whether it is ranked, custom game
-  settings, and whether the player is a spectator), then snapshots. A client
-  of another protocol version gets a `Reject` with the server's version; a
-  ranked server that turns a player away sends `Denied` with the reason.
+  mode and its rules, the server's build, custom game settings, and whether
+  the player is a spectator), then snapshots. A client of another protocol
+  version gets a `Reject` with the server's version.
 - **Reliable game events.** Hits, damage, kills, score, the roster, the
   match clock, the scoreboard, and each mode's objectives and streaks: things
   that happen once and must not be lost.
@@ -253,7 +252,7 @@ client's word for an outcome:
 | A lunge to dash, a weapon from afar, a press aim off its path | Lunges must point at a visible enemy, pickups are raycast, press aims must lie on the view's path since the last input (`subtick::check`). |
 | An older view tick, to shoot where a target was | Rewinds are clamped to what the round trip explains plus 0.25 s, and to 300 ms. |
 | A pitch past straight up | Inputs with a pitch past the limit do not decode. |
-| A class or streak the player has not unlocked | A ranked server refuses it ([online.md](online.md)). |
+| A class or streak the player has not unlocked | Not checked: the server cannot know a player's level, which the game keeps itself. |
 | A chat flood | Rate-limited (`chat::ChatLimiter`). |
 
 What is left is watched two ways.

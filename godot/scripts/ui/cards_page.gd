@@ -2,9 +2,8 @@ extends ScrollContainer
 ## The career screen's Calling Cards tab (docs/progression.md): every card,
 ## the earned ones to pick from (the one shown is outlined), the rest dim
 ## with what earns them. The pick is kept with the classes
-## (`ClassStore.set_card`), so it follows the account, and goes to the
-## server with the next class (`ClassStore.cosmetics`). Emits `changed`
-## after a pick.
+## (`ClassStore.set_card`), and goes to the server with the next class
+## (`ClassStore.cosmetics`). Emits `changed` after a pick.
 
 signal changed
 

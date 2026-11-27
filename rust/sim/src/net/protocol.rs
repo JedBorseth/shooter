@@ -218,10 +218,6 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // welcome's `spectator`, and `GameEvent::Caster`.
 // Version 93 added `ClientMessage::SwitchTeam`.
 pub const PROTOCOL_VERSION: u16 = 93;
-/// Longest account session token a hello carries, in bytes.
-pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
-/// Longest reason a denial carries, in bytes.
-pub const MAX_DENIED_BYTES: usize = 160;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -262,10 +258,6 @@ pub enum ClientMessage {
         version: u16,
         /// The player's name; the server cleans it (`tdm::clean_name`).
         name: String,
-        /// The player's account session token (a Nakama session), or empty
-        /// when not signed in. A server that checks accounts asks the
-        /// account server who it belongs to (docs/online.md).
-        account: String,
         /// Join as a spectator: on no team, watching (docs/custom-games.md).
         spectate: bool,
     },
@@ -310,8 +302,7 @@ pub enum ClientMessage {
     /// What we show others: prestige, calling card, and camos
     /// (`crate::cosmetics`). Sent with the class; the server checks it.
     Cosmetics(Cosmetics),
-    /// In the lobby: move us to the other team (a private match's team
-    /// swap). The server ignores it once the match counts down.
+    /// In the lobby: move us to the other team. The server ignores it once the match counts down.
     SwitchTeam,
 }
 
@@ -336,11 +327,7 @@ pub enum ServerMessage {
         /// Which build the server runs (a tag or short commit hash), so
         /// players can tell when it differs from theirs.
         server_build: String,
-        /// The server checks accounts and reports each player's match XP to
-        /// the account server itself, so the game must not report it too.
-        ranked: bool,
-        /// The host's custom game settings (`crate::custom`); the defaults
-        /// on a ranked server.
+        /// The host's custom game settings (`crate::custom`).
         custom: custom::Settings,
         /// The player joined as a spectator: `player_id` is theirs, but
         /// they have no body and are on no team.
@@ -348,11 +335,6 @@ pub enum ServerMessage {
     },
     Reject {
         server_version: u16,
-    },
-    /// The server turned the player away, and why ("Sign in to play on this
-    /// server."). Sent before disconnecting.
-    Denied {
-        reason: String,
     },
     Snapshot(Snapshot),
     /// Things that happened once, sent reliably and in order.
@@ -1358,13 +1340,11 @@ impl ClientMessage {
             ClientMessage::Hello {
                 version,
                 name,
-                account,
                 spectate,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(*version);
                 write_string(&mut w, name, MAX_NAME_BYTES);
-                write_string(&mut w, account, MAX_ACCOUNT_TOKEN_BYTES);
                 w.bool(*spectate);
             }
             ClientMessage::Input(packet) => {
@@ -1456,21 +1436,16 @@ impl ClientMessage {
         match r.bits(TAG_BITS)? {
             0 => {
                 let version = r.u16()?;
-                // An older client sends no name or account; let the version
+                // An older client may send something else; let the version
                 // check reject it.
-                let (name, account, spectate) = if version == PROTOCOL_VERSION {
-                    (
-                        read_string(&mut r, MAX_NAME_BYTES)?,
-                        read_string(&mut r, MAX_ACCOUNT_TOKEN_BYTES)?,
-                        r.bool()?,
-                    )
+                let (name, spectate) = if version == PROTOCOL_VERSION {
+                    (read_string(&mut r, MAX_NAME_BYTES)?, r.bool()?)
                 } else {
-                    (String::new(), String::new(), false)
+                    (String::new(), false)
                 };
                 Ok(ClientMessage::Hello {
                     version,
                     name,
-                    account,
                     spectate,
                 })
             }
@@ -1768,7 +1743,6 @@ impl ServerMessage {
                 snapshot_interval,
                 mode,
                 server_build,
-                ranked,
                 custom,
                 spectator,
             } => {
@@ -1779,17 +1753,12 @@ impl ServerMessage {
                 w.u8(*snapshot_interval);
                 write_mode(&mut w, mode);
                 write_string(&mut w, server_build, MAX_BUILD_BYTES);
-                w.bool(*ranked);
                 custom.write(&mut w);
                 w.bool(*spectator);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
                 w.u16(*server_version);
-            }
-            ServerMessage::Denied { reason } => {
-                w.bits(4, TAG_BITS);
-                write_string(&mut w, reason, MAX_DENIED_BYTES);
             }
             ServerMessage::Snapshot(snapshot) => {
                 w.bits(2, TAG_BITS);
@@ -1848,16 +1817,12 @@ impl ServerMessage {
                     snapshot_interval: r.u8()?.max(1),
                     mode: read_mode(&mut r)?,
                     server_build: read_string(&mut r, MAX_BUILD_BYTES)?,
-                    ranked: r.bool()?,
                     custom: custom::Settings::read(&mut r)?,
                     spectator: r.bool()?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
                 server_version: r.u16()?,
-            }),
-            4 => Ok(ServerMessage::Denied {
-                reason: read_string(&mut r, MAX_DENIED_BYTES)?,
             }),
             2 => Ok(ServerMessage::Snapshot(read_snapshot(&mut r, baseline)?)),
             3 => {
@@ -6013,7 +5978,6 @@ mod tests {
                 snapshot_interval: 2,
                 mode,
                 server_build: "abc1234".to_owned(),
-                ranked: mode == Mode::Domination,
                 custom: if mode == Mode::Hardpoint {
                     custom::Settings::hardcore()
                 } else {
@@ -6079,7 +6043,6 @@ mod tests {
             ClientMessage::Hello {
                 version: PROTOCOL_VERSION,
                 name: "Josh".to_owned(),
-                account: "eyJhbGciOiJIUzI1NiJ9.eyJ1aWQiOiJhYmMifQ.c2ln".to_owned(),
                 spectate: true,
             },
             ClientMessage::Ready { ready: true },
@@ -6143,7 +6106,6 @@ mod tests {
         let msg = ClientMessage::Hello {
             version: PROTOCOL_VERSION,
             name: "é".repeat(100),
-            account: String::new(),
             spectate: false,
         };
         let ClientMessage::Hello { name, .. } = ClientMessage::decode(&msg.encode()).unwrap()
@@ -6163,30 +6125,5 @@ mod tests {
             let _ = ClientMessage::decode(&bytes);
             let _ = ServerMessage::decode(&bytes, |_| Some(&[]));
         }
-    }
-
-    #[test]
-    fn welcome_and_denied_round_trip() {
-        let welcome = ServerMessage::Welcome {
-            player_id: 0,
-            tick: 1,
-            snapshot_interval: 2,
-            mode: Mode::Domination,
-            server_build: "dev".into(),
-            ranked: false,
-            custom: custom::Settings::default(),
-            spectator: false,
-        };
-        assert_eq!(
-            ServerMessage::decode(&welcome.encode(&[]), |_| None).unwrap(),
-            welcome
-        );
-        let denied = ServerMessage::Denied {
-            reason: "Sign in to play on this server.".into(),
-        };
-        assert_eq!(
-            ServerMessage::decode(&denied.encode(&[]), |_| None).unwrap(),
-            denied
-        );
     }
 }

@@ -2,6 +2,8 @@
 //! rules are `shooter_sim::progression`; the player's XP and weapon kills
 //! are kept by `godot/scripts/progress_store.gd`.
 
+use std::collections::BTreeMap;
+
 use godot::prelude::*;
 use shooter_sim::camo::Camo;
 use shooter_sim::card::Card;
@@ -9,11 +11,10 @@ use shooter_sim::challenge::{self, Challenge, Group, Reward};
 use shooter_sim::class::{self, Wildcard};
 use shooter_sim::equipment::Kind;
 use shooter_sim::perk::Perk;
-use shooter_sim::progression::{self, Earned, Outcome, PrestigeError};
-use shooter_sim::tdm::Mode;
-
-use crate::net::accounts;
+use shooter_sim::progression::{self, Earned, MAX_PRESTIGE, Outcome, PrestigeError};
+use shooter_sim::stats;
 use shooter_sim::streak::Streak;
+use shooter_sim::tdm::Mode;
 use shooter_sim::weapon::{Attachment, Slot, WeaponId};
 
 #[derive(GodotClass)]
@@ -84,8 +85,8 @@ impl Progression {
         let mut earned = earned(&totals);
         let gain = earned.add_match(
             xp.clamp(0, i64::from(u32::MAX)) as u32,
-            &accounts::counts_from(&weapon_kills),
-            &accounts::counts_from(&stats),
+            &counts_from(&weapon_kills),
+            &counts_from(&stats),
         );
         let mut d = VarDictionary::new();
         d.set("totals", &totals_dictionary(&earned));
@@ -269,21 +270,92 @@ impl Progression {
     }
 }
 
+/// A whole count from a dictionary value (numbers read from files may be
+/// floats).
+fn whole(value: Option<Variant>) -> u32 {
+    value
+        .and_then(|v| {
+            v.try_to::<i64>()
+                .ok()
+                .or_else(|| v.try_to::<f64>().ok().map(|f| f as i64))
+        })
+        .unwrap_or(0)
+        .clamp(0, i64::from(u32::MAX)) as u32
+}
+
+/// Counts by key (stat keys, or plain weapon keys) from a dictionary,
+/// keeping only well-formed keys.
+fn counts_from(d: &VarDictionary) -> BTreeMap<String, u32> {
+    let mut out = BTreeMap::new();
+    for (key, count) in d.iter_shared() {
+        let Ok(key) = key.try_to::<GString>() else {
+            continue;
+        };
+        let key = key.to_string();
+        if stats::valid_key(&key) {
+            out.insert(key, whole(Some(count)));
+        }
+    }
+    out
+}
+
+fn counts_at(progress: &VarDictionary, key: &str) -> BTreeMap<String, u32> {
+    progress
+        .get(key)
+        .and_then(|v| v.try_to::<VarDictionary>().ok())
+        .map_or_else(BTreeMap::new, |d| counts_from(&d))
+}
+
+/// Strings from an Array or a PackedStringArray.
+fn strings(value: &Variant) -> Vec<String> {
+    if let Ok(list) = value.try_to::<PackedStringArray>() {
+        return list.as_slice().iter().map(|s| s.to_string()).collect();
+    }
+    value
+        .try_to::<VarArray>()
+        .map(|list| {
+            list.iter_shared()
+                .filter_map(|v| v.try_to::<GString>().ok())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn counts_dictionary(counts: &BTreeMap<String, u32>) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    for (key, count) in counts {
+        d.set(key.as_str(), i64::from(*count));
+    }
+    d
+}
+
 /// A player's totals from a progress dictionary (`xp`, `prestige`,
-/// `weapon_kills`, `stats`), as `ProgressStore.totals` gives them.
+/// `weapon_kills`, `stats`, `tokens`, `permanent`), as
+/// `ProgressStore.totals` gives them.
 fn earned(totals: &VarDictionary) -> Earned {
-    accounts::earned_from(totals)
+    Earned {
+        xp: whole(totals.get("xp")),
+        weapon_kills: counts_at(totals, "weapon_kills"),
+        stats: counts_at(totals, "stats"),
+        prestige: whole(totals.get("prestige")).min(u32::from(MAX_PRESTIGE)) as u8,
+        tokens: whole(totals.get("tokens")).min(u32::from(u8::MAX)) as u8,
+        permanent: totals
+            .get("permanent")
+            .map(|v| strings(&v))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|key| key.len() <= 40)
+            .collect(),
+    }
 }
 
 fn totals_dictionary(earned: &Earned) -> VarDictionary {
     let mut d = VarDictionary::new();
     d.set("xp", i64::from(earned.xp));
     d.set("prestige", i64::from(earned.prestige));
-    d.set(
-        "weapon_kills",
-        &accounts::counts_dictionary(&earned.weapon_kills),
-    );
-    d.set("stats", &accounts::counts_dictionary(&earned.stats));
+    d.set("weapon_kills", &counts_dictionary(&earned.weapon_kills));
+    d.set("stats", &counts_dictionary(&earned.stats));
     d.set("tokens", i64::from(earned.tokens));
     let permanent: PackedStringArray = earned.permanent.iter().map(GString::from).collect();
     d.set("permanent", &permanent);

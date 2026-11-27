@@ -58,7 +58,7 @@ func _run() -> void:
 		roam.emit_signal("back_requested")
 		await process_frame
 	_check(free_roam.has_focus(), "closing the Free Roam card refocuses its route")
-	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
+	_check(not (menu.get_node("JoinServer") as Button).disabled, "Join Server is available")
 	var options_button := title.get_node("%Options") as Button
 	_check(not options_button.disabled, "Options is available on the main menu")
 	options_button.pressed.emit()
@@ -305,7 +305,7 @@ func _run() -> void:
 		"res://scenes/slamcity.tscn",
 		"res://scenes/nuketown.tscn",
 		"res://assets/maps/nuketown/generated/nuketown_world.scn",
-		"res://scenes/server_browser.tscn",
+		"res://scenes/join_server.tscn",
 	]:
 		_check(not ResourceLoader.has_cached(path), "menu does not load %s" % path)
 	_check(

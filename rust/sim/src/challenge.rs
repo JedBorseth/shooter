@@ -1,8 +1,7 @@
 //! Challenges: targets on a player's career stats (`crate::stats`) that pay
 //! XP once and may award a camo or a calling card. A challenge completes in
 //! the match its counter crosses the target; completion is never stored,
-//! only worked out from the totals, so the account and the game always
-//! agree on it.
+//! only worked out from the totals.
 //!
 //! Black Ops 2's challenges, with our numbers where its own are unknown:
 //!
