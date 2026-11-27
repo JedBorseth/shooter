@@ -57,6 +57,7 @@ func _run() -> void:
 			node.process_mode = Node.PROCESS_MODE_DISABLED
 	var player := level.get_node("Player") as FpsPlayer
 	player.set_look(0.0, -0.04)
+	_hide_legend()
 	await _sixtieths(60)
 	var weapons: Array = WEAPONS
 	var only := OS.get_environment("WEAPONS")
@@ -104,10 +105,11 @@ func _first_person(player: FpsPlayer, weapon: String) -> void:
 	# Mid-reload: the magazine out, or a round going in. Fire a few rounds
 	# first, so there is something to reload.
 	Input.action_press("fire")
-	# Mid-burst, with a case in the air.
-	await _sixtieths(4)
+	# The first shot's muzzle flash: it lasts 0.05 s (three sixtieths), so
+	# the frame is taken one sixtieth after the press.
+	await _sixtieths(1)
 	await _shot("%s_0fire" % tag)
-	await _sixtieths(16)
+	await _sixtieths(19)
 	Input.action_release("fire")
 	await _sixtieths(40)
 	await _tap("reload")
@@ -196,6 +198,15 @@ func _racks(level: Node, player: FpsPlayer) -> void:
 	await _sixtieths(3)
 	await _shot("%s_racks_all" % _map)
 	camera.queue_free()
+
+
+## Takes down the controls legend the HUD shows after spawning, so it does
+## not cover the weapon.
+func _hide_legend() -> void:
+	for hud: Node in root.find_children("*", "", true, false):
+		if hud.get("_controls_left") != null:
+			hud.set("_controls_left", 0.0)
+			hud.set("_controls_forced", false)
 
 
 func _shot(name: String) -> void:

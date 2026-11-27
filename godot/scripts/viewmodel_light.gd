@@ -34,7 +34,7 @@ const INTO_SUN := 0.4
 const SUN_BEHIND := 0.06
 ## The sky's fill in shade, as a multiple of the map's sky light (ambient
 ## energy), under open sky and under a roof.
-const SKY_FILL := 1.8
+const SKY_FILL := 2.6
 const ROOF_FILL := 0.45
 ## Where the sky's fill comes from: mostly overhead, tipped ahead of the
 ## player, so the top of the weapon catches it toward the eye.
@@ -105,7 +105,10 @@ func _process(delta: float) -> void:
 		sky_color,
 		sky
 	)
-	_set_key(key[0], key[1], key[2])
+	# The colour's alpha tells the shader how much of the key is the sky, which
+	# wraps round the weapon further than the sun.
+	var sky_share := sky / maxf(sun + sky, 1e-6)
+	_set_key(key[0], Color(key[1] as Color, sky_share), key[2])
 
 
 ## Where the key comes from: the sun, swung round to the player's side of the
