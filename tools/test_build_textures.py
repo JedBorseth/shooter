@@ -25,9 +25,7 @@ class FixImportsTest(unittest.TestCase):
             "props/fire_barrel/barrel_stove_nor_gl_1k.jpg.import": (texture, compressed_normal),
             "props/fire_barrel/fire_barrel.gltf.import": (prop, baked_prop),
             "props/fire_barrel/unregistered.gltf.import": (prop, prop),
-            "props/warehouse_photo/shelf.gltf.import": (prop, prop),
             "textures/effects/flash.png.import": (texture, texture),
-            "textures/warehouse/normal.jpg.import": (texture, texture),
             "weapons/knife/knife.glb.import": (knife, knife),
         }
         with tempfile.TemporaryDirectory() as directory:

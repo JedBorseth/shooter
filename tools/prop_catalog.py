@@ -8,9 +8,7 @@ Reads the table in tools/prop_library.py and the built glTFs in
 godot/assets/props, and writes godot/assets/props/catalog.json: for each
 prop its scene path, size in metres (Godot axes: x wide, y tall, z deep;
 the origin is the bottom centre), triangle count, tags, kit, and its Poly
-Haven source and authors. Warehouse's Field manifest supplies metadata for
-the scenery and access kit built outside the Poly Haven prop pipeline.
-Size and triangles come from the glTF's own JSON
+Haven source and authors. Size and triangles come from the glTF's own JSON
 (accessor bounds and index counts), so it needs neither Blender nor the
 LFS .bin files. `--write` asks the Poly Haven API for the authors of new
 sources (generic user agent, nothing else sent) and keeps the ones it knows.
@@ -35,8 +33,6 @@ PROPS_DIR = REPO / "godot/assets/props"
 CATALOG = PROPS_DIR / "catalog.json"
 CREDITS = REPO / "godot/assets/CREDITS.md"
 USER_AGENT = "shooter-asset-pipeline"
-WAREHOUSE = PROPS_DIR / "warehouse_field/manifest.json"
-CATALOG_KEYS = ("path", "size", "triangles", "tags", "source", "asset", "authors", "license")
 
 
 def gltf_stats(path: Path) -> tuple[list[float], int]:
@@ -87,15 +83,6 @@ def entry(name: str, by: list[str]) -> dict:
     }
 
 
-def warehouse_entries() -> dict:
-    manifest = json.loads(WAREHOUSE.read_text())
-    return {
-        name: {**{key: model[key] for key in CATALOG_KEYS}, "kit": kit}
-        for group, kit in (("models", "warehouse_field"), ("access_kit", "warehouse_walkways"))
-        for name, model in manifest[group].items()
-    }
-
-
 def load() -> dict:
     return json.loads(CATALOG.read_text()) if CATALOG.exists() else {"props": {}}
 
@@ -104,10 +91,9 @@ def write() -> None:
     old = load()["props"]
     known = {e["asset"]: e["authors"] for e in old.values()}
     props = {name: entry(name, authors(PROPS[name].asset, known)) for name in PROPS}
-    props.update(warehouse_entries())
     catalog = {
         "about": "Every prop in godot/assets/props. Written by tools/prop_catalog.py --write "
-        "from tools/prop_library.py and the Warehouse manifest; size is metres (x wide, y tall, z deep) about a "
+        "from tools/prop_library.py; size is metres (x wide, y tall, z deep) about a "
         "bottom-centre origin.",
         "props": dict(sorted(props.items())),
     }
@@ -120,25 +106,15 @@ def problems() -> list[str]:
     missing = [n for n in PROPS if not (PROPS_DIR / folder(n) / f"{n}.gltf").exists()]
     found += [f"{n}: no {res_path(n)}; run tools/build_props.py -- {n}" for n in missing]
     catalog = load()["props"]
-    warehouse = warehouse_entries()
-    registered = set(PROPS) | set(warehouse)
-    if sorted(catalog) != sorted(registered):
-        extra = sorted(set(catalog) - registered)
-        absent = sorted(registered - set(catalog))
+    if sorted(catalog) != sorted(PROPS):
+        extra = sorted(set(catalog) - set(PROPS))
+        absent = sorted(set(PROPS) - set(catalog))
         found.append(f"catalog.json out of date (not listed: {absent}, not in the table: {extra})")
     for name in sorted(set(catalog) & set(PROPS) - set(missing)):
         if catalog[name] != entry(name, catalog[name]["authors"]):
             found.append(f"{name}: catalog.json entry out of date")
-    for name, expected in warehouse.items():
-        file = REPO / "godot" / expected["path"].removeprefix("res://")
-        if not file.exists():
-            found.append(f"{name}: no {expected['path']}")
-        elif gltf_stats(file) != (expected["size"], expected["triangles"]):
-            found.append(f"{name}: update the size and triangle count in the Warehouse manifest")
-        if catalog.get(name) != expected:
-            found.append(f"{name}: catalog.json entry out of date")
     credits = CREDITS.read_text()
-    for asset in sorted({p.asset for p in PROPS.values()} | {e["asset"] for e in warehouse.values() if e["asset"] not in warehouse}):
+    for asset in sorted({p.asset for p in PROPS.values()}):
         if f"`{asset}`" not in credits:
             found.append(f"{asset}: not credited in godot/assets/CREDITS.md")
     if found:

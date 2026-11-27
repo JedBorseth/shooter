@@ -89,14 +89,10 @@ Targets for a 6v6 core map:
 | Longest line anywhere | 60 m or less |
 | From a spawn area | no line into the enemy's half |
 
-A plan only approximates the built map. To measure what players get,
-sample the scene's real collision: `godot/tests/warehouse_grid.gd` writes a
-0.5 m grid of it and `tools/map_blockout/warehouse_measure.py` reports the
-same targets (one floor per cell, so upper floors are not measured).
+A plan only approximates the built map; Breakwater's generator checks
+(below) test the layout it is built from.
 
-Approved plans stay in `tools/map_blockout/`: `breakwater_2026_11.py` and `warehouse_2026_11b.py` (Warehouse's
-asymmetric plan; `warehouse_2026_11.py`, a turned-twin plan, is kept for
-comparison).
+Approved plans stay in `tools/map_blockout/`: `breakwater_2026_11.py`.
 
 ## Generator checks
 
@@ -127,10 +123,10 @@ roof deck all exist to pass them.
   past 40 m and a 120 m longest line: the alley, the avenue, and the space under the El ran into one
   open field. The owner rejected it and a redesign drawn the same way. The
   city-block plan that replaced it meets every target.
-- **A turned twin can still read as a mirror.** Warehouse's halves were one
-  half turned 180 degrees; even dressed differently, the owner found it a
-  mirror. Its plan draws each half on its own (`twin=False`), a grass field
-  against a truck dock, balanced by walking times and sightlines.
+- **A turned twin can still read as a mirror.** Warehouse's halves (a map
+  since cut) were one half turned 180 degrees; even dressed differently, the
+  owner found it a mirror. Its last plan drew each half on its own
+  (`twin=False`), balanced by walking times and sightlines.
 - **High ground faces its own fight.** A roof or upper floor that sees across
   the map to the enemy's high ground or spawn turns into a sniper duel; give
   it walls or screens so it covers its own lane.
@@ -146,8 +142,7 @@ Collision follows Call of Duty's player clip, not the visible mesh:
   box from deck to top rail.
 - A prop collides with a few boxes fitted to its solid parts that keep every
   opening at least 0.3 m tall open (rack shelves, the space under overhead
-  parts) and skip thin details: `tools/build_warehouse_clip.py` voxelizes
-  each model to write them.
+  parts) and skip thin details.
 - Anything a sprinting or sliding player could catch a foot on either never
   collides (litter, debris, cones, tape, signs, weeds, wall dressing) or gets
   one smooth shape (a rubble mound is one low hull, slopes under 20 degrees).
@@ -191,16 +186,14 @@ root (`rust/game/src/net/server.rs`). Each is optional and has a fallback.
 | `ChargeSites` | Search and Destroy sites | `size` (default 5 x 3.6 x 5 m), `label` | Two sites on the defenders' side of the middle, one to each flank |
 
 A map script can build its markers in `prepare_server()`, which the server
-calls before reading them. A
-`roofed` metadata of `true` on the root takes out the scorestreaks that need
-open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
+calls before reading them. `ReverbZones` and a `Soundscape` set the map's acoustics
 ([audio.md](audio.md)).
 
 ## Tools
 
 - **Look at a map.** With a display, `just capture <map> <dir>` saves
   eye-level PNGs with the game's lighting (`godot/tests/capture_view.gd`).
-  `<map>` is a server key (`breakwater`, `warehouse`, `arena`), `testing`, or
+  `<map>` is a server key (`breakwater`, `arena`), `testing`, or
   a `res://` scene path. It picks up
   to 12 viewpoints from the map's spawn, lane, and objective markers, at
   standing eye height on the floor below. Environment variables:
@@ -214,7 +207,7 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
   ([editor-mcp.md](editor-mcp.md)).
 - **Minimaps.** `godot --headless --path godot --script
   res://tools/build_minimaps.gd` renders each multiplayer map's minimap from
-  its collision (`MINIMAPS=breakwater,warehouse` limits it) into
+  its collision (`MINIMAPS=breakwater` limits it) into
   `godot/assets/minimaps/` and `godot/scripts/net/minimap_data.gd`. Rebuild it
   whenever a map's collision changes.
 - **Props.** `python3 tools/prop_catalog.py --find <tags>` searches
@@ -226,10 +219,9 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
   `godot/assets/textures/decals/catalog.json`.
 - **Dressing the generated maps.** `tools/map_dressing.py` dresses the Testing
   Area and shades its slabs and panels per vertex;
-  Breakwater places props from its layout file; Warehouse from
-  its layout scripts in `tools/map_blockout/`.
+  Breakwater places props from its layout file.
 - **Lightmaps.** `tools/bake_lightmaps.sh [res://scenes/<map>.tscn ...]` bakes
-  (with no argument: the Testing Area, Warehouse, and Breakwater).
+  (with no argument: the Testing Area and Breakwater).
   Lights that exist only for the bake go under a `BakedLights` node
   (`scripts/baked_lights.gd`), which frees them in the game. A LightmapGI bakes
   only what is under its parent, so it sits at the scene's root; keep lamp
@@ -271,11 +263,9 @@ The owner made these; follow them unless the owner changes them.
 - City maps: CoD4 city blocks with BO2 compact loops, and two sides that are
   different but balanced rather than mirrored (the owner's answer for
   Slamcity, since cut).
-- Warehouse: flow like a real 6v6 map rather than match the real building,
-  with Atlas Superstore as the model of a warehouse map; a grassy start, and
-  two sides that play differently.
+- Breakwater is the one multiplayer map; Warehouse was cut on 2026-11-27
+  ([SCOPE.md](../SCOPE.md)).
 - Everything a player looks at is a modelled mesh built in Blender; Godot
-  primitives and CSG stay for collision, effects, and debug shapes. Warehouse's
-  shell is the exception: Cyclops blocks, kept editable.
-- Reference material (the Call of Duty minimaps, the office scan behind
-  Warehouse's shift office) is measured and rebuilt from, never committed.
+  primitives and CSG stay for collision, effects, and debug shapes.
+- Reference material (such as the Call of Duty minimaps) is measured and
+  rebuilt from, never committed.

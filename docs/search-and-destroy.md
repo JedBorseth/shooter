@@ -74,8 +74,8 @@ Breakwater's (`CHARGE_SITES` in `tools/breakwater_layout.py`), on Red's half:
 
 Each has a solid marker crate with its letter on every side
 (`gear_models.charge_site_a` and `_b`, built in Blender), which stands in
-every mode as set dressing. Warehouse and the Testing Area mark no sites,
-and the title screen offers Search and Destroy only on Breakwater.
+every mode as set dressing. The Testing Area marks no sites, so Search and
+Destroy plays only on Breakwater and its setup card has no map row.
 
 ## Bots
 

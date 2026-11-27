@@ -1041,36 +1041,3 @@ def map_testing_dressing(b: Model):
         for _ in range(3):
             weed_tuft(b, x + rng.uniform(-0.3, 0.3), z + rng.uniform(-0.3, 0.3), rng, blades=8,
                       size=rng.uniform(0.2, 0.4))
-
-
-# --- A burnt-out car (Warehouse's field, tools/build_warehouse_field.py) ---------------
-LOOKS.update({
-    "burnt_body": {"color": (0.12, 0.105, 0.095), "rough": 1.0, "metal": 0},
-    "burnt_rust": {"color": (0.2, 0.11, 0.07), "rough": 1.0, "metal": 0},
-})
-
-
-def burnt_car(b: Model, seed=0):
-    """A burnt-out sedan: Slamcity's car body with its paint burnt to rust and
-    soot and its glass gone, sitting low on its rims."""
-    from build_slamcity_city import yaw_matrix  # noqa: PLC0415 (Blender-only import)
-    from slamcity_models import _car, _Relook  # noqa: PLC0415
-
-    rng = random.Random(seed)
-    car = Model(b._part_geo)
-    swaps = {"glass_tint": "soot", "seat_vinyl": "soot", "light_lens": "soot", "tail_lens": "soot",
-             "chrome": "rust", "plate": "rust", "rubber": "soot", "trim_black": "soot", "steel_galv": "rust"}
-    _car(_Relook(car, swaps), "burnt_body", wrecked=True)
-    m = yaw_matrix((0.0, -0.08, 0.0), rng.uniform(-0.02, 0.02), 1.0, rng.uniform(-0.02, 0.02))
-    b.main.extend(car.main, m)
-    b.detail.extend(car.detail, m)
-    # Paint burnt off to rust across the roof, the bonnet, and the flanks.
-    for z0, z1, y in ((-0.85, 0.35, 1.4), (1.25, 2.0, 0.86)):
-        b.hull([(x, y + dy, z) for x in (-0.62, 0.62) for z in (z0, z1) for dy in (0.0, 0.012)], "burnt_rust")
-    for s in (-1, 1):
-        x = s * 0.925
-        b.hull([(x + dx, y, z) for dx in (-0.006, 0.006) for y, z in ((0.42, -1.5), (0.82, -0.9), (0.8, 1.2),
-                                                                      (0.42, 1.6))], "burnt_rust")
-
-
-assert "map_testing_dressing" in MODELS

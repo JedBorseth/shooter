@@ -184,7 +184,7 @@ out sideways, 20 m below, and 40 m above (`bake_area`), so far-off scenery
 with collision (mountains round a map) cannot make the grid too large to
 bake.
 
-- **Lanes**: maps with a `BotLanes` node (Breakwater, Warehouse)
+- **Lanes**: maps with a `BotLanes` node (Breakwater)
   give lines of points from one side to the other. With no objective, a bot
   follows a lane three times in four, picking the one with the fewest
   teammates on it; otherwise it heads for an enemy spawn (45%) or anywhere
@@ -292,18 +292,18 @@ objective's numbers, and tactics.
 
 ```sh
 godot --headless --fixed-fps 120 --path godot --script res://tools/bot_bench.gd -- \
-  --modes tdm,dom,hardpoint,ctf,snd --maps breakwater,warehouse --skill normal \
+  --modes tdm,dom,hardpoint,ctf,snd --maps breakwater --skill normal \
   --bots 12 --matches 2 --minutes 5 --out ../bench.json
 ```
 
-Maps: `breakwater`, `warehouse`, `arena`. Each match runs to its end or for
+Maps: `breakwater`, `arena`. Each match runs to its end or for
 `--minutes` of play. `--seed` (default 1) changes the bots' random choices,
 and each match adds its index; use the same seed before and after a change
 to compare like for like.
 
 Bot matches also drive the bandwidth bench (`godot/tests/bandwidth_test.gd`,
 see [netcode.md](netcode.md)) and the CPU bench (`just cpu-bench --map
-warehouse --bots 11`, see [performance.md](performance.md)).
+breakwater --bots 11`, see [performance.md](performance.md)).
 
 ## Tests
 

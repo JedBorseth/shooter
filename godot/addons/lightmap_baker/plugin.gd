@@ -35,7 +35,7 @@ func _bake(path: String) -> bool:
 	for i in 600:
 		await _frames(5)
 		root = EditorInterface.get_edited_scene_root()
-		# A big map (Warehouse) can be the edited scene before it is in the
+		# A big map can be the edited scene before it is in the
 		# editor's tree; baking then finds no world to bake in.
 		if root != null and root.scene_file_path == path and root.is_inside_tree():
 			break

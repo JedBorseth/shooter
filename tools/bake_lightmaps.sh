@@ -12,7 +12,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 scenes=("$@")
 if [[ ${#scenes[@]} -eq 0 ]]; then
-	scenes=(res://scenes/main.tscn res://scenes/warehouse.tscn res://scenes/breakwater.tscn)
+	scenes=(res://scenes/main.tscn res://scenes/breakwater.tscn)
 fi
 cd "$repo/godot"
 godot --headless --path . --script res://tools/bake_map_meshes.gd -- "${scenes[@]}" 2>&1 |

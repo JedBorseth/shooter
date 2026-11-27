@@ -43,21 +43,10 @@ func _run() -> void:
 	)
 	var free_roam := menu.get_node("FreeRoam") as Button
 	_check(not free_roam.disabled, "Free Roam is a home-screen option")
-	free_roam.pressed.emit()
-	await process_frame
-	var roam: Control = title.get_node_or_null("TdmSetup")
-	_check(roam != null and roam.get("mode") == "freeroam", "Free Roam opens its map card")
-	if roam != null:
-		var roam_maps: HBoxContainer = roam.get("_map")
-		_check(roam_maps.get_child_count() == 2, "Free Roam offers the two multiplayer maps")
-		(roam_maps.get_child(1) as Button).pressed.emit()
-		_check(
-			roam.options() == {"mode": "freeroam", "map": "warehouse"},
-			"Free Roam starts the chosen map, got %s" % roam.options()
-		)
-		roam.emit_signal("back_requested")
-		await process_frame
-	_check(free_roam.has_focus(), "closing the Free Roam card refocuses its route")
+	_check(
+		free_roam.pressed.is_connected(title.start_free_roam),
+		"Free Roam loads Breakwater straight away, with no map card"
+	)
 	_check(not (menu.get_node("JoinServer") as Button).disabled, "Join Server is available")
 	var options_button := title.get_node("%Options") as Button
 	_check(not options_button.disabled, "Options is available on the main menu")
@@ -105,16 +94,12 @@ func _run() -> void:
 			"the default local match is 6v6 Breakwater with normal bots, got %s" % options
 		)
 		var maps: HBoxContainer = setup.get("_map")
+		_check(maps.get_child_count() == 2, "the map row offers Breakwater and the Testing Arena")
 		(maps.get_child(1) as Button).pressed.emit()
+		_check(setup.options()["map"] == "arena", "Testing Arena selection starts the arena")
 		_check(
-			setup.options()["map"] == "warehouse", "Warehouse selection starts the Warehouse map"
-		)
-		_check(
-			(setup.get("_map_title") as Label).text == "Warehouse", "the card shows the chosen map"
-		)
-		_check(
-			(setup.get("_picture") as TextureRect).texture != null,
-			"the card shows Warehouse's picture"
+			(setup.get("_map_title") as Label).text == "Testing Arena",
+			"the card shows the chosen map"
 		)
 		(maps.get_child(0) as Button).pressed.emit()
 		_check(
@@ -124,7 +109,7 @@ func _run() -> void:
 			(setup.get("_picture") as TextureRect).texture != null,
 			"the card shows Breakwater's picture"
 		)
-		maps.call("select", 2)
+		maps.call("select", 1)
 		_check(setup.options()["map"] == "arena", "select() chooses a map like an OptionButton")
 		setup.back_requested.emit()
 		await process_frame
@@ -285,6 +270,11 @@ func _run() -> void:
 			),
 			"the default Search and Destroy is 6v6 to six rounds on Breakwater, got %s" % options
 		)
+		_check(setup.get("_map") == null, "Search and Destroy has no map row: Breakwater only")
+		_check(
+			(setup.get("_map_title") as Label).text == "Breakwater",
+			"the Search and Destroy card shows Breakwater"
+		)
 		setup.back_requested.emit()
 		await process_frame
 		_check(snd.has_focus(), "Back returns focus to Search and Destroy")
@@ -301,7 +291,6 @@ func _run() -> void:
 		"res://scenes/props/target_dummy.tscn",
 		"res://scenes/weapons/m4_view.tscn",
 		"res://scenes/breakwater.tscn",
-		"res://scenes/warehouse.tscn",
 		"res://scenes/join_server.tscn",
 	]:
 		_check(not ResourceLoader.has_cached(path), "menu does not load %s" % path)

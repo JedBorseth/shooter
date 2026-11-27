@@ -17,17 +17,15 @@ A map over its budget while its fix waits for a decision has its own limit under
 | Map | Preset | Limit | Why |
 | --- | --- | ---: | --- |
 | Breakwater | Medium | 7.6 ms | Medium's own full-screen passes (below); a preset change waits for the owner, and its art pass waits for approval |
-| Warehouse | Medium, High | 7.0, 12.8 ms | Allowances from its earlier layout; the current viewpoints have a GTX 1660 Ti baseline and wait for a run on the reference card |
 
 ### Current numbers
 
-From `docs/perf/baseline.json`: GPU milliseconds averaged over each map's viewpoints, with the worst view in brackets. Each view is the better of two steady runs (`tools/steady.sh`, below). Warehouse's rows were measured on a GTX 1660 Ti (the row's `adapter`); every other map on the reference card.
+From `docs/perf/baseline.json`: GPU milliseconds averaged over each map's viewpoints, with the worst view in brackets. Each view is the better of two steady runs (`tools/steady.sh`, below), on the reference card.
 
 | Map | Card | Low | Medium | High |
 | --- | --- | ---: | ---: | ---: |
 | Testing Area | GTX 1060 | 2.71 (2.83) | 5.66 (5.83) | 8.57 (9.02) |
 | Breakwater | GTX 1060 | 3.23 (3.42) | 6.90 (7.30) | 9.78 (10.24) |
-| Warehouse | GTX 1660 Ti | 1.90 (1.96) | 3.94 (4.13) | 6.70 (6.89) |
 
 Breakwater is over the Medium gate because of Medium's own full-screen passes, measured at the worst views of Breakwater and of Slamcity (a city map since cut): ambient occlusion 1.35 to 1.43 ms (nearly all of it the normal and roughness prepass it makes every opaque surface render; its cheapest quality saves nothing), glow 0.72 to 0.78, SMAA 0.65 to 0.79 (FXAA would save 0.45), sun shadows 0.73 to 1.0 (no shorter reach, smaller atlas, or fewer splits moves it), and fog 0.17 to 0.37. Nothing left in the map itself is worth more than 0.2 ms. Getting it under 6.5 ms means turning one of those passes down on Medium, which changes the default look; that waits for the owner.
 
@@ -56,7 +54,7 @@ Measured on the reference card with the tools below. "The city map" is Slamcity,
 **Lighting**
 
 - Bake lighting instead of computing it live. Every benchmarked map has a LightmapGI (`tools/bake_lightmaps.sh`; see [art-direction.md](art-direction.md)); No SDFGI, VoxelGI, SSIL, or screen-space reflections below High; volumetric fog is High only.
-- Live lights are the most expensive thing a map can do. Lit live, Warehouse's hall cost on Medium: 122 spot lights 13.7 ms (3.7 of it their shadows), SDFGI 5.1, multimeshes 2.9, SSIL 2.6, SSR 1.9, sun shadows 1.7, reflection probes 1.4. Baked, its current layout's worst Medium view is 4.13 ms (on a GTX 1660 Ti). Live extras whose light is also baked (Warehouse's reflection probes and the sun through its roof breach) are in the `graphics_high_only` group and show on High only.
+- Live lights are the most expensive thing a map can do. Lit live, the hall of Warehouse (a map since cut) cost on Medium: 122 spot lights 13.7 ms (3.7 of it their shadows), SDFGI 5.1, multimeshes 2.9, SSIL 2.6, SSR 1.9, sun shadows 1.7, reflection probes 1.4; baked, its worst Medium view was about 4 ms. Live extras whose light is also baked (reflection probes, a sun shaft through a hole in a roof) go in the `graphics_high_only` group and show on High only.
 - Reflection probes are expensive here: four small interior probes on the city map cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block 0.7 ms everywhere. Lightmaps light interiors instead.
 
 **Shaders**
@@ -108,13 +106,13 @@ tools/benchmark.sh --out after.json --compare docs/perf/baseline.json # and comp
 just bench                                                            # the same comparison
 ```
 
-`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Breakwater, and Warehouse. It visits every map once first, so shader compiles do not land in the first number, then holds each fixed viewpoint for 30 warm-up frames and 120 measured frames at each preset. It prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many went into shadow maps), and writes CPU render time, primitives, and video memory to the JSON. The sentry is switched off, so nothing fires.
+`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area and Breakwater. It visits every map once first, so shader compiles do not land in the first number, then holds each fixed viewpoint for 30 warm-up frames and 120 measured frames at each preset. It prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many went into shadow maps), and writes CPU render time, primitives, and video memory to the JSON. The sentry is switched off, so nothing fires.
 
 `tools/bench_compare.py before.json after.json` prints a Markdown table of the two runs to paste into the PR, and exits non-zero if a map and preset got more than 5% slower in GPU or frame time (`--max-regression`), so a loop can stop on a regression. Comparisons use only rows measured on the same card: a row with an `adapter` overrides the file's default.
 
 | Variable | Effect |
 | --- | --- |
-| `BENCH_MAPS` | comma list of `testing`, `breakwater`, `warehouse` (default all) |
+| `BENCH_MAPS` | comma list of `testing`, `breakwater` (default both) |
 | `BENCH_PRESETS` | comma list of `low`, `medium`, `high` (default all) |
 | `BENCH_FRAMES` | frames measured per viewpoint (default 120, at least 10) |
 | `BENCH_CAPTURE` | a directory for a screenshot of every viewpoint, for before-and-after comparisons |
@@ -194,7 +192,7 @@ Measure the build players run. The dev build (opt-level 1) is two to three times
 | Client render (CPU) | 3.1 ms | culling and command recording |
 | Server tick, 12 bots | 1.8 ms of 8.33 (p95 3.1) | character movement 1.4 (`move_and_slide` and step-up 0.95, the climb, ladder, and mount probes 0.36), bot thinking 0.16 (p95 1.3), path queries under 0.2, everything else under 0.1 |
 
-Warehouse and Breakwater servers measure the same within noise (1.7 to 1.8 ms a tick).
+Breakwater and Warehouse (a map since cut) servers measured the same within noise (1.7 to 1.8 ms a tick).
 
 What keeps the client cheap:
 

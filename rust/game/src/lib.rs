@@ -4,7 +4,6 @@
 mod acoustics;
 mod aim_assist;
 mod ambience;
-mod ambience_areas;
 mod audio;
 mod body;
 mod build_info;

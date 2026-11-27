@@ -2,7 +2,7 @@ extends SceneTree
 ## Renders each multiplayer map's minimap from its collision geometry, as a
 ## top-down plan the HUD's minimap (`scripts/net/minimap.gd`) draws:
 ##   godot --headless --path godot --script res://tools/build_minimaps.gd
-## MINIMAPS=breakwater,warehouse limits it to some maps (default: all of them).
+## MINIMAPS=breakwater limits it to some maps (default: all of them).
 ##
 ## Every pixel casts rays straight down through the map's physics:
 ##
@@ -35,7 +35,6 @@ const STEP := 0.45
 ## from spawns and objectives: [centre x, centre z, width].
 const MAPS := {
 	"arena": {"scene": "res://scenes/main.tscn", "bounds": [0.0, 0.0, 70.0]},
-	"warehouse": {"scene": "res://scenes/warehouse.tscn"},
 	"breakwater": {"scene": "res://scenes/breakwater.tscn"},
 }
 

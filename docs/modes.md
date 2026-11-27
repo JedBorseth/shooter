@@ -149,7 +149,6 @@ one's, and most of each footprint standable.
 | Map | Rotation |
 | --- | --- |
 | Testing Area | Crossroads, The Platform, Tunnel, Target Range |
-| Warehouse | Mid Stockpile, Receiving, Pick Mezzanine, Catwalk, Quality Control |
 | Breakwater | Loading Rack, Pump House, Rack Deck, Fire Pumps |
 
 A map without `Hardpoints` gets one zone halfway between the teams' spawns.

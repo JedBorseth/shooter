@@ -1,12 +1,12 @@
 extends Control
 ## The title screen: a grouped list of routes on the left over a still of
 ## a map. Local match modes open their setup as a card on the right; the
-## Join screen and Options take the whole screen.
+## Join screen and Options take the whole screen. The Testing Area and Free
+## Roam (Breakwater, alone) load straight away.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
-const WAREHOUSE_PATH := "res://scenes/warehouse.tscn"
 const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const JOIN_PATH := "res://scenes/join_server.tscn"
 ## The menu button for each local match mode.
@@ -18,12 +18,6 @@ const SETUP_BUTTONS := {
 	"gungame": "GunGame",
 	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
-	"freeroam": "FreeRoam",
-}
-## The scene each Free Roam map loads, and its name in the loading line.
-const FREE_ROAM := {
-	"breakwater": [BREAKWATER_PATH, "Breakwater"],
-	"warehouse": [WAREHOUSE_PATH, "Warehouse"],
 }
 ## The short tag on the right of each route, and the line the status shows
 ## while it has focus.
@@ -37,7 +31,7 @@ const ROUTES := {
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
 	"JoinServer": ["BY IP", "Join a dedicated server by its address."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
-	"FreeRoam": ["ANY MAP", "Walk Breakwater or Warehouse on your own."],
+	"FreeRoam": ["NO BOTS", "Walk Breakwater on your own."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -58,6 +52,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
+	_menu.get_node("FreeRoam").pressed.connect(start_free_roam)
 	%Options.pressed.connect(_open_options)
 	%Quit.pressed.connect(get_tree().quit)
 	for mode: String in SETUP_BUTTONS:
@@ -191,9 +186,6 @@ func _set_current(button_name: String) -> void:
 
 
 func _start_tdm(options: Dictionary) -> void:
-	if options.get("mode") == "freeroam":
-		start_free_roam(options.map)
-		return
 	_close_tdm()
 	_loading = true
 	_set_buttons_disabled(true)
@@ -204,12 +196,10 @@ func _start_tdm(options: Dictionary) -> void:
 	Net.start_local_match(options)
 
 
-## Loads a multiplayer map to walk alone ("breakwater" or "warehouse").
-func start_free_roam(map: String) -> void:
-	if not FREE_ROAM.has(map):
-		return
-	_close_tdm()
-	_start_scene(FREE_ROAM[map][0], FREE_ROAM[map][1])
+## Loads Breakwater to walk alone.
+func start_free_roam() -> void:
+	_close_tdm(false)
+	_start_scene(BREAKWATER_PATH, "Breakwater")
 
 
 func _start_testing() -> void:

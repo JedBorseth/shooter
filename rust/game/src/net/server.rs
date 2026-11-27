@@ -168,7 +168,7 @@ const COVER_SMOKE_OUT: f32 = 5.0;
 /// Chance a Hard bot fakes a plant, and a defuse, before the real one when
 /// an enemy is about. The fake defuse is the classic bait; a fake plant
 /// costs the attackers time at the site, and on the bench halved their
-/// plants on Warehouse at one in two.
+/// plants at one in two.
 const FAKE_PLANT: f32 = 0.2;
 const FAKE_DEFUSE: f32 = 0.5;
 /// How far from a flag carrier its escorts keep, nearest and farthest, in
@@ -362,9 +362,6 @@ pub struct NetServer {
     radar: Radar,
     /// The UAVs and Counter-UAVs up (`shooter_sim::streak`).
     sky: Sky,
-    /// The map is roofed over (its root's `roofed` metadata, Warehouse):
-    /// the streaks that need open sky are left out (`Streak::usable`).
-    roofed: bool,
     /// Care Packages called in and not yet taken (`shooter_sim::care_package`).
     crates: care_package::Crates,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
@@ -1750,12 +1747,6 @@ impl NetServer {
             self.spawn = player.get_position();
         }
         self.spawn_points = map_spawns(&map);
-        self.roofed = map
-            .get_meta_ex("roofed")
-            .default(&false.to_variant())
-            .done()
-            .try_to::<bool>()
-            .unwrap_or(false);
         self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
         self.zones = map_zones(&map);
@@ -4974,8 +4965,9 @@ impl NetServer {
                 continue;
             }
             let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
-            let loadout = avatar.streak_loadout.usable(self.roofed);
-            avatar.streaks.on_points(loadout, points, hardline);
+            avatar
+                .streaks
+                .on_points(avatar.streak_loadout, points, hardline);
             changed.push(avatar.id);
         }
         for id in changed {
@@ -4991,15 +4983,9 @@ impl NetServer {
             .filter(|a| a.brain.as_ref().is_some_and(|b| !b.passive) && a.predicted.state.alive())
             .filter(|a| (self.tick + u32::from(a.id)).is_multiple_of(TICK_RATE / 2))
             .map(|a| {
-                let mut usable: Vec<Streak> = a
-                    .streaks
-                    .held
-                    .iter()
-                    .copied()
-                    .filter(|s| s.usable(self.roofed))
-                    .collect();
-                usable.dedup();
-                (a.id, usable)
+                let mut held = a.streaks.held.clone();
+                held.dedup();
+                (a.id, held)
             })
             .collect();
         for (id, streaks) in bot_calls {
@@ -5077,7 +5063,7 @@ impl NetServer {
             return false;
         }
         let side = self.side(avatar);
-        if !avatar.streaks.held.contains(&streak) || !streak.usable(self.roofed) {
+        if !avatar.streaks.held.contains(&streak) {
             return false;
         }
         // A Care Package needs open sky to land in; without it the streak
@@ -5256,7 +5242,6 @@ impl NetServer {
             progress: avatar.streaks.progress,
             held: avatar.streaks.held.clone(),
             loadout: avatar.streak_loadout,
-            roofed: self.roofed,
         });
         self.send_event(id, event);
     }

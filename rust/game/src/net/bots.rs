@@ -2122,7 +2122,7 @@ impl BotBrain {
         };
         // A team heads away from its own spawns toward the enemy's, wherever
         // they are this round: along X on maps whose teams start west and
-        // east, along Z on Warehouse, whose teams start north and south.
+        // east, along Z on maps whose teams start north and south.
         // Without sides (free-for-all) team 0 heads east.
         let team = usize::from(me.team.min(1));
         let centroid = |points: &[Vector3]| {
@@ -2355,9 +2355,9 @@ fn horizontal_distance(a: Vector3, b: Vector3) -> f32 {
 const SEE_THROUGH_GLASS: usize = 3;
 
 /// Whether nothing on the map that blocks sight lies between `from` and `to`.
-/// Glass (colliders tagged `surface = "glass"`, such as Warehouse's office
-/// partitions) stops players but not eyes or rounds, so a bot sees, and is
-/// seen, through it; it is no cover either.
+/// Glass (colliders tagged `surface = "glass"`, such as an office partition)
+/// stops players but not eyes or rounds, so a bot sees, and is seen, through
+/// it; it is no cover either.
 fn clear_line(space: &mut Gd<PhysicsDirectSpaceState3D>, from: Vector3, to: Vector3) -> bool {
     let mut exclude: Array<Rid> = Array::new();
     for _ in 0..=SEE_THROUGH_GLASS {

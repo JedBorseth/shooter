@@ -102,19 +102,6 @@ impl Streak {
         }
     }
 
-    /// Whether it comes down from the sky onto a point on the map: the
-    /// Care Package's crate, from a flyover. A map roofed over (Warehouse)
-    /// has nowhere for it to land, so it is left out there
-    /// ([`Loadout::usable`]); the radar streaks still work.
-    pub fn needs_open_sky(self) -> bool {
-        self == Streak::CarePackage
-    }
-
-    /// Whether it can be earned and called in on a map, `roofed` or not.
-    pub fn usable(self, roofed: bool) -> bool {
-        !(roofed && self.needs_open_sky())
-    }
-
     /// Its index in [`Streak::ALL`], for the wire.
     pub fn code(self) -> u8 {
         self as u8
@@ -173,19 +160,6 @@ impl Loadout {
     /// The streaks, cheapest first.
     pub fn streaks(self) -> impl Iterator<Item = Streak> {
         self.sorted().0.into_iter().flatten()
-    }
-
-    /// The loadout without the streaks a map, `roofed` or not, cannot
-    /// have: the count runs on the rest, so the dearest usable one closes
-    /// the loop.
-    pub fn usable(self, roofed: bool) -> Self {
-        let mut slots = self.sorted().0;
-        for slot in &mut slots {
-            if slot.is_some_and(|s| !s.usable(roofed)) {
-                *slot = None;
-            }
-        }
-        Self(slots).sorted()
     }
 }
 
@@ -752,36 +726,6 @@ mod tests {
         // A rocket's damage is the whole health plus one.
         assert!(sky.hurt(cuav, AIRCRAFT_HEALTH + 1.0, 0).is_some());
         assert!(sky.up.is_empty());
-    }
-
-    #[test]
-    fn a_roofed_map_leaves_out_the_streaks_that_need_open_sky() {
-        let loadout = Loadout([
-            Some(Streak::Uav),
-            Some(Streak::CounterUav),
-            Some(Streak::CarePackage),
-        ]);
-        assert_eq!(loadout.usable(false), loadout);
-        let roofed = loadout.usable(true);
-        assert_eq!(
-            roofed,
-            Loadout([Some(Streak::Uav), Some(Streak::CounterUav), None])
-        );
-        // The count loops on the radar streaks alone: 1000 is two laps of
-        // 475 and 50 into a third.
-        let mut state = StreakState::default();
-        assert_eq!(
-            state.on_points(roofed, 1000, false),
-            vec![
-                Streak::Uav,
-                Streak::CounterUav,
-                Streak::Uav,
-                Streak::CounterUav
-            ]
-        );
-        assert_eq!(state.progress, 50);
-        assert!(Streak::CounterUav.usable(true));
-        assert!(!Streak::CarePackage.usable(true));
     }
 
     #[test]

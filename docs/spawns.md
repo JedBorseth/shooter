@@ -67,12 +67,12 @@ point, starts only the team's own.
 | Map | Points |
 | --- | --- |
 | Breakwater | 40: 20 on each side, in the scene |
-| Warehouse | 40: six starts on the grass of the Field for team 0, six on the lowered concrete Docks for team 1, and 28 neutral points over both yards and the production and high-bay aisles, facing open aisles |
 | Testing Area | None: six per team in two rows 14 m apart through the player start (`fallback_spawns`) |
 
 ## Tests
 
 - `rust/sim/src/tdm.rs`: safety tiers, side flips, own-side-only spawns,
   start spreading, and maps where every point is dangerous.
-- `godot/tests/warehouse_test.gd`: server preparation, floor, and body
-  clearance at every point.
+- `tools/test_breakwater_layout.py`: Breakwater's spawn yards closed to each
+  other, spawns out of the enemy's sight, and safe spawns even with the enemy
+  in our half.

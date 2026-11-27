@@ -11,6 +11,10 @@ cannot. In November 2026 the user rejected a long three-strip city layout
 (Slamcity, since cut) and a first redesign drawn the same way, then approved a
 plan built from real Call of Duty maps. Work the same way.
 
+Breakwater is the game's one multiplayer map ([SCOPE.md](../../../SCOPE.md));
+the Testing Area is for practice. A new or second map needs the owner's yes
+first.
+
 ## 1. Study the references
 
 The user wants maps that play like real Call of Duty maps. Look at real ones

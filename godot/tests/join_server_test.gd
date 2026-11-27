@@ -4,8 +4,7 @@ extends SceneTree
 ## offers "Join anyway"; that typing the server's address asks its query
 ## port, loads the server's map, and joins it with its bots in view; that
 ## both addresses are kept as recent servers, newest first; and that
-## leaving returns to Join Server with them listed. Pass `-- --warehouse`
-## to run the server on Warehouse. Exits non-zero on failure.
+## leaving returns to Join Server with them listed. Exits non-zero on failure.
 ##
 ##   cd rust && cargo build -p shooter-game
 ##   godot --headless --path godot --script res://tests/join_server_test.gd
@@ -28,9 +27,6 @@ func _run() -> void:
 		_check(false, "build the Rust extension first (cargo build -p shooter-game)")
 		_finish()
 		return
-	var warehouse := OS.get_cmdline_user_args().has("--warehouse")
-	var map_id := "warehouse" if warehouse else "arena"
-	var map_path := "res://scenes/warehouse.tscn" if warehouse else "res://scenes/main.tscn"
 	load("res://scripts/join_server.gd").storage_path = STORAGE_PATH
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORAGE_PATH))
 
@@ -48,7 +44,7 @@ func _run() -> void:
 			"--name",
 			SERVER_NAME,
 			"--map",
-			map_id,
+			"arena",
 		]
 	)
 	_server_pid = OS.create_process(OS.get_executable_path(), server_args)
@@ -108,7 +104,7 @@ func _run() -> void:
 	if client == null:
 		_finish()
 		return
-	_check(current_scene.scene_file_path == map_path, "the server's map is loaded")
+	_check(current_scene.scene_file_path == "res://scenes/main.tscn", "the server's map is loaded")
 	_check(client.port == GAME_PORT, "the client joined the game port")
 	_check(client.remote_ids().size() == 2, "both bots are visible")
 	for i in 3:

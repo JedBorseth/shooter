@@ -8,8 +8,8 @@ extends SceneTree
 ##     --audio-driver Dummy --script res://tests/profile_frame.gd
 ##
 ## Environment:
-##   PROFILE_MAP     a map of tests/benchmark.gd (testing, breakwater,
-##                   warehouse, ...; default breakwater).
+##   PROFILE_MAP     a map of tests/benchmark.gd (testing or breakwater;
+##                   default breakwater).
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
 ##   PROFILE_FRAMES  frames measured per round (default 90).
@@ -137,7 +137,7 @@ func _run() -> void:
 			_env_set.bind(&"glow_blend_mode", Environment.GLOW_BLEND_MODE_SCREEN)
 		],
 		["temporal antialiasing in place of SMAA", _taa],
-		# Live lights, probes, and particles (Warehouse lights its hall live).
+		# Live lights, probes, and particles.
 		["omni and spot lights cast no shadows", _light_shadows.bind(scene)],
 		["no omni or spot lights", _lights_off.bind(scene)],
 		["no reflection probes", _hide_class.bind(scene, "ReflectionProbe")],

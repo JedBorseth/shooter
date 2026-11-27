@@ -66,11 +66,6 @@ func _menus() -> void:
 	page.call("_on_preset", 0)
 	title.get_node("TdmSetup").emit_signal("back_requested")
 	await _frames(5)
-	title.call("_open_setup", "freeroam")
-	await _frames(10)
-	await _shot("menu_02a_free_roam")
-	title.get_node("TdmSetup").emit_signal("back_requested")
-	await _frames(5)
 	title.call("_open_options")
 	await _frames(10)
 	await _shot("menu_02b_options")
@@ -375,7 +370,7 @@ func _art() -> void:
 ## its player spawn in eight directions, at eye height and from higher up.
 ## Only on request (CAPTURE_PHASE=stills).
 func _stills() -> void:
-	for map: String in ["breakwater", "warehouse", "main"]:
+	for map: String in ["breakwater", "main"]:
 		var scene := await _open("res://scenes/%s.tscn" % map)
 		await _seconds(1.5)
 		for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
