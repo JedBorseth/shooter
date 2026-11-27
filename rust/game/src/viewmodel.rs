@@ -399,12 +399,22 @@ fn look_sway_target(look_velocity: Vector2, ads: f32) -> Vector3 {
 /// The bob over two steps (`theta` 0 to 2 pi; a footstep lands at 0 and at
 /// pi), as (position, rotation in degrees). A figure-8: one sideways sway per
 /// two steps, a dip on every footfall. `sprint` adds the running loop.
+///
+/// Walking, the weapon stays nearly still in the frame, as Modern Warfare
+/// (2019 on) and Black Ops 6 hold it: a few millimetres of bounce and a
+/// fraction of a degree, so the sights and the crosshair area stay readable
+/// while moving. The camera's own bob carries most of the walking motion.
 fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
     let (side, dip) = (theta.sin(), -(2.0 * theta).cos());
-    let walk_pos = Vector3::new(0.008 * side, 0.011 * dip, 0.0);
-    let walk_rot = Vector3::new(0.9 * dip, 0.4 * side, 0.6 * side);
-    let run_pos = Vector3::new(0.022 * side, 0.012 * dip, 0.004 * dip);
-    let run_rot = Vector3::new(2.0 * dip, 3.0 * side, 5.0 * side);
+    let walk_pos = Vector3::new(WALK_BOB_POS.x * side, WALK_BOB_POS.y * dip, 0.0);
+    let walk_rot = Vector3::new(
+        WALK_BOB_ROT.x * dip,
+        WALK_BOB_ROT.y * side,
+        WALK_BOB_ROT.z * side,
+    );
+    // The running loop keeps its full size (walk plus run is the sprint).
+    let run_pos = Vector3::new(0.027 * side, 0.019 * dip, 0.004 * dip);
+    let run_rot = Vector3::new(2.6 * dip, 3.28 * side, 5.42 * side);
     (
         (walk_pos + run_pos * sprint) * amount,
         (walk_rot + run_rot * sprint) * amount,
@@ -3565,19 +3575,24 @@ impl ViewmodelRig {
         let floor = if frame.on_floor { 1.0 } else { 0.0 };
         // Aimed, the look lag is mostly this shift (the turn is clamped hard).
         let look_shift = 0.002 - 0.0008 * ads;
-        // Moving sideways the weapon trails the body: a shove on each start
-        // and stop, and a steady lean while the strafe lasts.
-        let sway_pos = Vector3::new(
-            -frame.look_velocity.x * look_shift
-                - change.x * 0.008
-                - frame.velocity.x * STRAFE_SHIFT * floor,
-            -frame.look_velocity.y * look_shift * 0.6 - frame.velocity.y * 0.004,
-            change.z * 0.003,
+        let look_pos = Vector3::new(
+            -frame.look_velocity.x * look_shift,
+            -frame.look_velocity.y * look_shift * 0.6,
+            0.0,
         );
+        // Moving sideways the weapon trails the body a little: a small shove
+        // on each start and stop, and a slight lean while the strafe lasts.
+        // Kept small and capped tighter than the look lag, so walking and
+        // strafing leave the weapon steady.
+        let move_pos = Vector3::new(
+            -change.x * MOVE_SHOVE.x - frame.velocity.x * STRAFE_SHIFT * floor,
+            -frame.velocity.y * 0.004,
+            change.z * MOVE_SHOVE.z,
+        );
+        let move_limit = Vector3::new(0.010, 0.025, 0.006) * inertia;
         let limit = Vector3::new(0.025, 0.025, 0.015) * inertia;
-        let sway_pos = sway_pos.clamp(-limit, limit);
-        // Strafing leans the weapon into the move: Black Ops 2's `vStrafeRot`
-        // rolls it about 6 degrees at a full-speed strafe.
+        let sway_pos = (look_pos + move_pos.clamp(-move_limit, move_limit)).clamp(-limit, limit);
+        // Strafing leans the weapon into the move, gently (see `STRAFE_ROLL`).
         let strafe_roll = -(frame.velocity.x / WALK_SPEED).clamp(-1.2, 1.2)
             * STRAFE_ROLL.to_radians()
             * floor
@@ -3941,13 +3956,23 @@ const POS_MOVE_RATE: f32 = 6.0;
 const DUCKED_POS: Vector3 = Vector3::new(0.008, -0.005, 0.025);
 const DUCKED_ROT: Vector3 = Vector3::new(2.0, 0.0, -2.0);
 /// Walking at full speed, at the hip (`vStandMove`/`vStandRot`: back 0.2
-/// inch; pitch 2, roll -2).
+/// inch; pitch 2, roll -2 in Black Ops 2; halved, so starting and stopping
+/// barely tips the weapon, as in Modern Warfare 2019 on).
 const STAND_MOVE_POS: Vector3 = Vector3::new(0.0, 0.0, 0.005);
-const STAND_MOVE_ROT: Vector3 = Vector3::new(2.0, 0.0, -2.0);
+const STAND_MOVE_ROT: Vector3 = Vector3::new(1.0, 0.0, -1.0);
 /// The strafe lean (degrees at a full walk-speed strafe) and the shift the
-/// weapon trails by (metres per m/s; `vStrafeMove` is half an inch).
-const STRAFE_ROLL: f32 = 5.0;
-const STRAFE_SHIFT: f32 = 0.0022;
+/// weapon trails by (metres per m/s). Black Ops 2's `vStrafeRot` leans about
+/// 6 degrees; modern Call of Duty barely leans a strafing weapon, so ours
+/// leans 1.5.
+const STRAFE_ROLL: f32 = 1.5;
+const STRAFE_SHIFT: f32 = 0.0010;
+/// The walking bob's size: metres sideways and down, and degrees of pitch,
+/// yaw, and roll, at walk speed (see `stride_bob`).
+const WALK_BOB_POS: Vector2 = Vector2::new(0.003, 0.004);
+const WALK_BOB_ROT: Vector3 = Vector3::new(0.3, 0.12, 0.18);
+/// The shove when the body starts or stops (metres per m/s of change,
+/// sideways and fore-aft).
+const MOVE_SHOVE: Vector3 = Vector3::new(0.003, 0.0, 0.0015);
 /// Sliding: canted hard left, dropped, and pulled in (metres, degrees),
 /// as Black Ops 3 and Modern Warfare's slide clips hold a rifle (measured
 /// from footage, roughly).
@@ -4397,9 +4422,24 @@ mod tests {
         assert!((at(0.0).0.y - at(PI).0.y).abs() < 1e-6);
         // Sideways: one way on the first step, the other on the second.
         assert!(at(PI * 0.5).0.x > 0.0 && at(PI * 1.5).0.x < 0.0);
-        // Sprinting adds the running loop: about 2.5 cm and 5 degrees.
+        // Sprinting adds the running loop: about 3 cm and 5.6 degrees.
         let run = stride_bob(PI * 0.5, 1.0, 1.0);
-        assert!(run.0.x > 0.025 && run.1.z > 5.0);
+        assert!(run.0.x > 0.029 && run.1.z > 5.5);
+    }
+
+    #[test]
+    fn walking_keeps_the_weapon_steady() {
+        // At walk speed the bob stays under half a centimetre and half a
+        // degree anywhere in the stride.
+        for i in 0..64 {
+            let theta = TAU * i as f32 / 64.0;
+            let (pos, rot) = stride_bob(theta, 1.0, 0.0);
+            assert!(pos.length() <= 0.0051, "{pos:?}");
+            assert!(
+                rot.x.abs().max(rot.y.abs()).max(rot.z.abs()) < 0.5,
+                "{rot:?}"
+            );
+        }
     }
 
     #[test]
