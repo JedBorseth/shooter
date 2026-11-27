@@ -33,6 +33,8 @@ func _run() -> void:
 	# A new player first: custom classes locked.
 	var menu := await _open_menu()
 	await _shot("class_00_new_player")
+	_focus_class(menu, "custom:0")
+	await _shot("class_00b_new_player_custom")
 	menu.get_parent().queue_free()
 	await _frames(2)
 	# Far along, with a few items still locked.
@@ -41,8 +43,12 @@ func _run() -> void:
 	menu = await _open_menu()
 	var classes: VBoxContainer = menu.get("class_menu")
 	await _shot("class_01_list")
-	(classes.get("_class_buttons")["default:2"] as Button).grab_focus()
-	await _frames(6)
+	_focus_class(menu, "custom:0")
+	await _shot("class_01b_custom_focused")
+	for shot: Array in [["default:4", "class_02b_breacher"], ["default:5", "class_02c_marksman"]]:
+		_focus_class(menu, shot[0])
+		await _shot(shot[1])
+	_focus_class(menu, "default:2")
 	await _shot("class_02_default_focused")
 	classes.call("_open_streaks", 0)
 	await _frames(6)
@@ -92,6 +98,12 @@ func _open_menu() -> Control:
 	(menu.get("class_menu") as VBoxContainer).call("focus_first")
 	await _frames(6)
 	return menu
+
+
+## Focuses the class `id`'s row in the list.
+func _focus_class(menu: Control, id: String) -> void:
+	var classes: Control = menu.get("class_menu")
+	(classes.get("_class_buttons")[id] as Button).grab_focus()
 
 
 ## Focuses `slot`'s tile in the editor's grid, which opens its items.
