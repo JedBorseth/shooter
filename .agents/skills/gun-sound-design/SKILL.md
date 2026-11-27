@@ -43,13 +43,15 @@ Each gun has a `Recipe` in `RECIPES`:
 | Field | What it does |
 | --- | --- |
 | `sessions`, `weights` | Raw tracks that caught the same shots at once (muzzle, beside the shooter, behind), and each one's level in the mix. Shots are lined up by envelope cross-correlation and polarity-checked. |
-| `room`, `wet_db` | A bright small-yard room (slaps at 7–47 ms, then a decay whose highs die first) on the real shot, so it sustains. |
+| `room`, `wet_db` | A bright small-yard room (slaps at 7–47 ms, then a decay graded over four bands whose highs die first, faded out before the response ends) on the real shot, so it sustains. `t60_high` sets how separate fast shots sound. |
 | `dense` | Parallel compression: lifts what follows the hit. |
 | `drive`, `shave_db` | tanh saturation, then a soft clip under the peak. Lowers the crest so the gun reads loud. |
 | `seconds` | Length of each whole shot (the last half fades). |
 | `eq` | Third-octave gains from `match` (below). |
 | `reference`, `low_db` | The reference clips for `match`, and an optional cut below 250 Hz against them. |
 | `lufs` | Loudness of the gun's preview through the Weapons bus. Rifles −20; set the others so the guns sit level. |
+| `spray` | How `match` fires the gun against the reference: (shots, seconds between), the reference clips' cadence. |
+| `declick` | Tames isolated ticks in the tail (a struck steel target downrange that the behind microphones caught). |
 
 Every shot is written whole (`snap_N.wav`, ~1.2 s) and the gun's old body,
 tail, indoor tail and mech go. The engine plays a gun with no `tail` as a
@@ -70,41 +72,51 @@ builds the gun's real `mid` and `far` recordings and skips its near layers;
    music:
 
    ```sh
-   cd ~/.cache/shooter-audio-redo/ref/cs   # one folder per game
+   cd <refs>/cs   # one folder per game; pass --refs <refs> to match
    yt-dlp --print "%(id)s | %(duration)s | %(title)s" "ytsearch12:CS2 M4A4 sound effect"
    yt-dlp --js-runtimes node -x --audio-format wav -o "%(id)s.%(ext)s" "https://www.youtube.com/watch?v=ID"
    ```
 
    Plot each clip's 1 ms loudness envelope and pick spray segments
-   (start/end seconds) with no reload or voice in them. Semi-automatic and
-   bolt guns: use spaced single shots and compare the single-shot envelope
-   instead of a spray. Add them to the recipe's `reference`.
+   (start/end seconds) with no reload or voice in them, then look at the
+   spectrogram of each pick: a stretch of clicks is a reload, not a spray,
+   and Counter-Strike racks a pump or bolt about 0.35 s after each shot
+   (cut shotgun and sniper segments before it; ours is a separate sound).
+   Semi-automatic and bolt guns: use spaced single shots and compare the
+   single-shot envelope instead of a spray. Add them to the recipe's
+   `reference`, and set `spray` to the clips' own cadence (shots, seconds
+   between) so `match` fires the gun the same way.
 3. **Find the recordings.** The library's master sheet is
    `/mnt/slamdrive/slammer/shooter-weapon-raw/meta/master.xlsx`; the raw
    tracks are in the same folder, so pass `--cache
-   /mnt/slamdrive/slammer/shooter-weapon-raw`. Sessions recorded at once:
-   - AK-47: (`C_25` near, `C_45` beside, `C_39` behind),
-     (`C_28`, `C_48`, `C_42`).
-   - AR-15 (M4): (`D_31`, `D_28`, `D_27`), (`D_32`, `D_30`, `D_29`), only
-     5 shots in all.
-   - Beside-the-shooter microphones exist only for the 1911 (`A_37`/`A_38`),
-     the Springfield 1917 (`B_19`/`B_20`), the AK, the AR-15, the Arisaka
-     and the suppressed .22. For other guns mix the near and behind
-     microphones of the same session.
-   Pin every new track's SHA-256 in `build_weapon_audio.RAW_SHA256`.
-4. **Prototype variants** in `~/.cache/shooter-audio-redo/proto/` (the AK's
-   are `run_cs.py`, `real.py`). Start from the AK recipe and make 3–4 that
-   differ in one direction each (more room, less low end, heavier squash).
-   Run `match` for each, so tone is not what separates them.
+   /mnt/slamdrive/slammer/shooter-weapon-raw`. A "session" is only the
+   tracks whose shot onsets line up (same spacing between shots): the
+   library's near, beside and behind tracks were not always rolling for
+   the same shots, and `coherent_shots` drops a shot any of a session's
+   microphones missed. The sessions in `RECIPES` are checked; for example
+   the Springfield 1917's tracks never line up, the Arisaka and the Model 12
+   each share only two shots between near and behind, and the AR-15 has
+   four. Pin every new track's SHA-256 in `build_weapon_audio.RAW_SHA256`.
+4. **Prototype variants** outside the repository. Start from the AK recipe
+   and make 3–4 that differ in one direction each (more room, less low end,
+   heavier squash, the room's highs dying faster). Run `match` for each, so
+   tone is not what separates them.
 5. **Measure against the reference**: band shares over the spray, the
    per-shot envelope in a spray, crest factor, and a spectrogram beside the
    reference's. The AK's numbers to beat: tone within 3 dB per band, sustain
    above −13 dB through each 100 ms, crest about 17 dB (Counter-Strike's is
-   10–13).
+   10–13). Also compare how separate the shots are in the highs (4–16 kHz,
+   the envelope's max minus min in each shot period): Counter-Strike's AK is
+   a dense wash (11 dB), but its M4A4, MP7, FAMAS and SG 553 are crisp
+   (14–20 dB), and the AK's room (highs ringing 0.55 s) smears those; a room
+   whose highs die in 0.2–0.33 s matches them. The EQ is capped at +12 dB, so
+   100–160 Hz can stay a few dB under a bassy reference; the sub below 80 Hz
+   is never chased.
 6. **Send one clip**: the reference first, then the previous version, then
    the variants, all at the reference's spray loudness (match on the burst,
    not the whole clip). Name each, say what changed in plain words, and give
-   the numbers. Clips go in `~/.cache/shooter-audio-redo/clips/`.
+   the numbers. Scale every part of a clip by one common factor for
+   headroom rather than limiting the quiet ones.
    `tools/audio_preview.py compare` renders a gun the way the game plays it.
    Iterate on what the user says.
 7. **Ship the approved one.** Put its recipe in `RECIPES` with the `eq` from
@@ -113,22 +125,33 @@ builds the gun's real `mid` and `far` recordings and skips its near layers;
    (difference below −40 dB), `godot --headless --path godot --import`, and
    compare old and new loudness with `audio_preview.py compare`. Update
    `godot/assets/CREDITS.md` (tracks used) and `docs/audio.md`, and land it
-   with the ship-pr skill.
+   with the ship-pr skill. Set `lufs` so the gun keeps its place in the
+   mix: every gun moved up 3.1 dB (its preview loudness) when the AK did.
 
 ## Tests that know the layers
 
 - `godot/tests/smoke_test.gd` `_gunshots`: a gun without a tail must have no
   body and at least 12 snap voices; layered guns need body, tail and mech.
-- `godot/tests/sound_engine_test.gd` fires a remote M4 and checks
-  `ShotSnap`, `ShotBody` and `ShotTail` have streams. When the M4 goes
-  whole, check only `ShotSnap` there.
+- `godot/tests/sound_engine_test.gd` fires a remote M4 and checks its
+  `ShotSnap` plays on the Weapons bus with no body or tail (it is whole).
 
 ## Status
 
 | Gun | Reference | State |
 | --- | --- | --- |
 | AK-47 | Counter-Strike 2 AK-47 | Whole shot, approved 2026-11-19 (variant "K4") |
-| M4 | (ask) | Coherent real mix direction approved; needs the whole-shot treatment |
-| PDW-9, BR-3, LSW-6, M1911, M870, M40 | (ask) | Old layered build |
+| M4 | Counter-Strike 2 M4A4 | Whole shot, held for listening (2026-11-27) |
+| PDW-9 | Counter-Strike 2 MP7 | Whole shot, held for listening (2026-11-27) |
+| BR-3 | Counter-Strike 2 FAMAS | Whole shot, held for listening (2026-11-27) |
+| LSW-6 | Counter-Strike 2 M249 | Whole shot, held for listening (2026-11-27) |
+| M1911 | Counter-Strike 2 P2000 | Whole shot, held for listening (2026-11-27) |
+| M870 | Counter-Strike 2 Nova | Whole shot, held for listening (2026-11-27) |
+| M40 | Counter-Strike 2 SSG 08 | Whole shot, held for listening (2026-11-27) |
+| CQ-10 | Counter-Strike 2 MAC-10 | Whole shot, held for listening (2026-11-27) |
+| BP-9 | Counter-Strike 2 Tec-9 | Whole shot, held for listening (2026-11-27) |
+| KR-12 | Counter-Strike 2 SG 553 | Whole shot, held for listening (2026-11-27) |
+| DM-7 | Counter-Strike 2 SCAR-20 | Whole shot, held for listening (2026-11-27) |
+| SG-12 | Counter-Strike 2 XM1014 | Whole shot, held for listening (2026-11-27) |
+| RL-4 | (its own PR) | Plays the M870's shot |
 
 Update this table as guns ship.

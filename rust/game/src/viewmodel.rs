@@ -1995,8 +1995,6 @@ impl WeaponView {
         // each have their own, cross-faded by where the listener is.
         let tail = layer("tail", "GunshotTail", tail_db, 1);
         let tail_indoor = layer("tail_indoor", "GunshotTailIndoor", tail_db, 1);
-        // The shot as heard from down the range, for its slapback off walls.
-        let distant = audio::variations(&format!("{dir}/mid"), 1.0);
         // Optional layers live with the weapon's own model key first (a gun
         // that borrows another's shot still has its own action).
         let own = format!("res://assets/audio/weapons/{}", self.weapon);
@@ -2005,6 +2003,16 @@ impl WeaponView {
         // until it has its own. Its mechanical layer never mixes in (a whole
         // shot has none).
         let lent = format!("res://assets/audio/weapons/{}", self.sound_from);
+        // The shot as heard from down the range, for its slapback off walls:
+        // the shot's own recordings, else its lender's (a gun whose whole
+        // shot has landed may not have its own distant recordings yet).
+        let distant = audio::variations(&format!("{dir}/mid"), 1.0).or_else(|| {
+            if self.sound_from.is_empty() {
+                None
+            } else {
+                audio::variations(&format!("{lent}/mid"), 1.0)
+            }
+        });
         let (mech_db, hollow_db) = (self.mech_db, self.hollow_db);
         let mut optional = |name: &str, node: &str, offset_db: f32, lend: bool| {
             let mut sources = vec![&own, &dir];

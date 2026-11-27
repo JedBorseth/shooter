@@ -46,7 +46,15 @@ DEFAULTS = {
     "mech_db": -10.0,
 }
 # Single shots, then (shots, seconds between shots) for the burst.
-SEMI = {"m1911": (6, 0.17), "m870": (3, 1.0), "m40": (3, 1.3), "br3": (3, 0.075)}
+SEMI = {
+    "m1911": (6, 0.17),
+    "m870": (3, 1.0),
+    "m40": (3, 1.3),
+    "br3": (3, 0.075),
+    "bp9": (3, 0.052),
+    "dm7": (5, 0.3),
+    "sg12": (4, 0.4),
+}
 
 
 def settings(gun: str) -> dict[str, float]:

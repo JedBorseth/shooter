@@ -131,9 +131,13 @@ func _check_remote(level: Node3D, player: FpsPlayer, env: AudioEnvironment) -> v
 		remote.apply_test_sample(at, 0, false, true, 2, false, STEP)
 		await process_frame
 	_check(remote.shots_heard() - shots == 2, "two shots, two gunshots")
-	for layer in ["ShotSnap", "ShotBody", "ShotTail"]:
+	# Every gun's shot is whole (tools/build_gunshots.py): the snap alone,
+	# its room and echo included, with no body or tail layer.
+	var snap := remote.get_node("ShotSnap") as AudioStreamPlayer3D
+	_check(snap.stream != null and snap.bus == &"Weapons", "ShotSnap is on the Weapons bus")
+	for layer in ["ShotBody", "ShotTail"]:
 		var node := remote.get_node(layer) as AudioStreamPlayer3D
-		_check(node.stream != null and node.bus == &"Weapons", "%s is on the Weapons bus" % layer)
+		_check(node.stream == null, "a whole shot has no %s" % layer)
 	# From 150 m, the recordings from down the range play instead, half a
 	# second later.
 	var far_at := Vector3(0, 0, -130)

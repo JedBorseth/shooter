@@ -71,6 +71,14 @@ class Room:
     t60_low: float = 0.65
     t60_high: float = 0.32
     seed: int = 5
+    # Seconds of the response, and of the fade at its end. It has to die out
+    # before it stops: a response cut while still ringing ends every shot's
+    # tail with a click (a long room cut at 0.9 s did, 9-16 dB over the tail).
+    length: float = 1.8
+    fade: float = 0.4
+    # Bands the decay is graded over, from ``t60_low`` to ``t60_high``. Two
+    # (split at 1.8 kHz) leave a visible step in a long tail; four grade it.
+    bands: int = 4
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,15 @@ class Recipe:
     # other in the mix.
     lufs: float = -20.0
     takes: int = 8
+    # How ``match`` fires the gun against the reference: (shots, seconds
+    # between them), the reference clips' own cadence. A spray for automatic
+    # guns; one shot for bolt and pump guns, whose clips are single shots.
+    spray: tuple[int, float] = (30, 0.1)
+    # Tame isolated ticks in the tail from this many seconds on (0: off): a
+    # bullet striking a steel target downrange, which the microphones behind
+    # the shooter caught 0.86 s after the Tikka's and the Marlin's shots and
+    # 0.27 s after the shotguns' (pellets, a closer target).
+    declick: float = 0.3
 
 
 # Counter-Strike's AK, measured from four in-game clips: every shot stays
@@ -118,6 +135,96 @@ CS_AK = (
     ),
 )
 
+# The other guns' references, from Counter-Strike 2 (one per gun, the closest
+# in role). Sprays for automatic guns; spaced shots for the others. Each
+# (file, start s, end s) was picked from the clip's loudness envelope with no
+# reload, switch or voice in it.
+CS_M4A4 = (
+    "cs",
+    (
+        ("nO8F-tQmFUY.wav", 6.0, 7.2),
+        ("nO8F-tQmFUY.wav", 12.75, 13.8),
+        ("nO8F-tQmFUY.wav", 25.66, 26.9),
+        ("nO8F-tQmFUY.wav", 28.2, 29.25),
+    ),
+)
+CS_MP7 = (
+    "cs",
+    (
+        ("AMdRfCpR-hE.wav", 19.1, 21.6),
+        ("AMdRfCpR-hE.wav", 12.6, 13.85),
+        ("AMdRfCpR-hE.wav", 6.62, 7.2),
+    ),
+)
+CS_FAMAS = (
+    "cs",
+    (
+        ("Wa7Ax32h0Ug.wav", 8.03, 8.83),
+        ("Wa7Ax32h0Ug.wav", 4.32, 4.88),
+        ("Wa7Ax32h0Ug.wav", 16.07, 17.54),
+    ),
+)
+CS_M249 = (
+    "cs",
+    (("J7s9VMusUfk.wav", 21.5, 24.3), ("J7s9VMusUfk.wav", 28.45, 31.1)),
+)
+CS_P2000 = (
+    "cs",
+    (
+        ("e3pxNtm8RFM.wav", 3.27, 3.85),
+        ("e3pxNtm8RFM.wav", 3.94, 4.51),
+        ("e3pxNtm8RFM.wav", 8.46, 9.21),
+        ("e3pxNtm8RFM.wav", 16.66, 17.21),
+    ),
+)
+# The Nova's shot alone: the clean effect, and in-game shots cut before the
+# pump (CS2 racks it 0.35 s after each shot; ours is a separate sound).
+CS_NOVA = (
+    "cs",
+    (
+        ("66SRzlcUxTk.wav", 0.25, 1.25),
+        ("NBManrUtOis.wav", 4.21, 4.55),
+        ("NBManrUtOis.wav", 8.81, 9.15),
+        ("NBManrUtOis.wav", 11.0, 11.34),
+    ),
+)
+CS_SSG08 = (
+    "cs",
+    (("lyCaloypcgA.wav", 0.33, 1.6), ("lyCaloypcgA.wav", 10.27, 11.5)),
+)
+CS_MAC10 = (
+    "cs",
+    (("OaMfVys3C9I.wav", 0.5, 2.85), ("OaMfVys3C9I.wav", 5.87, 8.2)),
+)
+CS_TEC9 = (
+    "cs",
+    (
+        ("_JpbNp5FPvM.wav", 2.1, 3.35),
+        ("_JpbNp5FPvM.wav", 10.9, 11.78),
+        ("_JpbNp5FPvM.wav", 18.59, 19.14),
+    ),
+)
+CS_SG553 = (
+    "cs",
+    (
+        ("w77gevi-Vic.wav", 16.27, 17.73),
+        ("w77gevi-Vic.wav", 30.53, 31.58),
+        ("w77gevi-Vic.wav", 22.09, 22.89),
+    ),
+)
+CS_SCAR20 = (
+    "cs",
+    (
+        ("nek_T_qGM1Q.wav", 8.72, 10.58),
+        ("nek_T_qGM1Q.wav", 18.61, 19.91),
+        ("nek_T_qGM1Q.wav", 30.51, 31.87),
+    ),
+)
+CS_XM1014 = (
+    "cs",
+    (("Ge6Ty0clcU4.wav", 2.54, 4.16), ("Ge6Ty0clcU4.wav", 33.97, 35.23)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -127,7 +234,10 @@ RECIPES = {
         drive=3.5,
         shave_db=13.0,
         seconds=1.2,
-        room=Room(t60_low=0.7, t60_high=0.55),
+        # As approved: a 0.9 s response cut without a fade (its end sits
+        # about 60 dB under this short room's shot).
+        room=Room(t60_low=0.7, t60_high=0.55, length=0.9, fade=0.0, bands=2),
+        declick=0.0,
         eq=(
             3.0,
             3.0,
@@ -158,6 +268,547 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The M4: the AR-15 (5.56) from the muzzle, beside and behind the shooter (four
+    # shots all three caught), the behind microphone up, the room's highs dying in
+    # 0.2 s so each crack stands apart, matched to Counter-Strike 2's M4A4.
+    "m4": Recipe(
+        sessions=(("D_31", "D_28", "D_27"), ("D_32", "D_30", "D_29")),
+        weights=(0.0, -3.0, 0.0),
+        wet_db=-3.0,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.2,
+        room=Room(t60_low=0.70, t60_high=0.20),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            9.5,
+            12.0,
+            8.7,
+            -4.6,
+            -5.5,
+            -3.3,
+            -1.7,
+            -4.0,
+            -3.8,
+            -3.7,
+            -6.7,
+            -3.8,
+            -4.3,
+            -5.1,
+            -3.1,
+            -2.7,
+            0.0,
+            2.8,
+            4.8,
+            6.5,
+            6.6,
+            2.0,
+        ),
+        reference=CS_M4A4,
+        spray=(30, 0.09),
+        lufs=-19.5,
+    ),
+    # The PDW-9: the Carl Gustav M45 (9 mm), near and behind the shooter at equal
+    # level, the room's highs dying in 0.2 s, matched to Counter-Strike 2's MP7.
+    "pdw9": Recipe(
+        sessions=(("G_25", "G_26"), ("G_31", "G_32")),
+        weights=(0.0, 0.0),
+        wet_db=-3.0,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.0,
+        room=Room(t60_low=0.70, t60_high=0.20),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            12.0,
+            7.8,
+            9.8,
+            3.1,
+            -3.6,
+            -2.3,
+            -0.9,
+            -0.4,
+            -1.2,
+            -3.7,
+            -7.0,
+            -9.0,
+            -7.5,
+            -5.7,
+            -4.6,
+            -1.5,
+            0.0,
+            -1.1,
+            0.0,
+            4.0,
+            5.5,
+            2.4,
+        ),
+        reference=CS_MP7,
+        spray=(30, 0.08),
+        lufs=-22.7,
+    ),
+    # The BR-3: the SKS (7.62x39), near and behind the shooter, the room's highs
+    # dying in 0.2 s, matched to Counter-Strike 2's FAMAS.
+    "br3": Recipe(
+        sessions=(("U_12", "U_13"), ("U_14", "U_15")),
+        weights=(0.0, -3.0),
+        wet_db=-3.0,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.2,
+        room=Room(t60_low=0.70, t60_high=0.20),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            9.7,
+            5.3,
+            6.7,
+            2.1,
+            -9.2,
+            -8.0,
+            -3.1,
+            -3.7,
+            -5.1,
+            -8.7,
+            -8.6,
+            -4.0,
+            -5.2,
+            -8.4,
+            -5.6,
+            0.0,
+            1.1,
+            -0.4,
+            3.2,
+            5.8,
+            2.2,
+            -3.4,
+        ),
+        reference=CS_FAMAS,
+        spray=(30, 0.09),
+        lufs=-20.9,
+    ),
+    # The LSW-6: the Mosin-Nagant (7.62x54R, a machine gun's round), near and
+    # behind, a bigger room whose highs die in 0.33 s (dense like the M249, each
+    # shot still heard), matched to Counter-Strike 2's M249.
+    "lsw6": Recipe(
+        sessions=(("M_19", "M_20"), ("M_21", "M_22")),
+        weights=(0.0, -3.0),
+        wet_db=1.5,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.3,
+        room=Room(t60_low=0.85, t60_high=0.33),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            7.3,
+            0.0,
+            2.6,
+            -0.5,
+            -4.4,
+            -2.7,
+            -2.0,
+            -6.4,
+            -8.2,
+            -3.9,
+            -4.1,
+            -5.6,
+            -3.4,
+            -3.1,
+            -2.8,
+            0.3,
+            2.6,
+            1.8,
+            2.6,
+            3.7,
+            1.4,
+            -3.5,
+        ),
+        reference=CS_M249,
+        spray=(30, 0.08),
+        lufs=-17.1,
+    ),
+    # The M1911: the 1911 (.45) from the muzzle, beside and behind the shooter,
+    # light squash and room so each shot decays between trigger pulls, matched to
+    # Counter-Strike 2's P2000.
+    "m1911": Recipe(
+        sessions=(("A_41", "A_37", "A_35"), ("A_42", "A_38", "A_36")),
+        weights=(0.0, -3.0, -3.0),
+        wet_db=-3.0,
+        dense=0.8,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.0,
+        room=Room(t60_low=0.70, t60_high=0.55),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            11.2,
+            9.6,
+            4.2,
+            5.0,
+            -4.1,
+            -7.6,
+            -1.8,
+            -5.5,
+            -7.8,
+            -4.9,
+            -5.6,
+            -8.1,
+            -7.9,
+            -6.5,
+            -5.8,
+            -3.4,
+            0.0,
+            1.5,
+            2.7,
+            2.1,
+            1.4,
+            2.1,
+            -1.7,
+        ),
+        reference=CS_P2000,
+        spray=(14, 0.18),
+        lufs=-22.8,
+    ),
+    # The M870: the Benelli Nova and the Charles Daly (12 gauge pumps), near and
+    # behind, a big room and squash so the blast holds about a third of a second,
+    # matched to Counter-Strike 2's Nova (its shot alone, before the pump).
+    "m870": Recipe(
+        sessions=(("O_19", "O_18"), ("H_19", "H_18"), ("H_21", "H_20")),
+        weights=(0.0, -3.0),
+        wet_db=-0.5,
+        dense=1.6,
+        drive=5.8,
+        shave_db=17.5,
+        seconds=1.6,
+        room=Room(t60_low=1.00, t60_high=0.33),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            4.2,
+            6.3,
+            3.1,
+            -3.5,
+            -4.6,
+            -5.5,
+            -7.1,
+            -8.0,
+            -11.9,
+            -12.1,
+            -8.3,
+            -4.6,
+            -2.8,
+            -2.9,
+            -2.5,
+            0.0,
+            4.8,
+            6.0,
+            6.4,
+            12.0,
+            12.0,
+            -3.6,
+        ),
+        reference=CS_NOVA,
+        spray=(1, 1.0),
+        declick=0.2,
+        lufs=-23.9,
+    ),
+    # The M40: the Tikka T3 (.30-06 bolt action), near and behind the shooter (the
+    # Springfield 1917's tracks never caught the same shots), a long bright room,
+    # the peak squashed a little, matched to Counter-Strike 2's SSG 08.
+    "m40": Recipe(
+        sessions=(("W_27", "W_26"), ("W_29", "W_28")),
+        weights=(0.0, -3.0),
+        wet_db=0.0,
+        dense=1.6,
+        drive=5.0,
+        shave_db=16.0,
+        seconds=1.6,
+        room=Room(t60_low=0.80, t60_high=0.60),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            8.2,
+            8.4,
+            6.7,
+            0.4,
+            -5.4,
+            -6.6,
+            -6.0,
+            -4.1,
+            -2.9,
+            -2.3,
+            -3.2,
+            -3.4,
+            -2.0,
+            -1.1,
+            0.6,
+            0.0,
+            0.3,
+            2.0,
+            2.2,
+            2.1,
+            -1.3,
+            -5.5,
+            -8.2,
+        ),
+        reference=CS_SSG08,
+        spray=(1, 1.5),
+        lufs=-23.5,
+    ),
+    # The CQ-10: the PPSh (7.62x25, about 1000 rpm, the closest fast SMG), near and
+    # behind at equal level, the room's highs dying in 0.26 s, matched to
+    # Counter-Strike 2's MAC-10.
+    "cq10": Recipe(
+        sessions=(("P_30", "P_31"), ("P_24", "P_25"), ("P_32", "P_33")),
+        weights=(0.0, 0.0),
+        wet_db=-1.5,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.0,
+        room=Room(t60_low=0.70, t60_high=0.26),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            10.9,
+            0.2,
+            1.2,
+            0.0,
+            -8.8,
+            -8.8,
+            -9.1,
+            -8.7,
+            -6.8,
+            -5.0,
+            -6.8,
+            -12.0,
+            -10.7,
+            -8.3,
+            -5.7,
+            0.3,
+            0.3,
+            -0.7,
+            1.1,
+            1.5,
+            1.1,
+            -1.4,
+        ),
+        reference=CS_MAC10,
+        spray=(30, 0.075),
+        lufs=-22.5,
+    ),
+    # The BP-9: the Walther PPQ (9 mm), near and behind the shooter, short and dry
+    # (peak squashed, little density, a short dark room) so each burst round
+    # snaps and dies, matched to Counter-Strike 2's Tec-9.
+    "bp9": Recipe(
+        sessions=(("X_39", "X_38"), ("X_41", "X_40")),
+        weights=(0.0, -3.0),
+        wet_db=-9.0,
+        dense=0.2,
+        drive=5.0,
+        shave_db=16.0,
+        seconds=1.0,
+        room=Room(t60_low=0.30, t60_high=0.20),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            12.0,
+            6.1,
+            1.4,
+            -0.3,
+            0.6,
+            2.6,
+            -1.2,
+            -3.8,
+            -2.1,
+            0.0,
+            -1.1,
+            -5.0,
+            -9.3,
+            -12.0,
+            -4.6,
+            1.6,
+            -0.8,
+            -0.5,
+            -0.1,
+            1.3,
+            2.5,
+            -1.3,
+        ),
+        reference=CS_TEC9,
+        spray=(12, 0.105),
+        lufs=-22.8,
+    ),
+    # The KR-12: the Arisaka (a full-power rifle round), two shots near and behind
+    # the shooter at once and two from the muzzle microphone alone (its other
+    # tracks caught different shots), the room's highs dying in 0.26 s, matched
+    # to Counter-Strike 2's SG 553.
+    "kr12": Recipe(
+        sessions=(("E_25", "E_20"), ("E_22",)),
+        weights=(0.0, -3.0),
+        wet_db=-4.5,
+        dense=1.6,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.2,
+        room=Room(t60_low=0.70, t60_high=0.26),
+        eq=(
+            -4.1,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            12.0,
+            0.0,
+            0.0,
+            -2.9,
+            -8.8,
+            -4.8,
+            -6.7,
+            -10.2,
+            -12.2,
+            -12.9,
+            -10.0,
+            -7.3,
+            -1.5,
+            0.4,
+            -3.1,
+            -1.0,
+            2.4,
+            3.1,
+            6.1,
+            6.4,
+            4.1,
+            2.8,
+        ),
+        reference=CS_SG553,
+        spray=(30, 0.11),
+        lufs=-20.1,
+    ),
+    # The DM-7: the Marlin 336 (.30-30), near and behind the shooter, the room's
+    # highs dying in 0.33 s and the peak lightly squashed, matched to
+    # Counter-Strike 2's SCAR-20.
+    "dm7": Recipe(
+        sessions=(("I_20", "I_19"), ("I_22", "I_21")),
+        weights=(0.0, -3.0),
+        wet_db=-4.5,
+        dense=0.8,
+        drive=4.2,
+        shave_db=14.5,
+        seconds=1.4,
+        room=Room(t60_low=0.80, t60_high=0.33),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            10.7,
+            8.3,
+            4.3,
+            -2.0,
+            -5.3,
+            -5.2,
+            -4.4,
+            -5.4,
+            -6.9,
+            -9.5,
+            -9.0,
+            -5.6,
+            -4.3,
+            -4.5,
+            -3.3,
+            0.0,
+            3.5,
+            4.4,
+            4.8,
+            5.7,
+            3.8,
+            -1.2,
+        ),
+        reference=CS_SCAR20,
+        spray=(8, 0.25),
+        lufs=-20.9,
+    ),
+    # The SG-12: the Winchester Model 12 (12 gauge), two shots near and behind the
+    # shooter at once and two from the muzzle microphone alone, the room's highs
+    # dying in 0.2 s, matched to Counter-Strike 2's XM1014.
+    "sg12": Recipe(
+        sessions=(("K_20", "K_19"), ("K_22",)),
+        weights=(0.0, -3.0),
+        wet_db=1.0,
+        dense=2.4,
+        drive=3.5,
+        shave_db=13.0,
+        seconds=1.6,
+        room=Room(t60_low=1.05, t60_high=0.20),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            9.7,
+            3.2,
+            2.6,
+            -2.0,
+            -6.2,
+            -4.6,
+            -4.2,
+            -3.1,
+            -3.3,
+            -6.7,
+            -7.9,
+            -6.2,
+            -3.4,
+            0.0,
+            -0.2,
+            -0.3,
+            4.1,
+            3.6,
+            2.1,
+            6.2,
+            5.5,
+            -1.0,
+        ),
+        reference=CS_XM1014,
+        spray=(5, 0.33),
+        declick=0.2,
+        lufs=-22.2,
     ),
 }
 
@@ -200,25 +851,41 @@ def cut(x: np.ndarray, rate: int, at: int, seconds: float) -> np.ndarray:
     return y
 
 
+def shot_starts(x: np.ndarray, rate: int) -> list[int]:
+    """Samples where shots start: above a quarter of the track's peak, at
+    least a second after the last loud sample."""
+    level = np.abs(x).max(1)
+    starts, last = [], -10 * rate
+    for j in np.nonzero(level > level.max() * 0.25)[0]:
+        if j - last > rate:
+            starts.append(int(j))
+        last = j
+    return starts
+
+
 def coherent_shots(
     tracks: dict[str, Path], recipe: Recipe, seconds: float
 ) -> list[np.ndarray]:
-    """Every shot in the sessions, each mixed from all its microphones."""
+    """Every shot in the sessions that all its microphones heard, each mixed
+    from all of them. A session's tracks were not always rolling for the
+    same shots, so a shot one of them missed is left out rather than mixed
+    with another shot."""
     out = []
     for names in recipe.sessions:
         loaded = [read(tracks[n]) for n in names]
         ref, rr = loaded[0]
         offsets = [0.0] + [offset(ref, rr, x, r) for x, r in loaded[1:]]
-        level = np.abs(ref).max(1)
-        starts, last = [], -10 * rr
-        for j in np.nonzero(level > level.max() * 0.25)[0]:
-            if j - last > rr:
-                starts.append(int(j))
-            last = j
-        for i in starts:
+        heard = [np.array(shot_starts(x, r)) / r for x, r in loaded]
+        for i in shot_starts(ref, rr):
+            t = i / rr
+            if any(
+                len(h) == 0 or np.min(np.abs(h - (t + o))) > 0.02
+                for h, o in zip(heard[1:], offsets[1:])
+            ):
+                continue
             parts = []
             for (x, r), o, w in zip(loaded, offsets, recipe.weights):
-                y = cut(x, r, onset_near(x, r, i / rr + o), seconds)
+                y = cut(x, r, onset_near(x, r, t + o), seconds)
                 parts.append(y * 10 ** (w / 20) / np.abs(y[: int(0.01 * RATE)]).max())
             n = min(len(p) for p in parts)
             parts = [p[:n] for p in parts]
@@ -281,24 +948,41 @@ def fade_out(y: np.ndarray, share: float) -> np.ndarray:
     return y
 
 
-def room_ir(room: Room, length: float = 0.9, pre: float = 0.004) -> np.ndarray:
+def room_ir(room: Room, pre: float = 0.004) -> np.ndarray:
     rng = np.random.default_rng(room.seed)
-    n = int(length * RATE)
+    n = int(room.length * RATE)
     t = np.arange(n) / RATE
     noise = rng.standard_normal((n, 2))
-    lo = signal.sosfilt(
-        signal.butter(2, 1800, "low", fs=RATE, output="sos"), noise, axis=0
-    )
-    hi = noise - lo
-    ir = (
-        lo * np.exp(-6.91 * t / room.t60_low)[:, None]
-        + hi * np.exp(-6.91 * t / room.t60_high)[:, None]
-    )
+    if room.bands == 2:
+        lo = signal.sosfilt(
+            signal.butter(2, 1800, "low", fs=RATE, output="sos"), noise, axis=0
+        )
+        parts = [(lo, room.t60_low), (noise - lo, room.t60_high)]
+    else:
+        # Crossovers spaced evenly in log frequency around 1.8 kHz, each
+        # band's decay graded between the low and high ones.
+        edges = 1800 * 3.0 ** (np.arange(room.bands - 1) - (room.bands - 2) / 2)
+        parts, rest = [], noise
+        for k, hz in enumerate(edges):
+            low = signal.sosfilt(
+                signal.butter(2, hz, "low", fs=RATE, output="sos"), rest, axis=0
+            )
+            parts.append((low, k))
+            rest = rest - low
+        parts.append((rest, room.bands - 1))
+        parts = [
+            (x, room.t60_low * (room.t60_high / room.t60_low) ** (k / (room.bands - 1)))
+            for x, k in parts
+        ]
+    ir = sum(x * np.exp(-6.91 * t / t60)[:, None] for x, t60 in parts)
     ir *= np.clip((t - pre) / 0.012, 0, 1)[:, None]
     for ms, g in ((7, 0.9), (13, 0.7), (19, 0.6), (26, 0.5), (34, 0.4), (47, 0.3)):
         k = int(ms * RATE / 1000)
         ir[k, 0] += g * 30 * rng.uniform(0.7, 1.0)
         ir[k + rng.integers(1, 30), 1] += g * 30 * rng.uniform(0.7, 1.0)
+    if room.fade:
+        k = int(room.fade * RATE)
+        ir[-k:] *= (0.5 + 0.5 * np.cos(np.linspace(0, np.pi, k)))[:, None]
     ir = signal.sosfilt(
         signal.butter(2, 120, "high", fs=RATE, output="sos"), ir, axis=0
     )
@@ -338,16 +1022,19 @@ def finish(shots: list[np.ndarray], eq: np.ndarray) -> list[np.ndarray]:
 
 
 def leveled(gun: str, shots: list[np.ndarray], lufs: float) -> list[np.ndarray]:
-    """``shots`` scaled so the gun's preview reaches ``lufs`` through the
-    game's Weapons bus (two passes: the bus compressor is not linear)."""
+    """``shots`` scaled so the gun's preview reaches ``lufs`` (within 0.2 dB)
+    through the game's Weapons bus. The bus compressor is not linear, so a
+    loud gun takes several passes."""
     import audio_preview
     import pyloudnorm
 
     meter = pyloudnorm.Meter(RATE)
-    for _ in range(2):
+    for i in range(8):
         with tempfile.TemporaryDirectory() as tmp:
             write_gun(Path(tmp) / gun, shots)
             now = meter.integrated_loudness(audio_preview.render(Path(tmp), gun))
+        if i >= 2 and abs(lufs - now) <= 0.2:
+            break
         gain = 10 ** ((lufs - now) / 20)
         shots = [s * gain for s in shots]
     if max(np.abs(s).max() for s in shots) > 0.99:
@@ -363,6 +1050,8 @@ def shaped(recipe: Recipe, cache: Path) -> list[np.ndarray]:
     shots = coherent_shots(tracks, recipe, recipe.seconds + 0.2)[: recipe.takes]
     if not shots:
         sys.exit("no shots found")
+    if recipe.declick:
+        shots = [bwa.declick(s, recipe.declick) for s in shots]
     ir = room_ir(recipe.room)
     return [shape(s, recipe, ir) for s in shots]
 
@@ -387,9 +1076,9 @@ def written(shots: list[np.ndarray]) -> set[str]:
 # --- Matching ----------------------------------------------------------------
 
 
-def band_tilt(x: np.ndarray) -> np.ndarray:
+def band_tilt(x: np.ndarray, seconds: float = 2.8) -> np.ndarray:
     """Each band's share of a spray's energy, dB, overall level removed."""
-    x = x[: int(2.8 * RATE)]
+    x = x[: int(seconds * RATE)]
     s = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
     f = np.fft.rfftfreq(len(x), 1 / RATE)
     out = np.array(
@@ -433,16 +1122,29 @@ def reference_tilt(recipe: Recipe, refs: Path) -> np.ndarray:
     )
 
 
-def spray(folder: Path, gun: str) -> np.ndarray:
-    """30 rounds at 600 rpm, mixed as the game plays them."""
+def spray(folder: Path, gun: str, cadence: tuple[int, float] = (30, 0.1)) -> np.ndarray:
+    """The gun fired at ``cadence`` (rounds, seconds between them), mixed as
+    the game plays it."""
     import audio_preview
 
-    audio_preview.burst = lambda _gun: (30, 0.1)
-    x = audio_preview.render(folder, gun).mean(1)
+    burst = audio_preview.burst
+    audio_preview.burst = lambda _gun: cadence
+    try:
+        x = audio_preview.render(folder, gun).mean(1)
+    finally:
+        audio_preview.burst = burst
     return from_onset(x[int(2.6 * RATE) - int(0.01 * RATE) :])
 
 
-def match(gun: str, cache: Path, refs: Path, rounds: int = 4) -> None:
+def window(recipe: Recipe) -> float:
+    """Seconds of a spray the match compares: as long as the reference's
+    clips, so a single shot is not weighed against a longer stretch."""
+    return min(
+        2.8, float(np.mean([end - start for _, start, end in recipe.reference[1]]))
+    )
+
+
+def match(gun: str, cache: Path, refs: Path, rounds: int = 8) -> None:
     recipe = RECIPES[gun]
     target = reference_tilt(recipe, refs)
     shots = shaped(recipe, cache)
@@ -450,14 +1152,31 @@ def match(gun: str, cache: Path, refs: Path, rounds: int = 4) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         for i in range(rounds):
             write_gun(Path(tmp) / gun, finish(shots, eq))
-            gap = target - band_tilt(spray(Path(tmp), gun))
+            ours = spray(Path(tmp), gun, recipe.spray)
+            gap = target - band_tilt(ours, window(recipe))
             gap = np.convolve(np.pad(gap, 1, mode="edge"), [0.25, 0.5, 0.25], "valid")
-            print(f"round {i + 1}: largest gap {np.abs(gap).max():.1f} dB")
+            # The sub below 80 Hz is not chased (``step_eq``), so the gap
+            # that counts is the rest's, centred on itself.
+            heard = (CENTERS > 90) & (CENTERS < 13000)
+            rest = gap[heard] - gap[heard].mean()
+            print(
+                f"round {i + 1}: largest gap 90 Hz-13 kHz {np.abs(rest).max():.1f} dB"
+            )
             if i == rounds - 1:
                 break
-            eq = np.clip(eq + gap, -15, 12)
-            eq[CENTERS < 80] = np.minimum(eq[CENTERS < 80], 3)  # no sub boom
+            eq = step_eq(eq, gap)
     print("eq=(" + ", ".join(f"{g:.1f}" for g in eq) + "),")
+
+
+def step_eq(eq: np.ndarray, gap: np.ndarray) -> np.ndarray:
+    """One round of the match: close the gap, centred on the median band so
+    the curve's shape, not its overall level, uses the -15..+12 dB range (a
+    pistol's needs more tilt than a rifle's, and drifting into the floor
+    stalled it), with no more than +3 dB below 80 Hz (no sub boom)."""
+    eq = eq + gap
+    eq = np.clip(eq - np.median(eq), -15, 12)
+    eq[CENTERS < 80] = np.minimum(eq[CENTERS < 80], 3)
+    return eq
 
 
 def main() -> None:

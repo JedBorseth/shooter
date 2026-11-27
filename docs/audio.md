@@ -75,61 +75,75 @@ and slapback (4).
 ## Gunshots
 
 Each gun's shot is a folder under `godot/assets/audio/weapons/<key>/`, from the
-raw master tracks of the CC0 Free Firearm Sound Library. The BR-3 is an SKS and
-the LSW-6 a Mosin-Nagant, so each of the original nine has its own recording.
-Newer guns borrow a close one's folder until their own lands (`sound_from` on
-the view scene, `audio::shot_source`):
+raw master tracks of the CC0 Free Firearm Sound Library, and every gun's near
+shot is built whole (below). Where the library has no such gun, the closest one
+stands in with its own voice:
 
-| Weapon | Plays |
+| Weapon | Recording |
 | --- | --- |
-| KR-12 | AK-47 |
-| CQ-10 | PDW-9 |
-| BP-9 | M1911 |
-| DM-7 | BR-3 |
-| SG-12, RL-4 | M870 |
+| AK-47 | AK-47 |
+| M4 | AR-15 |
+| PDW-9 | Carl Gustav M45 (9 mm) |
+| BR-3 | Norinco SKS |
+| LSW-6 | Mosin-Nagant (7.62x54R) |
+| M1911 | 1911 |
+| M870 | Benelli Nova and Charles Daly (12 gauge pumps) |
+| M40 | Tikka T3 (.30-06 bolt action) |
+| CQ-10 | PPSh (fast 7.62x25 SMG) |
+| BP-9 | Walther PPQ (9 mm) |
+| KR-12 | Arisaka (full-power rifle round) |
+| DM-7 | Marlin 336 (.30-30) |
+| SG-12 | Winchester Model 12 (12 gauge) |
 
-A borrowing gun still uses its own folder for any layer it has (`mech`,
-`hollow`, foley), and its own `mid` and `far` first. Once a `snap` exists in its
-own folder, its own shot takes over with no code change.
+The five newer guns (CQ-10, BP-9, KR-12, DM-7, SG-12) still borrow the rest of
+a close gun's folder (`sound_from` on the view scene): handling foley, the
+last-rounds `hollow` ring, and the `mid` and `far` recordings, including the
+`mid` that your own shot's wall slapback plays. A gun's own file always wins
+(`audio::shot_source`); the RL-4 still plays the M870's shot until its own lands.
 
-Guns are remade one at a time with the
+Guns are remade with the
 [gun-sound-design](../.agents/skills/gun-sound-design/SKILL.md) skill, each
 approved by ear before it merges.
 
-### Whole shots (`tools/build_gunshots.py`): the AK-47
+### Whole shots (`tools/build_gunshots.py`)
 
 Each take is one real shot mixed from every microphone that caught it (near the
 muzzle, beside and behind the shooter, lined up to the sample), put in a short
-bright room, squashed so it stays loud until the next round, and EQ'd so a spray
-matches the reference game's gun (Counter-Strike's AK for the AK-47). It is
-written whole, about 1.2 s with its room and echo, as `snap_N.wav`; the gun has
+bright room, squashed so it stays loud until the next round, and EQ'd so the gun
+matches a reference game's gun (Counter-Strike 2: the AK-47's AK-47, the M4's
+M4A4, the PDW-9's MP7, the BR-3's FAMAS, the LSW-6's M249, the M1911's P2000, the
+M870's Nova, the M40's SSG 08, the CQ-10's MAC-10, the BP-9's Tec-9, the KR-12's
+SG 553, the DM-7's SCAR-20, the SG-12's XM1014). A shot that one of a session's
+microphones did not catch is left out rather than mixed with another shot, and
+isolated ticks in a shot's tail (a bullet striking a steel target downrange,
+which the microphones behind the shooter caught) are tamed. The room's decay is
+graded over four bands, its highs dying first, and fades out before it ends. It is
+written whole, 1.0 to 1.6 s with its room and echo, as `snap_N.wav`; the gun has
 no `body`, `tail`, `tail_indoor` or `mech`. With no tail, `WeaponView` and
 `Gunfire` give the snap 14 voices (`audio::WHOLE_SHOT_VOICES`), so full auto
 overlaps in full and builds into one dense wall instead of each shot cutting the
-last one's tail. Each gun's recipe (microphone mix, room, density, EQ) is in
-`build_gunshots.RECIPES`; `build_gunshots.py match` prints the EQ against
-reference clips, which are never committed. The AK-47 is the only gun built
-this way on `main`.
+last one's tail. Each gun's recipe (microphone mix, room, density, EQ, loudness,
+and how `match` fires it against the reference) is in `build_gunshots.RECIPES`;
+`build_gunshots.py match` prints the EQ against reference clips, which are never
+committed. Each gun's `lufs` keeps the balance between guns the game had before:
+every gun moved up as much as the AK-47 did when it went whole (3.1 dB on its
+preview).
 
-### Layered shots (`tools/build_weapon_audio.py`): the other guns
+### Distant and magazine layers (`tools/build_weapon_audio.py`)
 
 | Layer | What it is |
 | --- | --- |
-| `snap` | The first 200 ms above 1.5 kHz: the crack, from the near microphone. |
-| `body` | The first 200 ms below 1.5 kHz: the blast, from behind the shooter, with a synthesized low body under it. |
-| `tail` | The recorded terrain echo with a synthesized outdoor room. |
-| `tail_indoor` | The shot through a synthesized room (early reflections, 0.55 s decay). `WeaponView` cross-fades the two by `acoustics::listener_indoors()`. |
-| `mid`, `far` | Real recordings from down the range, for other players' fire at distance. |
-| `mech` | The action cycling, synthesized (`mech` subcommand). |
+| `mid`, `far` | Real recordings from down the range, for other players' fire at distance and your own shot's slapback (`layers` subcommand). |
 | `hollow` | The ring of a nearly empty magazine, synthesized: over the last 2 to 5 rounds (a fifth of the magazine), rising from -9 dB to full and up to 6% in pitch. |
 
-`layers` cuts the recorded layers with a Linkwitz-Riley crossover, so snap,
-body, and tail at 0 dB add back to the recording. Each layer picks from up to
-eight numbered takes and never plays the same take twice running
-(`audio::variations`). The tail plays one at a time, so full auto stays tight.
+`layers` still holds the older split into `snap`, `body`, `tail` and
+`tail_indoor` for a gun with no whole-shot recipe, and `mech` synthesizes the
+action for such a gun; no gun uses them now. Each layer picks from up to eight
+numbered takes and never plays the same take twice running
+(`audio::variations`).
 
-A suppressor takes 14 dB off the snap, 7 off the body, 12 off the tail, and 10
-more off the slapback.
+A suppressor takes 14 dB off the whole shot (the snap) and 10 more off the
+slapback (a layered gun's body and tail would lose 7 and 12).
 
 ### Space around a shot
 
