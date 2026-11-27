@@ -43,6 +43,7 @@ _subresources={
 "materials": {
 "Cartridge": {
 "use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/cartridge.tres",
 "use_external/path": "res://assets/weapons/shared/cartridge.tres"
 },
 "Glow": {
@@ -51,6 +52,7 @@ _subresources={
 },
 "Lens": {
 "use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/lens.tres",
 "use_external/path": "res://assets/weapons/shared/lens.tres"
 },
 "Optics": {
@@ -59,10 +61,12 @@ _subresources={
 },
 "Scope": {
 "use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/dm7/dm7_scope.tres",
 "use_external/path": "res://assets/weapons/dm7/dm7_scope.tres"
 },
 "Weapon": {
 "use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/dm7/dm7.tres",
 "use_external/path": "res://assets/weapons/dm7/dm7.tres"
 }
 }
