@@ -55,6 +55,9 @@ func _draw() -> void:
 	if rows.is_empty() and clock == "":
 		return
 	var disk := Vector2(MARGIN + DISK_R + 4.0, size.y - DISK_UP)
+	# A soft shade from the screen's corner, so the small labels hold over a
+	# bright floor (as the weapon cluster's corner does).
+	Paint.corner_shade(self, Rect2(0.0, size.y - 250.0, 480.0, 250.0), Vector2(0, 1), 0.45)
 	draw_set_transform_matrix(Shapes.tilt(MARGIN, Shapes.TILT))
 	_draw_disk(disk)
 	if clock != "":

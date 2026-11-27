@@ -349,21 +349,15 @@ static func _slide(a: Vector2, b: Vector2, away: Vector2, pitch: float) -> Vecto
 ## Moves a point off the HUD's corner clusters, to the nearest edge of the
 ## cluster it sits on that faces the screen's middle.
 static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vector2:
+	var rects := _clear_rects(screen, dead)
+	var inside := rects.filter(func(r: Rect2) -> bool: return r.has_point(point))
+	if inside.is_empty():
+		return point
+	# Every way out of the boxes it sits in, nearest first; the first that
+	# lands outside every box wins (two boxes overlap at the minimap's foot).
 	var ui := screen.y / 900.0
-	var boxes := KEEP_CLEAR.duplicate()
-	if dead:
-		boxes.append(Rect2(DEATH_CARD.position + Vector2(800, 450), DEATH_CARD.size))
-	for box: Rect2 in boxes:
-		var rect := Rect2(box.position * ui, box.size * ui)
-		if box.get_center().x > 900.0:
-			# Right-hand clusters hang off the right edge on any screen shape.
-			rect.position.x = screen.x - (1600.0 - box.position.x) * ui
-		elif box.get_center().x > 700.0:
-			rect.position.x = screen.x / 2.0 + (box.position.x - 800.0) * ui
-		rect = rect.grow(RADIUS * ui + 4.0 * ui)
-		if not rect.has_point(point):
-			continue
-		var options: Array[Vector2] = []
+	var options: Array[Vector2] = []
+	for rect: Rect2 in inside:
 		if rect.position.x > 1.0:
 			options.append(Vector2(rect.position.x, point.y))
 		if rect.end.x < screen.x - 1.0:
@@ -373,15 +367,36 @@ static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vecto
 		if rect.end.y < minf(screen.y - 1.0, HOLD_BOTTOM * ui):
 			# Never down into the bottom clusters and the controls legend.
 			options.append(Vector2(point.x, rect.end.y))
-		var best := point
-		var best_d := INF
-		for option in options:
-			var d := option.distance_to(point)
-			if d < best_d:
-				best_d = d
-				best = option
-		point = best
-	return point
+	options.sort_custom(
+		func(a: Vector2, b: Vector2) -> bool: return a.distance_to(point) < b.distance_to(point)
+	)
+	for option in options:
+		var free := true
+		for rect: Rect2 in rects:
+			if rect.grow(-0.5).has_point(option):
+				free = false
+				break
+		if free:
+			return option
+	return options[0] if not options.is_empty() else point
+
+
+## The HUD's clusters on this screen, grown by a marker's half size.
+static func _clear_rects(screen: Vector2, dead: bool) -> Array[Rect2]:
+	var ui := screen.y / 900.0
+	var boxes := KEEP_CLEAR.duplicate()
+	if dead:
+		boxes.append(Rect2(DEATH_CARD.position + Vector2(800, 450), DEATH_CARD.size))
+	var rects: Array[Rect2] = []
+	for box: Rect2 in boxes:
+		var rect := Rect2(box.position * ui, box.size * ui)
+		if box.get_center().x > 900.0:
+			# Right-hand clusters hang off the right edge on any screen shape.
+			rect.position.x = screen.x - (1600.0 - box.position.x) * ui
+		elif box.get_center().x > 700.0:
+			rect.position.x = screen.x / 2.0 + (box.position.x - 800.0) * ui
+		rects.append(rect.grow(RADIUS * ui + 4.0 * ui))
+	return rects
 
 
 ## A small solid triangle pointing `direction`, centred on `at`.

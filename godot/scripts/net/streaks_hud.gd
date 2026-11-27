@@ -94,7 +94,10 @@ func _process(delta: float) -> void:
 	var ended := String(client.match_info().get("phase", "")) == "ended"
 	# A custom game can turn scorestreaks off.
 	var off := bool(client.match_info().get("streaks_off", false))
-	visible = (mode != "gungame" and not off and not client.in_killcam() and not ended)
+	# Dead or watching a teammate, the column goes with the rest of our own
+	# cluster (ammo, health).
+	var alive := player == null or not is_instance_valid(player) or player.is_alive()
+	visible = (mode != "gungame" and not off and not client.in_killcam() and not ended and alive)
 	_info = client.streak_info()
 	# Under the HUD size setting the piece is scaled: keep it screen-sized.
 	size = get_viewport_rect().size / scale
@@ -339,7 +342,7 @@ func _draw_notices() -> void:
 		var width := Paint.text_width(Paint.LABEL, text, 16, 1.2) + 22.0
 		var plate := Rect2(40.0, y - 18.0, width, 24.0)
 		Paint.fade(
-			self, Rect2(plate.position, plate.size + Vector2(30, 0)), Color(0, 0, 0, 0.45 * alpha)
+			self, Rect2(plate.position, plate.size + Vector2(30, 0)), Color(0, 0, 0, 0.62 * alpha)
 		)
 		draw_rect(Rect2(plate.position, Vector2(3.0, plate.size.y)), Color(colour, alpha))
 		Paint.text(
@@ -348,7 +351,7 @@ func _draw_notices() -> void:
 			text,
 			Vector2(52.0, y),
 			16,
-			Color(colour.lerp(Color.WHITE, 0.25), alpha),
+			Color(colour.lerp(Color.WHITE, 0.4), alpha),
 			1.2
 		)
 		y += 28.0
