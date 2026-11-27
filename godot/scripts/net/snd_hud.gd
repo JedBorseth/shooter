@@ -162,7 +162,7 @@ func _refresh_pips() -> void:
 func _draw_rows() -> void:
 	var ui := _rows.size.y / 900.0
 	_rows.draw_set_transform_matrix(Marks.row_slope(ui))
-	if _alive[0][1] + _alive[1][1] > 0:
+	if _alive[0][1] + _alive[1][1] > 0 and Marks.rows_shown(_rows):
 		for i in 2:
 			var at := Vector2(44.0, 246.0 + i * 30.0) * ui
 			_draw_alive_row(at, i == 0, int(_alive[i][0]), ui)

@@ -206,7 +206,7 @@ func _draw_column() -> void:
 
 ## An empty slot: dark, a thin border, and a thin cross.
 func _draw_empty(rect: Rect2) -> void:
-	Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.4))
+	Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.55))
 	Shapes.smooth_rect(self, rect, Color(1, 1, 1, 0.26), false, 1.0)
 	Shapes.empty_cross(self, rect.grow(-1.0), Color(1, 1, 1, 0.26))
 
@@ -227,9 +227,9 @@ func _draw_slot(rect: Rect2, key: String, count: int, selected: bool) -> void:
 				UiTheme.READY
 			)
 	else:
-		Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.5))
+		Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.62))
 		Shapes.smooth_rect(self, rect, Color(1, 1, 1, 0.32), false, 1.0)
-	var colour := UiTheme.TEXT if earned else Color(UiTheme.TEXT, 0.4)
+	var colour := UiTheme.TEXT if earned else Color(UiTheme.TEXT, 0.55)
 	_draw_icon(key, rect.get_center(), colour)
 	if count > 1:
 		Paint.text_right(
@@ -248,6 +248,7 @@ func _draw_rail(slots: Array[Rect2], loadout: PackedStringArray, progress: float
 	var fill_y := foot
 	var below := 0.0
 	var next_cost := -1
+	var next_y := head
 	var from_y := foot
 	for i in loadout.size():
 		var cost := float(_cost(loadout[i]))
@@ -258,6 +259,7 @@ func _draw_rail(slots: Array[Rect2], loadout: PackedStringArray, progress: float
 			var t := clampf((progress - below) / maxf(cost - below, 1.0), 0.0, 1.0)
 			fill_y = lerpf(from_y, to_y, t)
 			next_cost = int(cost)
+			next_y = to_y
 			break
 		below = cost
 		from_y = to_y
@@ -267,7 +269,8 @@ func _draw_rail(slots: Array[Rect2], loadout: PackedStringArray, progress: float
 		return
 	var text := str(next_cost)
 	var tag_w := Paint.text_width(Paint.LABEL, text, 14) + 10.0
-	var tag := Rect2(x - 6.0 - tag_w, head - 9.0, tag_w, 18.0)
+	# Level with the slot it prices.
+	var tag := Rect2(x - 6.0 - tag_w, next_y - 9.0, tag_w, 18.0)
 	Shapes.smooth_rect(self, tag, Color(0, 0, 0, 0.62))
 	Shapes.smooth_rect(self, tag, Color(1, 1, 1, 0.24), false, 1.0)
 	Paint.text_centred(

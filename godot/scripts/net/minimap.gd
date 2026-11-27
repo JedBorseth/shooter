@@ -69,6 +69,9 @@ var _turn := 0.0
 var _jam := 0.0
 ## Our heading for the compass, degrees clockwise from north (-Z).
 var _heading := 0.0
+## Our yaw, or the watched teammate's while spectating.
+var _yaw := 0.0
+var _watching := false
 
 
 func _ready() -> void:
@@ -110,8 +113,19 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	var feet := player.global_position
-	_here = Vector2(feet.x, feet.z)
 	var yaw := player.view_yaw()
+	# Dead and watching a teammate (Search and Destroy): centre on the
+	# camera we watch through, as the arrow.
+	var camera := get_viewport().get_camera_3d()
+	_watching = (
+		not player.is_alive() and camera != null and camera != player.get_node_or_null(^"Camera")
+	)
+	if _watching:
+		feet = camera.global_position
+		var ahead := -camera.global_basis.z
+		yaw = atan2(-ahead.x, -ahead.z)
+	_here = Vector2(feet.x, feet.z)
+	_yaw = yaw
 	_heading = fposmod(rad_to_deg(-yaw), 360.0)
 	var settings := get_node_or_null(^"/root/Settings")
 	var rotates: bool = settings == null or bool(settings.get(&"minimap_rotates"))
@@ -164,7 +178,7 @@ static func key_for(scene_path: String) -> String:
 func _draw() -> void:
 	draw_set_transform_matrix(_tilt())
 	# The plate behind the plan (the ground outside the map shows as this).
-	Shapes.smooth_rect(self, Rect2(Vector2.ZERO, WINDOW), Color(0.118, 0.137, 0.157, 0.82))
+	Shapes.smooth_rect(self, Rect2(Vector2.ZERO, WINDOW), Color(0.118, 0.137, 0.157, 0.9))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -217,8 +231,8 @@ func _draw_icons() -> void:
 			if _inside(at):
 				_chevron(at, window_angle(remote.view_angles().x), TeamColours.ally)
 	_draw_crates()
-	if player.is_alive():
-		_arrow(WINDOW / 2.0, window_angle(player.view_yaw()), SELF_ARROW)
+	if _arrow_shown():
+		_arrow(WINDOW / 2.0, window_angle(_yaw), SELF_ARROW)
 	_draw_sky()
 	_draw_frame()
 	_draw_compass()
@@ -325,6 +339,10 @@ func _draw_sky() -> void:
 		x += width + 4.0
 
 
+func _arrow_shown() -> bool:
+	return player.is_alive() or _watching
+
+
 func _inside(at: Vector2) -> bool:
 	return Rect2(Vector2.ZERO, WINDOW).grow(-3.0).has_point(at)
 
@@ -419,13 +437,20 @@ func _draw_objectives() -> void:
 	_spread(marks)
 	for mark: Array in marks:
 		var at: Vector2 = mark[0]
-		if at.distance_to(WINDOW / 2.0) < 12.0:
+		if _arrow_shown() and at.distance_to(WINDOW / 2.0) < 12.0:
 			# Under our arrow: a hollow ring round it, so the arrow does not
 			# erase the letter (the row under the minimap names it).
 			var ring := Marks.hex_points(WINDOW / 2.0, 14.0)
 			ring.append(ring[0])
 			_icons.draw_polyline(ring, Color(0, 0, 0, 0.6), 4.0, true)
 			_icons.draw_polyline(ring, mark[2], 2.0, true)
+			if mark[1] != "":
+				# Its letter in a small tag at the ring's top right.
+				var tag := WINDOW / 2.0 + Vector2(13.0, -13.0)
+				_icons.draw_circle(tag, 6.5, Color(0, 0, 0, 0.7), true, -1.0, true)
+				Paint.text_centred(
+					_icons, Paint.LABEL, mark[1], tag + Vector2(0, 4.0), 11, mark[2], 0.0, false
+				)
 			continue
 		_hex(mark[0], mark[1], mark[2], mark[3])
 	if charge.get("has_position", false) and String(charge.status) != "carried":

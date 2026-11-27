@@ -398,6 +398,8 @@ func _draw_strip() -> void:
 	var zones: Array = info.zones
 	var zone: Dictionary = zones[info.active]
 	var holder: String = info.holder
+	if not Marks.rows_shown(_strip):
+		return
 	var screen := get_viewport().get_visible_rect().size
 	var ui := screen.y / 900.0
 	_strip.draw_set_transform_matrix(Marks.row_slope(ui))

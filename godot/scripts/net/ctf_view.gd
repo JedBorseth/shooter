@@ -260,6 +260,9 @@ func _feed(play: String, player_id: int, ours: bool) -> void:
 		var team := client.team_of(player_id)
 		var mine_team: int = client.match_info().my_team
 		var name_colour := TeamColours.of(team == mine_team)
+		if player_id == client.player_id():
+			# You, in the one "you" yellow.
+			name_colour = UiTheme.SELF
 		parts.append([client.name_of(player_id), name_colour])
 		parts.append([{"taken": "TOOK", "dropped": "DROPPED"}.get(play, verb), grey, true])
 		parts.append([flag_name, flag_colour])
@@ -448,6 +451,8 @@ func _draw_overlay() -> void:
 			player != null and is_instance_valid(player) and not player.is_alive()
 		)
 	# A row per flag under the minimap, ours first.
+	if not Marks.rows_shown(_overlay):
+		return
 	var ui := size.y / 900.0
 	var row := 0
 	for ours: bool in [true, false]:

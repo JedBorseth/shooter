@@ -76,11 +76,6 @@ func _draw() -> void:
 	draw_line(cross - Vector2(4.5, 0), cross + Vector2(4.5, 0), Color(colour, 0.5), 2.0, true)
 	draw_line(cross - Vector2(0, 4.5), cross + Vector2(0, 4.5), Color(colour, 0.5), 2.0, true)
 	Paint.text_centred(
-		self,
-		Paint.DISPLAY,
-		str(ceili(player.health())),
-		centre + Vector2(0, 15.0),
-		34,
-		Color(colour, 0.94)
+		self, Paint.DISPLAY, str(ceili(player.health())), centre + Vector2(0, 16.0), 36, colour
 	)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
