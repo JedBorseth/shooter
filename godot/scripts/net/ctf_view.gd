@@ -19,7 +19,7 @@ extends Node3D
 ## reacts to `NetClient.flag_played`.
 
 const Paint := preload("res://scripts/ui/hud_paint.gd")
-const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
@@ -37,7 +37,6 @@ const CARRIED_SCALE := 0.7
 ## How high above a flag's foot its marker floats.
 const MARKER_LIFT := 3.1
 const ANNOUNCE_SECONDS := 3.2
-const SCREEN_MARGIN := 56.0
 ## Markers hide within this many metres of their flag: it is right there.
 const MARKER_HIDE_DISTANCE := 6.0
 
@@ -416,8 +415,31 @@ func _draw_overlay() -> void:
 	var camera := get_viewport().get_camera_3d()
 	var size := _overlay.size
 	if camera != null:
+		var eye := camera.global_position
+		if player != null and is_instance_valid(player):
+			eye = player.global_position
+		var marks: Array = []
 		for marker: Dictionary in _markers:
-			_draw_marker(camera, size, marker)
+			var distance := eye.distance_to(marker.position)
+			if distance < MARKER_HIDE_DISTANCE:
+				continue
+			var alpha := 1.0
+			if marker.get("pulse", false):
+				alpha = 0.7 + 0.3 * sin(_time * 7.0)
+			(
+				marks
+				. append(
+					{
+						"world": marker.position + Vector3.UP * MARKER_LIFT,
+						"fill": marker.colour,
+						"glyph": "flag",
+						"action": String(marker.label),
+						"distance": int(round(distance)),
+						"alpha": alpha,
+					}
+				)
+			)
+		Marks.draw_world(_overlay, camera, marks, size, eye)
 	# A row per flag under the minimap, ours first.
 	var ui := size.y / 900.0
 	var row := 0
@@ -426,45 +448,6 @@ func _draw_overlay() -> void:
 			if entry.ours == ours:
 				_draw_status(Vector2(44.0, 246.0 + row * 30.0) * ui, entry, ui)
 				row += 1
-
-
-func _draw_marker(camera: Camera3D, size: Vector2, marker: Dictionary) -> void:
-	var distance := 0.0
-	if player != null and is_instance_valid(player):
-		distance = player.global_position.distance_to(marker.position)
-		if distance < MARKER_HIDE_DISTANCE:
-			return
-	var world: Vector3 = marker.position + Vector3.UP * MARKER_LIFT
-	var point := Paint.screen_point(camera, world)
-	var behind := camera.is_position_behind(world)
-	var bounds := Rect2(Vector2.ONE * SCREEN_MARGIN, size - Vector2.ONE * SCREEN_MARGIN * 2.0)
-	var on_screen := not behind and bounds.has_point(point)
-	if not on_screen:
-		# Push it out from the centre to the edge, the way it lies.
-		var centre := size / 2.0
-		var direction := point - centre
-		if behind:
-			direction = -direction
-			if direction.length() < 1.0:
-				direction = Vector2.DOWN
-		var half := bounds.size / 2.0
-		var scale := minf(
-			half.x / maxf(absf(direction.x), 0.001), half.y / maxf(absf(direction.y), 0.001)
-		)
-		point = centre + direction * scale
-	var colour: Color = marker.colour
-	var alpha := 1.0
-	if marker.get("pulse", false):
-		alpha = 0.7 + 0.3 * sin(_time * 7.0)
-	var ui := size.y / 900.0
-	var hex := {
-		"fill": colour,
-		"glyph": "flag",
-		"action": String(marker.label),
-		"distance": int(round(distance)),
-		"alpha": alpha,
-	}
-	Shapes.objective(_overlay, point, hex, ui)
 
 
 ## A flag's row under the minimap: a square in its team's colour with a

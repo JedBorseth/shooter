@@ -24,6 +24,7 @@ const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 const CONTESTED := UiTheme.ACCENT
@@ -33,8 +34,6 @@ const WALL_HEIGHT := 1.1
 ## How high over a flag's floor its marker floats, in metres.
 const MARKER_LIFT := 2.6
 const CALL_SECONDS := 2.6
-## Pixels kept clear at the screen's edges for clamped markers.
-const SCREEN_MARGIN := 64.0
 ## Segments in each circle's wall.
 const WALL_SEGMENTS := 48
 
@@ -357,42 +356,36 @@ func _draw_overlay() -> void:
 	var ui := size.y / 900.0
 	var camera := get_viewport().get_camera_3d()
 	if camera != null:
+		var marks: Array = []
 		for i in flags.size():
-			if i != here:
-				_draw_marker(camera, flags[i], size, ui)
-	_draw_row(flags, size, ui)
+			if i == here:
+				continue
+			var flag: Dictionary = flags[i]
+			var center: Vector3 = flag.center
+			var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
+			var mark := _marker(flag)
+			mark.world = world
+			mark.action = "DEFEND" if flag.owner == "ally" else "CAPTURE"
+			mark.distance = int(round(_eye(camera).distance_to(world)))
+			marks.append(mark)
+		Marks.draw_world(_overlay, camera, marks, size, _eye(camera))
+	if _row_shown():
+		_draw_row(flags, size, ui)
 	if here >= 0:
 		_draw_capture_bar(flags[here], size, ui)
 
 
-## The flag's hexagon marker, held at the screen's edge when off screen.
-func _draw_marker(camera: Camera3D, flag: Dictionary, size: Vector2, ui: float) -> void:
-	var center: Vector3 = flag.center
-	var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
-	var point := Paint.screen_point(camera, world)
-	var behind := camera.is_position_behind(world)
-	var margin := SCREEN_MARGIN * ui
-	var bounds := Rect2(Vector2.ONE * margin, size - Vector2.ONE * margin * 2.0)
-	if behind or not bounds.has_point(point):
-		# Push it out from the centre to the edge, the way it lies.
-		var middle := size / 2.0
-		var direction := point - middle
-		if behind:
-			direction = -direction
-			if direction.length() < 1.0:
-				direction = Vector2.DOWN
-		var half := bounds.size / 2.0
-		var scale := minf(
-			half.x / maxf(absf(direction.x), 0.001), half.y / maxf(absf(direction.y), 0.001)
-		)
-		point = middle + direction * scale
-	var distance := -1
+## Where distances are measured from: the player, or the camera.
+func _eye(camera: Camera3D) -> Vector3:
 	if player != null and is_instance_valid(player):
-		distance = int(round(player.global_position.distance_to(world)))
-	var marker := _marker(flag)
-	marker.action = "DEFEND" if flag.owner == "ally" else "CAPTURE"
-	marker.distance = distance
-	Shapes.objective(_overlay, point, marker, ui)
+		return player.global_position
+	return camera.global_position
+
+
+## The row of letters shows with the minimap (hidden in a killcam).
+func _row_shown() -> bool:
+	var minimap := get_tree().current_scene.get_node_or_null("TdmHud/Minimap") as CanvasItem
+	return minimap == null or minimap.is_visible_in_tree()
 
 
 ## A flag's hexagon: its letter, its owner's colour (sand while neutral,
@@ -410,40 +403,13 @@ func _marker(flag: Dictionary) -> Dictionary:
 	return marker
 
 
-## The three letters side by side under the minimap.
+## The three letters side by side under the minimap, on the minimap's slope.
 func _draw_row(flags: Array, _size: Vector2, ui: float) -> void:
-	var x := 44.0 * ui + 16.0 * ui
-	var y := 262.0 * ui
+	var x := 60.0 * ui
+	var y := 264.0 * ui
 	for flag: Dictionary in flags:
-		var marker := _marker(flag)
-		Shapes.hexagon(
-			_overlay, Vector2(x, y) + Vector2(0, 1.5) * ui, 15.0 * ui, Color(0, 0, 0, 0.45)
-		)
-		Shapes.hexagon(
-			_overlay,
-			Vector2(x, y),
-			13.0 * ui,
-			Color(Color(marker.fill).darkened(0.12), 0.92),
-			Color(1, 1, 1, 0.75),
-			2.0 * ui
-		)
-		Paint.text_centred(
-			_overlay,
-			Paint.DISPLAY,
-			marker.letter,
-			Vector2(x, y + 5.0 * ui),
-			int(15 * ui),
-			UiTheme.TEXT
-		)
-		if marker.has("progress"):
-			Shapes._hex_ring(
-				_overlay,
-				Vector2(x, y),
-				17.0 * ui,
-				marker.progress,
-				marker.progress_colour,
-				2.5 * ui
-			)
+		var drop := (x - 60.0 * ui) * Shapes.TILT
+		Marks.badge(_overlay, Vector2(x, y + drop), _marker(flag), 14.0 * ui, ui)
 		x += 38.0 * ui
 
 

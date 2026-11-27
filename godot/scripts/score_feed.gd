@@ -8,9 +8,10 @@ extends Control
 ## (rust/sim/src/score.rs).
 ##
 ## Medals are drawn here, not loaded as images: each family has its own emblem
-## shape (hexagon for multi-kills, a starred disc for streaks, a diamond for
+## shape (a shield for multi-kills, a starred disc for streaks, a diamond for
 ## collaterals, a shield with a flag on a zone for Hardpoint captures, a
-## charge with its fuse for Search and Destroy's plays and round medals) and the
+## charge with its fuse on an octagon for Search and Destroy's plays and round
+## medals; hexagons stay for objectives) and the
 ## colour climbs a tier ladder as the feat gets rarer.
 
 ## Seconds after the last award before the running "+N" total fades.
@@ -32,9 +33,11 @@ const MEDAL_PITCH := 118.0
 ## Layout is authored for a 900 px tall viewport and scaled from there.
 const BASE_HEIGHT := 900.0
 ## Emblem radius in base pixels.
-const EMBLEM_R := 50.0
+const EMBLEM_R := 55.0
 
 const INK := Color(0.03, 0.035, 0.05)
+## The bonus lines under the "+N".
+const BONUS_INK := Color("d8dce0")
 const GOLD := Color(1.0, 0.8, 0.3)
 
 ## Tier colours, from common to rare.
@@ -139,6 +142,16 @@ func _draw_points(ui: float) -> void:
 		var pop := lerpf(1.0, 1.25, _ease_out_cubic(_total_pop))
 		_with_transform(at, ui * pop)
 		Paint.text_centred(
+			self,
+			Paint.LABEL,
+			"+%d" % _total,
+			Vector2(0, 2),
+			25,
+			Color(0, 0, 0, 0.55 * alpha),
+			0.0,
+			false
+		)
+		Paint.text_centred(
 			self, Paint.LABEL, "+%d" % _total, Vector2(0, 0), 25, Color(UiTheme.TEXT, alpha)
 		)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
@@ -148,13 +161,19 @@ func _draw_points(ui: float) -> void:
 		var fade_in := clampf(line.age / 0.12, 0.0, 1.0)
 		var fade_out := clampf((LINE_TIME - line.age) / 0.3, 0.0, 1.0)
 		var alpha: float = fade_in * fade_out
+		var words := "%s +%d" % [line.text, line.points]
 		Paint.text_centred(
 			self,
-			Paint.LABEL_LIGHT,
-			"%s +%d" % [line.text, line.points],
-			Vector2(at.x, y),
+			Paint.LABEL,
+			words,
+			Vector2(at.x, y + 2.0 * ui),
 			int(16.0 * ui),
-			Color(UiTheme.TEXT, 0.8 * alpha)
+			Color(0, 0, 0, 0.7 * alpha),
+			0.0,
+			false
+		)
+		Paint.text_centred(
+			self, Paint.LABEL, words, Vector2(at.x, y), int(16.0 * ui), Color(BONUS_INK, alpha)
 		)
 		y += 19.0 * ui
 
@@ -192,17 +211,23 @@ func _draw_medal(medal: Dictionary, at: Vector2, ui: float) -> void:
 	if flash > 0.0:
 		draw_colored_polygon(outline, Color(1, 1, 1, 0.85 * flash * alpha))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
-	# Its name under it, and how many times over.
-	var name_y := at.y + (EMBLEM_R + 28.0) * ui
+	# Its name under it on a dark plate that hugs it, and how many times over.
+	var name_y := at.y + (EMBLEM_R + 30.0) * ui
+	var name_size := int(19.0 * ui)
+	var name_w := Paint.text_width(Paint.LABEL, label, name_size)
+	draw_rect(
+		Rect2(at.x - name_w / 2.0 - 8.0 * ui, name_y - 17.0 * ui, name_w + 16.0 * ui, 22.0 * ui),
+		Color(0, 0, 0, 0.45 * alpha)
+	)
 	Paint.text_centred(
-		self, Paint.LABEL, label, Vector2(at.x, name_y), int(19.0 * ui), Color(UiTheme.TEXT, alpha)
+		self, Paint.LABEL, label, Vector2(at.x, name_y), name_size, Color(UiTheme.TEXT, alpha)
 	)
 	if int(medal.count) > 1:
 		Paint.text_centred(
 			self,
 			Paint.LABEL,
 			"x%d" % int(medal.count),
-			Vector2(at.x, name_y + 20.0 * ui),
+			Vector2(at.x, name_y + 22.0 * ui),
 			int(18.0 * ui),
 			Color(UiTheme.TEXT, alpha)
 		)
@@ -362,8 +387,7 @@ func _emblem_shape(family: String, r: float) -> PackedVector2Array:
 	var turn := PI / 8.0
 	match family:
 		"multi":
-			sides = 6
-			turn = -PI / 2.0
+			return _shield(r)
 		"streak":
 			sides = 24
 			scale = 0.98
@@ -381,10 +405,32 @@ func _emblem_shape(family: String, r: float) -> PackedVector2Array:
 			scale = 1.04
 			turn = PI / 2.0
 		"charge":
-			sides = 6
+			sides = 8
 			scale = 1.02
-			turn = 0.0
+			turn = PI / 8.0
 	return _regular(sides, r * scale, turn)
+
+
+## A shield: a flat top with clipped shoulders, straight sides, and a rounded
+## point at the foot.
+func _shield(r: float) -> PackedVector2Array:
+	var points := PackedVector2Array(
+		[Vector2(-0.7, -0.98), Vector2(0.7, -0.98), Vector2(0.9, -0.78), Vector2(0.9, 0.1)]
+	)
+	for k in range(1, 8):
+		var t := float(k) / 8.0
+		# Down the right flank to the point, bowing outward.
+		var flank := Vector2(0.9, 0.1).lerp(Vector2(0.0, 1.05), t)
+		points.append(flank + Vector2(0.16, 0.08) * sin(t * PI))
+	points.append(Vector2(0.0, 1.05))
+	for k in range(7, 0, -1):
+		var t := float(k) / 8.0
+		var flank := Vector2(-0.9, 0.1).lerp(Vector2(0.0, 1.05), t)
+		points.append(flank + Vector2(-0.16, 0.08) * sin(t * PI))
+	points.append_array(PackedVector2Array([Vector2(-0.9, 0.1), Vector2(-0.9, -0.78)]))
+	for i in points.size():
+		points[i] *= r
+	return points
 
 
 func _family(label: String) -> String:
@@ -474,6 +520,7 @@ func _update_own_score() -> void:
 		footer += "   STREAK %d" % player.kill_streak()
 	_block.set(&"footer", footer)
 	_block.set(&"mode", "Testing Area")
+	_block.set(&"min_digits", 4)
 
 
 # --- Drawing helpers -------------------------------------------------------

@@ -16,7 +16,7 @@ extends Node3D
 ##   next.
 
 const Paint := preload("res://scripts/ui/hud_paint.gd")
-const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const CONTESTED := Color("ffd34d")
 const NEUTRAL := Color("e8eef2")
@@ -340,9 +340,9 @@ func _draw_markers() -> void:
 	var zone: Dictionary = zones[info.active]
 	var holder: String = info.holder
 	var left: float = info.seconds_to_move
+	var marks: Array = []
 	if left > 0.0 and left <= WARN_SECONDS and zones.size() > 1:
-		var next: Dictionary = zones[info.next]
-		_draw_marker(camera, next, "NEXT", NEUTRAL.darkened(0.25), 0.55)
+		marks.append(_mark(camera, zones[info.next], "NEXT", "neutral", 0.55))
 	if not _in_zone(zone):
 		var label := "CAPTURE"
 		match holder:
@@ -352,7 +352,9 @@ func _draw_markers() -> void:
 				label = "ATTACK"
 			"contested":
 				label = "CONTESTED"
-		_draw_marker(camera, zone, label, holder_colour(holder), 1.0)
+		marks.append(_mark(camera, zone, label, holder, 1.0))
+	var screen := get_viewport().get_visible_rect().size
+	Marks.draw_world(_marker, camera, marks, screen, camera.global_position)
 
 
 ## The zone's hexagon fill on the HUD: the holder's colour, sand while
@@ -369,34 +371,20 @@ func _hud_colour(holder: String) -> Color:
 	return UiTheme.NEUTRAL
 
 
-## A hexagon over the zone with what to do and how far it is, clamped inside
-## the screen's edges when the zone is off screen.
-func _draw_marker(
-	camera: Camera3D, zone: Dictionary, label: String, _colour: Color, alpha: float
-) -> void:
+## A hexagon over the zone with what to do and how far it is.
+func _mark(
+	camera: Camera3D, zone: Dictionary, label: String, holder: String, alpha: float
+) -> Dictionary:
 	var center: Vector3 = zone.center
 	var size: Vector3 = zone.size
-	var point := Vector3(center.x, center.y - size.y / 2.0 + 2.2, center.z)
-	var screen := get_viewport().get_visible_rect().size
-	var ui := screen.y / 900.0
-	var behind := camera.is_position_behind(point)
-	var at := Paint.screen_point(camera, point)
-	if behind:
-		# Mirror it, so the marker sits on the side the zone is on.
-		at = screen - at
-	var margin := Vector2(60, 70) * ui
-	var clamped := at.clamp(margin, screen - margin)
-	if behind:
-		clamped.y = screen.y - margin.y
-	var holder := String(_info().get("holder", "neutral")) if label != "NEXT" else "neutral"
-	var marker := {
+	return {
+		"world": Vector3(center.x, center.y - size.y / 2.0 + 2.2, center.z),
 		"fill": _hud_colour(holder),
 		"glyph": "zone",
 		"action": label,
 		"distance": int(round(camera.global_position.distance_to(center))),
 		"alpha": alpha,
 	}
-	Shapes.objective(_marker, clamped, marker, ui)
 
 
 ## Under the minimap: the zone's hexagon in the holder's colour, the time
@@ -447,15 +435,7 @@ func _draw_strip() -> void:
 	var width := 34.0 * ui + clock_w + 14.0 * ui + status_w + 14.0 * ui
 	Paint.fade(_strip, Rect2(x, top, width + 40.0 * ui, row_h), Color(0, 0, 0, 0.55))
 	var hex := Vector2(x + 15.0 * ui, top + row_h / 2.0)
-	Shapes.hexagon(
-		_strip,
-		hex,
-		10.5 * ui,
-		Color(_hud_colour(holder).darkened(0.12), 0.95),
-		Color(1, 1, 1, 0.75),
-		1.5 * ui
-	)
-	Shapes._glyph(_strip, "zone", hex, 0.75 * ui, UiTheme.TEXT)
+	Marks.badge(_strip, hex, {"fill": _hud_colour(holder), "glyph": "zone"}, 11.5 * ui, ui)
 	var baseline := top + row_h / 2.0 + 6.5 * ui
 	Paint.text(
 		_strip,

@@ -17,7 +17,7 @@ const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const HURT := 0.35
 ## Seconds the trail of a hit holds before it drains.
 const TRAIL_HOLD := 0.45
-const RADIUS := 62.0
+const RADIUS := 65.0
 const RING_W := 6.0
 
 var player: FpsPlayer
@@ -42,7 +42,7 @@ func _process(delta: float) -> void:
 	_trail = maxf(_trail, ratio)
 	_pulse = fmod(_pulse + delta * 1.6, 1.0)
 	# Quiet at full health; fully up once hurt.
-	modulate.a = move_toward(modulate.a, 0.7 if ratio >= 1.0 else 1.0, delta * 3.0)
+	modulate.a = move_toward(modulate.a, 0.86 if ratio >= 1.0 else 1.0, delta * 3.0)
 	queue_redraw()
 
 
@@ -61,10 +61,11 @@ func _draw() -> void:
 	# The disk, a thin outer rim, and the ring: track, the trail of the last
 	# hit, and what is left, from the top clockwise.
 	draw_circle(centre, RADIUS + 2.0, Color(0, 0, 0, 0.3), true, -1.0, true)
-	draw_circle(centre, RADIUS - RING_W - 2.0, Color(0.03, 0.035, 0.045, 0.62), true, -1.0, true)
-	draw_arc(centre, RADIUS + 1.0, 0.0, TAU, 72, Color(1, 1, 1, 0.16), 1.0, true)
+	draw_circle(centre, RADIUS - RING_W - 2.0, Color(0, 0, 0, 0.65), true, -1.0, true)
+	draw_arc(centre, RADIUS + 1.0, 0.0, TAU, 72, Color(0, 0, 0, 0.5), 2.0, true)
+	draw_arc(centre, RADIUS + 2.5, 0.0, TAU, 72, Color(1, 1, 1, 0.14), 1.0, true)
 	var ring_r := RADIUS - RING_W / 2.0
-	draw_arc(centre, ring_r, 0.0, TAU, 72, Color(1, 1, 1, 0.14), RING_W, true)
+	draw_arc(centre, ring_r, 0.0, TAU, 72, Color(1, 1, 1, 0.2), RING_W - 2.0, true)
 	var top := -PI / 2.0
 	var ghost := Color(UiTheme.HARM, 0.6) if hurt else Color(1, 1, 1, 0.45)
 	if _trail > ratio:
@@ -73,10 +74,15 @@ func _draw() -> void:
 		draw_arc(centre, ring_r, top, top + TAU * ratio, 72, colour, RING_W, true)
 
 	# A small medical cross over the number.
-	var cross := centre + Vector2(0, -23.0)
-	draw_line(cross - Vector2(6, 0), cross + Vector2(6, 0), Color(colour, 0.8), 3.0, true)
-	draw_line(cross - Vector2(0, 6), cross + Vector2(0, 6), Color(colour, 0.8), 3.0, true)
+	var cross := centre + Vector2(0, -24.0)
+	draw_line(cross - Vector2(4.5, 0), cross + Vector2(4.5, 0), Color(colour, 0.5), 2.0, true)
+	draw_line(cross - Vector2(0, 4.5), cross + Vector2(0, 4.5), Color(colour, 0.5), 2.0, true)
 	Paint.text_centred(
-		self, Paint.DISPLAY, str(ceili(player.health())), centre + Vector2(0, 15.0), 34, colour
+		self,
+		Paint.DISPLAY,
+		str(ceili(player.health())),
+		centre + Vector2(0, 15.0),
+		34,
+		Color(colour, 0.94)
 	)
 	draw_set_transform_matrix(Transform2D.IDENTITY)

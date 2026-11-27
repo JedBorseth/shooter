@@ -33,6 +33,9 @@ var rows: Array = []
 var state := ""
 var state_colour := UiTheme.TEXT
 var footer := ""
+## The fewest digits the score cells are sized for, so the block does not
+## widen as the score grows (the own-score block outside a match sets 4).
+var min_digits := 0
 ## Unused since the block moved to the bottom left (the minimap used to push
 ## it down); kept so older callers still can set it.
 var top := 24.0
@@ -72,15 +75,13 @@ func _draw() -> void:
 			self, Paint.LABEL, state, Vector2(disk.x, baseline), 16, UiTheme.TEXT, 1.5
 		)
 	if footer != "":
-		var width := Paint.text_width(Paint.LABEL, footer, 14, 1.2)
-		Paint.fade(self, Rect2(right_x, baseline - 15.0, width + 40.0, 20.0), Color(0, 0, 0, 0.4))
 		Paint.text(
 			self,
 			Paint.LABEL,
 			footer,
-			Vector2(right_x + 6.0, baseline),
+			Vector2(right_x + 2.0, baseline),
 			14,
-			Color(UiTheme.TEXT, 0.8),
+			Color(UiTheme.TEXT, 0.88),
 			1.2
 		)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
@@ -164,7 +165,7 @@ func _draw_mark(at: Vector2, r: float, team: int, colour: Color) -> void:
 func _draw_clock(disk: Vector2) -> void:
 	var seconds := _clock_seconds()
 	var urgent := seconds >= 0 and seconds < 30
-	var colour := UiTheme.HARM if urgent else UiTheme.TEXT
+	var colour := UiTheme.ENEMY if urgent else UiTheme.TEXT
 	var text_size := 19
 	var width := maxf(70.0, Paint.text_width(Paint.DISPLAY, clock, text_size) + 22.0)
 	var rect := Rect2(disk.x - width / 2.0, disk.y - DISK_R - 28.0, width, 27.0)
@@ -183,13 +184,19 @@ func _draw_clock(disk: Vector2) -> void:
 		_capsule.anti_aliasing = true
 	var grown := rect.grow(beat * 2.0)
 	draw_style_box(_capsule, grown)
+	if urgent:
+		# A red rim, so the last seconds read at the edge of sight.
+		var rim := _capsule.duplicate() as StyleBoxFlat
+		rim.draw_center = false
+		rim.border_color = Color(UiTheme.ENEMY, 0.7 + 0.3 * beat)
+		draw_style_box(rim, grown)
 	Paint.text_centred(
 		self,
 		Paint.DISPLAY,
 		clock,
 		Vector2(rect.get_center().x, rect.end.y - 6.5),
 		text_size,
-		colour.lerp(Color.WHITE, beat * 0.3)
+		colour.lerp(Color.WHITE, beat * 0.12)
 	)
 
 
@@ -200,6 +207,8 @@ func _draw_rows(at: Vector2) -> void:
 	var y := at.y
 	# Both cells as wide as the wider number needs.
 	var cell_w := CELL_W
+	if min_digits > 0:
+		cell_w = maxf(cell_w, Paint.text_width(Paint.DISPLAY, "0".repeat(min_digits), 40) + 22.0)
 	for i in rows.size():
 		var digits := Paint.text_width(Paint.DISPLAY, String(rows[i].value), 40 if i == 0 else 24)
 		cell_w = maxf(cell_w, digits + 22.0)
@@ -208,7 +217,7 @@ func _draw_rows(at: Vector2) -> void:
 		var ours: bool = row.get("ours", false)
 		var h: float = heights[mini(i, 1)]
 		var cell := Rect2(at.x, y, cell_w, h)
-		Shapes.smooth_rect(self, cell, Color(0, 0, 0, 0.56))
+		Shapes.smooth_rect(self, cell, Color(0, 0, 0, 0.62))
 		draw_line(cell.position, cell.position + Vector2(0, h), Color(1, 1, 1, 0.3), 1.0, true)
 		var value_colour := (
 			TeamColours.ally.lerp(Color.WHITE, 0.55) if ours else Color(UiTheme.TEXT, 0.82)
@@ -225,11 +234,23 @@ func _draw_rows(at: Vector2) -> void:
 			value_colour
 		)
 		# The bar's own plate, beside the cell.
-		var bars := Rect2(cell.end.x + 2.0, y, BARS_W, h)
+		var barred: bool = row.get("bar", true)
+		var bars := Rect2(cell.end.x + 2.0, y, BARS_W if barred else 64.0, h)
 		Shapes.smooth_rect(self, bars, Color(0, 0, 0, 0.42))
 		var left := bars.position.x + 8.0
 		var label: String = row.get("label", "")
-		if label != "":
+		if label != "" and not barred:
+			# No bar: the label sits right-aligned on the number's baseline.
+			Paint.text_right(
+				self,
+				Paint.LABEL,
+				label,
+				Vector2(bars.end.x - 8.0, cell.end.y - (8.0 if i == 0 else 6.0)),
+				13,
+				Color(UiTheme.TEXT, 0.78),
+				1.0
+			)
+		elif label != "":
 			var label_w := Paint.text(
 				self,
 				Paint.LABEL,
@@ -240,7 +261,7 @@ func _draw_rows(at: Vector2) -> void:
 				1.0
 			)
 			left += label_w + 6.0
-		if not row.get("bar", true):
+		if not barred:
 			y += h + 2.0
 			continue
 		var track := Rect2(left, bars.get_center().y - 1.5, bars.end.x - 12.0 - left, 3.0)
@@ -251,13 +272,11 @@ func _draw_rows(at: Vector2) -> void:
 			Shapes.smooth_rect(
 				self, Rect2(track.position, Vector2(track.size.x * fill, 3.0)), bar_colour
 			)
-		# A small square where the bar ends: the limit.
+		# A short upright tick where the bar ends: the limit.
 		Shapes.smooth_rect(
 			self,
-			Rect2(track.end.x + 2.0, track.get_center().y - 2.0, 4.0, 4.0),
-			Color(1, 1, 1, 0.55),
-			false,
-			1.0
+			Rect2(track.end.x + 3.0, track.get_center().y - 4.0, 1.5, 8.0),
+			Color(1, 1, 1, 0.6)
 		)
 		y += h + 2.0
 

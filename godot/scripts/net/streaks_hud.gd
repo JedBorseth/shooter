@@ -176,12 +176,17 @@ func _draw_column() -> void:
 	var progress := float(_info.get("progress", 0))
 	var right := size.x - RIGHT
 	var bottom := size.y - BOTTOM
+	# Always three streak slots and the held slot, so the column never grows
+	# mid-match; a slot with no streak chosen shows the empty cross.
+	var count := maxi(loadout.size(), 3)
 	var slots: Array[Rect2] = []
-	for i in loadout.size() + 1:
+	for i in count + 1:
 		var y := bottom - (i + 1) * SLOT.y - i * SLOT_GAP
 		slots.append(Rect2(right - SLOT.x, y, SLOT.x, SLOT.y))
-	# The chosen streaks.
-	for i in loadout.size():
+	for i in count:
+		if i >= loadout.size():
+			_draw_empty(slots[i])
+			continue
 		var key := loadout[i]
 		_draw_slot(slots[i], key, held.count(key), key == selected_key)
 	# The held slot: a streak from a Care Package, or empty.
@@ -190,15 +195,20 @@ func _draw_column() -> void:
 		if not key in loadout:
 			extra = key
 			break
-	var top := slots[loadout.size()]
+	var top := slots[count]
 	if extra != "":
 		_draw_slot(top, extra, held.count(extra), extra == selected_key)
 	else:
-		Shapes.smooth_rect(self, top, Color(0, 0, 0, 0.4))
-		Shapes.smooth_rect(self, top, Color(1, 1, 1, 0.26), false, 1.0)
-		Shapes.empty_cross(self, top.grow(-1.0), Color(1, 1, 1, 0.26))
+		_draw_empty(top)
 	if not loadout.is_empty():
 		_draw_rail(slots, loadout, progress)
+
+
+## An empty slot: dark, a thin border, and a thin cross.
+func _draw_empty(rect: Rect2) -> void:
+	Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.4))
+	Shapes.smooth_rect(self, rect, Color(1, 1, 1, 0.26), false, 1.0)
+	Shapes.empty_cross(self, rect.grow(-1.0), Color(1, 1, 1, 0.26))
 
 
 ## One slot: dark with a thin border and the streak's icon, dim until earned;
@@ -371,19 +381,23 @@ func _draw_icon(key: String, at: Vector2, colour: Color) -> void:
 				draw_arc(top, r, -0.7, 0.7, 10, colour, 1.6, true)
 				draw_arc(top, r, PI - 0.7, PI + 0.7, 10, colour, 1.6, true)
 		"care_package":
-			var box := Rect2(at - Vector2(11, 8), Vector2(22, 17))
-			draw_rect(box, Color(colour, colour.a * 0.35))
-			draw_rect(box, colour, false, 2.0)
-			draw_line(box.position, box.end, colour, 1.5, true)
-			draw_line(
-				Vector2(box.end.x, box.position.y),
-				Vector2(box.position.x, box.end.y),
-				colour,
-				1.5,
-				true
-			)
-			# Its parachute's lines up to the canopy.
-			draw_arc(at + Vector2(0, -8), 12.0, PI + 0.5, TAU - 0.5, 16, colour, 2.0, true)
+			# A strapped crate hanging under a small canopy.
+			var box := Rect2(at + Vector2(-9, 0), Vector2(18, 12))
+			draw_rect(box, colour)
+			var strap := Color(0, 0, 0, 0.55 * colour.a)
+			draw_rect(Rect2(box.position + Vector2(0, 5), Vector2(box.size.x, 2)), strap)
+			draw_rect(Rect2(box.position + Vector2(8, 0), Vector2(2, box.size.y)), strap)
+			var canopy := at + Vector2(0, -6)
+			draw_arc(canopy, 11.0, PI + 0.25, TAU - 0.25, 18, colour, 3.0, true)
+			for side: float in [-1.0, 1.0]:
+				draw_line(
+					canopy + Vector2(side * 10.5, -1.5),
+					box.position + Vector2(9 + side * 9, 0),
+					colour,
+					1.2,
+					true
+				)
+			draw_line(canopy + Vector2(0, -11), box.position + Vector2(9, 0), colour, 1.2, true)
 		_:
 			Paint.text_centred(
 				self, Paint.LABEL, _name(key).to_upper(), at + Vector2(0, 5), 13, colour

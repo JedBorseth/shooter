@@ -63,7 +63,15 @@ func _draw() -> void:
 	if not warning.is_empty():
 		# Blinks twice a second, as Call of Duty's ammo warnings do.
 		var blink := 1.0 if warning.get("steady", false) else 0.7 + 0.3 * cos(_time * TAU * 2.0)
-		Paint.prompt(self, warning, centre.x, centre.y + 74.0, 18, blink, false)
+		# On a dark plate that hugs it, as the interact prompt sits, so it
+		# holds over bright ground.
+		var width := prompt_width(warning, 18)
+		var baseline := centre.y + 74.0
+		draw_rect(
+			Rect2(centre.x - width / 2.0 - 10.0, baseline - 26.0, width + 20.0, 34.0),
+			Color(0, 0, 0, 0.45)
+		)
+		Paint.prompt(self, warning, centre.x, baseline, 18, blink, false)
 	if not prompt.is_empty():
 		_draw_prompt(prompt, centre.y + 118.0, 19)
 	if legend_alpha > 0.01 and not legend.is_empty():
@@ -132,8 +140,9 @@ func _draw_killed() -> void:
 	var bottom := size.y - 58.0
 	if legend_alpha > 0.01 and not legend.is_empty():
 		bottom = minf(bottom, _legend_top - 20.0)
-	var plate := Rect2(size.x / 2.0 - maxf(name_w + 48.0, 220.0) / 2.0, bottom - 40.0, 0.0, 40.0)
-	plate.size.x = maxf(name_w + 48.0, 220.0)
+	# The plate hugs the name.
+	var plate_w := maxf(name_w + 40.0, 120.0)
+	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
 	Paint.text(
 		self,
 		Paint.LABEL,
@@ -164,8 +173,9 @@ func _draw_death(at: Vector2) -> void:
 	var rise := (1.0 - alpha) * 10.0
 	at.y += rise
 	var known := killer != ""
-	var headline := killer if known else "Killed"
-	var colour := killer_colour if known else UiTheme.TEXT
+	# One card either way: who killed us, or (not knowing) that we died.
+	var headline := killer if known else "Killed in action"
+	var colour := killer_colour if known else UiTheme.ENEMY
 	var name_size := 26
 	var name_w := Paint.text_width(Paint.LABEL, headline, name_size)
 	var icon_w := 0.0
@@ -174,16 +184,15 @@ func _draw_death(at: Vector2) -> void:
 		icon_w = icon.get_width() * (22.0 / icon.get_height()) + 22.0
 	var width := maxf(name_w + icon_w + 52.0, 300.0)
 	var plate := Rect2(at.x - width / 2.0, at.y - 26.0, width, 50.0)
-	if known:
-		Paint.text(
-			self,
-			Paint.LABEL,
-			"KILLED BY",
-			plate.position + Vector2(0, -7.0),
-			14,
-			Color(UiTheme.TEXT, 0.85 * alpha),
-			1.5
-		)
+	Paint.text(
+		self,
+		Paint.LABEL,
+		"KILLED BY" if known else "YOU DIED",
+		plate.position + Vector2(0, -7.0),
+		14,
+		Color(UiTheme.TEXT, 0.85 * alpha),
+		1.5
+	)
 	draw_rect(plate, Color(0, 0, 0, 0.62 * alpha))
 	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1.0)), Color(1, 1, 1, 0.3 * alpha))
 	draw_rect(Rect2(plate.position, Vector2(4.0, plate.size.y)), Color(colour, alpha))
@@ -193,7 +202,7 @@ func _draw_death(at: Vector2) -> void:
 		headline,
 		Vector2(plate.position.x + 22.0, plate.end.y - 15.0),
 		name_size,
-		Color(colour.lerp(Color.WHITE, 0.2) if known else colour, alpha)
+		Color(colour.lerp(Color.WHITE, 0.2) if known else UiTheme.TEXT, alpha)
 	)
 	if icon_w > 0.0:
 		Paint.weapon(

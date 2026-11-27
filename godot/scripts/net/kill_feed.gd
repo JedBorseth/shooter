@@ -19,7 +19,8 @@ const FADE := 0.4
 const SHIFT := 0.12
 const LINES := 5
 const LINE_H := 22.0
-const ICON_H := 15.0
+## The weapon silhouette's box: every gun fits the same 40 by 14.
+const ICON_BOX := Vector2(40.0, 14.0)
 const TEXT_SIZE := 17
 const SMALL_SIZE := 14
 
@@ -91,14 +92,10 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 	for part: Variant in line.parts:
 		if part is Dictionary:
 			if part.has("icon"):
-				var w := Paint.weapon(
-					self,
-					part.icon,
-					Vector2(x + _part_width(part), at.y + LINE_H / 2.0),
-					ICON_H,
-					Color(1, 1, 1, 0.95 * alpha)
-				)
-				if w == 0.0:
+				var icon := Paint.weapon_icon(part.icon)
+				if icon != null:
+					_draw_icon(icon, Vector2(x, at.y + (LINE_H - ICON_BOX.y) / 2.0), alpha)
+				else:
 					Paint.text(
 						self,
 						Paint.LABEL_LIGHT,
@@ -137,8 +134,8 @@ func _part_width(part: Variant) -> float:
 			var icon := Paint.weapon_icon(part.icon)
 			if icon == null:
 				return Paint.text_width(Paint.LABEL_LIGHT, part.get("name", ""), SMALL_SIZE)
-			return icon.get_width() * ICON_H / icon.get_height()
-		return 14.0
+			return ICON_BOX.x
+		return 15.0
 	var small: bool = part.size() > 2 and part[2]
 	return Paint.text_width(
 		Paint.LABEL_LIGHT if small else Paint.LABEL,
@@ -147,21 +144,41 @@ func _part_width(part: Variant) -> float:
 	)
 
 
-## A headshot mark: a head and shoulders with a small sight ring round the
-## head.
+## A weapon's silhouette fitted into the fixed box at `at` (its top left),
+## centred, in white.
+func _draw_icon(icon: Texture2D, at: Vector2, alpha: float) -> void:
+	var source := Vector2(icon.get_size())
+	var fit := minf(ICON_BOX.x / source.x, ICON_BOX.y / source.y)
+	var drawn := source * fit
+	var rect := Rect2(at + (ICON_BOX - drawn) / 2.0, drawn)
+	draw_texture_rect(
+		icon, Rect2(rect.position + Vector2(0, 1), rect.size), false, Color(0, 0, 0, 0.5 * alpha)
+	)
+	draw_texture_rect(icon, rect, false, Color(UiTheme.TEXT, alpha))
+
+
+## A headshot mark: a head and shoulders in profile with a small impact burst
+## at the temple.
 func _draw_headshot(centre: Vector2, alpha: float) -> void:
-	var colour := Color(UiTheme.TEXT, 0.95 * alpha)
-	var head := centre + Vector2(0, -2.0)
-	draw_circle(head, 3.2, colour, true, -1.0, true)
+	var colour := Color(UiTheme.TEXT, alpha)
+	var head := centre + Vector2(-1.5, -2.5)
+	draw_circle(head, 3.6, colour, true, -1.0, true)
 	draw_colored_polygon(
 		PackedVector2Array(
 			[
-				centre + Vector2(-6.0, 7.0),
-				centre + Vector2(-3.5, 2.5),
-				centre + Vector2(3.5, 2.5),
-				centre + Vector2(6.0, 7.0),
+				centre + Vector2(-8.0, 7.5),
+				centre + Vector2(-6.5, 3.0),
+				centre + Vector2(-3.5, 1.8),
+				centre + Vector2(0.5, 1.8),
+				centre + Vector2(3.5, 3.0),
+				centre + Vector2(5.0, 7.5),
 			]
 		),
 		colour
 	)
-	draw_arc(head, 6.0, 0.0, TAU, 20, colour, 1.2, true)
+	# The burst: four short rays round the point of impact.
+	var hit := head + Vector2(4.8, -3.2)
+	draw_circle(hit, 1.3, colour, true, -1.0, true)
+	for angle: float in [-PI / 4.0, PI / 4.0, PI * 0.75, -PI * 0.75, 0.0]:
+		var ray := Vector2.RIGHT.rotated(angle)
+		draw_line(hit + ray * 2.2, hit + ray * 4.2, colour, 1.2, true)

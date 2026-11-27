@@ -23,7 +23,7 @@ extends Node3D
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
-const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const HudCentre := preload("res://scripts/hud_centre.gd")
 ## Built in Blender (tools/gear_models.py `charge`), origin at its underside.
@@ -208,6 +208,7 @@ func _draw_overlay() -> void:
 	var status: String = info.status
 	var sites: Array = info.sites
 	var alive := player != null and is_instance_valid(player) and player.is_alive()
+	var marks: Array = []
 	for i in sites.size():
 		var site: Dictionary = sites[i]
 		var label := ""
@@ -228,60 +229,48 @@ func _draw_overlay() -> void:
 		var ground := Vector3(center.x, center.y - size.y / 2.0, center.z)
 		if alive and camera.global_position.distance_to(ground) < SITE_HIDE_DISTANCE:
 			continue
-		_draw_marker(camera, ground + Vector3.UP * MARKER_LIFT, String(site.name), label, colour)
+		marks.append(
+			_mark(camera, ground + Vector3.UP * MARKER_LIFT, String(site.name), label, colour)
+		)
 	# The attackers see where the charge is: lying (PICK UP) or with a
 	# teammate (ESCORT).
 	if attacking and info.has_position and not info.carrying:
 		if status == "dropped":
-			_draw_marker(camera, info.position + Vector3.UP * 0.6, "", "PICK UP", UiTheme.NEUTRAL)
+			marks.append(
+				_mark(camera, info.position + Vector3.UP * 0.6, "", "PICK UP", UiTheme.NEUTRAL)
+			)
 		elif status == "carried":
-			_draw_marker(camera, info.position + Vector3.UP * 2.3, "", "ESCORT", TeamColours.ally)
+			marks.append(
+				_mark(camera, info.position + Vector3.UP * 2.3, "", "ESCORT", TeamColours.ally)
+			)
+	var screen := get_viewport().get_visible_rect().size
+	Marks.draw_world(_overlay, camera, marks, screen, camera.global_position)
 	_draw_use(info, alive)
 
 
 ## A hexagon at `point` with a site's letter in it (or the charge), what to
-## do over it, and how far it is under it, clamped inside the screen's edges
-## when off screen. A planted site beats, with the fuse under it.
-func _draw_marker(
+## do over it, and how far it is under it. A planted site beats, with the
+## fuse under it.
+func _mark(
 	camera: Camera3D, point: Vector3, letter: String, label: String, colour: Color
-) -> void:
-	var screen := get_viewport().get_visible_rect().size
-	var ui := screen.y / 900.0
-	var behind := camera.is_position_behind(point)
-	var at := Paint.screen_point(camera, point)
-	if behind:
-		at = screen - at
-	var margin := Vector2(60, 70) * ui
-	var clamped := at.clamp(margin, screen - margin)
-	if behind:
-		clamped.y = screen.y - margin.y
+) -> Dictionary:
 	var planted := colour == UiTheme.HARM
-	var alpha := 1.0
-	if planted:
-		alpha = 0.7 + 0.3 * cos(_blink * TAU)
-	var marker := {
+	var mark := {
+		"world": point,
 		"fill": colour,
 		"action": label,
 		"distance": int(round(camera.global_position.distance_to(point))),
-		"alpha": alpha,
+		"alpha": 0.7 + 0.3 * cos(_blink * TAU) if planted else 1.0,
 	}
 	if letter != "":
-		marker.letter = letter
+		mark.letter = letter
 	else:
-		marker.glyph = "charge"
+		mark.glyph = "charge"
 	if planted:
-		marker.distance = -1
-	Shapes.objective(_overlay, clamped, marker, ui)
-	if planted:
+		mark.distance = -1
 		var fuse := int(ceil(float(client.round_info().seconds_left)))
-		Paint.text_centred(
-			_overlay,
-			Paint.DISPLAY,
-			"%d:%02d" % [fuse / 60, fuse % 60],
-			clamped + Vector2(0, 42.0) * ui,
-			int(15 * ui),
-			UiTheme.HARM.lerp(Color.WHITE, 0.25)
-		)
+		mark.under = "%d:%02d" % [fuse / 60, fuse % 60]
+	return mark
 
 
 ## Under the crosshair: what holding interact does here, our own plant or

@@ -31,6 +31,7 @@ const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const MinimapData := preload("res://scripts/net/minimap_data.gd")
 const SHADER := preload("res://shaders/minimap.gdshader")
 const PLANS := "res://assets/minimaps/%s.png"
@@ -45,8 +46,8 @@ const COMPASS_SPAN := 180.0
 ## Scale: pixels per metre (the window shows about 73 by 41 metres).
 const PIXELS_PER_METRE := 4.4
 const ARROW := 7.5
-## Your arrow: Black Ops 3's bright yellow.
-const SELF_ARROW := Color("ffe83a")
+## Your arrow: the game's one "you" yellow.
+const SELF_ARROW := UiTheme.SELF
 const FRAME := Color(0.78, 0.82, 0.84, 0.42)
 
 var client: NetClient
@@ -140,7 +141,15 @@ func _find_plan() -> void:
 	var entry: Dictionary = MinimapData.MAPS[key]
 	_centre = entry.centre
 	_width = entry.width
-	_material.set_shader_parameter(&"plan", load(PLANS % key))
+	var plan := load(PLANS % key) as Texture2D
+	_material.set_shader_parameter(&"plan", plan)
+	# The ground's bounding box, for the contour lines round it.
+	var image := plan.get_image()
+	if image != null:
+		var used := Rect2(image.get_used_rect())
+		var whole := Vector2(image.get_size())
+		_material.set_shader_parameter(&"ground_min", used.position / whole)
+		_material.set_shader_parameter(&"ground_max", used.end / whole)
 	_map_key = key
 
 
@@ -258,8 +267,8 @@ func _draw_compass() -> void:
 				Paint.LABEL,
 				letter,
 				Vector2(x, bottom - (2.0 if cardinal else 3.0)),
-				14 if cardinal else 11,
-				Color(UiTheme.TEXT, (0.95 if cardinal else 0.7) * fade)
+				14 if cardinal else 12,
+				Color(UiTheme.TEXT, (1.0 if cardinal else 0.88) * fade)
 			)
 			continue
 		_icons.draw_line(
@@ -322,7 +331,7 @@ func _inside(at: Vector2) -> bool:
 
 ## A point held inside the window's edge, for objectives out of view.
 func _held(at: Vector2) -> Vector2:
-	var margin := 13.0
+	var margin := 16.0
 	return at.clamp(Vector2(margin, margin), WINDOW - Vector2(margin, margin))
 
 
@@ -419,7 +428,7 @@ func _draw_objectives() -> void:
 ## Pushes markers apart until none overlaps another (those held at the
 ## window's edge pile up there), keeping them inside the window.
 func _spread(marks: Array) -> void:
-	var spacing := 23.0
+	var spacing := 24.0
 	for _pass in 4:
 		for i in marks.size():
 			for j in range(i + 1, marks.size()):
@@ -451,20 +460,12 @@ func _side_colour(side: String) -> Color:
 	)
 
 
-## An objective: a flat-topped hexagon in its holder's colour with a light
-## rim, and its letter (or a flag) in white.
+## An objective: a pointy-topped hexagon in its holder's colour with a light
+## rim, and its letter (or a flag, or a zone's chevrons).
 func _hex(at: Vector2, letter: String, colour: Color, flag := false) -> void:
-	Shapes.hexagon(_icons, at + Vector2(0, 1), 12.5, Color(0, 0, 0, 0.5))
-	Shapes.hexagon(_icons, at, 11.0, Color(colour.darkened(0.2), 0.95), Color(1, 1, 1, 0.75), 1.5)
+	var marker := {"fill": colour}
 	if letter != "":
-		Paint.text_centred(_icons, Paint.DISPLAY, letter, at + Vector2(0, 4.5), 13, UiTheme.TEXT)
-	elif flag:
-		_icons.draw_line(at + Vector2(-2.5, 5), at + Vector2(-2.5, -5), UiTheme.TEXT, 1.5)
-		_icons.draw_colored_polygon(
-			PackedVector2Array(
-				[at + Vector2(-2, -5), at + Vector2(4.5, -2.5), at + Vector2(-2, 0)]
-			),
-			UiTheme.TEXT
-		)
+		marker.letter = letter
 	else:
-		_icons.draw_circle(at, 2.5, UiTheme.TEXT)
+		marker.glyph = "flag" if flag else "zone"
+	Marks.badge(_icons, at, marker, 10.5, 0.7)
