@@ -372,9 +372,6 @@ pub struct FpsPlayer {
     /// Online, while a killcam plays: the killer's view, drawn instead of
     /// ours, and devices are ignored (`net::killcam`).
     killcam: Option<KillcamView>,
-    /// Online, as a spectator flying free: the camera sits here, with no
-    /// weapon, and devices are ignored (the spectator controls steer it).
-    spectator_camera: Option<Transform3D>,
     /// Held still by the match (a Search and Destroy round's freeze): the
     /// player can look and aim but not move or fire.
     movement_locked: bool,
@@ -851,14 +848,6 @@ impl ICharacterBody3D for FpsPlayer {
             + basis.col_a() * bob.x
             + basis * self.shake.value;
         let first_person = Transform3D::new(basis, origin);
-        if let Some(camera) = self.spectator_camera
-            && self.killcam.is_none()
-        {
-            self.camera.set_global_transform(camera);
-            self.camera.set_fov(self.base_fov);
-            self.viewmodel.set_visible(false);
-            return;
-        }
         if let Some(view) = self.killcam {
             // The killer's eyes and weapon instead of ours.
             if !alive {
@@ -1045,8 +1034,7 @@ impl FpsPlayer {
     /// A killcam is showing the killer's view instead of ours.
     #[func]
     fn in_killcam(&self) -> bool {
-        // A spectator's view steps the HUD aside the same way.
-        self.killcam.is_some() || self.spectator_camera.is_some()
+        self.killcam.is_some()
     }
 
     /// Breath left for steadying a scope, 0 to 1.
@@ -1483,19 +1471,7 @@ impl FpsPlayer {
     /// Whether keys, mouse, and gamepad steer the player: not while a menu
     /// is open or a killcam plays.
     fn devices_on(&self) -> bool {
-        self.input_enabled && self.killcam.is_none() && self.spectator_camera.is_none()
-    }
-
-    /// Online, as a spectator: puts the camera at `camera` with no weapon
-    /// (flying free), or with `None` hands it back to `set_killcam` (a
-    /// followed player's eyes) or to our own view.
-    pub(crate) fn set_spectator_camera(&mut self, camera: Option<Transform3D>) {
-        self.spectator_camera = camera;
-    }
-
-    /// Where the camera is now (a spectator's free camera starts there).
-    pub(crate) fn camera_transform(&self) -> Transform3D {
-        self.camera.get_global_transform()
+        self.input_enabled && self.killcam.is_none()
     }
 
     /// Our first-person weapons wear `cosmetics`' camos: ours, or a

@@ -258,8 +258,6 @@ pub enum ClientMessage {
         version: u16,
         /// The player's name; the server cleans it (`tdm::clean_name`).
         name: String,
-        /// Join as a spectator: on no team, watching (docs/custom-games.md).
-        spectate: bool,
     },
     Input(InputPacket),
     /// Debug: ask for the hitboxes the server rewinds for each of our shots
@@ -317,9 +315,6 @@ pub enum ServerMessage {
         server_build: String,
         /// The host's custom game settings (`crate::custom`).
         custom: custom::Settings,
-        /// The player joined as a spectator: `player_id` is theirs, but
-        /// they have no body and are on no team.
-        spectator: bool,
     },
     Reject {
         server_version: u16,
@@ -470,25 +465,6 @@ pub enum GameEvent {
     /// there: what player `id` shows (`crate::cosmetics`), as the server
     /// allows it.
     Cosmetics { id: u8, cosmetics: Cosmetics },
-    /// To spectators, twice a second while anything in it changes: every
-    /// player's class and scorestreaks, for the caster's view
-    /// (docs/custom-games.md). Players never get it: it would tell them
-    /// enemies' classes.
-    Caster(Vec<CasterRow>),
-}
-
-/// One player in [`GameEvent::Caster`].
-#[derive(Clone, Debug, PartialEq)]
-pub struct CasterRow {
-    pub id: u8,
-    /// The class this life spawned with (a custom game's loadout rule
-    /// applied).
-    pub class: Class,
-    /// The scorestreaks they bring, their count toward the next, and the
-    /// ones they hold.
-    pub streaks: streak::Loadout,
-    pub progress: u32,
-    pub held: Vec<Streak>,
 }
 
 /// Scorestreaks' news.
@@ -1230,15 +1206,10 @@ impl ClientMessage {
     pub fn encode(&self) -> Vec<u8> {
         let mut w = BitWriter::new();
         match self {
-            ClientMessage::Hello {
-                version,
-                name,
-                spectate,
-            } => {
+            ClientMessage::Hello { version, name } => {
                 w.bits(0, TAG_BITS);
                 w.u16(*version);
                 write_string(&mut w, name, MAX_NAME_BYTES);
-                w.bool(*spectate);
             }
             ClientMessage::Input(packet) => {
                 w.bits(1, TAG_BITS);
@@ -1317,16 +1288,12 @@ impl ClientMessage {
                 let version = r.u16()?;
                 // An older client may send something else; let the version
                 // check reject it.
-                let (name, spectate) = if version == PROTOCOL_VERSION {
-                    (read_string(&mut r, MAX_NAME_BYTES)?, r.bool()?)
+                let name = if version == PROTOCOL_VERSION {
+                    read_string(&mut r, MAX_NAME_BYTES)?
                 } else {
-                    (String::new(), false)
+                    String::new()
                 };
-                Ok(ClientMessage::Hello {
-                    version,
-                    name,
-                    spectate,
-                })
+                Ok(ClientMessage::Hello { version, name })
             }
             1 => {
                 let ack_snapshot = read_option_tick(&mut r)?;
@@ -1607,7 +1574,6 @@ impl ServerMessage {
                 mode,
                 server_build,
                 custom,
-                spectator,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
@@ -1617,7 +1583,6 @@ impl ServerMessage {
                 write_mode(&mut w, mode);
                 write_string(&mut w, server_build, MAX_BUILD_BYTES);
                 custom.write(&mut w);
-                w.bool(*spectator);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -1681,7 +1646,6 @@ impl ServerMessage {
                     mode: read_mode(&mut r)?,
                     server_build: read_string(&mut r, MAX_BUILD_BYTES)?,
                     custom: custom::Settings::read(&mut r)?,
-                    spectator: r.bool()?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -2031,22 +1995,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(COSMETICS_EVENT_TAG, EVENT_TAG_BITS);
             w.u8(*id);
             write_cosmetics(w, cosmetics);
-        }
-        GameEvent::Caster(rows) => {
-            w.bits(CASTER_EVENT_TAG, EVENT_TAG_BITS);
-            let count = rows.len().min(MAX_SCOREBOARD_ROWS);
-            w.varint(count as u32);
-            for row in &rows[..count] {
-                w.u8(row.id);
-                write_class(w, &row.class);
-                write_loadout(w, row.streaks);
-                w.varint(row.progress);
-                let held = row.held.len().min(MAX_HELD_STREAKS);
-                w.varint(held as u32);
-                for streak in &row.held[..held] {
-                    write_streak(w, *streak);
-                }
-            }
         }
         GameEvent::Stats(stats) => {
             w.bits(STATS_EVENT_TAG, EVENT_TAG_BITS);
@@ -2514,35 +2462,6 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             id: r.u8()?,
             cosmetics: read_cosmetics(r)?,
         }),
-        CASTER_EVENT_TAG => {
-            let count = r.varint()? as usize;
-            if count > MAX_SCOREBOARD_ROWS {
-                return Err(DecodeError::Invalid("caster rows"));
-            }
-            let mut rows = Vec::with_capacity(count);
-            for _ in 0..count {
-                let id = r.u8()?;
-                let class = read_class(r)?;
-                let streaks = read_loadout(r)?;
-                let progress = r.varint()?;
-                let held_count = r.varint()? as usize;
-                if held_count > MAX_HELD_STREAKS {
-                    return Err(DecodeError::Invalid("caster held streaks"));
-                }
-                let mut held = Vec::with_capacity(held_count);
-                for _ in 0..held_count {
-                    held.push(read_streak(r)?);
-                }
-                rows.push(CasterRow {
-                    id,
-                    class,
-                    streaks,
-                    progress,
-                    held,
-                });
-            }
-            Ok(GameEvent::Caster(rows))
-        }
         STATS_EVENT_TAG => {
             let len = r.varint()? as usize;
             if len > stats::MAX_MATCH_KEYS {
@@ -2567,7 +2486,6 @@ const STATS_EVENT_TAG: u32 = 25;
 /// Bits for a [`StreakEvent`]'s tag; room for sixteen.
 const STREAK_TAG_BITS: u32 = 4;
 const COSMETICS_EVENT_TAG: u32 = 26;
-const CASTER_EVENT_TAG: u32 = 27;
 /// Bits for a prestige (0 to `progression::MAX_PRESTIGE`).
 const PRESTIGE_BITS: u32 = 4;
 /// Bits for a camo code (`crate::camo`).
@@ -5082,22 +5000,6 @@ mod tests {
                     camos: vec![(WeaponId::expect("ak47"), Camo::FINAL)],
                 },
             },
-            GameEvent::Caster(vec![
-                CasterRow {
-                    id: 3,
-                    class: Class::default(),
-                    streaks: streak::Loadout([Some(Streak::Uav), None, Some(Streak::CarePackage)]),
-                    progress: 250,
-                    held: vec![Streak::Uav],
-                },
-                CasterRow {
-                    id: 201,
-                    class: crate::class::DefaultClass::ALL[5].class(),
-                    streaks: streak::Loadout::default(),
-                    progress: 0,
-                    held: Vec::new(),
-                },
-            ]),
             GameEvent::Stats(
                 [("kills", 12), ("w.m4.hs", 3), ("time", 600)]
                     .into_iter()
@@ -5538,7 +5440,6 @@ mod tests {
                 } else {
                     custom::Settings::default()
                 },
-                spectator: mode == Mode::CaptureTheFlag,
             };
             assert_eq!(
                 ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -5553,7 +5454,6 @@ mod tests {
             ClientMessage::Hello {
                 version: PROTOCOL_VERSION,
                 name: "Josh".to_owned(),
-                spectate: true,
             },
             ClientMessage::Ready { ready: true },
             ClientMessage::Chat {
@@ -5605,7 +5505,6 @@ mod tests {
         let msg = ClientMessage::Hello {
             version: PROTOCOL_VERSION,
             name: "é".repeat(100),
-            spectate: false,
         };
         let ClientMessage::Hello { name, .. } = ClientMessage::decode(&msg.encode()).unwrap()
         else {

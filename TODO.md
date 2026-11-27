@@ -104,18 +104,17 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 ## Scorestreaks and perks
 
-- [ ] A damaged UAV's smoke trail, UAV assist points, and a full-map view for the dead and for spectators ([docs/scorestreaks.md](docs/scorestreaks.md)).
+- [ ] A damaged UAV's smoke trail, UAV assist points, and a full-map view for the dead ([docs/scorestreaks.md](docs/scorestreaks.md)).
 - [ ] Engineer's Care Package reroll and booby trap.
 
 ## Bots
 
 - [ ] Search and Destroy on Warehouse: on the old layout the bench had attackers winning 5 to 8 rounds of 28. Re-run `godot/tools/bot_bench.gd` on the reworked map and look at the sites' approaches if the defenders still win most rounds ([docs/bots.md](docs/bots.md)).
 
-## Custom games and spectating
+## Custom games
 
 - [ ] Black Ops 2's teamkill punishment (`teamKillPunishCount`, `teamKillSpawnDelay`): a longer respawn after repeat teamkills, then a kick.
 - [ ] Grey out what a loadout rule (default classes, pistols only, snipers only) bars in the class menu, as Black Ops 2 shows restricted items; today the server applies the rule at spawn.
-- [ ] Spectating: a third-person follow camera and an overhead map view (Black Ops 2's CODcaster has both), and spectators by name on the scoreboard and in chat.
 
 ## Create-a-Class and progression
 

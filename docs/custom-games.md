@@ -69,46 +69,6 @@ Beside the class menu, a panel lists both teams: who is ready, and the bots. Its
 
 ![The lobby: both teams beside the class menu, with Switch team and Ready](media/lobby.jpg)
 
-## Spectating
-
-A player can join a match as a spectator, as Black Ops 2's CODcaster lets casters do. A spectator is on no team, has no body, and takes no place: bots fill the teams as if nobody had joined. Up to eight can watch one server.
-
-How to spectate:
-
-- **Local match:** the **Spectate** toggle beside Game settings, to watch the bots.
-- **Any server:** `--connect HOST[:PORT] --spectate`, or `"spectate": true` in `Net.join`'s options.
-
-The controls (`godot/scripts/net/spectator.gd`):
-
-| Action | Keyboard and mouse | Controller |
-| --- | --- | --- |
-| Next player, by team | Fire (left mouse) | Fire (right trigger) |
-| Previous player | Aim (right mouse) | Aim (left trigger) |
-| Switch between watching a player and the free camera | Interact (F) | Interact (X, or Square) |
-| Fly the free camera | Move, Jump up, Crouch down, Sprint faster | the same |
-
-Watching a player is first person, from their eyes, with their weapon. Their body hides, as in the killcam, and the killcam's machinery draws the view (`ViewDriver`, `killcam::eye`). The free camera starts where the view was.
-
-![Watching a bot from its eyes, with both teams down the sides and its class below](media/spectate-follow.jpg)
-
-![The free camera over Slamcity, a map since cut](media/spectate-free.jpg)
-
-### The caster's view
-
-The caster's view (`godot/scripts/net/caster_overlay.gd`) shows:
-
-- **Each team down its side of the screen:** every player's name, kills and deaths, the weapon in hand, and the scorestreaks they hold. The dead are dimmed, and the watched player is highlighted.
-- **A card for the watched player:** both weapons with their attachments, equipment, perks, and the count toward their next scorestreak.
-
-The match HUD keeps the score, clock, and kill feed. The mode views show the objective (flags, zones, the charge), seen from the first team's side. The first team takes the ally colour and the second the enemy's. The minimap and the class menu are off.
-
-### What the server sends spectators
-
-- **Every player's snapshot**, with no own state and no minimap dots.
-- **`GameEvent::Caster` twice a second while it changes:** every player's class (with the custom loadout rule applied), their scorestreaks, their count toward the next one, and what they hold. Players never get it, since it would tell them their enemies' classes.
-
-Spectators only acknowledge snapshots; they send no inputs.
-
 ## The text form
 
 Servers take the settings as `key=value` pairs split by commas (`--custom`, or `SHOOTER_CUSTOM` for the Docker image):

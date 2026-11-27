@@ -67,7 +67,6 @@ drawn from their eyes: their body hides, and the local first-person rig
 plays their weapon, camo, aim, reloads, switches, shots, and knife
 (`ViewDriver`). Grenades fly and burst in the replay. Bodies that fall in it
 go when it ends, and bodies already lying in the world hide while it plays.
-The spectator view uses the same machinery ([custom-games.md](custom-games.md)).
 
 ## On screen
 

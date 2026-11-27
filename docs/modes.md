@@ -32,7 +32,7 @@ limits, a map, team sizes, bot difficulty, and the custom game settings.
 Search and Destroy's setup lists only Breakwater, the map with charge
 sites. An unknown `--mode` runs Team Deathmatch.
 
-A server accepts up to 12 connections (players and spectators; bots are not connections). In team modes a new player joins the
+A server accepts up to 12 players (bots are not connections). In team modes a new player joins the
 smaller team (ties go to team 0 for humans and team 1 for bots,
 `tdm::assign_team`). With `--bots N` and a bot skill, bots fill the server
 to N + 1 players and each human who joins takes a bot's place; `--team-bots`

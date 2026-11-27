@@ -31,7 +31,7 @@ REALTIME=(join_server_test local_pause_test)
 # Real-time tests whose server takes a port from the test's process id
 # (30000 + pid % 20000) with no query port (--query-port -1), and that use
 # no fixed port.
-REALTIME_OWN_PORT=(net_test killcam_test custom_games_test spectator_test lobby_switch_test)
+REALTIME_OWN_PORT=(net_test killcam_test custom_games_test lobby_switch_test)
 # Extra argument sets: a test listed here runs once per entry instead of once
 # with no arguments.
 declare -A RUNS=(

@@ -22,7 +22,7 @@ player and draw everyone else a little in the past.
 | Simulation tick, server and client prediction | 120 Hz | `shooter_sim::TICK_RATE` |
 | Snapshots, server to each client | 60 Hz (every 2 ticks) | `NetServer.snapshot_interval` |
 | Input packets, client to server | 120 Hz, one a tick | `NetClient` |
-| Players per server | 12 (6v6), plus 8 spectators | `net::MAX_PLAYERS`, `MAX_SPECTATORS` in `server.rs` |
+| Players per server | 12 (6v6) | `net::MAX_PLAYERS` |
 | Protocol version | 93 | `protocol::PROTOCOL_VERSION` |
 | Transport | Godot's ENet, two channels | `rust/game/src/net/transport.rs` |
 
@@ -36,16 +36,15 @@ format is tested without the engine.
 `rust/sim/src/net/protocol.rs` holds every message, bit-packed
 (`net::bits`).
 
-- **Client to server.** A hello (protocol version, name, and whether to
-  spectate), then one `InputPacket` a tick. Each packet carries every input the server has not acknowledged, up
-  to 24 (200 ms), so a lost packet costs nothing while a later one arrives.
-  Reliable messages cover ready-up, the class, streaks, and cosmetics,
-  chat, skipping a killcam, and switching teams
-  in the lobby.
+- **Client to server.** A hello (protocol version and name), then one
+  `InputPacket` a tick. Each packet carries every input the server has not
+  acknowledged, up to 24 (200 ms), so a lost packet costs nothing while a
+  later one arrives. Reliable messages cover ready-up, the class, streaks,
+  and cosmetics, chat, skipping a killcam, and switching teams in the lobby.
 - **Server to client.** A welcome (player id, tick, snapshot interval, the
-  mode and its rules, the server's build, custom game settings, and whether
-  the player is a spectator), then snapshots. A client of another protocol
-  version gets a `Reject` with the server's version.
+  mode and its rules, the server's build, and custom game settings), then
+  snapshots. A client of another protocol version gets a `Reject` with the
+  server's version.
 - **Reliable game events.** Hits, damage, kills, score, the roster, the
   match clock, the scoreboard, and each mode's objectives and streaks: things
   that happen once and must not be lost.
@@ -295,8 +294,8 @@ half-second-old view ticks, and a switch flipped every two seconds, which
 are flagged.
 
 Not covered: wallhacks (snapshots carry every player, which killcams,
-spectators, and the minimap rely on) and aim assistance subtle enough to
-look human. Both need data the server does not have, or review.
+Search and Destroy's spectating dead, and the minimap rely on) and aim
+assistance subtle enough to look human. Both need data the server does not have, or review.
 
 ## Trying it
 

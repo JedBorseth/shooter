@@ -125,7 +125,8 @@ impl RemotePlayer {
     }
 
     /// The character, for tests.
-    /// The view yaw and pitch last drawn, in radians (spectator cameras).
+    /// The view yaw and pitch last drawn, in radians (Search and Destroy's
+    /// spectating camera).
     #[func]
     fn view_angles(&self) -> Vector2 {
         Vector2::new(self.yaw, self.pitch)

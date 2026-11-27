@@ -30,9 +30,8 @@ extends Node
 ##                                    --team-bots gives each team exactly that
 ##                                    many bots (players take no bot's place),
 ##                                    each at its --team-bot-skill.
-##   --connect HOST[:PORT] [--spectate] [--lag MS] [--jitter MS] [--loss PERCENT]
-##                                    join a server (as a spectator with
-##                                    --spectate); lag, jitter, and loss are
+##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
+##                                    join a server; lag, jitter, and loss are
 ##                                    simulated in each direction for testing
 ##
 ## A dedicated server export (feature "dedicated_server") always runs as a server.
@@ -75,7 +74,6 @@ const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
 const KILLCAM_HUD_SCRIPT := "res://scripts/net/killcam_hud.gd"
 const SND_VIEW_SCRIPT := "res://scripts/net/snd_view.gd"
 const SCAVENGER_VIEW_SCRIPT := "res://scripts/net/scavenger_view.gd"
-const SPECTATOR_SCRIPT := "res://scripts/net/spectator.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -98,8 +96,6 @@ func _ready() -> void:
 	if OS.has_feature("dedicated_server") or options.has("server"):
 		_start_server.call_deferred(options)
 	elif options.has("connect"):
-		if options.has("spectate"):
-			options["spectate"] = true
 		join.call_deferred(String(options["connect"]), options)
 
 
@@ -158,7 +154,7 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 ## `bots`, `bot_skill`, `score_limit` (0 for the mode's usual limit),
 ## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`, `name`,
 ## `auto_start` to skip the ready-up, `custom` for a custom game's settings in
-## their text form, `spectate` to join as a spectator) and joins it. The server pauses with
+## their text form) and joins it. The server pauses with
 ## the pause menu and answers no queries.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
@@ -172,10 +168,7 @@ func start_local_match(options: Dictionary) -> void:
 	if _local_server_pid <= 0:
 		push_error("Net.start_local_match: cannot start the server process")
 		return
-	join(
-		"127.0.0.1:%d" % port,
-		{"map": map, "name": server_name, "spectate": bool(options.get("spectate", false))}
-	)
+	join("127.0.0.1:%d" % port, {"map": map, "name": server_name})
 
 
 ## The command line for the server process `start_local_match` starts on
@@ -356,7 +349,6 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	client.latency_ms = float(options.get("lag", 0))
 	client.jitter_ms = float(options.get("jitter", 0))
 	client.loss_percent = float(options.get("loss", 0))
-	client.spectate = bool(options.get("spectate", false))
 	main.add_child(client)
 	_client = client
 
@@ -482,10 +474,3 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	scavenger_view.set("client", client)
 	scavenger_view.set("player", player)
 	main.add_child(scavenger_view)
-	# Spectating: switching players, the free camera, and who is watched;
-	# idle unless the server let us in as a spectator.
-	var spectator := CanvasLayer.new()
-	spectator.name = "Spectator"
-	spectator.set_script(load(SPECTATOR_SCRIPT))
-	spectator.set("client", client)
-	main.add_child(spectator)

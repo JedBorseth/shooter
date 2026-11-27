@@ -109,8 +109,7 @@ shooter-launcher -- --connect 10.0.0.5 --map breakwater
 
 The client loads the map before it connects, and the server does not send
 it, so pass the server's `--map` (the map id or the name its query answers with);
-without it the client loads Breakwater. `--spectate` joins as a spectator
-([custom-games.md](custom-games.md)).
+without it the client loads Breakwater.
 
 To feel the netcode at a realistic ping against a local server, add a
 simulated link to the client; each value applies in each direction:
@@ -130,7 +129,6 @@ F4 draws hitboxes, with the ones the server rewound for your shots in white
 | --- | --- |
 | `--connect HOST[:PORT]` | Join a server at launch (port 27015 unless given) |
 | `--map MAP` | With `--connect`: the server's map |
-| `--spectate` | With `--connect`: join as a spectator |
 | `--lag MS`, `--jitter MS`, `--loss PERCENT` | With `--connect`: simulate a link, each way |
 
 ## Play over the internet

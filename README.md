@@ -112,7 +112,7 @@ The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 | Domination | `dom` | Hold flags A, B, and C; each scores every 5 seconds; to 200, sides swap at halftime. | [domination.md](docs/domination.md) |
 | Search and Destroy | `snd` | One life a round; the attackers win by wiping out the defenders or by planting the charge at a site until it goes off; first to 6 rounds. | [search-and-destroy.md](docs/search-and-destroy.md) |
 
-Any mode can run as a custom game, with Black Ops 2's game settings (limits, health and regeneration, friendly fire, radar, killcams, streaks, loadout rules, hardcore) and a bot count and skill per team, and players can join as spectators with a caster's view ([docs/custom-games.md](docs/custom-games.md)). Bots play every multiplayer mode at Easy, Normal, or Hard ([docs/bots.md](docs/bots.md)).
+Any mode can run as a custom game, with Black Ops 2's game settings (limits, health and regeneration, friendly fire, radar, killcams, streaks, loadout rules, hardcore) and a bot count and skill per team ([docs/custom-games.md](docs/custom-games.md)). Bots play every multiplayer mode at Easy, Normal, or Hard ([docs/bots.md](docs/bots.md)).
 
 ### Maps
 
@@ -271,7 +271,7 @@ Modes:
 - [domination.md](docs/domination.md): Domination's flags, scoring, and halftime.
 - [search-and-destroy.md](docs/search-and-destroy.md): rounds, the charge, sites, and the spectating dead.
 - [spawns.md](docs/spawns.md): how the server chooses spawns in each mode, and each map's spawn points.
-- [custom-games.md](docs/custom-games.md): custom game settings, hardcore, spectators, and the caster's view.
+- [custom-games.md](docs/custom-games.md): custom game settings, hardcore, bots per team, and the lobby.
 - [bots.md](docs/bots.md): how bots see, aim, move, and play each mode.
 
 Online and servers:

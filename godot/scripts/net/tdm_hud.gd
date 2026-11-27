@@ -120,7 +120,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				open_chat(action == &"team_chat")
 				return
-	if event.is_action_pressed(&"loadout") and not client.is_spectator():
+	if event.is_action_pressed(&"loadout"):
 		get_viewport().set_input_as_handled()
 		_set_menu_open(not _menu.visible)
 	elif (
@@ -181,7 +181,7 @@ func _process(delta: float) -> void:
 	_menu_panel.custom_minimum_size.x = 560.0 if ladder else 900.0
 	_age_chat(delta)
 
-	if phase == "lobby" and not _opened_for_lobby and not client.is_spectator():
+	if phase == "lobby" and not _opened_for_lobby:
 		_opened_for_lobby = true
 		_set_menu_open(true)
 	if phase != "lobby" and _ready_button.visible:

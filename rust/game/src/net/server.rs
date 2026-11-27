@@ -147,11 +147,6 @@ const STATS_INTERVAL_TICKS: Tick = 2 * TICK_RATE;
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
 const FIRST_BOT_ID: u8 = 200;
-/// Spectators get ids from here up, between players' and bots'.
-const FIRST_SPECTATOR_ID: u8 = 100;
-/// Most spectators a server takes (Black Ops 2's CODcaster lobbies take a
-/// few casters beside the twelve players).
-const MAX_SPECTATORS: u8 = 8;
 /// Seconds a death keeps nearby spawn points unattractive.
 const RECENT_DEATH_SECONDS: u32 = 5;
 /// Ticks between scoreboard updates when nothing scored.
@@ -412,8 +407,6 @@ pub struct NetServer {
     /// The latest kill of the match (or the Search and Destroy round), for
     /// the killcam that ends it.
     last_kill: Option<KillRecord>,
-    /// The caster's rows last sent to spectators (`GameEvent::Caster`).
-    caster_sent: Vec<protocol::CasterRow>,
 }
 
 /// A smoke cloud still hanging.
@@ -430,9 +423,6 @@ struct ClientSlot {
     peer: Gd<ENetPacketPeer>,
     /// Set once the hello is accepted.
     player: Option<u8>,
-    /// Watching, not playing: `player` is a spectator id
-    /// (`FIRST_SPECTATOR_ID` up), with no body and no team.
-    spectator: bool,
     inputs: InputQueue,
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
@@ -458,13 +448,6 @@ struct ClientSlot {
     kicked: bool,
     /// What the server lets them show (`shooter_sim::cosmetics`).
     cosmetics: Cosmetics,
-}
-
-impl ClientSlot {
-    /// Admitted as a player (not a spectator).
-    fn playing(&self) -> bool {
-        self.player.is_some() && !self.spectator
-    }
 }
 
 struct Avatar {
@@ -838,7 +821,6 @@ impl INode3D for NetServer {
             self.broadcast_scoreboard();
         }
         self.send_stats(false);
-        self.send_caster();
         self.send_events();
         host.flush();
         drop(net_out);
@@ -850,7 +832,7 @@ impl INode3D for NetServer {
             }
         }
 
-        let players = self.clients.iter().filter(|c| c.playing()).count();
+        let players = self.clients.iter().filter(|c| c.player.is_some()).count();
         if let Some(responder) = &mut self.responder {
             responder.info.players = players.min(255) as u8;
             responder.poll();
@@ -878,39 +860,14 @@ impl NetServer {
         }
     }
 
-    /// Sends spectators every player's class and scorestreaks
-    /// (`GameEvent::Caster`) twice a second, when they changed.
-    fn send_caster(&mut self) {
-        if !self.tick.is_multiple_of(TICK_RATE / 2) || !self.clients.iter().any(|c| c.spectator) {
-            return;
-        }
-        let mut rows: Vec<protocol::CasterRow> = self
-            .avatars
-            .iter()
-            .map(|a| protocol::CasterRow {
-                id: a.id,
-                class: self.custom.loadouts.restrict(a.class),
-                streaks: a.streak_loadout,
-                progress: a.streaks.progress,
-                held: a.streaks.held.clone(),
-            })
-            .collect();
-        rows.sort_by_key(|r| r.id);
-        if rows == self.caster_sent {
-            return;
-        }
-        let event = GameEvent::Caster(rows.clone());
-        self.caster_sent = rows;
-        for client in self.clients.iter_mut().filter(|c| c.spectator) {
-            client.outbox.push(event.clone());
-        }
-    }
-
     /// A player asks to change teams in the lobby: they move to the other team and respawn there, and the bots
     /// even out. Only before the countdown, and only in team modes.
     fn switch_team(&mut self, index: usize) {
         let client = &self.clients[index];
-        if !client.playing() || self.match_state.phase != Phase::Lobby || self.game.free_for_all() {
+        if client.player.is_none()
+            || self.match_state.phase != Phase::Lobby
+            || self.game.free_for_all()
+        {
             return;
         }
         let Some(id) = client.player else { return };
@@ -1847,7 +1804,6 @@ impl NetServer {
                     peer.get_remote_port()
                 );
                 self.clients.push(ClientSlot {
-                    spectator: false,
                     peer,
                     player: None,
                     inputs: InputQueue::default(),
@@ -1870,9 +1826,7 @@ impl NetServer {
                     return;
                 };
                 let client = self.clients.swap_remove(index);
-                if let Some(id) = client.player.filter(|_| client.spectator) {
-                    godot_print!("server: spectator {id} left");
-                } else if let Some(id) = client.player {
+                if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
                     if self.match_state.phase == Phase::Playing && self.stats_on() {
                         let tick = self.tick;
@@ -1968,33 +1922,14 @@ impl NetServer {
     /// Lets a connection in: a player id, the welcome, the state of the
     /// game, and a spawn. The hello already passed.
     fn admit(&mut self, index: usize, name: &str) {
-        self.admit_as(index, name, false);
-    }
-
-    /// Lets a client in, as a player or as a `spectator`: a spectator gets
-    /// the welcome and everything a late joiner needs to follow the match,
-    /// but no body, no team, and no place a bot would fill.
-    fn admit_as(&mut self, index: usize, name: &str, spectator: bool) {
         let mut peer = self.clients[index].peer.clone();
-        let ids = if spectator {
-            FIRST_SPECTATOR_ID..FIRST_SPECTATOR_ID + MAX_SPECTATORS
-        } else {
-            0..MAX_PLAYERS as u8
-        };
-        let Some(id) = ids
-            .clone()
-            .find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
+        let Some(id) =
+            (0..MAX_PLAYERS as u8).find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
         else {
             peer.peer_disconnect_later();
             return;
         };
         self.clients[index].player = Some(id);
-        self.clients[index].spectator = spectator;
-        if spectator {
-            // Everything for the caster's view, on the next send.
-            self.caster_sent.clear();
-            godot_print!("server: spectator {id} \"{name}\" joined");
-        }
         let name = tdm::clean_name(name, &format!("Player {}", id + 1));
         let class = self.clients[index].class;
         // The welcome goes first, so the client knows its id before
@@ -2006,7 +1941,6 @@ impl NetServer {
             mode: self.game,
             server_build: crate::build_info::BUILD.to_owned(),
             custom: self.custom,
-            spectator,
         };
         transport::send_reliable(&mut peer, &welcome.encode(&[]));
         // Everyone already here, then the newcomer for everyone.
@@ -2033,19 +1967,17 @@ impl NetServer {
                 }),
         );
         self.clients[index].outbox.extend(shown);
-        if !spectator {
-            self.spawn_avatar(id, false, &name, class, None);
-            if self.clients[index].cosmetics != Cosmetics::default() {
-                let cosmetics = self.clients[index].cosmetics.clone();
-                self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
-            }
-            let streaks = self.clients[index].streaks;
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                avatar.streak_wanted = streaks;
-                avatar.streak_loadout = streaks;
-            }
-            self.send_streaks(id);
+        self.spawn_avatar(id, false, &name, class, None);
+        if self.clients[index].cosmetics != Cosmetics::default() {
+            let cosmetics = self.clients[index].cosmetics.clone();
+            self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
         }
+        let streaks = self.clients[index].streaks;
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+            avatar.streak_wanted = streaks;
+            avatar.streak_loadout = streaks;
+        }
+        self.send_streaks(id);
         let sky = self.sky_event();
         self.send_event(id, sky);
         for crate_ in self.crates.list.clone() {
@@ -2088,11 +2020,7 @@ impl NetServer {
 
     fn handle_message(&mut self, index: usize, message: ClientMessage) {
         match message {
-            ClientMessage::Hello {
-                version,
-                name,
-                spectate,
-            } => {
+            ClientMessage::Hello { version, name } => {
                 if self.clients[index].player.is_some() {
                     return;
                 }
@@ -2105,9 +2033,6 @@ impl NetServer {
                     peer.peer_disconnect_later();
                     return;
                 }
-                if spectate {
-                    return self.admit_as(index, &name, true);
-                }
                 self.admit(index, &name);
             }
             ClientMessage::Input(packet) => {
@@ -2115,10 +2040,7 @@ impl NetServer {
                 if client.player.is_none() {
                     return;
                 }
-                // A spectator's inputs move nothing; only its acks count.
-                if !client.spectator {
-                    client.inputs.receive(packet.first_seq, &packet.inputs);
-                }
+                client.inputs.receive(packet.first_seq, &packet.inputs);
                 if let Some(ack) = packet.ack_snapshot
                     && ack <= self.tick
                     && client.ack.is_none_or(|current| ack > current)
@@ -4257,7 +4179,7 @@ impl NetServer {
         {
             self.recent_deaths.pop_front();
         }
-        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.playing()).collect();
+        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.player.is_some()).collect();
         if humans.is_empty() && !self.auto_start {
             if self.match_state.phase != Phase::Lobby {
                 self.match_state.reset();
@@ -6603,11 +6525,6 @@ impl NetServer {
         };
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
-            if client.spectator {
-                let outgoing = parts.for_spectator(&self.history, client.ack);
-                transport::send_unreliable(&mut client.peer, &outgoing.encode());
-                continue;
-            }
             let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
                 continue;
             };
@@ -6648,26 +6565,6 @@ struct SnapshotParts<'a> {
 }
 
 impl SnapshotParts<'_> {
-    /// The snapshot for a spectator: every player, no own state, and no
-    /// minimap dots (a caster sees the players themselves).
-    fn for_spectator(&self, history: &SnapshotHistory, ack: Option<Tick>) -> Outgoing {
-        let baseline: Option<(Tick, Vec<PlayerView>)> =
-            ack.and_then(|tick| Some((tick, history.get(tick)?.to_vec())));
-        Outgoing {
-            snapshot: Snapshot {
-                tick: self.tick,
-                baseline: baseline.as_ref().map(|(tick, _)| *tick),
-                own: None,
-                players: self.views.to_vec(),
-                grenades: self.grenades.to_vec(),
-                smokes: self.smokes.to_vec(),
-                radar: RadarView::default(),
-            },
-            base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
-            base_own: None,
-        }
-    }
-
     /// The snapshot for `avatar`'s client, delta-encoded against what it
     /// acknowledged (`ack`) if the server still has it.
     fn for_player(
