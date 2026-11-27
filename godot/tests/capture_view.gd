@@ -4,7 +4,7 @@ extends SceneTree
 ##     --resolution 1600x900 --audio-driver Dummy --script res://tests/capture_view.gd
 ##
 ## CAPTURE_DIR        Required output directory for PNGs and views.json.
-## CAPTURE_MAP        Net map key (arena, warehouse, breakwater), "testing", or a res:// scene path.
+## CAPTURE_MAP        Net map key (arena, breakwater), "testing", or a res:// scene path.
 ## CAPTURE_VIEWS      "name:x,y,z,heading,pitch[,fov];..." in world metres at
 ##                    the feet. Heading 0 is -Z, 90 is +X. Positive pitch
 ##                    looks up. Angles are degrees and FOV is vertical.

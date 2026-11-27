@@ -1,14 +1,13 @@
 extends SceneTree
 ## Every playable map pushes Settings onto its player: with Input device set to
-## Controller, the right stick turns the view on each map. Warehouse (and a
-## map since cut) once left its pause menu without a player, so the player never
-## learned a controller was in use and stick look did nothing there.
+## Controller, the right stick turns the view on each map. Two maps since cut
+## once left their pause menu without a player, so the player never learned a
+## controller was in use and stick look did nothing there.
 ## godot --headless --path godot --script res://tests/map_settings_test.gd
 
 const TEST_PATH := "user://map_settings_test.cfg"
 const MAPS: Array[String] = [
 	"res://scenes/main.tscn",
-	"res://scenes/warehouse.tscn",
 	"res://scenes/breakwater.tscn",
 ]
 

@@ -60,7 +60,7 @@ These rules apply to every weapon and movement change.
 - **Netcode:** prediction and reconciliation, delta-compressed snapshots, sub-tick fire, lag compensation against the animated body, and server checks on what clients send ([netcode.md](netcode.md)).
 - **Servers and online:** dedicated servers joined by address, a Docker image for them, and a launcher that keeps client logs, sends crash reports, and keeps a server on the latest build ([multiplayer.md](multiplayer.md), [server.md](server.md), [crash-reports.md](crash-reports.md)).
 - **Custom games:** Black Ops 2's custom game settings and loadout rules, and bots per team ([custom-games.md](custom-games.md)).
-- **Maps:** Breakwater (the default) and Warehouse built for 6v6, and the Testing Area; agents can see and edit maps through the editor bridge ([map-design.md](map-design.md), [editor-mcp.md](editor-mcp.md)).
+- **Maps:** Breakwater, the one multiplayer map, built for 6v6, and the Testing Area for practice (the owner cut Warehouse on 2026-11-27); agents can see and edit maps through the editor bridge ([map-design.md](map-design.md), [editor-mcp.md](editor-mcp.md)).
 - **Art:** modelled soldiers, PBR world materials, baked lightmaps and a grade per map, and modern combat effects ([art-direction.md](art-direction.md)).
 - **Audio:** layered gunshots from recordings, positional sound with occlusion and reverb zones, per-map ambience, and a mix with loudness priority ([audio.md](audio.md)).
 - **Settings and HUD:** Call of Duty's PC options, controller tuning, glyph prompts, colour-blind palettes, and HUD size and opacity ([settings.md](settings.md)).

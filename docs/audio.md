@@ -258,7 +258,7 @@ All in `acoustics.rs`, judged from where the listener (the current camera) is.
 - **Reverb zones.** A map marks its rooms and tunnels with `ReverbZone` boxes.
   While the camera is inside one, a reverb blends onto Effects and Footsteps
   toward that zone's settings. Gunshots carry their own tails instead. A zone
-  with `outdoor = true` or `wet` under 0.10 (Warehouse's Field zones) adds its
+  with `outdoor = true` or `wet` under 0.10 adds its
   light reflection but keeps the listener outdoors for the soundscape, the
   gunshot tails, and slapback.
 - **Occlusion.** Every playing positional sound is checked with a ray from the
@@ -266,7 +266,6 @@ All in `acoustics.rs`, judged from where the listener (the current camera) is.
   that start together within 1.5 m share one). Behind a wall it drops up to
   9 dB and plays through the occluded bus. A wall within 0.4 m of the source
   does not count, so an impact on the near face of a wall is not muffled.
-  Far off-map emitters opt out (`skip_occlusion` metadata).
 - **Front and back.** A sound more than about 107° from the view direction, and
   further than 1.5 m, plays 1.5 dB quieter through the behind bus (highs above
   2.2 kHz at 0.42), so a step behind you sounds different from one ahead.
@@ -311,42 +310,11 @@ to 25 m away.
 | --- | --- | --- |
 | Testing Area | `day` | yes |
 | Breakwater | `day` | no |
-| Warehouse | per area (below) | no |
 
 `distant_battle` plays a fight far beyond the map on one voice, 250 to 400 m
 out: bursts of the game's own guns' `far` recordings and, about one time in
 six, a distant explosion. Multiplayer maps leave it off, so every gunshot heard
 in a match is real.
-
-### Warehouse (`preset = "warehouse"`, `ambience_areas.rs`)
-
-Modelled on CoD4's Vacant and Modern Warfare's Hackney Yard and Atlas
-Superstore: each outdoor half has its own bed and one-shots, cross-faded by
-where the listener stands.
-
-- **The Field** (the north grass lot and the demolished west wing): grass wind,
-  sparse birds and insects, and a distant road (`warehouse_field`), with gusts,
-  a rattling chain-link fence, loose roofing, and crows.
-- **The Docks** (the lowered south truck apron): distant highway, a truck
-  idling, and hall machinery bleeding out of the bays (`warehouse_docks`), with
-  trailer creaks, pallet drops, air brakes, and reversing alarms.
-- **The hall**: room tone over a quiet plant thrum (`warehouse_hall`). Inside,
-  the nearest outdoor bed bleeds through muffled, so crossing the hall shifts
-  the bleed from the Field to the Docks. Under the 12 × 12 m roof breach
-  (`x 7.5..19.5, z -2.5..9.5`, fading over 5 m) a faint sky wind fades in and
-  the outdoor low-pass opens toward 1.5 kHz.
-- **Off-map industry**: one voice (`IndustrialOffMap`, on `Ambience (outdoor)`)
-  plays plant noises 30 to 80 m beyond the perimeter: hammering, muffled
-  shouts, reversing alarms (biased to the Docks side), forklift horns, metal
-  drops, impact wrenches, roller doors, and PA chimes. `IndustrialScheduler`
-  keeps it sparse so it stays atmosphere, never a combat cue: a 12 to 24 s
-  grace at the start, 25 to 60 s gaps, no back-to-back repeats, 90 s per
-  category, 150 s for shouts, and 120 s for reversing alarms (shared with the
-  Docks one-shot). Levels sit around -21 dB so footsteps and gunfire always
-  win.
-
-`uv run tools/build_world_audio.py warehouse` builds these from pinned CC0
-recordings (`tools/warehouse_audio.py`).
 
 ### Stings and calls
 

@@ -105,8 +105,8 @@ const PRESETS := [
 ## removes it, so it is never saved again.
 const _STALE_AUTHORED := &"_graphics_authored"
 ## Nodes in this group (saved with the scene) are shown on High only: a
-## map's live extras whose light is also baked, such as Warehouse's
-## reflection probes and the sun through its roof breach.
+## map's live extras whose light is also baked, such as reflection probes
+## or a sun shaft through a hole in a roof.
 const HIGH_ONLY := &"graphics_high_only"
 ## A map's ambient particles that fill a lot of the screen with transparent
 ## puffs (a smoke plume, steam, spray mist), saved in this group by their
@@ -371,8 +371,8 @@ static func _apply_node(node: Node, p: Dictionary) -> void:
 		env.glow_enabled = authored["glow"] and p["glow"]
 		env.volumetric_fog_enabled = authored["volumetric_fog"] and p["volumetric_fog"]
 		# Live global illumination and reflections cost several milliseconds
-		# each on the reference card (Warehouse, Medium: SDFGI 5.1 ms, SSIL
-		# 2.6, SSR 1.9); maps bake their light instead. Only High keeps them.
+		# each on the reference card (a roofed hall, Medium: SDFGI 5.1 ms,
+		# SSIL 2.6, SSR 1.9); maps bake their light instead. Only High keeps them.
 		var gi: bool = p["screen_space_gi"]
 		env.sdfgi_enabled = authored.get("sdfgi", false) and gi
 		env.ssil_enabled = authored.get("ssil", false) and gi

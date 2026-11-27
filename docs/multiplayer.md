@@ -32,7 +32,7 @@ in a run's artifacts and on the `nightly` release) always starts as a server,
 with no `--server` needed.
 
 ```sh
-./shooter-server.x86_64 --headless -- --name "EU 1" --map warehouse --bots 6 --bot-skill hard
+./shooter-server.x86_64 --headless -- --name "EU 1" --map breakwater --bots 6 --bot-skill hard
 ```
 
 The same server runs in Docker ([server.md](server.md)), or under
@@ -48,7 +48,7 @@ Options go after `--`. A repeated option takes its last value.
 | `--port N` | 27015 | UDP game port |
 | `--query-port N` | game port + 1 | Port that answers queries; `-1` turns queries off |
 | `--name NAME` | "Shooter server" | The name joining games show (32 bytes at most) |
-| `--map MAP` | `breakwater` | `breakwater`, `warehouse`, or `arena` |
+| `--map MAP` | `breakwater` | `breakwater` or `arena` |
 | `--mode MODE` | `tdm` | See the table below; an unknown mode runs Team Deathmatch with a warning |
 | `--score-limit N` | the mode's | Points to win; 0 keeps the mode's own limit |
 | `--time-limit MINUTES` | 10 | Length of a match (0.1 at least) |

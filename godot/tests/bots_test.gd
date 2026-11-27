@@ -4,15 +4,11 @@ extends SceneTree
 ## ready-up, and checks that the bots bake a navigation mesh, find each other
 ## across the map, and score kills within a minute of play, and that the
 ## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
-## With `-- --warehouse` the team match runs on Warehouse instead, whose teams
-## start north and south rather than west and east (the free-for-all part
-## stays on Breakwater).
-## godot --headless --path godot --script res://tests/bots_test.gd [-- --warehouse]
+## godot --headless --path godot --script res://tests/bots_test.gd
 
 const SECONDS := 60
 ## Loaded at run time: preloading needs the autoloads a test script lacks.
 const SERVER_SCENE := "res://scenes/server.tscn"
-const WAREHOUSE := "res://scenes/warehouse.tscn"
 const BREAKWATER := "res://scenes/breakwater.tscn"
 
 ## A port per process, so test runs in parallel on one machine don't meet.
@@ -26,16 +22,10 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var bots := int(OS.get_environment("BOTS")) if OS.get_environment("BOTS") != "" else 6
-	var args := OS.get_cmdline_user_args()
-	var map_name := "Breakwater"
-	var map_path := BREAKWATER
-	if args.has("--warehouse"):
-		map_name = "Warehouse"
-		map_path = WAREHOUSE
 	var lanes := 3
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
-	server.map_scene = load(map_path) as PackedScene
-	server.map_name = map_name
+	server.map_scene = load(BREAKWATER) as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.bots = bots
@@ -49,7 +39,7 @@ func _run() -> void:
 	_check(server.has_bot_navigation(), "the bots bake a navigation mesh")
 	_check(
 		server.bot_lane_count() == lanes,
-		"%s gives the bots %d lanes, got %d" % [map_name, lanes, server.bot_lane_count()]
+		"Breakwater gives the bots %d lanes, got %d" % [lanes, server.bot_lane_count()]
 	)
 	_check(server.player_count() == bots, "%d bots join, got %d" % [bots, server.player_count()])
 	var teams := [0, 0]
@@ -82,8 +72,7 @@ func _run() -> void:
 	_check(int(tactics.cover) >= 1, "hurt bots take cover, %d times" % tactics.cover)
 	server.queue_free()
 	await process_frame
-	if map_name == "Breakwater":
-		await _free_for_all()
+	await _free_for_all()
 	_finish()
 
 

@@ -12,7 +12,7 @@ extends SceneTree
 ## Environment:
 ##   BENCH_OUT      JSON results file (optional; a table always prints).
 ##   BENCH_PRESETS  comma list of low, medium, high (default: all three).
-##   BENCH_MAPS     comma list of testing, breakwater, warehouse (default: all).
+##   BENCH_MAPS     comma list of testing, breakwater (default: both).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
 ##   BENCH_MOTION_BLUR  1 to measure with motion blur on (off by default).
@@ -47,19 +47,6 @@ const MAPS := {
 			[Vector3(-27, 3.85, -6), PI, -0.05],
 			[Vector3(-39, 0.05, -31), -PI / 2, 0.0],
 			[Vector3(-36, 0.05, 22.5), -PI / 2 + 0.2, 0.02],
-		],
-	},
-	# Warehouse's Field, Docks, Catwalk, Pick Mezzanine, and mid stockpile.
-	"warehouse":
-	{
-		"scene": "res://scenes/warehouse.tscn",
-		"views":
-		[
-			[Vector3(6.5, 0.05, -33.0), PI / 2 + 0.35, -0.05],
-			[Vector3(28.6, -1.2, 41.0), PI / 2 - 0.45, -0.03],
-			[Vector3(22.5, 2.85, -9.2), PI - 0.35, -0.14],
-			[Vector3(12.6, 3.05, 15.2), -0.45, -0.14],
-			[Vector3(18.75, 0.05, 3.25), 0.65, 0.05],
 		],
 	},
 }

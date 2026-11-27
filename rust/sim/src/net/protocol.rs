@@ -218,7 +218,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Missile and Attack Chopper, spectators, and cosmetics are gone, with their
 // messages, events, and snapshot fields (their ids are left unused). The
 // player view's flags lost `downed`.
-pub const PROTOCOL_VERSION: u16 = 94;
+// Version 95 dropped `roofed` from `StreakEvent::State`: no map is roofed
+// over now that Warehouse is gone.
+pub const PROTOCOL_VERSION: u16 = 95;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -461,14 +463,12 @@ pub enum GameEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreakEvent {
     /// To one player, whenever it changes: their count toward the next
-    /// streak this life, the streaks they hold (oldest first), the loadout
-    /// they chose, and whether the map is roofed over, which leaves out the
-    /// streaks that need open sky ([`Streak::usable`]).
+    /// streak this life, the streaks they hold (oldest first), and the loadout
+    /// they chose.
     State {
         progress: u32,
         held: Vec<Streak>,
         loadout: streak::Loadout,
-        roofed: bool,
     },
     /// To everyone, whenever it changes and on joining: the ring they fly
     /// over the map, and every UAV and Counter-UAV up.
@@ -2472,7 +2472,6 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             progress,
             held,
             loadout,
-            roofed,
         } => {
             w.bits(0, STREAK_TAG_BITS);
             w.varint(*progress);
@@ -2482,7 +2481,6 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
                 write_streak(w, *streak);
             }
             write_loadout(w, *loadout);
-            w.bool(*roofed);
         }
         StreakEvent::CrateIncoming {
             id,
@@ -2579,7 +2577,6 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
                 progress,
                 held,
                 loadout: read_loadout(r)?,
-                roofed: r.bool()?,
             })
         }
         1 => {
@@ -3897,7 +3894,6 @@ mod tests {
                 progress: 310,
                 held: vec![Streak::Uav, Streak::CounterUav, Streak::Uav],
                 loadout: streak::Loadout::default(),
-                roofed: true,
             }),
             GameEvent::Streak(StreakEvent::Sky {
                 orbit: streak::Orbit {

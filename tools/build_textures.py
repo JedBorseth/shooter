@@ -165,10 +165,9 @@ def write_look(name: str, look: dict) -> None:
 def fix_imports(assets: Path = REPO / "godot/assets") -> None:
     """Compress world sets, generated world extras (decals, noise, chain-link),
     weapon PBR maps, and the registered Poly Haven prop textures with mipmaps.
-    Effects and Warehouse textures use their own import settings.
+    Effects textures use their own import settings.
 
-    Set 0.1 m lightmap texels on registered prop meshes. Warehouse's separate
-    prop library was baked at 0.2 m. Disable light baking for movable weapons
+    Set 0.1 m lightmap texels on registered prop meshes. Disable light baking for movable weapons
     and the soldier, and link weapon materials when a matching .tres exists.
     """
     count = 0

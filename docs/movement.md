@@ -250,7 +250,7 @@ goes away: `ViewmodelRig` finds the rungs from the feet and moves each hand's
 hold into the first-person projection (`effects::world_to_viewmodel`), so the
 hands show over the rungs whatever the field of view. Every climber's hands
 close round the rung, backs of the hands out (`poser::RUNG_GRIP`). The Testing
-Area's tower and Warehouse have ladders.
+Area's tower has a ladder.
 
 ## Collision and stepping
 

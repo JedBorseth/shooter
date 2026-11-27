@@ -108,7 +108,6 @@ each team's spawn and B in the middle:
 
 | Map | A (team 0's side) | B | C (team 1's side) |
 | --- | --- | --- | --- |
-| Warehouse | The north production aisle | The east edge of the Mid Stockpile | The dispatch aisle near the dock ramp |
 | Breakwater | The west main road, between the pickup and the analyser shelter | The crossing under the loading rack's deck (3 m circle) | A's twin on the east main road |
 
 Breakwater's are in `DOM_FLAGS` in `tools/breakwater_layout.py` (A and C are

@@ -7,9 +7,8 @@ extends Control
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
-## rounds to win, on Breakwater), or
-## Free Roam ("freeroam": a map to walk alone, no server, no bots).
-## Bots fill the empty places in the other modes. Start runs a local dedicated server with
+## rounds to win, on Breakwater, with no map row).
+## Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
 ##
@@ -25,16 +24,11 @@ const CustomPresets := preload("res://scripts/custom_presets.gd")
 const CustomSettingsPage := preload("res://scripts/ui/custom_settings_page.gd")
 const MAPS := [
 	["Breakwater", "breakwater"],
-	["Warehouse", "warehouse"],
 	["Testing Arena", "arena"],
 ]
-## Search and Destroy needs a map with attacking and defending sides.
-const SND_MAPS := [["Breakwater", "breakwater"]]
-## Free Roam walks a multiplayer map alone (the Testing Area has its own route).
-const FREE_ROAM_MAPS := [
-	["Breakwater", "breakwater"],
-	["Warehouse", "warehouse"],
-]
+## Search and Destroy needs a map with attacking and defending sides, so it
+## is played on Breakwater only.
+const SND_MAP := ["Breakwater", "breakwater"]
 const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
@@ -52,7 +46,6 @@ const FFA_SCORE_LIMITS := [10, 20, 30, 50]
 
 ## Pictures for the map header, by map id.
 const MAP_PICTURES := {
-	"warehouse": "res://assets/ui/maps/warehouse.jpg",
 	"breakwater": "res://assets/ui/maps/breakwater.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
 }
@@ -64,7 +57,6 @@ const MODE_NAMES := {
 	"hardpoint": "Hardpoint",
 	"dom": "Domination",
 	"snd": "Search and Destroy",
-	"freeroam": "Free Roam",
 }
 ## The line under the map picture, by mode.
 const DETAILS := {
@@ -87,14 +79,14 @@ const DETAILS := {
 		"Rounds with one life each. The attackers wipe out the defenders, or the"
 		+ " defenders hold out until time runs out."
 	),
-	"freeroam": "Walk the map on your own: no bots, no clock.",
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", or "freeroam".
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", or "snd".
 var mode := "tdm"
 
 var _name: LineEdit
+## The map row (every mode but Search and Destroy).
 var _map: ChipRow
 ## Team modes: each team's size (ours counts us) and its bots' difficulty.
 var _allies: ChipRow
@@ -116,7 +108,7 @@ var _layout: VBoxContainer
 var _custom_page: Control
 var _custom_summary: Label
 var _custom_button: Button
-## The custom rules chosen (`CustomPresets`), for every mode but Free Roam.
+## The custom rules chosen (`CustomPresets`).
 var _custom := CustomPresets.last()
 
 
@@ -143,21 +135,13 @@ func _unhandled_input(event: InputEvent) -> void:
 ## game settings in their text form (`custom`).
 func options() -> Dictionary:
 	var chosen := _base_options()
-	if _has_custom():
-		var custom := CustomPresets.to_text(_custom)
-		if not custom.is_empty():
-			chosen["custom"] = custom
+	var custom := CustomPresets.to_text(_custom)
+	if not custom.is_empty():
+		chosen["custom"] = custom
 	return chosen
 
 
-## Whether this mode takes custom game settings (not Free Roam).
-func _has_custom() -> bool:
-	return not _free_roam()
-
-
 func _base_options() -> Dictionary:
-	if _free_roam():
-		return {"mode": "freeroam", "map": FREE_ROAM_MAPS[_map.selected][1]}
 	if _gun_game():
 		return {
 			"mode": "gungame",
@@ -180,7 +164,7 @@ func _base_options() -> Dictionary:
 		return _with_teams(
 			{
 				"mode": "snd",
-				"map": SND_MAPS[_map.selected][1],
+				"map": SND_MAP[1],
 				"rounds_to_win": ROUNDS_TO_WIN[_rounds.selected],
 			}
 		)
@@ -240,18 +224,8 @@ func _ffa() -> bool:
 	return mode == "ffa"
 
 
-func _free_roam() -> bool:
-	return mode == "freeroam"
-
-
-func _maps() -> Array:
-	if _free_roam():
-		return FREE_ROAM_MAPS
-	return SND_MAPS if _snd() else MAPS
-
-
 func _show_map(index: int) -> void:
-	var map: Array = _maps()[index]
+	var map: Array = SND_MAP if _snd() else MAPS[index]
 	_map_title.text = map[0]
 	_picture.texture = load(MAP_PICTURES[map[1]]) as Texture2D
 
@@ -314,13 +288,7 @@ func _build() -> void:
 	caption.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	header.add_child(caption)
 	var eyebrow := Label.new()
-	eyebrow.text = (
-		"%s  ·  %s"
-		% [
-			"PRACTICE" if _free_roam() else "LOCAL MATCH",
-			MODE_NAMES.get(mode, "Team Deathmatch").to_upper(),
-		]
-	)
+	eyebrow.text = "LOCAL MATCH  ·  %s" % MODE_NAMES.get(mode, "Team Deathmatch").to_upper()
 	eyebrow.theme_type_variation = &"Eyebrow"
 	eyebrow.add_theme_color_override("font_color", UiTheme.ACCENT)
 	caption.add_child(eyebrow)
@@ -340,20 +308,16 @@ func _build() -> void:
 	rows.add_theme_constant_override("h_separation", 16)
 	rows.add_theme_constant_override("v_separation", 8)
 	layout.add_child(rows)
-	if _free_roam():
-		_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
-		_map.item_selected.connect(_show_map)
-		_show_map(0)
-		_build_actions(layout)
-		return
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
 	_name.max_length = 16
 	_name.placeholder_text = "Player"
 	_name.custom_minimum_size = Vector2(0, 38)
 	_row(rows, "Name", _name)
-	_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
-	_map.item_selected.connect(_show_map)
+	# Search and Destroy has one map, so no row to choose it.
+	if not _snd():
+		_map = _chips(rows, "Map", MAPS.map(func(m: Array) -> String: return m[0]), 0)
+		_map.item_selected.connect(_show_map)
 	_show_map(0)
 	if _gun_game() or _ffa():
 		_players = _chips(
@@ -400,9 +364,8 @@ func _build() -> void:
 		_time_limit = _chips(
 			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
-	if _has_custom():
-		_build_custom_line(layout)
-		_point_up_to_chosen(_custom_button, _rounds if _snd() else _time_limit)
+	_build_custom_line(layout)
+	_point_up_to_chosen(_custom_button, _rounds if _snd() else _time_limit)
 	_build_actions(layout)
 
 
@@ -491,7 +454,7 @@ func _build_actions(layout: VBoxContainer) -> void:
 	actions.add_child(back)
 	_start = Button.new()
 	_start.name = "Start"
-	_start.text = "START" if _free_roam() else "START MATCH"
+	_start.text = "START MATCH"
 	_start.theme_type_variation = &"PrimaryButton"
 	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
@@ -508,8 +471,6 @@ func _build_actions(layout: VBoxContainer) -> void:
 
 
 func _detail() -> String:
-	if _free_roam():
-		return DETAILS[mode]
 	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 

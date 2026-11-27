@@ -8,132 +8,15 @@ objectives is under "Map markers" there.
 | Map | Scene | Server key | Modes in the menu | Built from |
 | --- | --- | --- | --- | --- |
 | Breakwater | `scenes/breakwater.tscn` | `breakwater` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Search and Destroy, Free Roam | `tools/breakwater_layout.py` |
-| Warehouse | `scenes/warehouse.tscn` | `warehouse` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Free Roam | `tools/map_blockout/warehouse_photo_layout.py` |
 | Testing Area | `scenes/main.tscn` | `arena` | Its own title-screen route; TDM, FFA, Gun Game, CTF, Domination, Hardpoint as "Testing Arena" | `map_testing_area` in `tools/gear_models.py` |
 
-The menu lists come from `godot/scripts/tdm_setup.gd` (`MAPS`, `SND_MAPS`,
-`FREE_ROAM_MAPS`); a dedicated server takes
-`--map breakwater|warehouse|arena`
-(`godot/scripts/net/bootstrap.gd`), Breakwater by default, and Breakwater is
-first in every menu list. Search and Destroy is offered only on Breakwater,
-the one map that marks its sites. Every map has a minimap
-(`godot/assets/minimaps/`).
-
-## Warehouse
-
-A corrugated-box plant in daylight, rebuilt from reference photos of a real
-plant. Its two sides are built separately and balanced by walking times and
-sightlines, not by symmetry. It takes structure from Modern Warfare's Atlas
-Superstore (a yard start at each end, big blocks in a grid with aisles
-between, a middle under a breach in the roof, overwatch reached by a stair)
-and from Call of Duty 4's Vacant (an overgrown lot against industrial
-interiors). The plan is `tools/map_blockout/warehouse_2026_11b.py`.
-
-- **The Field (team 0, north).** An overgrown lot where the west wing was torn
-  down: grass over broken slab, a guard booth, a fence closing off the
-  substation. The team enters through two doors in the north wall, a dock
-  door in the west wall, and the hole a box truck punched through it (the
-  crashed truck still in it).
-- **The Docks (team 1, south).** A concrete truck apron 1.25 m below the hall,
-  with scrap bales, barriers, pallets, and a shipping container. The team
-  enters by a personnel stair, a vehicle ramp, or two dry vans backed into
-  the bays: mantle up into the trailer from the apron and walk through into
-  the hall.
-- **North half: production.** Machine lines run north to south: the flexo
-  line (with a 1.4 m crouch tunnel under a transfer conveyor), the die cutter,
-  the ink room (two crate steps up to its roof), maintenance, and receiving.
-  A steel catwalk at 2.8 m runs over the middle line, with a stair from the
-  back aisle and a ladder at its south end. The two-storey shift office has a
-  ground floor rebuilt from the owner's scan of a real in-plant office; its
-  glass partitions stop players but not bullets.
-- **South half: high-bay storage.** Pallet racking in east-west rows whose
-  ends are staggered so no aisle runs through, a QC cell, a forklift charging
-  bay, the wrapper and strapper, and the plate room, whose roof only a ladder
-  reaches. The pick mezzanine is an open steel deck at 3 m with flow racks
-  under it, a stair from the dispatch aisle, and a ladder toward the middle.
-- **Middle.** The mid stockpile, a stack of paper rolls under a breach in the
-  roof, with the fallen roofing round it and a sun shaft through the haze.
-- **Set pieces.** A forklift on its side smoulders in receiving; a switchboard
-  that arced and burnt out stands on the south half's east wall; a high-bay
-  swings off one hanger over the north back aisle; a roof leak drips into a
-  mop bucket.
-
-There are 6 starts per team and 28 respawns either team can use, across the
-aisles and both yards. Warehouse is roofed (`roofed` metadata on the scene's
-root), so scorestreaks that need open sky are out
-([scorestreaks.md](scorestreaks.md)).
-
-| Measure | Plan (`blockout.py`) | Built scene (`warehouse_measure.py`) |
-| --- | --- | --- |
-| Start to start | 84.6 m (11.4 s) | 87 m (11.7 s) |
-| Start to the mid stockpile, north / south | 5.9 / 5.6 s | 5.8 / 6.0 s |
-| Median longest eye-height line | 29.0 m | 24.2 m |
-| Floor that sees past 40 m | 7% | 6.5% |
-| Longest line | 52 m | 53 m |
-
-No team start sees into the other half on the built scene.
-
-Objectives (in the scene, written by the builder):
-
-- **Capture the Flag:** no flag markers; each flag stands at the centre of its
-  team's six starts.
-- **Domination:** A inside the north end of production, B at the mid
-  stockpile, C in the dispatch aisle near the ramp.
-- **Hardpoint:** Mid Stockpile, Receiving, Pick Mezzanine, Catwalk, Quality
-  Control.
-- **Bots** follow three lanes: West, Centre, East. Their direction runs from
-  their own starts toward the enemy's, which on Warehouse is north to south.
-
-**Look.** Daylight over the yards with the Warehouse horizon strip
-(`tools/build_horizon.py --warehouse`) and terrain out past the fences; a
-baked lightmap inside (`texel_scale` 0.7), with the high-bays as bake-only
-lights and one failing high-bay left live so it can flicker. The slab
-(`shaders/warehouse_floor.gdshader`) shades every pour on its own and reads
-painted masks for dust, tyre tracks, puddles, oil, soot, and broken concrete
-(`tools/build_warehouse_floor_masks.py`). The tilt-up walls
-(`shaders/warehouse_tiltup.gdshader`, `tools/build_warehouse_wall_damage.py`)
-use a scanned cast-concrete face with spalls, cracks, and repairs drawn per
-panel, colour only. `scripts/prop_variation.gd` varies the colour and wear of
-repeated stock when the map loads, by a hash of each node's name, so every
-player sees the same loads. The Field's grass thins on Low. The soundscape
-(`tools/warehouse_audio.py`, through `tools/build_world_audio.py warehouse`)
-has its own beds for the Field, the Docks, the hall, and the breach.
-
-**Built with:** the shell (walls, floors, roofs) is Cyclops blocks, kept
-editable in the editor. Everything else is generated:
-
-- `tools/map_blockout/warehouse_photo_layout.py` places everything from the
-  plan (helped by `warehouse_walkways.py`, `warehouse_detail_layout.py`,
-  `warehouse_outdoors.py`, and `warehouse_dressing_layout.py`) and writes
-  `godot/tools/warehouse_photo_layout.json`.
-- Blender builds the models into `godot/assets/props/warehouse_photo/`:
-  `tools/build_warehouse_photo_props.py` (stock, building parts, and the
-  picked, knocked, torn, and crushed stock variants),
-  `build_warehouse_photo_machines.py`, `build_warehouse_detail_props.py`,
-  `build_warehouse_variation_props.py`, `build_warehouse_walkways.py`,
-  `build_warehouse_field.py`, and `build_warehouse_outdoors.py`. Textures come
-  from `tools/build_warehouse_photo_textures.py`.
-- `tools/build_warehouse_clip.py` voxelizes each model and writes fitted clip
-  boxes to `clip.json`.
-- `godot/tools/warehouse_photo_build.gd` rebuilds the scene from the JSON;
-  `godot/tools/warehouse_build_headless.gd` runs it outside the editor
-  (`WAREHOUSE_PARTS` picks parts). It needs a real renderer: under
-  `--headless` MultiMesh instances save empty, so it refuses.
-
-```sh
-python3 tools/map_blockout/warehouse_photo_layout.py
-uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
-uv run tools/build_warehouse_wall_damage.py
-xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
-tools/bake_lightmaps.sh res://scenes/warehouse.tscn
-MINIMAPS=warehouse godot --headless --path godot --script res://tools/build_minimaps.gd
-GRID_OUT=grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
-uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py grid.json --centre=18.75,3.25
-```
-
-`godot/tests/warehouse_test.gd` checks spawns, clearance, prop collision,
-the access structures, dock traversal, and entry through the menu;
-`godot/tests/prop_variation_test.gd` checks the stock variation.
+Breakwater is the one multiplayer map. The match setup's map row
+(`MAPS` in `godot/scripts/tdm_setup.gd`) offers it and the Testing Arena,
+Breakwater first; Search and Destroy, which needs marked sites, is played on
+Breakwater with no map row, and Free Roam loads Breakwater straight from the
+title screen. A dedicated server takes `--map breakwater|arena`
+(`godot/scripts/net/bootstrap.gd`), Breakwater by default. Every map has a
+minimap (`godot/assets/minimaps/`).
 
 ## Breakwater
 

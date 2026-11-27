@@ -8,7 +8,6 @@ extends SceneTree
 
 const MAPS := {
 	"Testing Area": "res://scenes/main.tscn",
-	"Warehouse": "res://scenes/warehouse.tscn",
 	"Breakwater": "res://scenes/breakwater.tscn",
 }
 const MIN_HOP := 16.0
@@ -84,11 +83,6 @@ func _check_map(map_name: String, path: String) -> void:
 				% [map_name, zone.name, share * 100, minimum * 100]
 			)
 		)
-		if map_name == "Warehouse":
-			_check(
-				is_equal_approx(zone.centre.y - zone.size.y * 0.5, -0.2),
-				"%s has 20 cm of margin below the hall floor" % zone.name
-			)
 	for i in zones.size():
 		var a: Dictionary = zones[i]
 		var b: Dictionary = zones[(i + 1) % zones.size()]

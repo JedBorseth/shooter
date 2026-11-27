@@ -6,9 +6,7 @@ extends Control
 ##   cheapest lowest, as Black Ops 2 stacks them: each with its cost, a thin
 ##   bar filling with this life's score toward it, and lit with a count once
 ##   earned. Streaks held from a Care Package stack above them. The one the
-##   use key calls in carries its key cap. A streak the map cannot have
-##   (one needing open sky on a roofed map) is greyed out with the reason
-##   in place of its cost;
+##   use key calls in carries its key cap;
 ## - "UAV READY" in the upper third when one is earned, with the key to call
 ##   it in;
 ## - calls when a UAV or Counter-UAV goes up, ours or the enemy's ("UAV
@@ -165,8 +163,6 @@ func _draw_column() -> void:
 	var selected := int(_info.get("selected", -1))
 	var selected_key := held[selected] if selected >= 0 and selected < held.size() else ""
 	var progress := float(_info.get("progress", 0))
-	var unavailable: PackedStringArray = _info.get("unavailable", PackedStringArray())
-	var reason := String(_info.get("unavailable_reason", ""))
 	var rows := Array(loadout)
 	for key in held:
 		if not key in rows:
@@ -178,28 +174,15 @@ func _draw_column() -> void:
 		var key: String = rows[i]
 		var count := held.count(key)
 		var lit := count > 0
-		var out := key in unavailable
 		var row := Rect2(right - WIDTH, y - ROW_H, WIDTH, ROW_H - 4.0)
 		Paint.fade(self, row, Color(Paint.PLATE, 0.6 if lit else 0.35), true)
 		var colour := UiTheme.TEXT if lit else Color(UiTheme.TEXT, 0.55)
-		if out:
-			colour = Color(UiTheme.TEXT, 0.3)
 		var baseline := row.position.y + 15.0
 		var name := _name(key).to_upper()
 		if count > 1:
 			name += "  ×%d" % count
-		var name_right := right - (96.0 if out else 46.0)
-		Paint.text_right(self, Paint.LABEL, name, Vector2(name_right, baseline), 13, colour, 1.5)
-		if out:
-			Paint.text_right(
-				self,
-				Paint.LABEL_LIGHT,
-				reason,
-				Vector2(row.end.x - 4.0, baseline),
-				11,
-				Color(UiTheme.TEXT, 0.45)
-			)
-		elif i < loadout.size():
+		Paint.text_right(self, Paint.LABEL, name, Vector2(right - 46.0, baseline), 13, colour, 1.5)
+		if i < loadout.size():
 			_draw_cost(row, float(_cost(key)), floor_cost, progress, baseline)
 			floor_cost = float(_cost(key))
 		if key == selected_key:

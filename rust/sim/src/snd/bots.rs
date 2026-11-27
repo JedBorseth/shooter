@@ -52,8 +52,8 @@ pub const ROTATE_THREAT: u32 = 2;
 pub const PLANT_CHECK: (f32, f32) = (2.5, 5.0);
 /// The least chance the carrier goes to plant at each look. Black Ops 2 has
 /// none (the chance is the share of the round gone), which on the bench left
-/// the team waiting short of the site until defenders found it: Warehouse's
-/// attackers planted in 6 rounds of 28.
+/// the team waiting short of the site until defenders found it: on one map
+/// the attackers planted in 6 rounds of 28.
 pub const PLANT_FLOOR: f32 = 0.3;
 /// Share of the round after which the carrier always goes to plant.
 pub const PLANT_FORCED: f32 = 0.85;

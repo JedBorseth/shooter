@@ -5,7 +5,7 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME]
-##            [--query-port N] [--map breakwater|warehouse|arena]
+##            [--query-port N] [--map breakwater|arena]
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
@@ -48,13 +48,11 @@ const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
 const MAP_SCENES := {
 	"arena": ARENA_SCENE,
-	"warehouse": "res://scenes/warehouse.tscn",
 	"breakwater": "res://scenes/breakwater.tscn",
 }
 ## The name queries answer with for each map; a joining game loads it.
 const MAP_NAMES := {
 	"arena": "Arena",
-	"warehouse": "Warehouse",
 	"breakwater": "Breakwater",
 }
 const TITLE_SCENE := "res://scenes/title_screen.tscn"

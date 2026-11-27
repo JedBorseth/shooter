@@ -1,19 +1,18 @@
 extends SceneTree
 ## Headless Domination bots test: runs a dedicated server in this process in
 ## Domination with six bots at normal skill and no players (Breakwater, or the
-## map named by --warehouse or --arena), starts the match
+## testing arena with --arena), starts the match
 ## without a ready-up, and checks that the bots go for the flags: they take
 ## flags, most of them stand in a circle for a capture, the teams score by
 ## owning flags (never more than three points every five seconds between
-## them), and kills alone score nothing. CI runs it on Breakwater and
-## Warehouse. The testing arena is left out: its fallback spawns
+## them), and kills alone score nothing. CI runs it on Breakwater. The
+## testing arena is left out: its fallback spawns
 ## stand 14 m apart on one open floor, so its bots fight far more than they
 ## capture (`domination_test` checks the arena's rules).
-## godot --headless --path godot --script res://tests/domination_bots_test.gd [-- --warehouse]
+## godot --headless --path godot --script res://tests/domination_bots_test.gd
 
 const SECONDS := 75
 const MAPS := {
-	"--warehouse": "res://scenes/warehouse.tscn",
 	"--arena": "res://scenes/main.tscn",
 }
 

@@ -97,7 +97,7 @@ The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 
 - **Vs bots:** Team Deathmatch, Gun Game, Free-for-all, Capture the Flag, Hardpoint, Domination, and Search and Destroy. Each opens a setup card (map, team size or player count, bot skill, limits, and custom game rules), then starts a dedicated server in the background and joins it.
 - **Online:** Join Server (a dedicated server, by its address).
-- **Practice:** Testing Area (the training range) and Free Roam (walk any multiplayer map alone).
+- **Practice:** Testing Area (the training range) and Free Roam (walk Breakwater alone).
 - **Options** and **Quit**.
 
 ### Modes
@@ -118,11 +118,10 @@ Any mode can run as a custom game, with Black Ops 2's game settings (limits, hea
 
 | Map | `--map` | What it is |
 | --- | --- | --- |
-| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. The default map. |
-| Warehouse | `warehouse` | A corrugated-box plant rebuilt from reference photos: an overgrown field on one side, a truck dock on the other. |
+| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. The one multiplayer map. |
 | Testing Area | `arena` | The training range: weapon racks, target dummies, steel plates, and a sentry that shoots back. |
 
-Search and Destroy plays on Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
+Every mode plays on Breakwater; all but Search and Destroy can also be played in the Testing Area. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
 
 ### Classes, streaks, and progression
 
