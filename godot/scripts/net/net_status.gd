@@ -1,10 +1,11 @@
 extends CanvasLayer
-## Connection status while joining a server: a "Connecting" panel with a
-## Cancel button until the server accepts us. If the server rejects us, never
-## answers, or the connection drops, it returns to the Join screen with the
-## reason (`Net.leave`).
+## Connection status while joining a server: the loading screen
+## (`ui/loading_screen.gd`, Black Ops 3's: map, mode, tip, and a thin orange
+## bar) with Esc or B to cancel, until the server accepts us; then it fades
+## out. If the server rejects us, never answers, or the connection drops, it
+## returns to the Join screen with the reason (`Net.leave`).
 
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const LoadingScreen := preload("res://scripts/ui/loading_screen.gd")
 ## Seconds to wait for the server to accept us.
 const CONNECT_TIMEOUT := 12.0
 
@@ -12,12 +13,14 @@ var client: NetClient
 var player: Node
 ## How the server is named in messages: its name, or its address.
 var server_label := ""
+## The match's mode ("tdm") and map ("breakwater"), when known before joining.
+var mode := ""
+var map := "breakwater"
 
 var _joined := false
 var _elapsed := 0.0
 var _leaving := false
 var _root: Control
-var _detail: Label
 
 
 func _ready() -> void:
@@ -27,53 +30,14 @@ func _ready() -> void:
 
 
 func _build() -> void:
-	_root = Control.new()
-	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root = LoadingScreen.new()
+	_root.name = "Loading"
+	_root.set("map", map)
+	_root.set("mode", mode)
+	_root.set("status", "Connecting to %s" % server_label)
+	_root.set("cancel_action", &"ui_cancel")
+	_root.connect(&"cancel_requested", _cancel)
 	add_child(_root)
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.01, 0.015, 0.02, 0.82)
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(backdrop)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(520, 0)
-	panel.add_theme_stylebox_override("panel", MenuStyle.panel())
-	center.add_child(panel)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 10)
-	panel.add_child(layout)
-
-	var eyebrow := Label.new()
-	eyebrow.text = "MULTIPLAYER"
-	eyebrow.add_theme_color_override("font_color", MenuStyle.ACCENT)
-	eyebrow.add_theme_font_size_override("font_size", 15)
-	layout.add_child(eyebrow)
-	var title := Label.new()
-	title.name = "Title"
-	title.text = "Connecting…"
-	title.add_theme_font_size_override("font_size", 36)
-	layout.add_child(title)
-	_detail = Label.new()
-	_detail.name = "Detail"
-	_detail.text = server_label
-	_detail.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	_detail.add_theme_font_size_override("font_size", 18)
-	layout.add_child(_detail)
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
-	layout.add_child(spacer)
-	var cancel := Button.new()
-	cancel.name = "Cancel"
-	cancel.text = "Cancel"
-	cancel.custom_minimum_size = Vector2(0, 52)
-	cancel.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	cancel.add_theme_font_size_override("font_size", 20)
-	MenuStyle.style_button(cancel)
-	cancel.pressed.connect(_cancel)
-	layout.add_child(cancel)
-	cancel.grab_focus.call_deferred()
 
 
 func _input(event: InputEvent) -> void:
@@ -91,7 +55,7 @@ func _process(delta: float) -> void:
 	if status == "joined":
 		if not _joined:
 			_joined = true
-			_root.hide()
+			_root.call(&"finish")
 			_set_player_input(true)
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
@@ -109,7 +73,11 @@ func _process(delta: float) -> void:
 			_leave("Could not connect to %s." % server_label)
 	elif not _joined:
 		_elapsed += delta
-		_detail.text = "%s   %ds" % [server_label, int(_elapsed)]
+		var seconds := int(_elapsed)
+		_root.set(
+			"status",
+			"Connecting to %s  ·  %d:%02d" % [server_label, floori(seconds / 60.0), seconds % 60]
+		)
 		# Keep the cursor free for the Cancel button.
 		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

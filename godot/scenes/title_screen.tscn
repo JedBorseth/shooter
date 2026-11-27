@@ -1,24 +1,10 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/title_screen.gd" id="1_menu"]
 [ext_resource type="Texture2D" path="res://assets/ui/title_backdrop.jpg" id="2_backdrop"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_right.svg" id="3_arrow"]
-
-[sub_resource type="Gradient" id="SideFade"]
-offsets = PackedFloat32Array(0, 0.42, 1)
-colors = PackedColorArray(0.043, 0.051, 0.063, 0.94, 0.043, 0.051, 0.063, 0.7, 0.043, 0.051, 0.063, 0.35)
-
-[sub_resource type="GradientTexture2D" id="SideFadeTexture"]
-gradient = SubResource("SideFade")
-fill_to = Vector2(1, 0)
-
-[sub_resource type="Gradient" id="FloorFade"]
-colors = PackedColorArray(0.043, 0.051, 0.063, 0, 0.043, 0.051, 0.063, 0.85)
-
-[sub_resource type="GradientTexture2D" id="FloorFadeTexture"]
-gradient = SubResource("FloorFade")
-fill_from = Vector2(0, 0)
-fill_to = Vector2(0, 1)
+[ext_resource type="Script" path="res://scripts/ui/screen_frame.gd" id="3_frame"]
+[ext_resource type="Script" path="res://scripts/ui/map_card.gd" id="4_card"]
+[ext_resource type="Script" path="res://scripts/ui/player_card.gd" id="5_player"]
 
 [node name="TitleScreen" type="Control"]
 layout_mode = 3
@@ -41,7 +27,7 @@ texture = ExtResource("2_backdrop")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Shade" type="TextureRect" parent="."]
+[node name="Frame" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -49,21 +35,22 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = SubResource("SideFadeTexture")
-expand_mode = 1
+script = ExtResource("3_frame")
+title = "Multiplayer"
+context = "Shooter"
 
-[node name="FloorShade" type="TextureRect" parent="."]
+[node name="PlayerCard" type="Control" parent="."]
 layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
+anchors_preset = 1
+anchor_left = 1.0
 anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -180.0
-grow_horizontal = 2
-grow_vertical = 0
+offset_left = -364.0
+offset_top = 34.0
+offset_right = -64.0
+offset_bottom = 98.0
+grow_horizontal = 0
 mouse_filter = 2
-texture = SubResource("FloorFadeTexture")
-expand_mode = 1
+script = ExtResource("5_player")
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -74,195 +61,156 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/margin_left = 64
-theme_override_constants/margin_top = 28
+theme_override_constants/margin_top = 140
 theme_override_constants/margin_right = 64
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_bottom = 10
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
 mouse_filter = 2
-theme_override_constants/separation = 6
-
-[node name="Brand" type="HBoxContainer" parent="Margin/Layout"]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="Title" type="Label" parent="Margin/Layout/Brand"]
-layout_mode = 2
-theme_type_variation = &"Wordmark"
-text = "SHOOTER"
-
-[node name="Dot" type="Label" parent="Margin/Layout/Brand"]
-layout_mode = 2
-theme_type_variation = &"Wordmark"
-theme_override_colors/font_color = Color(1, 0.745, 0.102, 1)
-text = "."
-
-[node name="TopSpace" type="Control" parent="Margin/Layout"]
-layout_mode = 2
-size_flags_vertical = 3
-mouse_filter = 2
+theme_override_constants/separation = 0
 
 [node name="Menu" type="VBoxContainer" parent="Margin/Layout"]
-custom_minimum_size = Vector2(500, 0)
 layout_mode = 2
 size_flags_horizontal = 0
-theme_override_constants/separation = 2
-
-[node name="MatchHeading" type="Label" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 28)
-layout_mode = 2
-theme_type_variation = &"Eyebrow"
-text = "VS BOTS"
-vertical_alignment = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
 
 [node name="TeamDeathmatch" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Team Deathmatch"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "TEAM DEATHMATCH"
 alignment = 0
-icon_alignment = 2
 
 [node name="GunGame" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Gun Game"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "GUN GAME"
 alignment = 0
-icon_alignment = 2
 
 [node name="FreeForAll" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Free-for-all"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "FREE-FOR-ALL"
 alignment = 0
-icon_alignment = 2
 
 [node name="CaptureTheFlag" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Capture the Flag"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "CAPTURE THE FLAG"
 alignment = 0
-icon_alignment = 2
 
 [node name="Hardpoint" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Hardpoint"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "HARDPOINT"
 alignment = 0
-icon_alignment = 2
 
 [node name="Domination" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Domination"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "DOMINATION"
 alignment = 0
-icon_alignment = 2
 
 [node name="SearchAndDestroy" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Search and Destroy"
-icon = ExtResource("3_arrow")
+theme_type_variation = &"FrontMenuItem"
+text = "SEARCH AND DESTROY"
 alignment = 0
-icon_alignment = 2
 
-[node name="MoreHeading" type="Label" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 28)
-layout_mode = 2
-theme_type_variation = &"Eyebrow"
-text = "ONLINE"
-vertical_alignment = 2
-
-[node name="JoinServer" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Join Server"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="PracticeHeading" type="Label" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 28)
-layout_mode = 2
-theme_type_variation = &"Eyebrow"
-text = "PRACTICE"
-vertical_alignment = 2
-
-[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Testing Area"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="FreeRoam" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Free Roam"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 8)
+[node name="ModesGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 9)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="System" type="HBoxContainer" parent="Margin/Layout/Menu"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Options" type="Button" parent="Margin/Layout/Menu/System"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_default_cursor_shape = 2
-theme_type_variation = &"QuietButton"
-text = "Options"
-
-[node name="Quit" type="Button" parent="Margin/Layout/Menu/System"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_default_cursor_shape = 2
-theme_type_variation = &"QuietButton"
-text = "Quit"
-
-[node name="Status" type="Label" parent="Margin/Layout"]
-custom_minimum_size = Vector2(500, 26)
+[node name="JoinServer" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
 size_flags_horizontal = 0
-theme_type_variation = &"DimLabel"
-vertical_alignment = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "JOIN SERVER"
+alignment = 0
+
+[node name="OnlineGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "TESTING AREA"
+alignment = 0
+
+[node name="FreeRoam" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "FREE ROAM"
+alignment = 0
+
+[node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Options" type="Button" parent="Margin/Layout/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "OPTIONS"
+alignment = 0
+
+[node name="Quit" type="Button" parent="Margin/Layout/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "QUIT"
+alignment = 0
+
+[node name="StatusGap" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Status" type="Label" parent="Margin/Layout"]
+custom_minimum_size = Vector2(420, 24)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"HintLabel"
 autowrap_mode = 3
 
 [node name="BottomSpace" type="Control" parent="Margin/Layout"]
@@ -270,33 +218,54 @@ layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
+[node name="MapCard" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(320, 180)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+script = ExtResource("4_card")
+
+[node name="CardGap" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+mouse_filter = 2
+
 [node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="SelectKey" type="Label" parent="Margin/Layout/Footer"]
 layout_mode = 2
+size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
 text = "ENTER"
 
 [node name="SelectHint" type="Label" parent="Margin/Layout/Footer"]
 layout_mode = 2
-theme_type_variation = &"DimLabel"
+theme_type_variation = &"FooterHint"
 text = "Select"
 
 [node name="HintGap" type="Control" parent="Margin/Layout/Footer"]
-custom_minimum_size = Vector2(14, 0)
+custom_minimum_size = Vector2(18, 0)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="BackKey" type="Label" parent="Margin/Layout/Footer"]
+[node name="BackPrompt" type="HBoxContainer" parent="Margin/Layout/Footer"]
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BackKey" type="Label" parent="Margin/Layout/Footer/BackPrompt"]
+layout_mode = 2
+size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
 text = "ESC"
 
-[node name="BackHint" type="Label" parent="Margin/Layout/Footer"]
+[node name="BackHint" type="Button" parent="Margin/Layout/Footer/BackPrompt"]
 layout_mode = 2
-theme_type_variation = &"DimLabel"
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FooterPrompt"
 text = "Back"
 
 [node name="FooterSpace" type="Control" parent="Margin/Layout/Footer"]
@@ -307,4 +276,5 @@ mouse_filter = 2
 [node name="Build" type="Label" parent="Margin/Layout/Footer"]
 layout_mode = 2
 theme_type_variation = &"FaintLabel"
+theme_override_font_sizes/font_size = 14
 text = "Development build"

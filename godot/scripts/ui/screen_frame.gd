@@ -90,12 +90,12 @@ func _draw_shade(view: Rect2) -> void:
 		),
 		PackedColorArray([Color(left, shade * 0.8), right, right, Color(left, shade * 0.8)])
 	)
-	# Scan lines: one faint line every third pixel.
-	var line := Color(0, 0, 0, 0.07)
+	# Scan lines: one faint line every fourth pixel.
+	var line := Color(0, 0, 0, 0.035)
 	var y := 0.0
 	while y < view.size.y:
 		draw_rect(Rect2(0, y, view.size.x, 1), line)
-		y += 3.0
+		y += 4.0
 
 
 func _draw_header(view: Rect2) -> void:

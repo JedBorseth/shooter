@@ -95,6 +95,9 @@ is not 27015 (`203.0.113.7`, `play.example.com:27017`), and press Enter or
   server's details and so loads the Arena map.
 - **Recent.** The last eight addresses joined are listed below, newest
   first, in `user://servers.cfg`; pick one to join it, or **Forget** it.
+- **Loading.** While the map loads and until the server lets you in, a
+  loading screen shows the map, the mode when it is known, a tip, and a thin
+  loading bar (`godot/scripts/ui/loading_screen.gd`); Esc or B cancels.
 
 If a server turns the client away, never answers, or drops the connection,
 the game returns to Join Server and says why. **Leave server** in the pause

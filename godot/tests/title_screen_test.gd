@@ -34,8 +34,8 @@ func _run() -> void:
 		"Team Deathmatch has keyboard focus at launch"
 	)
 	_check(
-		(menu.get_node("TeamDeathmatch/Tag") as Label).text == "TEAMS",
-		"each route shows a short tag"
+		String(title.get_node("Margin/Layout/MapCard").get("_header")).ends_with("TEAMS"),
+		"the map card names the focused route's kind"
 	)
 	_check(
 		title.get_node("Margin/Layout/Status").text == "Two teams race to the kill limit.",
@@ -74,7 +74,7 @@ func _run() -> void:
 	var setup := title.get_node_or_null("TdmSetup")
 	_check(setup != null, "Team Deathmatch opens its setup")
 	_check(title.get_node("Margin").visible, "the setup is a card beside the menu")
-	_check(tdm.theme_type_variation == &"RouteButtonCurrent", "the open mode's route turns green")
+	_check(tdm.theme_type_variation == &"FrontMenuItemCurrent", "the open mode's route turns green")
 	if setup != null:
 		var options: Dictionary = setup.options()
 		_check(
@@ -93,15 +93,15 @@ func _run() -> void:
 			),
 			"the default local match is 6v6 Breakwater with normal bots, got %s" % options
 		)
-		var maps: HBoxContainer = setup.get("_map")
-		_check(maps.get_child_count() == 2, "the map row offers Breakwater and the Testing Arena")
-		(maps.get_child(1) as Button).pressed.emit()
+		var maps: Control = setup.get("_map")
+		_check(maps.call("item_count") == 2, "the map row offers Breakwater and the Testing Area")
+		maps.call("choose", 1)
 		_check(setup.options()["map"] == "arena", "Testing Arena selection starts the arena")
 		_check(
-			(setup.get("_map_title") as Label).text == "Testing Arena",
+			(setup.get("_map_title") as Label).text == "Testing Area",
 			"the card shows the chosen map"
 		)
-		(maps.get_child(0) as Button).pressed.emit()
+		maps.call("choose", 0)
 		_check(
 			setup.options()["map"] == "breakwater", "Breakwater selection starts the Breakwater map"
 		)
@@ -114,7 +114,7 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")
-		_check(tdm.theme_type_variation == &"RouteButton", "closing the setup clears the route")
+		_check(tdm.theme_type_variation == &"FrontMenuItem", "closing the setup clears the route")
 	tdm.pressed.emit()
 	await process_frame
 	(menu.get_node("CaptureTheFlag") as Button).pressed.emit()
@@ -126,7 +126,7 @@ func _run() -> void:
 		cards.size() == 1 and cards[0].get("mode") == "ctf",
 		"choosing another mode replaces the open card"
 	)
-	_check(tdm.theme_type_variation == &"RouteButton", "only the open mode's route is green")
+	_check(tdm.theme_type_variation == &"FrontMenuItem", "only the open mode's route is green")
 	cards[0].back_requested.emit()
 	await process_frame
 	var gun_game := menu.get_node("GunGame") as Button
