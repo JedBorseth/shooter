@@ -368,11 +368,15 @@ func _draw_overlay() -> void:
 			mark.action = "DEFEND" if flag.owner == "ally" else "CAPTURE"
 			mark.distance = int(round(_eye(camera).distance_to(world)))
 			marks.append(mark)
-		Marks.draw_world(_overlay, camera, marks, size, _eye(camera))
+		Marks.draw_world(_overlay, camera, marks, size, _eye(camera), _dead())
 	if _row_shown():
 		_draw_row(flags, size, ui)
 	if here >= 0:
 		_draw_capture_bar(flags[here], size, ui)
+
+
+func _dead() -> bool:
+	return player != null and is_instance_valid(player) and not player.is_alive()
 
 
 ## Where distances are measured from: the player, or the camera.

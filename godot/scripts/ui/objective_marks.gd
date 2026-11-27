@@ -32,11 +32,17 @@ const HOLD_BOTTOM := 690.0
 ## the minimap with its rows, the kill feed with the score block, and the
 ## scorestreak column with the ammo.
 const KEEP_CLEAR: Array[Rect2] = [
-	Rect2(0, 0, 420, 320),
+	Rect2(0, 0, 410, 350),
 	Rect2(0, 560, 390, 340),
-	Rect2(1390, 480, 210, 420),
+	Rect2(1230, 520, 370, 380),
 ]
 const DISTANCE_INK := Color("d8dce0")
+## How much the minimap and the mode rows under it fall toward the screen's
+## centre (`hud_shapes.gd` TILT).
+const ROW_TILT := 0.045
+## While dead: the death card and the prompt under it (1600 x 900 units,
+## centred on the screen).
+const DEATH_CARD := Rect2(-260, 140, 520, 230)
 
 
 ## Draws a mode's markers. Each entry holds "world" (Vector3, the point the
@@ -47,12 +53,12 @@ const DISTANCE_INK := Color("d8dce0")
 ## 1, a ring filling clockwise from the top), "progress_colour", and "alpha".
 ## `eye` is where distances are measured from (sorting nearest on top).
 static func draw_world(
-	item: CanvasItem, camera: Camera3D, marks: Array, screen: Vector2, eye: Vector3
+	item: CanvasItem, camera: Camera3D, marks: Array, screen: Vector2, eye: Vector3, dead := false
 ) -> void:
 	var ui := screen.y / 900.0
 	var placed: Array[Dictionary] = []
 	for mark: Dictionary in marks:
-		var at := place(camera, mark.world, screen)
+		var at := place(camera, mark.world, screen, dead)
 		var entry := mark.duplicate()
 		entry.point = at.point
 		entry.edge = at.edge
@@ -85,7 +91,7 @@ static func draw_world(
 
 ## Where a world point's marker goes: {"point", "edge" (held at the ellipse),
 ## "out" (the unit direction from the marker toward the spot when held)}.
-static func place(camera: Camera3D, world: Vector3, screen: Vector2) -> Dictionary:
+static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := false) -> Dictionary:
 	var ui := screen.y / 900.0
 	var centre := Vector2(screen.x / 2.0, screen.y * HOLD_CENTRE_Y)
 	var axes := Vector2(screen.x / 2.0 - HOLD_INSET_X * ui, HOLD_BOTTOM * ui - centre.y)
@@ -99,12 +105,12 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2) -> Dictiona
 			offset = Vector2.DOWN
 	var reach := (offset / axes).length()
 	if not behind and reach <= 1.0:
-		var pushed := _keep_clear(point, screen)
+		var pushed := _keep_clear(point, screen, dead)
 		if pushed == point:
 			return {"point": point, "edge": false, "out": Vector2.ZERO}
 		return {"point": pushed, "edge": true, "out": (point - pushed).normalized()}
 	var held := centre + offset / maxf(reach, 0.001)
-	return {"point": _keep_clear(held, screen), "edge": true, "out": offset.normalized()}
+	return {"point": _keep_clear(held, screen, dead), "edge": true, "out": offset.normalized()}
 
 
 ## A hexagon badge, pointy at the top and bottom: the fill (a little darker
@@ -197,8 +203,12 @@ static func _draw_one(item: CanvasItem, entry: Dictionary, ui: float) -> void:
 	var r := RADIUS * ui
 	badge(item, at, entry, r, ui)
 	if entry.edge:
-		# An arrow outside the hexagon, toward the spot.
+		# An arrow on the hexagon's side facing the spot, pointing straight
+		# out (a diagonal one reads as a mouse pointer).
 		var out: Vector2 = entry.out
+		out = (
+			Vector2(signf(out.x), 0.0) if absf(out.x) > absf(out.y) else Vector2(0.0, signf(out.y))
+		)
 		_arrow(item, at + out * (r + 9.0 * ui), 8.0 * ui, out, white)
 	else:
 		_arrow(item, at + Vector2(0, r + 6.0 * ui), 6.0 * ui, Vector2.DOWN, white)
@@ -306,13 +316,18 @@ static func _slide(a: Vector2, b: Vector2, away: Vector2, pitch: float) -> Vecto
 
 ## Moves a point off the HUD's corner clusters, to the nearest edge of the
 ## cluster it sits on that faces the screen's middle.
-static func _keep_clear(point: Vector2, screen: Vector2) -> Vector2:
+static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vector2:
 	var ui := screen.y / 900.0
-	for box in KEEP_CLEAR:
+	var boxes := KEEP_CLEAR.duplicate()
+	if dead:
+		boxes.append(Rect2(DEATH_CARD.position + Vector2(800, 450), DEATH_CARD.size))
+	for box: Rect2 in boxes:
 		var rect := Rect2(box.position * ui, box.size * ui)
-		if box.position.x > 800.0:
+		if box.get_center().x > 900.0:
 			# Right-hand clusters hang off the right edge on any screen shape.
 			rect.position.x = screen.x - (1600.0 - box.position.x) * ui
+		elif box.get_center().x > 700.0:
+			rect.position.x = screen.x / 2.0 + (box.position.x - 800.0) * ui
 		rect = rect.grow(RADIUS * ui + 4.0 * ui)
 		if not rect.has_point(point):
 			continue
@@ -379,3 +394,11 @@ static func _ring(
 			drawn.append(path[i].lerp(path[i + 1], left / step))
 			break
 	item.draw_polyline(drawn, colour, width, true)
+
+
+## The slope the mode rows under the minimap share with it: they fall a
+## little toward the screen's centre from the minimap's left edge. Use it
+## with `draw_set_transform_matrix`, and reset after.
+static func row_slope(ui: float) -> Transform2D:
+	var pivot := 44.0 * ui
+	return Transform2D(Vector2(1, ROW_TILT), Vector2(0, 1), Vector2(0, -ROW_TILT * pivot))

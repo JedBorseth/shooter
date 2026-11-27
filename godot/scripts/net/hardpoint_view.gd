@@ -354,7 +354,8 @@ func _draw_markers() -> void:
 				label = "CONTESTED"
 		marks.append(_mark(camera, zone, label, holder, 1.0))
 	var screen := get_viewport().get_visible_rect().size
-	Marks.draw_world(_marker, camera, marks, screen, camera.global_position)
+	var dead := player != null and is_instance_valid(player) and not player.is_alive()
+	Marks.draw_world(_marker, camera, marks, screen, camera.global_position, dead)
 
 
 ## The zone's hexagon fill on the HUD: the holder's colour, sand while
@@ -399,6 +400,7 @@ func _draw_strip() -> void:
 	var holder: String = info.holder
 	var screen := get_viewport().get_visible_rect().size
 	var ui := screen.y / 900.0
+	_strip.draw_set_transform_matrix(Marks.row_slope(ui))
 	var left: float = info.seconds_to_move
 	var clock := ""
 	if left >= 0.0:

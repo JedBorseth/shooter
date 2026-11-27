@@ -112,9 +112,9 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 			Paint.text(
 				self,
 				Paint.LABEL_LIGHT if small else Paint.LABEL,
-				String(part[0]),
+				_words(part),
 				Vector2(x, baseline),
-				SMALL_SIZE if small else TEXT_SIZE,
+				TEXT_SIZE,
 				Color(colour, colour.a * alpha)
 			)
 		x += _part_width(part) + gap
@@ -137,11 +137,14 @@ func _part_width(part: Variant) -> float:
 			return ICON_BOX.x
 		return 15.0
 	var small: bool = part.size() > 2 and part[2]
-	return Paint.text_width(
-		Paint.LABEL_LIGHT if small else Paint.LABEL,
-		String(part[0]),
-		SMALL_SIZE if small else TEXT_SIZE
-	)
+	return Paint.text_width(Paint.LABEL_LIGHT if small else Paint.LABEL, _words(part), TEXT_SIZE)
+
+
+## A part's words: names as typed; the small connecting words ("took",
+## "returned") in lower case at the names' size, so a row reads as one line.
+func _words(part: Array) -> String:
+	var small: bool = part.size() > 2 and part[2]
+	return String(part[0]).to_lower() if small else String(part[0])
 
 
 ## A weapon's silhouette fitted into the fixed box at `at` (its top left),
@@ -154,7 +157,8 @@ func _draw_icon(icon: Texture2D, at: Vector2, alpha: float) -> void:
 	draw_texture_rect(
 		icon, Rect2(rect.position + Vector2(0, 1), rect.size), false, Color(0, 0, 0, 0.5 * alpha)
 	)
-	draw_texture_rect(icon, rect, false, Color(UiTheme.TEXT, alpha))
+	# The silhouettes are rendered a light grey: lift them to the HUD's white.
+	draw_texture_rect(icon, rect, false, Color(1.26, 1.26, 1.27, alpha))
 
 
 ## A headshot mark: a head and shoulders in profile with a small impact burst

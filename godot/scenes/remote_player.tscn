@@ -14,8 +14,10 @@ enabled = false
 [node name="Name" type="Label3D" parent="."]
 visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.15, 0)
+pixel_size = 0.0007
 billboard = 1
 no_depth_test = true
+fixed_size = true
 modulate = Color(1, 0.55, 0.45, 1)
 outline_size = 8
 font_size = 40

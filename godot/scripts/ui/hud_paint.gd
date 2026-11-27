@@ -112,7 +112,9 @@ static func text_width(font: Font, value: String, size: int, spacing := 0.0) -> 
 	return width + spacing * maxi(value.length() - 1, 0)
 
 
-## Draws `text` with its baseline at `at`, with a soft shadow under it.
+## Draws `text` with its baseline at `at`, with a soft shadow under it (a
+## 1 px drop at 75% with a pixel of spread either side, so small labels
+## hold over a bright sky or sand).
 ## `spacing` adds letter-spacing (drawn glyph by glyph).
 static func text(
 	item: CanvasItem,
@@ -125,8 +127,11 @@ static func text(
 	shadow := true
 ) -> float:
 	if shadow:
-		var shade := Color(SHADOW, SHADOW.a * colour.a)
-		_text_raw(item, font, value, at + Vector2(0, maxf(size / 18.0, 1.0)), size, shade, spacing)
+		var drop := Vector2(0, maxf(size / 18.0, 1.0))
+		var soft := Color(0, 0, 0, 0.32 * colour.a)
+		_text_raw(item, font, value, at + drop + Vector2(-1, 0), size, soft, spacing)
+		_text_raw(item, font, value, at + drop + Vector2(1, 0), size, soft, spacing)
+		_text_raw(item, font, value, at + drop, size, Color(0, 0, 0, 0.75 * colour.a), spacing)
 	_text_raw(item, font, value, at, size, colour, spacing)
 	return text_width(font, value, size, spacing)
 
@@ -347,7 +352,9 @@ static func prompt(
 	var total := 0.0
 	for part: Array in parts:
 		var width := (
-			cap_width(part[1], cap_h) if part[0] else text_width(LABEL, part[1], text_size, 1.0)
+			cap_width(part[1], cap_h)
+			if part[0]
+			else text_width(LABEL, part[1], text_size, _tracking(part[1]))
 		)
 		widths.append(width)
 		total += width
@@ -363,7 +370,15 @@ static func prompt(
 		if parts[i][0]:
 			key_cap(item, parts[i][1], Vector2(left, baseline - cap_h + 5.0), cap_h, alpha)
 		else:
-			text(item, LABEL, parts[i][1], Vector2(left, baseline), text_size, colour, 1.0)
+			text(
+				item,
+				LABEL,
+				parts[i][1],
+				Vector2(left, baseline),
+				text_size,
+				colour,
+				_tracking(parts[i][1])
+			)
 		left += widths[i] + gap
 
 
@@ -423,3 +438,9 @@ static func canister(item: CanvasItem, at: Vector2, size: float, colour: Color, 
 		maxf(size * 0.05, 1.2),
 		true
 	)
+
+
+## Letter-spacing for a prompt's words: caps are tracked a pixel, mixed-case
+## sentences are not (Black Ops 3 tracks only its caps).
+static func _tracking(words: String) -> float:
+	return 1.0 if words == words.to_upper() else 0.0

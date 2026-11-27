@@ -239,12 +239,13 @@ func _draw_overlay() -> void:
 			marks.append(
 				_mark(camera, info.position + Vector3.UP * 0.6, "", "PICK UP", UiTheme.NEUTRAL)
 			)
-		elif status == "carried":
+		elif status == "carried" and camera.global_position.distance_to(info.position) > 5.0:
+			# Not over the teammate we watch from their shoulder.
 			marks.append(
 				_mark(camera, info.position + Vector3.UP * 2.3, "", "ESCORT", TeamColours.ally)
 			)
 	var screen := get_viewport().get_visible_rect().size
-	Marks.draw_world(_overlay, camera, marks, screen, camera.global_position)
+	Marks.draw_world(_overlay, camera, marks, screen, camera.global_position, not alive)
 	_draw_use(info, alive)
 
 

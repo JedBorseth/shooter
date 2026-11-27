@@ -20,6 +20,7 @@ const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const HudCentre := preload("res://scripts/hud_centre.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 
 ## Seconds after dying before the camera moves to a teammate.
 const SPECTATE_DELAY := 1.5
@@ -46,6 +47,8 @@ var _watching := ""
 var _watch_hint := ""
 var _camera: Camera3D
 var _dead_for := 0.0
+## The name tag hidden over the teammate we watch.
+var _hidden_tag: GeometryInstance3D
 ## Player id being spectated, or -1.
 var _target := -1
 
@@ -158,6 +161,7 @@ func _refresh_pips() -> void:
 ## defend under them; and while spectating, the plate in the lower centre.
 func _draw_rows() -> void:
 	var ui := _rows.size.y / 900.0
+	_rows.draw_set_transform_matrix(Marks.row_slope(ui))
 	if _alive[0][1] + _alive[1][1] > 0:
 		for i in 2:
 			var at := Vector2(44.0, 246.0 + i * 30.0) * ui
@@ -172,6 +176,7 @@ func _draw_rows() -> void:
 				Color(UiTheme.TEXT, 0.85),
 				1.5 * ui
 			)
+	_rows.draw_set_transform_matrix(Transform2D.IDENTITY)
 	if _watching != "" or _watch_hint != "":
 		_draw_spectating(ui)
 
@@ -279,6 +284,7 @@ func _update_spectating(delta: float, in_round: bool) -> void:
 	var remote := client.remote_player(_target)
 	if remote == null:
 		return
+	_hide_tag(remote)
 	_follow(remote, delta)
 	_watching = client.name_of(_target)
 	_watch_hint = "[%s] Next teammate" % Settings.prompt_key(&"fire")
@@ -325,7 +331,26 @@ func _follow(remote: RemotePlayer, delta: float) -> void:
 	_camera.global_basis = _camera.global_basis.slerp(basis, blend).orthonormalized()
 
 
+## Hides the name over the teammate we watch (the camera rides their
+## shoulder, so it would fill the screen), and shows the last one's again.
+func _hide_tag(remote: Node) -> void:
+	var tag := remote.get_node_or_null(^"Name") as GeometryInstance3D
+	if tag == _hidden_tag:
+		return
+	_show_tag()
+	_hidden_tag = tag
+	if tag != null:
+		tag.transparency = 1.0
+
+
+func _show_tag() -> void:
+	if _hidden_tag != null and is_instance_valid(_hidden_tag):
+		_hidden_tag.transparency = 0.0
+	_hidden_tag = null
+
+
 func _stop_spectating() -> void:
+	_show_tag()
 	_target = -1
 	if _camera == null:
 		return

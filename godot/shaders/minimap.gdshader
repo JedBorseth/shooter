@@ -49,7 +49,7 @@ void fragment() {
 	tone = mix(tone, block_colour, block);
 	float edge = smoothstep(0.04, 0.14, fwidth(l)) * 0.4;
 	tone = mix(tone, vec3(0.816, 0.847, 0.863), edge);
-	vec4 plan_colour = vec4(tone, source.a * mix(0.84, 0.92, max(block, edge)));
+	vec4 plan_colour = vec4(tone, source.a * mix(0.9, 0.95, max(block, edge)));
 	// Off the map: thin red contour lines round its edge, a metre and a half
 	// apart and fading out, rounded at its corners (the distance to the
 	// ground's bounding box, in metres).

@@ -439,14 +439,23 @@ func _draw_overlay() -> void:
 					}
 				)
 			)
-		Marks.draw_world(_overlay, camera, marks, size, eye)
+		Marks.draw_world(
+			_overlay,
+			camera,
+			marks,
+			size,
+			eye,
+			player != null and is_instance_valid(player) and not player.is_alive()
+		)
 	# A row per flag under the minimap, ours first.
 	var ui := size.y / 900.0
 	var row := 0
 	for ours: bool in [true, false]:
 		for entry: Dictionary in _status:
 			if entry.ours == ours:
+				_overlay.draw_set_transform_matrix(Marks.row_slope(ui))
 				_draw_status(Vector2(44.0, 246.0 + row * 30.0) * ui, entry, ui)
+				_overlay.draw_set_transform_matrix(Transform2D.IDENTITY)
 				row += 1
 
 
