@@ -159,7 +159,7 @@ def build() -> tuple[dict, dict]:
     markers (Blender view space)."""
     receiver = m870.receiver()
     guard_parts, blade = m870.trigger_group()
-    body_parts = receiver + barrel() + handguard() + m870.stock() + guard_parts
+    body_parts = receiver + barrel() + handguard() + m870.stock("polymer") + guard_parts
     mag, rounds = magazine()
     view = view_matrix()
     nodes = {

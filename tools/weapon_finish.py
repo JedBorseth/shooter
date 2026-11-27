@@ -327,6 +327,21 @@ FINISHES = {
         "bump": 0.00003,
         "tint": 0.016,
     },
+    # Oiled walnut furniture (the M870's stock and forend): warm brown with
+    # dark grain lines along the gun and a slow figure across the blank,
+    # paler and smoother where hands wear the oil off its edges.
+    "walnut": {
+        "id": 21,
+        "color": (0.36, 0.2, 0.1),
+        "roughness": 0.5,
+        "metallic": 0.0,
+        "bare": ((0.47, 0.3, 0.17), 0.42, 0.0),
+        "wear": 0.55,
+        "grime": 0.7,
+        "bump": 0.00003,
+        "tint": 0.02,
+        "wood": True,
+    },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
 # Zone ids are baked as a fraction of this (so up to 31 zones).
@@ -567,6 +582,19 @@ def _noise_material(n: Nodes):
     grain = _noise(n, (900.0, 900.0, 900.0), detail=2.0, w=2.2)
     blotch = _noise(n, (28.0, 28.0, 28.0), detail=4.0, roughness=0.6, w=5.5)
     _emit(n, (grain, blotch, _scratches(n)))
+
+
+def _wood_material(n: Nodes):
+    """R: the grain, bands a few millimetres apart running along the gun
+    (+Y) and warped by noise, G: the figure, slow light and dark across the
+    blank."""
+    wave = n.new("ShaderNodeTexWave", Vector=_position(n, (60.0, 25.0, 380.0)), Scale=1.0, Distortion=7.0,
+                 Detail=3.0, **{"Detail Scale": 1.5})
+    wave.wave_type = "BANDS"
+    wave.bands_direction = "Z"
+    wave.wave_profile = "SIN"
+    figure = _noise(n, (35.0, 9.0, 35.0), detail=3.0, roughness=0.55, w=9.1)
+    _emit(n, (wave.outputs["Fac"], figure, 0.0))
 
 
 def _new_image(name: str, size: int, fill=(0.0, 0.0, 0.0, 1.0)):
@@ -876,6 +904,11 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     n = Nodes(material)
     _noise_material(n)
     noise = _bake(targets, material, _new_image("Noise", size), "EMIT", 1)
+    wood = None
+    if any(f.get("wood") and (zones == f["id"]).any() for f in FINISHES.values()):
+        n = Nodes(material)
+        _wood_material(n)
+        wood = _bake(targets, material, _new_image("Wood", size), "EMIT", 1)[..., :2]
     n = Nodes(material)
     n.link(n.new("ShaderNodeBsdfPrincipled").outputs[0], n.out.inputs["Surface"])
     ao = _bake(targets, material, _new_image("AO", size, (1, 1, 1, 1)), "AO", 64)
@@ -899,7 +932,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     material.node_tree.nodes.clear()
     material.use_nodes = False
     for image in list(bpy.data.images):
-        if image.name in ("Edges", "Noise", "AO", "Normal", "Position", "Zones"):
+        if image.name in ("Edges", "Noise", "AO", "Normal", "Position", "Zones", "Wood"):
             bpy.data.images.remove(image)
     maps = {
         "edge": edges[..., 0],
@@ -912,6 +945,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
         "normal": normal[..., :3],
         "markings": markings,
         "stencils": stencils,
+        "wood": wood,
         "covered": (own > 0) if finish.get("seam_fix") else None,
     }
     # WEAPON_FINISH_DEBUG=<dir> keeps the baked masks, to tune `compose`
@@ -977,6 +1011,12 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             web_color, threshold = f["mottle"]
             web = _smoothstep(threshold - 0.015, threshold + 0.015, blotch[m] + (grain[m] - 0.5) * 0.08)
             color[m] = color[m] * (1.0 - web[:, None]) + np.asarray(web_color, np.float32) * web[:, None]
+        if f.get("wood") and maps.get("wood") is not None:
+            # Dark late-wood lines where the bands peak, and the figure.
+            bands, figure = maps["wood"][..., 0][m], maps["wood"][..., 1][m]
+            lines = _smoothstep(0.55, 0.97, bands)
+            shade = (1.0 - 0.42 * lines) * (0.8 + 0.45 * figure)
+            color[m] = color[m] * shade[:, None] * np.asarray((1.0, 0.97, 0.93), np.float32) ** lines[:, None]
         rough[m] = f["roughness"] + (grain[m] - 0.5) * 0.08 + (blotch[m] - 0.5) * 0.08
         metal[m] = f["metallic"]
         # Wear: the edge mask broken up by blotches so it is patchy, not a
@@ -984,7 +1024,7 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         wear[m] = _smoothstep(0.4, 0.8, edge[m] * (0.25 + 1.3 * blotch[m]) * f["wear"]) * exposed[m]
         # Fine scratches only burnish the coating: they show in reflections
         # (smoother, a touch lighter), not as bare metal.
-        if name not in ("polymer", "rubber", "leather"):
+        if name not in ("polymer", "rubber", "leather", "walnut"):
             rough[m] -= 0.14 * scratch[m]
             color[m] += 0.025 * scratch[m][:, None]
         grime[m] = cavity[m] * f["grime"] * (0.55 + 0.6 * blotch[m])

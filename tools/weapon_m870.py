@@ -13,9 +13,10 @@ is a service-pattern pump with an 18.5 inch barrel:
   guard's rear, and the action release lever ahead of it on the left;
 - the barrel with a brass bead at the muzzle, the magazine tube under it
   with its cap and a barrel clamp;
-- a smooth polymer forend with grooves on the pump, its two action bars
-  running back into the receiver;
-- a polymer stock with a rubber recoil pad.
+- a walnut forend with round-bottomed grooves on the pump, its two action
+  bars running back into the receiver;
+- a walnut stock, slim at the wrist and full at the butt, with a rubber
+  recoil pad (the classic police pattern; the SG-12 takes it in polymer).
 
 It is built in "gun space" (metres; the receiver's top-rear corner at the
 origin, its flat top at z = 0) and then moved into the weapon's view space,
@@ -55,6 +56,30 @@ BEAD_R = 0.0025
 BEAD_Y = MUZZLE_Y - 0.007
 
 
+def rounded(points, radius: float, steps: int = 6) -> list:
+    """A closed outline with each corner rounded by an arc of up to
+    `radius` (a corner given as (y, z, r) uses its own radius)."""
+    pts = [(p[0], p[1]) for p in points]
+    radii = [p[2] if len(p) > 2 else radius for p in points]
+    out = []
+    n = len(pts)
+    for i in range(n):
+        p0, p1, p2 = np.array(pts[i - 1]), np.array(pts[i]), np.array(pts[(i + 1) % n])
+        a, b = p0 - p1, p2 - p1
+        la, lb = np.linalg.norm(a), np.linalg.norm(b)
+        r = min(radii[i], la * 0.45, lb * 0.45)
+        if r <= 1e-5:
+            out.append(tuple(p1))
+            continue
+        start, end = p1 + a / la * r, p1 + b / lb * r
+        for k in range(steps + 1):
+            t = k / steps
+            # A quadratic Bezier through the corner: tangent to both sides.
+            q = (1 - t) ** 2 * start + 2 * (1 - t) * t * p1 + t * t * end
+            out.append(tuple(q))
+    return out
+
+
 def bead_tip() -> Vector:
     return Vector((0.0, BEAD_Y, BORE_Z + BARREL_R + 2.0 * BEAD_R - 0.0004))
 
@@ -71,12 +96,19 @@ def view_matrix() -> Matrix:
 def receiver() -> list:
     # Side outline: flat top, a squared front where the barrel and tube go
     # in, the bottom, and a rear that drops at an angle into the wrist.
-    outline = [
-        (0.000, 0.000), (RECEIVER_LENGTH, 0.000), (RECEIVER_LENGTH, -0.050),
-        (0.150, RECEIVER_BOTTOM), (0.012, RECEIVER_BOTTOM), (-0.006, -0.042), (-0.004, -0.010),
-    ]
+    # The rear sweeps down into the wrist in one curve.
+    outline = rounded([
+        (0.000, 0.000, 0.0), (RECEIVER_LENGTH, 0.000, 0.0), (RECEIVER_LENGTH, -0.050, 0.004),
+        (0.150, RECEIVER_BOTTOM, 0.012), (0.012, RECEIVER_BOTTOM, 0.012), (-0.006, -0.042, 0.016),
+        (-0.004, -0.010, 0.006),
+    ], 0.0, steps=8)
     body = side_profile("Receiver", outline, -RECEIVER_HALF, RECEIVER_HALF)
-    bevel(body, 0.0025, 3)
+    bevel(body, 0.003, 4)
+    # The seam where the trigger plate meets the receiver, along each side.
+    for side in (-1.0, 1.0):
+        x0, x1 = sorted((side * (RECEIVER_HALF - 0.0004), side * (RECEIVER_HALF + 0.002)))
+        seam = box(f"Seam{side}", (x0, 0.016, -0.0462), (x1, 0.150, -0.0457))
+        body = boolean(body, seam, "DIFFERENCE")
     # Ejection port on the right, 70 by 20 mm.
     port = box("Port", (0.004, 0.102, -0.030), (0.03, 0.172, -0.008))
     bevel(port, 0.0012, 2)
@@ -114,15 +146,15 @@ def receiver() -> list:
 
 def trigger_group() -> tuple[list, object]:
     # The guard: a rounded loop under the receiver.
-    guard = side_profile("Guard", [
-        (0.022, RECEIVER_BOTTOM + 0.002), (0.118, RECEIVER_BOTTOM + 0.002), (0.118, -0.064),
-        (0.104, -0.083), (0.040, -0.083), (0.022, -0.066),
-    ], -0.0065, 0.0065)
+    guard = side_profile("Guard", rounded([
+        (0.022, RECEIVER_BOTTOM + 0.002, 0.0), (0.118, RECEIVER_BOTTOM + 0.002, 0.0), (0.118, -0.066, 0.006),
+        (0.106, -0.083, 0.012), (0.040, -0.083, 0.014), (0.022, -0.066, 0.006),
+    ], 0.0, steps=8), -0.0065, 0.0065)
     bevel(guard, 0.0025, 3)
-    hole = side_profile("GuardHole", [
-        (0.034, -0.054), (0.106, -0.054), (0.106, -0.064), (0.098, -0.077), (0.044, -0.077),
-        (0.034, -0.066),
-    ], -0.02, 0.02)
+    hole = side_profile("GuardHole", rounded([
+        (0.034, -0.054, 0.003), (0.106, -0.054, 0.003), (0.106, -0.065, 0.004),
+        (0.098, -0.077, 0.008), (0.044, -0.077, 0.009), (0.034, -0.066, 0.004),
+    ], 0.0, steps=8), -0.02, 0.02)
     bevel(hole, 0.002, 2)
     guard = boolean(guard, hole, "DIFFERENCE")
     group(guard, "aluminium")
@@ -135,10 +167,10 @@ def trigger_group() -> tuple[list, object]:
         bevel(p, 0.0006, 2)
         group(p, "steel")
     # The trigger: a curved blade on its pin at the top.
-    trigger = side_profile("TriggerBlade", [
-        (0.066, -0.051), (0.072, -0.051), (0.071, -0.060), (0.067, -0.069), (0.062, -0.074),
-        (0.059, -0.073), (0.063, -0.064),
-    ], -0.0028, 0.0028)
+    trigger = side_profile("TriggerBlade", rounded([
+        (0.066, -0.051, 0.0), (0.072, -0.051, 0.0), (0.071, -0.060, 0.004), (0.067, -0.069, 0.004),
+        (0.062, -0.074, 0.0015), (0.059, -0.073, 0.0015), (0.063, -0.064, 0.004),
+    ], 0.0, steps=5), -0.0028, 0.0028)
     bevel(trigger, 0.0008, 2)
     group(trigger, "steel")
     return [guard, safety, release], trigger
@@ -155,9 +187,15 @@ def barrel_and_tube() -> list:
     tube = lathe("Tube", [(RECEIVER_LENGTH, 0.0), (RECEIVER_LENGTH, TUBE_R), (TUBE_END, TUBE_R), (TUBE_END, 0.0)],
                  40, "Y", (0.0, 0.0, TUBE_Z))
     group(tube, "steel")
-    cap = lathe("Cap", [(TUBE_END, 0.0), (TUBE_END, 0.0125), (TUBE_END + 0.016, 0.0125),
-                        (TUBE_END + 0.022, 0.0100), (TUBE_END + 0.022, 0.0)], 12, "Y", (0.0, 0.0, TUBE_Z))
-    bevel(cap, 0.0008, 2)
+    # The magazine cap, with grip rings round it and a domed end.
+    cap_loop = [(TUBE_END, 0.0), (TUBE_END, 0.0125)]
+    for k in range(5):
+        y = TUBE_END + 0.002 + k * 0.0028
+        cap_loop += [(y, 0.0125), (y + 0.0006, 0.0119), (y + 0.0016, 0.0119), (y + 0.0022, 0.0125)]
+    cap_loop += [(TUBE_END + 0.016, 0.0125), (TUBE_END + 0.019, 0.0118), (TUBE_END + 0.021, 0.0102),
+                 (TUBE_END + 0.022, 0.0070), (TUBE_END + 0.022, 0.0)]
+    cap = lathe("Cap", cap_loop, 48, "Y", (0.0, 0.0, TUBE_Z))
+    bevel(cap, 0.0004, 1)
     group(cap, "steel")
     # The barrel's hanger, clamped round the tube.
     clamp = side_profile("Clamp", [
@@ -174,7 +212,7 @@ def barrel_and_tube() -> list:
 
 
 def forend() -> list:
-    """The pump: a smooth oval polymer forend with grooves along each side,
+    """The pump: a smooth oval walnut forend with grooves along each side,
     and its action bars running back to the receiver."""
     y0, y1 = FOREND
     shell = lathe("Forend", [(y0, 0.0), (y0, 0.0185), (y0 + 0.007, 0.0225), (y1 - 0.007, 0.0225),
@@ -186,10 +224,15 @@ def forend() -> list:
     for side in (-1.0, 1.0):
         for k in range(6):
             z = TUBE_Z - 0.017 + k * 0.0052
-            x0, x1 = sorted((side * 0.0175, side * 0.035))
-            groove = box(f"Groove{side}{k}", (x0, y0 + 0.020, z), (x1, y1 - 0.020, z + 0.0019))
+            # A round-bottomed channel cut along the surface (the oval's
+            # side, a hair inside it).
+            dz = z + 0.00095 - (TUBE_Z - 0.003)
+            surface = 1.02 * np.sqrt(0.0225 ** 2 - dz * dz) - 0.0002
+            groove = lathe(f"Groove{side}{k}", [(y0 + 0.020, 0.0), (y0 + 0.020, 0.0011),
+                                                  (y1 - 0.020, 0.0011), (y1 - 0.020, 0.0)],
+                           12, "Y", (side * surface, 0.0, z + 0.00095))
             shell = boolean(shell, groove, "DIFFERENCE")
-    group(shell, "polymer")
+    group(shell, "walnut")
     bars = []
     for side in (-1.0, 1.0):
         bar = box(f"Bar{side}", (side * 0.0118 - 0.0011, RECEIVER_LENGTH - 0.04, TUBE_Z + 0.004),
@@ -210,18 +253,24 @@ def bolt() -> object:
     return group(face, "bolt")
 
 
-def stock() -> list:
-    """A polymer sporting stock with a rubber recoil pad."""
-    outline = [
-        (0.002, -0.004), (-0.050, -0.017), (-0.296, -0.040), (-0.300, -0.046), (-0.300, -0.166),
-        (-0.292, -0.172), (-0.150, -0.120), (-0.085, -0.093), (-0.048, -0.080), (-0.022, -0.068),
-        (0.002, -0.050),
-    ]
+def stock(finish: str = "walnut") -> list:
+    """A sporting stock (walnut on the M870, polymer on the SG-12) with a
+    rubber recoil pad: slim at the wrist, swelling to the butt, its comb
+    and toe drawn in curves."""
+    outline = rounded([
+        (0.002, -0.004, 0.0), (-0.050, -0.017, 0.03), (-0.296, -0.040, 0.004), (-0.300, -0.046, 0.0),
+        (-0.300, -0.166, 0.0), (-0.292, -0.172, 0.006), (-0.150, -0.120, 0.05), (-0.085, -0.093, 0.04),
+        (-0.048, -0.080, 0.02), (-0.022, -0.068, 0.015), (0.002, -0.050, 0.0),
+    ], 0.0, steps=8)
     body = side_profile("Stock", outline, -0.0185, 0.0185)
-    bevel(body, 0.0065, 4)
-    group(body, "polymer")
+    bevel(body, 0.0075, 5)
+    # Thinner at the wrist (86%), fuller at the butt (110%).
+    for v in body.data.vertices:
+        t = min(max((-v.co.y - 0.02) / 0.26, 0.0), 1.0)
+        v.co.x *= 0.86 + 0.24 * t * t * (3.0 - 2.0 * t)
+    group(body, finish)
     pad = side_profile("Pad", [(-0.299, -0.042), (-0.320, -0.044), (-0.320, -0.168), (-0.299, -0.170)],
-                       -0.0188, 0.0188)
+                       -0.0206, 0.0206)
     bevel(pad, 0.004, 3)
     group(pad, "rubber")
     return [body, pad]
@@ -280,7 +329,11 @@ FINISH = {
     "unwrap": True,
     "wear_radius": 0.0032,
     "scratch_depth": 0.15,
-    "zones": [{"zone": z, "parts": [z]} for z in ("steel", "aluminium", "polymer", "rubber", "bolt", "brass")],
+    "zones": [{"zone": z, "parts": [z]} for z in ("steel", "aluminium", "polymer", "rubber", "bolt", "brass",
+                                                  "walnut")],
+    # Rounded edges meet at UV seams (see weapon_finish `_refill_seams`).
+    "seam_fix": True,
+    "uv_margin": 6.0,
     "markings": [
         # The left of the receiver, the side the player sees.
         {"text": "M870\n12 GA  2 3/4 IN", "at": (0.120, -0.024), "size": 0.0062},
