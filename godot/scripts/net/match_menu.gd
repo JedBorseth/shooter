@@ -81,7 +81,7 @@ func _ready() -> void:
 	ready_button = Button.new()
 	ready_button.name = "Ready"
 	ready_button.text = "READY"
-	ready_button.theme_type_variation = &"PrimaryButton"
+	ready_button.theme_type_variation = &"FrontAction"
 	ready_button.position = Vector2(1276, 782)
 	ready_button.size = Vector2(260, 48)
 	_stage.add_child(ready_button)
