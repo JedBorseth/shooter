@@ -71,13 +71,23 @@ func _check_card() -> void:
 	var text := _texts(card)
 	_check("+2,750" in text, "the total is score and bonus: %s" % [text])
 	_check("Match bonus  ·  win" in text, "the bonus says it was a win")
-	_check("LEVEL 1" in text, "the bar starts where the match started")
+	# The level shows in its mark; the line over the bar names the next one.
+	_check(
+		text.any(func(t: String) -> bool: return t.ends_with("XP to level 2")),
+		"the bar starts where the match started: %s" % [text]
+	)
 	_check(
 		text.any(func(t: String) -> bool: return t.begins_with("M4A1  +2 kills")), "kills listed"
 	)
 	await create_timer(XpSummary.FILL_DELAY + XpSummary.FILL_SECONDS + 0.3).timeout
 	text = _texts(card)
-	_check("LEVEL 4" in text and "LEVEL UP" in text, "it fills to level 4: %s" % [text])
+	_check(
+		(
+			text.any(func(t: String) -> bool: return t.ends_with("XP to level 5"))
+			and "LEVEL UP" in text
+		),
+		"it fills to level 4: %s" % [text]
+	)
 	_check(
 		text.any(func(t: String) -> bool: return t.begins_with("Create-a-Class, AK-47")),
 		"and lists the unlocks"

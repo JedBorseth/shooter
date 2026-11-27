@@ -1,10 +1,11 @@
 extends RefCounted
 ## Drawn pieces for the screens around a match, in Black Ops 2 and 3's
 ## grammar and our own art: the two team marks (plain geometric marks drawn in
-## code, one per team), light label plates with dark type, the VS chip, the
-## result banner (a long plate with pointed ends, gapped leader lines, and a
-## colour-split word), the hexagon XP badge and level badge, ping bars, and the
-## small skull for a player sitting out a round. Text, key caps, and plates are
+## code, one per team), light label plates with dark type, the VS chips (a
+## small plate, and the loading screen's hexagon), the result banner (a long
+## plate with pointed ends, gapped leader lines, and a colour-split word),
+## our XP mark (a square with cut corners), the front end's level mark, ping
+## bars, and the small skull for a player sitting out a round. Text, key caps, and plates are
 ## in `hud_paint.gd`; hexagons, banners, and focus rules in `hud_shapes.gd`.
 ##
 ## Everything is drawn at the 1600x900 design size; callers scale with
@@ -206,9 +207,13 @@ static func big_word(
 	var spacing := size * 0.06
 	var width := HudPaint.text_width(HudPaint.DISPLAY, word, size, spacing)
 	var at := centre - Vector2(width / 2.0, 0)
-	var shade := Color(0, 0, 0, 0.16 * colour.a)
-	for offset: Vector2 in [Vector2(0, 2), Vector2(-1.5, 3), Vector2(1.5, 3), Vector2(0, 4)]:
-		HudPaint.text(item, HudPaint.DISPLAY, word, at + offset, size, shade, spacing, false)
+	# A soft shadow straight under the word (no offset): dark outlines
+	# widening and fading, so the word lifts off a bright sky without an
+	# extruded edge.
+	for layer: Array in [[0.2, 0.08], [0.12, 0.1], [0.06, 0.14]]:
+		_outline(
+			item, word, at, size, spacing, int(size * float(layer[0])), float(layer[1]) * colour.a
+		)
 	if split > 0.0:
 		for side: Array in [[-split, HudShapes.SPLIT_LEFT], [split, HudShapes.SPLIT_RIGHT]]:
 			var tint: Color = side[1]
@@ -234,7 +239,7 @@ static func reason_plate(
 	var size := 22
 	var width := HudPaint.text_width(HudPaint.LABEL_LIGHT, text, size, 0.6) + 36.0
 	var rect := Rect2(top.x - width / 2.0, top.y, width, 36.0)
-	item.draw_rect(rect, Color(0.16, 0.17, 0.19, 0.92 * alpha))
+	item.draw_rect(rect, Color(0.16, 0.17, 0.19, alpha))
 	item.draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)), Color(edge, 0.9 * alpha))
 	HudPaint.text_centred(
 		item,
@@ -247,75 +252,12 @@ static func reason_plate(
 	)
 
 
-## The blue XP badge: a flat-topped hexagon with a thin inner ring, centred
-## on `centre`.
-static func xp_badge(item: CanvasItem, centre: Vector2, size: float, alpha := 1.0) -> void:
-	var r := size / 2.0
-	HudShapes.hexagon(
-		item,
-		centre,
-		r,
-		Color(UiTheme.XP_BLUE, alpha),
-		Color(UiTheme.XP_BLUE.lightened(0.45), alpha),
-		1.5,
-		false
-	)
-	HudShapes.hexagon(
-		item, centre, r * 0.8, Color(0, 0, 0, 0.18 * alpha), Color.TRANSPARENT, 1.0, false
-	)
-	var text_size := int(size * 0.4)
-	HudPaint.text_centred(
-		item,
-		HudPaint.DISPLAY,
-		"XP",
-		Vector2(centre.x, centre.y + HudPaint.DISPLAY.get_ascent(text_size) * 0.36),
-		text_size,
-		Color(1, 1, 1, alpha),
-		0.0,
-		false
-	)
-
-
-## A level badge: a cyan hexagon with the level number in dark type, or two
-## chevrons for a `level` of 0 (the next level is drawn hollow).
-static func level_badge(
-	item: CanvasItem, centre: Vector2, size: float, level: int, filled := true, alpha := 1.0
-) -> void:
-	var r := size / 2.0
-	var fill := Color(UiTheme.LEVEL_CYAN, alpha) if filled else Color(0, 0, 0, 0.55 * alpha)
-	var edge := Color(UiTheme.LEVEL_CYAN, (1.0 if filled else 0.7) * alpha)
-	HudShapes.hexagon(item, centre, r, fill, edge, 1.5, true)
-	var ink := Color(UiTheme.LABEL_INK, alpha) if filled else Color(UiTheme.TEXT, alpha)
-	if level <= 0:
-		# No number: two stacked chevrons, a rank mark.
-		for i in 2:
-			var y := centre.y - r * 0.12 + i * r * 0.36
-			var w := r * 0.46
-			var points := PackedVector2Array(
-				[
-					Vector2(centre.x - w, y + r * 0.2),
-					Vector2(centre.x, y - r * 0.14),
-					Vector2(centre.x + w, y + r * 0.2)
-				]
-			)
-			item.draw_polyline(points, ink, maxf(r * 0.16, 2.0), true)
-		return
-	var text_size := int(size * 0.42)
-	HudPaint.text_centred(
-		item,
-		HudPaint.DISPLAY,
-		str(level),
-		Vector2(centre.x, centre.y + HudPaint.DISPLAY.get_ascent(text_size) * 0.36),
-		text_size,
-		ink,
-		0.0,
-		false
-	)
-
-
 ## Five signal bars for a ping, bottom left at `at` (20 x 16): green, then
 ## yellow and red as the ping climbs. A negative ping (a bot) is full.
-static func ping_bars(item: CanvasItem, at: Vector2, ping: int, alpha := 1.0) -> void:
+## `empty` is the unlit bars' white.
+static func ping_bars(
+	item: CanvasItem, at: Vector2, ping: int, alpha := 1.0, empty := 0.16
+) -> void:
 	var lit := 5
 	var colour := UiTheme.GOOD
 	if ping >= 0:
@@ -331,7 +273,7 @@ static func ping_bars(item: CanvasItem, at: Vector2, ping: int, alpha := 1.0) ->
 	for i in 5:
 		var h := 4.0 + i * 3.0
 		var bar := Rect2(at.x + i * 4.0, at.y - h, 3.0, h)
-		item.draw_rect(bar, Color(colour, alpha) if i < lit else Color(1, 1, 1, 0.16 * alpha))
+		item.draw_rect(bar, Color(colour, alpha) if i < lit else Color(1, 1, 1, empty * alpha))
 
 
 ## A small skull, centred on `centre`, for a player out of the round.
@@ -345,34 +287,6 @@ static func skull(item: CanvasItem, centre: Vector2, size: float, colour: Color)
 	for i in 2:
 		var x := centre.x - r * 0.2 + i * r * 0.4
 		item.draw_rect(Rect2(x - 0.5, centre.y + r * 0.55, 1.0, r * 0.5), hole)
-
-
-## The match's XP under the result: one dark plate holding the blue XP badge
-## on its left, "MATCH XP" in small caps, and the value in big squared
-## numerals, centred on `centre`.
-static func xp_plate(item: CanvasItem, centre: Vector2, value: int, alpha := 1.0) -> void:
-	var text := "+%d" % value
-	var value_w := HudPaint.text_width(HudPaint.DISPLAY, text, 30)
-	var width := maxf(value_w, HudPaint.text_width(HudPaint.LABEL, "MATCH XP", 15, 2.5)) + 96.0
-	var rect := Rect2(centre.x - width / 2.0, centre.y - 32.0, width, 64.0)
-	item.draw_rect(rect, Color(0.03, 0.04, 0.05, 0.9 * alpha))
-	item.draw_rect(
-		Rect2(rect.position, Vector2(rect.size.x, 2)), Color(UiTheme.XP_BLUE, 0.9 * alpha)
-	)
-	xp_badge(item, Vector2(rect.position.x + 36.0, centre.y), 46.0, alpha)
-	var left := rect.position.x + 72.0
-	HudPaint.text(
-		item,
-		HudPaint.LABEL,
-		"MATCH XP",
-		Vector2(left, centre.y - 8.0),
-		15,
-		Color(UiTheme.TEXT_DIM, alpha),
-		2.5
-	)
-	HudPaint.text(
-		item, HudPaint.DISPLAY, text, Vector2(left, centre.y + 24.0), 30, Color(XP_BOX_TEXT, alpha)
-	)
 
 
 ## A dark band behind text that fades out on all four sides, so no hard
@@ -399,6 +313,115 @@ static func soft_band(item: CanvasItem, rect: Rect2, alpha: float, feather := 28
 				var solid := xi in [1, 2] and yi in [1, 2]
 				colours.append(Color(0, 0, 0, alpha if solid else 0.0))
 			item.draw_polygon(corners, colours)
+
+
+## The VS chip of the loading screen's band: a light hexagon, points left
+## and right, with "VS" in squared caps.
+static func vs_hex(item: CanvasItem, centre: Vector2, alpha := 1.0, radius := 34.0) -> void:
+	HudShapes.hexagon(
+		item,
+		centre,
+		radius,
+		Color(UiTheme.LABEL_BOX, alpha),
+		Color(UiTheme.INK, 0.9 * alpha),
+		2.0,
+		true
+	)
+	var text_size := int(radius * 0.82)
+	HudPaint.text_centred(
+		item,
+		HudPaint.DISPLAY,
+		"VS",
+		centre + Vector2(0, radius * 0.29),
+		text_size,
+		Color(UiTheme.LABEL_INK, alpha),
+		0.0,
+		false
+	)
+
+
+## Our XP mark: a square with its corners cut, a blue edge, and "XP" in it,
+## centred on `centre`, `size` across.
+static func xp_mark(item: CanvasItem, centre: Vector2, size: float, alpha := 1.0) -> void:
+	var r := size / 2.0
+	var cut := size * 0.24
+	var points := PackedVector2Array(
+		[
+			centre + Vector2(-r + cut, -r),
+			centre + Vector2(r - cut, -r),
+			centre + Vector2(r, -r + cut),
+			centre + Vector2(r, r - cut),
+			centre + Vector2(r - cut, r),
+			centre + Vector2(-r + cut, r),
+			centre + Vector2(-r, r - cut),
+			centre + Vector2(-r, -r + cut),
+		]
+	)
+	item.draw_colored_polygon(points, Color(UiTheme.XP_BLUE, 0.2 * alpha))
+	points.append(points[0])
+	item.draw_polyline(points, Color(UiTheme.XP_BLUE, alpha), 2.0, true)
+	var text_size := int(size * 0.4)
+	HudPaint.text_centred(
+		item,
+		HudPaint.DISPLAY,
+		"XP",
+		centre + Vector2(0, HudPaint.DISPLAY.get_ascent(text_size) * 0.36),
+		text_size,
+		Color(UiTheme.TEXT, alpha),
+		0.0,
+		false
+	)
+
+
+## The level mark the front end shows beside the player's name: a blue
+## hexagon, points up and down, with the level in white, centred on
+## `centre`, `size` tall. `reached` false draws the next level hollow.
+static func level_mark(
+	item: CanvasItem, centre: Vector2, size: float, level: int, reached := true, alpha := 1.0
+) -> void:
+	var r := size / 2.0
+	HudShapes.hexagon(
+		item,
+		centre,
+		r,
+		Color(UiTheme.XP_BLUE, 0.18 * alpha),
+		Color(UiTheme.XP_BLUE, (1.0 if reached else 0.6) * alpha),
+		2.0,
+		false
+	)
+	var inner := Color(UiTheme.XP_BLUE, alpha) if reached else Color(0, 0, 0, 0.5 * alpha)
+	HudShapes.hexagon(item, centre, r * 0.77, inner, Color.TRANSPARENT, 0.0, false)
+	var text_size := int(size * 0.4)
+	HudPaint.text_centred(
+		item,
+		HudPaint.DISPLAY,
+		str(level),
+		centre + Vector2(0, HudPaint.DISPLAY.get_ascent(text_size) * 0.36),
+		text_size,
+		Color(UiTheme.TEXT, (1.0 if reached else 0.7) * alpha),
+		0.0,
+		false
+	)
+
+
+## `word` outlined `width` px in black at `alpha`, its baseline's left at
+## `at`, letter by letter as `HudPaint.text` spaces it.
+static func _outline(
+	item: CanvasItem, word: String, at: Vector2, size: int, spacing: float, width: int, alpha: float
+) -> void:
+	if width <= 0:
+		return
+	var shade := Color(0, 0, 0, alpha)
+	var font := HudPaint.DISPLAY
+	if spacing == 0.0:
+		item.draw_string_outline(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1, size, width, shade)
+		return
+	var x := at.x
+	for glyph in word:
+		item.draw_string_outline(
+			font, Vector2(x, at.y), glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size, width, shade
+		)
+		x += font.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + spacing
 
 
 static func _ease(t: float) -> float:

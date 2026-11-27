@@ -15,6 +15,7 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 ## Seconds the "Killed" plate holds after a kill.
 const KILLED_SECONDS := 2.0
+const DeathCard := preload("res://scripts/net/death_card.gd")
 
 ## The legend wraps to rows no wider than this, between the corner clusters.
 const LEGEND_WIDTH := 760.0
@@ -27,6 +28,8 @@ var prompt := {}
 var dead := false
 var killer := ""
 var killer_colour := TeamColours.enemy
+## The killer's team (0 or 1) for its mark on the death card, or -1.
+var killer_team := -1
 var killer_weapon := ""
 var respawn_left := 0.0
 var respawn_total := 0.0
@@ -166,72 +169,17 @@ func _draw_killed() -> void:
 	)
 
 
-## The death card in the lower third: "KILLED BY" over a dark plate with a
-## tab in the killer's colour, their name, and their weapon's silhouette;
-## the respawn countdown and its bar under it.
 func _draw_death(at: Vector2) -> void:
-	var alpha := clampf(_dead_for / 0.25, 0.0, 1.0)
-	var rise := (1.0 - alpha) * 10.0
-	at.y += rise
-	var known := killer != ""
-	# One card either way: who killed us, or (not knowing) that we died.
-	var headline := killer if known else "Killed in action"
-	var colour := killer_colour if known else UiTheme.ENEMY
-	var name_size := 26
-	var name_w := Paint.text_width(Paint.LABEL, headline, name_size)
-	var icon_w := 0.0
-	var icon := Paint.weapon_icon(killer_weapon) if killer_weapon != "" else null
-	if known and icon != null:
-		icon_w = icon.get_width() * (22.0 / icon.get_height()) + 22.0
-	var width := maxf(name_w + icon_w + 52.0, 300.0)
-	var plate := Rect2(at.x - width / 2.0, at.y - 26.0, width, 50.0)
-	Paint.text(
-		self,
-		Paint.LABEL,
-		"KILLED BY" if known else "YOU DIED",
-		plate.position + Vector2(0, -7.0),
-		14,
-		Color(UiTheme.TEXT, 0.85 * alpha),
-		1.5
-	)
-	draw_rect(plate, Color(0, 0, 0, 0.62 * alpha))
-	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1.0)), Color(1, 1, 1, 0.3 * alpha))
-	draw_rect(Rect2(plate.position, Vector2(4.0, plate.size.y)), Color(colour, alpha))
-	Paint.text(
-		self,
-		Paint.LABEL,
-		headline,
-		Vector2(plate.position.x + 22.0, plate.end.y - 15.0),
-		name_size,
-		Color(colour.lerp(Color.WHITE, 0.2) if known else UiTheme.TEXT, alpha)
-	)
-	if icon_w > 0.0:
-		Paint.weapon(
-			self,
-			killer_weapon,
-			Vector2(plate.end.x - 18.0, plate.get_center().y),
-			22.0,
-			Color(1, 1, 1, 0.9 * alpha)
-		)
-
-	# Respawn countdown and its bar.
-	if respawn_total > 0.0:
-		var bar := Rect2(at.x - 110.0, plate.end.y + 14.0, 220.0, 3.0)
-		var progress := clampf(1.0 - respawn_left / respawn_total, 0.0, 1.0)
-		draw_rect(bar, Color(Paint.TRACK, Paint.TRACK.a * alpha))
-		draw_rect(
-			Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)),
-			Color(UiTheme.TEXT, 0.9 * alpha)
-		)
-		Paint.text_centred(
-			self,
-			Paint.LABEL,
-			"RESPAWN  %.1f" % maxf(respawn_left, 0.0),
-			Vector2(at.x, bar.end.y + 18.0),
-			14,
-			Color(UiTheme.TEXT, 0.8 * alpha),
-			1.5
-		)
+	var state := {
+		"killer": killer,
+		"colour": killer_colour,
+		"team": killer_team,
+		"weapon": killer_weapon,
+		"left": respawn_left,
+		"total": respawn_total,
+		"age": _dead_for,
+	}
+	DeathCard.draw(self, size, at, state)
 
 
 ## Key caps and actions along the bottom edge, wrapped into centred rows.

@@ -21,6 +21,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const HudCentre := preload("res://scripts/hud_centre.gd")
 const Marks := preload("res://scripts/ui/objective_marks.gd")
+const MatchResults := preload("res://scripts/net/match_results.gd")
 
 ## Seconds after dying before the camera moves to a teammate.
 const SPECTATE_DELAY := 1.5
@@ -106,21 +107,27 @@ func _update_banner(round: Dictionary, playing: bool) -> void:
 	_overlay.title = ""
 	_overlay.detail = ""
 	_overlay.colour = MenuStyle.TEXT
+	_overlay.countdown = 0.0
+	_overlay.strip = {}
 	if playing:
 		match String(round.phase):
 			"freeze":
-				_overlay.title = "ROUND %d" % round.number
-				var goal := (
-					"ATTACK  ·  Plant the charge at a site"
-					if round.attacking
-					else "DEFEND  ·  Stop the plant, or defuse the charge"
+				# The round's countdown, as the match's (`match_banner.gd`).
+				_overlay.countdown = maxf(float(round.seconds_left), 0.01)
+				_overlay.countdown_mode = (
+					"Round %d  ·  %s" % [round.number, "Attack" if round.attacking else "Defend"]
 				)
-				_overlay.detail = "%s  ·  %d" % [goal, int(ceil(round.seconds_left))]
-				_overlay.colour = TeamColours.enemy if round.attacking else TeamColours.ally
+				_overlay.countdown_objective = (
+					"Plant the charge at a site"
+					if round.attacking
+					else "Stop the plant, or defuse the charge"
+				)
 			"over":
 				var won: bool = round.winner == client.match_info().my_team
 				_overlay.title = "ROUND WON" if won else "ROUND LOST"
 				_overlay.colour = TeamColours.of(won)
+				# The rounds won either side, under the banner at the top.
+				_overlay.strip = MatchResults.strip(client.match_info())
 				_overlay.detail = _reason_text(round, won)
 				if round.halftime:
 					_overlay.detail += "  ·  Halftime: switching sides"

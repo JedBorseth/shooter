@@ -37,12 +37,15 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const ScoreBlock := preload("res://scripts/net/score_block.gd")
 const KillFeed := preload("res://scripts/net/kill_feed.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
+const MatchResults := preload("res://scripts/net/match_results.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const MatchMenu := preload("res://scripts/net/match_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
 
 const CALLOUT_SECONDS := 2.2
+## Seconds the result banner shows with the team strip before the scoreboard.
+const STRIP_SECONDS := 3.0
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
 const CHAT_LINES := 6
@@ -66,6 +69,9 @@ var _match_xp: Node
 ## whether it has this match's summary.
 var _xp_card: PanelContainer
 var _xp_ready := false
+var _xp_bonus := 0
+## Seconds of results seen (outside the final killcam), for the team strip.
+var _results_age := 0.0
 var _ready_button: Button
 var _ladder_marked := -1
 var _callout_left := 0.0
@@ -142,7 +148,11 @@ func _process(delta: float) -> void:
 	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
 	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
-	_score.visible = not bool(info.get("hardcore", false))
+	# The score block steps aside for the scoreboard and the results.
+	var board_up := (
+		phase == "ended" or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
+	)
+	_score.visible = not bool(info.get("hardcore", false)) and not board_up
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
@@ -182,14 +192,32 @@ func _process(delta: float) -> void:
 	var results := phase == "ended"
 	if not results:
 		_xp_ready = false
-	_xp_card.visible = results and _xp_ready and not _menu.visible
-	_board.visible = (results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible))
-	# The banner above says the result; the board keeps the mode, in its colour.
+		_results_age = 0.0
+	else:
+		_results_age += delta
+	# After a match: the result banner and the team strip first (before the
+	# final killcam, as Black Ops 3 does, and after it if it came at once),
+	# then the scoreboard and the match report under the banner. The age only
+	# runs while the results are on screen.
+	var strip_stage := results and _results_age < STRIP_SECONDS
+	_xp_card.visible = results and not strip_stage and _xp_ready and not _menu.visible
+	var held := Input.is_action_pressed(&"scoreboard") and not _menu.visible
+	_board.visible = (results and not strip_stage) or held
+	# The header: the mode and its goal ("FIRST TO 75 KILLS"), or the round.
 	_board.title = String(info.get("mode_name", "")).to_upper()
-	_board.title_colour = _result_colour(info) if results else MenuStyle.TEXT
+	if snd and phase == "playing":
+		_board.title += "  ·  ROUND %d" % int(client.round_info().get("number", 0))
+	elif _score.footer != "":
+		_board.title += "  ·  " + String(_score.footer)
 	_board.clock = _score.clock
-	# The banner says the result; the board sits under it.
-	_overlay.banner_y = 0.1 if results else 0.2
+	# The match report under the results board is as wide as it.
+	var report_w := maxf(_board.panel_width(), 900.0)
+	_xp_card.offset_left = -report_w / 2.0
+	_xp_card.offset_right = report_w / 2.0
+	_board.top = 214.0 if results else Scoreboard.TOP
+
+	_overlay.strip = MatchResults.strip(info) if strip_stage and not held else {}
+	_overlay.bonus = _xp_bonus if strip_stage and not held and _xp_ready else -1
 
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
@@ -343,43 +371,10 @@ func _clock_text(phase: String, seconds_left: float) -> String:
 
 
 func _update_banner(phase: String, info: Dictionary) -> void:
-	_overlay.title = ""
-	_overlay.detail = ""
-	_overlay.colour = MenuStyle.TEXT
-	match phase:
-		"countdown":
-			_overlay.title = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
-			if info.mode == "ffa":
-				_overlay.detail = "Free-for-all  ·  first to %d kills" % info.score_limit
-			elif info.get("free_for_all", false):
-				var kills: int = info.get("kills_per_weapon", 1)
-				_overlay.detail = (
-					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
-					% [kills, "" if kills == 1 else "s", info.score_limit]
-				)
-			elif info.mode == "ctf":
-				_overlay.detail = (
-					"Capture the Flag  ·  first to %d captures  ·  two halves" % info.score_limit
-				)
-			elif info.mode == "hardpoint":
-				_overlay.detail = "Hardpoint  ·  first to %d points" % info.score_limit
-			elif info.mode == "dom":
-				_overlay.detail = "Domination  ·  first to %d points" % info.score_limit
-			elif info.mode == "snd":
-				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
-			else:
-				_overlay.detail = "Team Deathmatch  ·  first to %d kills" % info.score_limit
-		"ended":
-			_overlay.title = _results_title(info)
-			_overlay.detail = "Next match in %d" % int(ceil(info.seconds_left))
-			_overlay.colour = _result_colour(info)
-
-
-## Blue for a win, red for a loss, white for a draw.
-func _result_colour(info: Dictionary) -> Color:
-	if _we_won(info):
-		return TeamColours.ally
-	return TeamColours.enemy if info.winner >= 0 else MenuStyle.TEXT
+	var winner := int(info.winner)
+	MatchResults.fill(
+		_overlay, phase, info, _we_won(info), client.name_of(winner) if winner >= 0 else ""
+	)
 
 
 ## Whether the match's winner is our team, or in Gun Game us.
@@ -389,16 +384,6 @@ func _we_won(info: Dictionary) -> bool:
 	if info.get("free_for_all", false):
 		return info.winner == client.player_id()
 	return info.winner == info.my_team
-
-
-func _results_title(info: Dictionary) -> String:
-	if info.winner < 0:
-		return "DRAW"
-	if _we_won(info):
-		return "VICTORY"
-	if info.get("free_for_all", false):
-		return "%s WINS" % String(client.name_of(info.winner)).to_upper()
-	return "DEFEAT"
 
 
 # --- Kill feed ---------------------------------------------------------------
@@ -428,18 +413,23 @@ func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
 	if victim == me and killer != victim and killer >= 0:
-		_name_killer(client.name_of(killer), _team_colour(killer), key)
+		_name_killer(killer, _team_colour(killer), key)
 	elif killer == me and victim != me:
 		_name_victim(client.name_of(victim), _team_colour(victim))
 
 
 ## Tells the shared HUD's death card who killed us.
-func _name_killer(killer_name: String, colour: Color, weapon_key: String) -> void:
+func _name_killer(killer: int, colour: Color, weapon_key: String) -> void:
 	if player == null or not is_instance_valid(player):
 		return
 	var hud := player.get_parent().get_node_or_null("HUD")
 	if hud != null and hud.has_method("set_killer"):
-		hud.set_killer(killer_name, colour, weapon_key)
+		hud.set_killer(client.name_of(killer), colour, weapon_key)
+		# The killer's team, for the death card's team mark (none in FFA).
+		var centre := hud.get_node_or_null("Centre")
+		if centre != null:
+			var ffa: bool = client.match_info().get("free_for_all", false)
+			centre.set("killer_team", -1 if ffa else client.team_of(killer))
 
 
 ## Tells the shared HUD whom we just killed, for its "Killed" plate.
@@ -533,7 +523,7 @@ func _check_period(phase: String, info: Dictionary) -> void:
 		"second_half":
 			_show_callout("HALFTIME", "Switching sides", MenuStyle.TEXT)
 		"overtime":
-			_show_callout("OVERTIME", _overtime_detail(info), MenuStyle.ACCENT)
+			_show_callout("OVERTIME", _overtime_detail(info), MenuStyle.TEXT)
 
 
 func _overtime_detail(info: Dictionary) -> String:
@@ -581,16 +571,16 @@ func _refresh_board() -> void:
 	var hardpoint: bool = info.mode == "hardpoint"
 	var dom: bool = info.mode == "dom"
 	var snd: bool = info.mode == "snd"
-	var headings := ["NAME", "SCORE", "K", "D", "PING"]
+	var headings := ["Name", "Score", "Kills", "Deaths", "Ping"]
 	if ctf:
-		headings = ["NAME", "SCORE", "CAPS", "RET", "K", "D", "PING"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Captures", "Returns", "Ping"]
 	if snd:
 		# Plants and defuses ride in the captures and returns columns.
-		headings = ["NAME", "SCORE", "PLANT", "DEF", "K", "D", "PING"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Plants", "Defuses", "Ping"]
 	if hardpoint:
-		headings.insert(headings.size() - 1, "TIME")
+		headings.insert(headings.size() - 1, "Time")
 	if dom:
-		headings = ["NAME", "SCORE", "CAPS", "DEF", "K", "D", "PING"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Captures", "Defends", "Ping"]
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = info.scores
@@ -600,15 +590,14 @@ func _refresh_board() -> void:
 		for entry: Dictionary in client.roster():
 			if entry.team != team:
 				continue
-			var cells := [entry.name, str(entry.score)]
+			# Score, kills, and deaths first, then the mode's own columns.
+			var cells := [entry.name, str(entry.score), str(entry.kills), str(entry.deaths)]
 			if ctf or snd:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("returns", 0)))
 			if dom:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("defends", 0)))
-			cells.append(str(entry.kills))
-			cells.append(str(entry.deaths))
 			if hardpoint:
 				var hill := int(entry.get("hill_seconds", 0))
 				cells.append("%d:%02d" % [hill / 60, hill % 60])
@@ -629,9 +618,10 @@ func _refresh_board() -> void:
 			sections
 			. append(
 				{
-					"name": "YOUR TEAM" if team == my_team else "ENEMY",
+					"name": "Your team" if team == my_team else "Enemy",
 					"score": str(scores[team]) if scores.size() == 2 else "",
 					"colour": TeamColours.of(team == my_team),
+					"team": team,
 					"headings": headings,
 					"rows": rows,
 				}
@@ -689,7 +679,7 @@ func _refresh_ladder_board() -> void:
 			"name": "EVERY PLAYER FOR THEMSELVES",
 			"score": "",
 			"colour": MenuStyle.TEXT,
-			"headings": ["NAME", "WEAPON" if ladder else "SCORE", "K", "D", "PING"],
+			"headings": ["Name", "Weapon" if ladder else "Score", "Kills", "Deaths", "Ping"],
 			"rows": rows,
 		}
 	]
@@ -872,17 +862,19 @@ func _build_board() -> void:
 	_board.visible = false
 	_xp_card = XpSummary.new()
 	_xp_card.visible = false
-	# Right of the results scoreboard, clear of the ammo cluster.
-	_xp_card.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_xp_card.offset_left = -372.0
-	_xp_card.offset_right = -32.0
-	_xp_card.offset_top = 222.0
-	_xp_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	# Under the results scoreboard, between the HUD's bottom corners.
+	_xp_card.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_xp_card.offset_left = -XpSummary.WIDTH / 2.0
+	_xp_card.offset_right = XpSummary.WIDTH / 2.0
+	_xp_card.offset_top = -236.0
+	_xp_card.offset_bottom = -58.0
+	_xp_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_root.add_child(_xp_card)
 
 
 func _on_match_finished(summary: Dictionary) -> void:
 	_xp_card.show_summary(summary)
+	_xp_bonus = int(summary.get("score", 0)) + int(summary.get("bonus", 0))
 	_xp_ready = true
 
 
