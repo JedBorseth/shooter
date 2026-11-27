@@ -223,6 +223,33 @@ judged from the hit triangle's material name (`gravel_0`, `planks_1`,
 `tread_plate_0`), so maps and props sound right without hand tagging. A sprinting soldier's kit
 rattles under every stride.
 
+### Where the steps come from
+
+Every footstep is a real boot on a real surface, built by
+`tools/build_steps_and_hits.py` from CC0 Freesound recordings (fetched by a
+pinned SHA-256): it finds each step in a recording (a heel and toe less than
+0.22 s apart stay one step), keeps the cleanest and most typical ones, shared
+across a surface's recordings, and cleans, EQs, compresses, and levels each.
+Modern Call of Duty is the reference: a step is the boot's weight under the
+surface's texture, dry and close, never a click.
+
+| Set | Takes | From |
+| --- | --- | --- |
+| concrete | 8 | Shoes and cloth on concrete (a one-shot pack, step then cloth) |
+| metal | 8 | Boots on hollow metal, deep: a ship's deck |
+| wood | 8 | Boots on wooden floors and planks |
+| gravel, grass, dirt, tile | 8 each | Mountain and hiking boots on each |
+| carpet | 8 | Foley steps on carpet |
+| `player/step_gear` | 6 | A rifle rattled, harness straps, a carabiner |
+| `player/step_cloth` | 6 | Denim and cloth step foley |
+
+Each take is high-passed, run through a spectral gate against its own
+recording's floor and a downward expander, EQ'd for weight (about 140 Hz) and
+heel click, compressed, softly clipped 4 dB so a sharp heel does not poke out,
+faded, and set to its set's loudness (measured padded to 0.5 s): concrete,
+wood -25 LUFS, metal -24, gravel and tile -25.5, dirt -26, grass -27, carpet
+-29. These sit about 3 dB over the clicks they replaced.
+
 ## Bullets
 
 Snapshots say that another player fired, not where the round went, so the
@@ -249,7 +276,9 @@ hit, weapon)`; effects that want other players' tracers or impacts connect to it
 
 `tools/build_world_audio.py bullets` synthesizes the cracks, whizzes, and
 ricochets, and impact takes 4 to 8 for every surface over the recorded takes 1
-to 3.
+to 3. The flesh set is real: `tools/build_steps_and_hits.py` layers a punch's
+slap, a fist into dough (the wet part), and a low punch's thud, lined up on
+their onsets, into a short thwack (-22 LUFS).
 
 ## Room sound, occlusion, and direction
 
@@ -277,8 +306,11 @@ All in `acoustics.rs`, judged from where the listener (the current camera) is.
 - breathing after 2.5 s of sprinting, and recovery breaths after it for up to
   4 s; hurt breathing below 35% health; the held breath and release on a scope;
 - a heartbeat below 40% health, racing from one every 0.95 s to 0.55 s;
-- being hit (a soft thud and the kit jolted, at -10 dB; -14 dB for a hard
-  landing), and a body fall on death;
+- being hit, at -10 dB (-14 dB for a hard landing): a heavy kick into a body,
+  a punch's slap on top, and a fist into dough under it, layered from real
+  recordings by `tools/build_steps_and_hits.py`, cut to 0.18 s and softly
+  clipped so it lands as one tight punch with no boom or ring (-18 LUFS);
+- a body fall on death;
 - a jump's push-off and hands on a ledge when mantling;
 - the kit under each step (sprint and walk, none crouched or quiet) and cloth
   under each sprinting step.
@@ -286,8 +318,8 @@ All in `acoustics.rs`, judged from where the listener (the current camera) is.
 The HUD (`godot/scripts/hud.gd`) plays a dry tick for a hit, a struck-helmet
 ring for a headshot, and a thump with a short ding for a kill; a headshot kill
 plays the ring under the kill, so neither is lost. Medals chime
-(`score_feed.gd`). `tools/build_world_audio.py player` synthesizes all of these
-except the medal chime.
+(`score_feed.gd`). `tools/build_world_audio.py player` synthesizes the markers,
+heartbeat, breathing, death, jump, and mantle.
 
 ## Equipment and streaks
 
@@ -350,5 +382,8 @@ sounds.
   (three single shots, then a burst at the fire rate, through an approximation
   of the Weapons compressor and the limiter), several builds back to back, with
   loudness numbers. Every gunshot change goes to a person as a clip first.
+- `tools/build_steps_and_hits.py preview OUT --old DIR` renders listening clips
+  of the footsteps (walking, then sprinting with the kit, at the game's stride,
+  levels, and random pitch), being shot, and rounds into a body, old then new.
 - `godot/tests/weapon_foley_test.gd` writes every foley event with its time when
   `FOLEY_TRACE` names a file.
