@@ -99,5 +99,4 @@ MPFB 2 (MakeHuman for Blender, GPL-3.0) is used only as a build tool by `tools/b
 | --- | --- | --- | --- |
 | ProtonScatter 4.0 by HungryProton (`ca624412c657d469147b4ce464cee290df738a40`) | `godot/addons/proton_scatter/` | [Release 4.0](https://github.com/HungryProton/scatter/releases/tag/4.0) | MIT |
 | FuncGodot 2025.12 by the func-godot contributors (`169f2dd1461c0f166c81bf7e8c4fd6bce8af3a8a`) | `godot/addons/func_godot/` | [Release 2025.12](https://github.com/func-godot/func_godot_plugin/releases/tag/2025.12) | MIT |
-| Cyclops Level Builder 1.5.2 by Mark McKay (editor only) | `godot/addons/cyclops_level_builder/` | [blackears/cyclopsLevelBuilder](https://github.com/blackears/cyclopsLevelBuilder) | MIT |
 | Godot AI MCP 1.1.0 (editor only; its Node.js bridge is vendored with local changes in `tools/godot-mcp/`) | `godot/addons/godot_ai_mcp/` | [event-horizon-studio/godot-ai-mcp](https://github.com/event-horizon-studio/godot-ai-mcp) | MIT |

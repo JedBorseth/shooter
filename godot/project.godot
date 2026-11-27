@@ -39,7 +39,7 @@ window/vsync/vsync_mode=2
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/cyclops_level_builder/plugin.cfg", "res://addons/godot_ai_mcp/plugin.cfg", "res://addons/lightmap_baker/plugin.cfg", "res://addons/proton_scatter/plugin.cfg", "res://addons/func_godot/plugin.cfg")
+enabled=PackedStringArray("res://addons/godot_ai_mcp/plugin.cfg", "res://addons/lightmap_baker/plugin.cfg", "res://addons/proton_scatter/plugin.cfg", "res://addons/func_godot/plugin.cfg")
 
 [func_godot]
 
