@@ -74,9 +74,6 @@ use super::transport::{self, NetEvent};
 use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::{self, HitboxRig};
 use crate::player::FpsPlayer;
-use shooter_sim::camo::Camo;
-use shooter_sim::card::Card;
-use shooter_sim::cosmetics::Cosmetics;
 
 /// What the kill feed calls a knife kill.
 const KNIFE_NAME: &str = "Knife";
@@ -171,13 +168,6 @@ pub struct NetClient {
     ghosts: VecDeque<(Gd<HitboxRig>, f32)>,
     /// Everyone in the game, ourselves included.
     roster: Vec<RosterEntry>,
-    /// Our stats this match, as the server last sent them
-    /// (`shooter_sim::stats`).
-    match_stats: shooter_sim::stats::Stats,
-    /// What we ask to show (`set_cosmetics`), sent again on connecting.
-    cosmetics_wanted: Cosmetics,
-    /// What each player shows, as the server passed it on.
-    cosmetics: std::collections::HashMap<u8, Cosmetics>,
     match_phase: Option<Phase>,
     match_ends_at: Option<Tick>,
     /// Regulation, the second half, or overtime.
@@ -391,8 +381,6 @@ impl INode for NetClient {
                     transport::send_reliable(&mut peer, &class.encode());
                     let streaks = ClientMessage::Streaks(self.streak_choice);
                     transport::send_reliable(&mut peer, &streaks.encode());
-                    let cosmetics = ClientMessage::Cosmetics(self.cosmetics_wanted.clone());
-                    transport::send_reliable(&mut peer, &cosmetics.encode());
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
@@ -507,15 +495,6 @@ impl NetClient {
     /// Someone joined, left, or changed team or name.
     #[signal]
     fn roster_changed();
-
-    /// The server sent our match stats (`match_stats`).
-    #[signal]
-    fn stats_changed();
-
-    /// Player `id`'s prestige, calling card, or camos changed
-    /// (`cosmetics_of`).
-    #[signal]
-    fn cosmetics_changed(id: i32);
 
     /// The match phase or the team scores changed.
     #[signal]
@@ -1535,36 +1514,6 @@ impl NetClient {
         custom_dict(&self.custom)
     }
 
-    /// Our stats this match so far (stat key to count), as the server
-    /// counts them; the server sends them every few seconds while they
-    /// change, and once more as the match ends.
-    #[func]
-    fn match_stats(&self) -> VarDictionary {
-        crate::progression::counts_dictionary(&self.match_stats)
-    }
-
-    /// Asks to show `cosmetics`: `prestige`, `card` (a calling card key),
-    /// and `camos` (plain weapon key to camo key). The server checks it;
-    /// what it allows comes back as `cosmetics_changed`.
-    #[func]
-    fn set_cosmetics(&mut self, cosmetics: VarDictionary) {
-        self.cosmetics_wanted = cosmetics_from_dict(&cosmetics);
-        let message = ClientMessage::Cosmetics(self.cosmetics_wanted.clone());
-        self.send_reliable(&message);
-    }
-
-    /// What player `id` shows, as `set_cosmetics` takes it (empty before
-    /// the server says).
-    #[func]
-    fn cosmetics_of(&self, id: i32) -> VarDictionary {
-        let Ok(id) = u8::try_from(id) else {
-            return VarDictionary::new();
-        };
-        self.cosmetics
-            .get(&id)
-            .map_or_else(VarDictionary::new, cosmetics_to_dict)
-    }
-
     /// True once the server accepted us.
     #[func]
     fn is_joined(&self) -> bool {
@@ -1831,7 +1780,6 @@ impl NetClient {
             }
             GameEvent::Left { id } => {
                 self.roster.retain(|e| e.id != id);
-                self.cosmetics.remove(&id);
                 self.signals().roster_changed().emit();
             }
             GameEvent::Match {
@@ -1841,10 +1789,6 @@ impl NetClient {
                 score_limit,
                 period,
             } => {
-                if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
-                    // A new match counts its stats from nothing.
-                    self.match_stats.clear();
-                }
                 if matches!(phase, Phase::Lobby | Phase::Countdown) {
                     // Between matches there is no round, and no killcam.
                     self.set_round(None);
@@ -2086,21 +2030,6 @@ impl NetClient {
                 self.signals()
                     .aircraft_downed()
                     .emit(streak.key(), ours, by_me, to_godot(at));
-            }
-            GameEvent::Stats(stats) => {
-                self.match_stats = stats;
-                self.signals().stats_changed().emit();
-            }
-            GameEvent::Cosmetics { id, cosmetics } => {
-                if let Some(remote) = self.remotes.iter_mut().find(|r| r.id == id) {
-                    remote.node.bind_mut().set_cosmetics(&cosmetics);
-                }
-                let ours = Some(id) == self.player_id && self.playing.is_none();
-                if ours && let Some(player) = &mut self.player {
-                    player.bind_mut().set_cosmetics(&cosmetics);
-                }
-                self.cosmetics.insert(id, cosmetics);
-                self.signals().cosmetics_changed().emit(i32::from(id));
             }
             GameEvent::Streak(StreakEvent::Sky { orbit, up }) => {
                 let new = up
@@ -2586,15 +2515,6 @@ impl NetClient {
             return;
         };
         let playing = Playing::start(killcam, &self.tape, &mut parent, |id| self.killcam_copy(id));
-        // Our weapon rig plays the killer's weapon, in their camo.
-        let killer = self
-            .cosmetics
-            .get(&killcam.killer)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(player) = &mut self.player {
-            player.bind_mut().set_cosmetics(&killer);
-        }
         for remote in &mut self.remotes {
             remote.node.set_visible(false);
             remote.node.bind_mut().set_muted(true);
@@ -2611,13 +2531,8 @@ impl NetClient {
         };
         playing.stop();
         self.playing_kind = None;
-        let ours = self
-            .player_id
-            .and_then(|id| self.cosmetics.get(&id).cloned())
-            .unwrap_or_default();
         if let Some(player) = &mut self.player {
             player.bind_mut().set_killcam(None);
-            player.bind_mut().set_cosmetics(&ours);
         }
         for remote in &mut self.remotes {
             remote.node.set_visible(true);
@@ -2644,9 +2559,6 @@ impl NetClient {
                 copy.set_display_name(&entry.name);
             }
             copy.set_friendly(friendly);
-            if let Some(cosmetics) = self.cosmetics.get(&id) {
-                copy.set_cosmetics(cosmetics);
-            }
         }
         Some(node)
     }
@@ -2664,9 +2576,6 @@ impl NetClient {
         let mut parent = self.base().get_parent()?;
         parent.add_child(&node);
         node.bind_mut().set_display_name(&label);
-        if let Some(cosmetics) = self.cosmetics.get(&id) {
-            node.bind_mut().set_cosmetics(cosmetics);
-        }
         Some(node)
     }
 
@@ -2836,59 +2745,6 @@ fn ray_meets_body(
     let enter = t0.max(y0).max(0.0);
     let leave = t1.min(y1);
     (enter <= leave).then_some(enter)
-}
-
-/// Cosmetics from a dictionary (`NetClient.set_cosmetics`): `prestige`,
-/// `card` (key), and `camos` (plain weapon key to camo key). Unknown keys
-/// are left out.
-fn cosmetics_from_dict(d: &VarDictionary) -> Cosmetics {
-    let prestige = d
-        .get("prestige")
-        .and_then(|v| v.try_to::<i64>().ok())
-        .unwrap_or(0)
-        .clamp(0, i64::from(shooter_sim::progression::MAX_PRESTIGE)) as u8;
-    let card = d
-        .get("card")
-        .and_then(|v| v.try_to::<GString>().ok())
-        .and_then(|key| Card::by_key(&key.to_string()))
-        .unwrap_or_default();
-    let mut camos = Vec::new();
-    if let Some(map) = d
-        .get("camos")
-        .and_then(|v| v.try_to::<VarDictionary>().ok())
-    {
-        for (weapon, camo) in map.iter_shared() {
-            let (Ok(weapon), Ok(camo)) = (weapon.try_to::<GString>(), camo.try_to::<GString>())
-            else {
-                continue;
-            };
-            if let (Some(weapon), Some(camo)) = (
-                WeaponId::by_key(&weapon.to_string()),
-                Camo::by_key(&camo.to_string()),
-            ) && camo != Camo::NONE
-                && camos.len() < shooter_sim::cosmetics::MAX_CAMOS
-            {
-                camos.push((weapon.plain(), camo));
-            }
-        }
-    }
-    Cosmetics {
-        prestige,
-        card,
-        camos,
-    }
-}
-
-fn cosmetics_to_dict(cosmetics: &Cosmetics) -> VarDictionary {
-    let mut d = VarDictionary::new();
-    d.set("prestige", i64::from(cosmetics.prestige));
-    d.set("card", cosmetics.card.key());
-    let mut camos = VarDictionary::new();
-    for (weapon, camo) in &cosmetics.camos {
-        camos.set(weapon.def().key.as_str(), camo.key());
-    }
-    d.set("camos", &camos);
-    d
 }
 
 /// A custom game's settings as GDScript reads them (`NetClient.custom_settings`).

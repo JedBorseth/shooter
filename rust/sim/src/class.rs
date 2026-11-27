@@ -49,7 +49,7 @@ pub const TACTICALS: u8 = 2;
 /// Perks a tier's slot takes, and with that tier's Perk Greed.
 pub const PERKS_PER_TIER: u8 = 1;
 pub const GREED_PERKS_PER_TIER: u8 = 2;
-/// Custom class slots a player has (Black Ops 2's five, before prestige).
+/// Custom class slots a player has (Black Ops 2's five).
 pub const CUSTOM_CLASSES: usize = 5;
 
 /// A wildcard: a point spent to bend one slot's rule.

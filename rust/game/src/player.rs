@@ -1474,12 +1474,6 @@ impl FpsPlayer {
         self.input_enabled && self.killcam.is_none()
     }
 
-    /// Our first-person weapons wear `cosmetics`' camos: ours, or a
-    /// killcam's killer's while it plays.
-    pub(crate) fn set_cosmetics(&mut self, cosmetics: &shooter_sim::cosmetics::Cosmetics) {
-        self.viewmodel.bind_mut().set_cosmetics(cosmetics);
-    }
-
     /// Online: shows a killcam's frame (the killer's eyes and weapon), or
     /// with `None` goes back to our own view. Our fallen body hides while
     /// the killcam's own copy of us is drawn.

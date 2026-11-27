@@ -6,8 +6,7 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_weapons.gd
 ## Optional: MAP (main, the default), WEAPONS (for example
-## `m4,ak47+reddot`), PARTS (`first,third,racks`, default all three), and
-## CAMO (a camo key, `gold`: every weapon wears it).
+## `m4,ak47+reddot`), and PARTS (`first,third,racks`, default all three).
 
 const WEAPONS := [
 	"m4",
@@ -76,22 +75,8 @@ func _run() -> void:
 	quit()
 
 
-## Paints the CAMO camo on every weapon view under `node`.
-func _paint(node: Node) -> void:
-	var camo := OS.get_environment("CAMO")
-	if camo.is_empty():
-		return
-	for view: Node in node.find_children("*", "WeaponView", true, false):
-		view.call(&"apply_camo", camo)
-
-
-func _camo_tag() -> String:
-	var camo := OS.get_environment("CAMO")
-	return "" if camo.is_empty() else "_" + camo
-
-
 func _first_person(player: FpsPlayer, weapon: String) -> void:
-	var tag := "%s_%s%s" % [_map, weapon.replace("+", "_"), _camo_tag()]
+	var tag := "%s_%s" % [_map, weapon.replace("+", "_")]
 	# Sidearms go in the second slot (the M1911 is already there).
 	var path := "res://data/weapons/%s.ron" % weapon.get_slice("+", 0)
 	var slot := (
@@ -106,7 +91,6 @@ func _first_person(player: FpsPlayer, weapon: String) -> void:
 	await _sixtieths(2)
 	Input.action_release(slot)
 	player.refill_all_ammo()
-	_paint(player)
 	await _sixtieths(80)
 	if player.weapon_key() != weapon:
 		push_error("capture_weapons: holding `%s`, not `%s`" % [player.weapon_key(), weapon])
@@ -167,10 +151,8 @@ func _third_person(level: Node, player: FpsPlayer, weapons: Array) -> void:
 		for frame in 45:
 			hero.drive({"weapon": weapon, "yaw": -0.5, "pitch": 0.0}, 1.0 / 60.0)
 			await process_frame
-		_paint(hero)
-		await process_frame
 		camera.make_current()
-		await _shot("%s_%s%s_6third" % [_map, weapon.replace("+", "_"), _camo_tag()])
+		await _shot("%s_%s_6third" % [_map, weapon.replace("+", "_")])
 		far.look_at_from_position(base + Vector3(3.5, 1.7, 7.0), base + Vector3(0, 1.1, 0))
 		far.make_current()
 		await _shot("%s_%s_7third_far" % [_map, weapon.replace("+", "_")])

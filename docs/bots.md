@@ -54,9 +54,6 @@ Counter-UAV, and the Care Package (`BOT_STREAKS`), and calls a streak as
 soon as it holds one it can use. Bots go for a landed Care Package, their
 own within 40 m and anyone's within 15 m, and hold use on it. See [scorestreaks.md](scorestreaks.md).
 
-**Cosmetics.** Each bot shows a low prestige (0 to 3) and a career calling
-card, fixed by its id (`bot_cosmetics`).
-
 ## Difficulty
 
 Black Ops 2 has four levels (`bot_set_difficulty`); this game has three

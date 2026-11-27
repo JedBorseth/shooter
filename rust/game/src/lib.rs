@@ -9,7 +9,6 @@ mod audio;
 mod body;
 mod build_info;
 mod bullets;
-mod camo_look;
 mod character;
 mod convert;
 mod effects;

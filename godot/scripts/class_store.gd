@@ -8,11 +8,6 @@ extends RefCounted
 ##
 ## The server checks every class it is sent; this only keeps what the
 ## player made between sessions.
-##
-## A class also names the camo on each of its weapons (`primary_camo`,
-## `secondary_camo`, camo keys), and the store keeps the calling card the
-## player shows (`card`). `cosmetics` gives both, with the prestige, as
-## `NetClient.set_cosmetics` takes them (docs/progression.md).
 
 const PATH := "user://classes.cfg"
 const HEADLESS_PATH := "user://headless_classes.cfg"
@@ -29,8 +24,6 @@ static var _custom: Array[Dictionary] = []
 static var _selected := "default:0"
 ## The scorestreaks to bring (keys), shared by every class as in Black Ops 2.
 static var _streaks := PackedStringArray()
-## The calling card shown (a key, `Progression.cards`).
-static var _card := "default"
 static var _loaded := false
 
 
@@ -44,33 +37,6 @@ static func set_streaks(keys: PackedStringArray) -> void:
 	_load()
 	_streaks = keys.slice(0, 3)
 	save()
-
-
-## The calling card shown: its key, or "default" for one still locked.
-static func card() -> String:
-	_load()
-	return _card if Progression.card_unlocked(ProgressStore.totals(), _card) else "default"
-
-
-static func set_card(key: String) -> void:
-	_load()
-	_card = key
-	save()
-
-
-## What the player shows others with the selected class: the prestige,
-## the calling card, and the camo on each of the class's weapons (only
-## those unlocked), as `NetClient.set_cosmetics` takes them.
-static func cosmetics() -> Dictionary:
-	var entry := by_id(selected_id())
-	var totals := ProgressStore.totals()
-	var camos := {}
-	for slot: String in ["primary", "secondary"]:
-		var weapon := String(entry.get(slot, ""))
-		var camo := String(entry.get(slot + "_camo", "none"))
-		if weapon != "" and camo != "none" and Progression.camo_unlocked(totals, weapon, camo):
-			camos[weapon] = camo
-	return {"prestige": ProgressStore.prestige(), "card": card(), "camos": camos}
 
 
 ## The custom classes, loading them on first use.
@@ -173,7 +139,6 @@ static func save() -> void:
 		config.set_value("custom", str(i), _custom[i])
 	config.set_value("class", "selected", _selected)
 	config.set_value("class", "streaks", _streaks)
-	config.set_value("profile", "card", _card)
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
@@ -224,7 +189,6 @@ static func _load() -> void:
 				_streaks.append(key)
 	if not _valid_id(_selected):
 		_selected = "default:0"
-	_card = String(config.get_value("profile", "card", "default")) if err == OK else "default"
 
 
 static func _valid_id(id: String) -> bool:
@@ -250,8 +214,6 @@ static func _clean(value: Dictionary) -> Dictionary:
 		"tacticals",
 		"perks",
 		"wildcards",
-		"primary_camo",
-		"secondary_camo",
 	]:
 		var item: Variant = value.get(key)
 		if item == null:

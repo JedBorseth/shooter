@@ -52,7 +52,7 @@ These rules apply to every weapon and movement change.
 
 - **Movement:** Source-style acceleration at the 120 Hz tick, toggle sprint, slides and slide-cancels, mantles and vaults, ladders, mounting on cover, and Black Ops 2's prone with directional crawls that lie along slopes ([movement.md](movement.md)).
 - **Weapons:** fourteen guns in eight Black Ops 2 classes, each held to its class's time-to-kill band, with attachments, penetration, frags, flashbangs, smoke, and a knife on its own button ([weapons.md](weapons.md)).
-- **Create-a-Class and progression:** Pick 10 classes checked by the server, Black Ops 2's perks and wildcards, levels 1 to 55, challenges, camos, calling cards, and ten prestiges plus Master ([create-a-class.md](create-a-class.md), [progression.md](progression.md)).
+- **Create-a-Class and progression:** Pick 10 classes checked by the server, Black Ops 2's perks and wildcards, XP and levels 1 to 55 that unlock weapons and perks, and weapon kills that unlock attachments ([create-a-class.md](create-a-class.md), [progression.md](progression.md)).
 - **Modes:** Team Deathmatch, Free-for-all, Gun Game, Capture the Flag, Hardpoint, Domination, and Search and Destroy, with Call of Duty-style spawns ([modes.md](modes.md), [domination.md](domination.md), [search-and-destroy.md](search-and-destroy.md), [spawns.md](spawns.md)).
 - **Scorestreaks:** Black Ops 2's UAV, Counter-UAV, and Care Package, earned from score within a life ([scorestreaks.md](scorestreaks.md)).
 - **Bots:** navigation-mesh bots at three skills that play every mode's objective, after Black Ops 2's Combat Training bots, with a headless match bench to compare changes ([bots.md](bots.md)).

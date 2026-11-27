@@ -5,13 +5,9 @@
 //! and can be unit-tested without the engine.
 
 pub mod bot;
-pub mod camo;
-pub mod card;
 pub mod care_package;
-pub mod challenge;
 pub mod chat;
 pub mod class;
-pub mod cosmetics;
 pub mod ctf;
 pub mod custom;
 pub mod domination;
@@ -35,7 +31,6 @@ pub mod rng;
 pub mod scavenger;
 pub mod score;
 pub mod snd;
-pub mod stats;
 pub mod streak;
 pub mod tdm;
 pub mod weapon;

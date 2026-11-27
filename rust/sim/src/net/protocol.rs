@@ -21,11 +21,8 @@ use super::Tick;
 use super::bits::{BitReader, BitSink, BitSource, BitWriter, DecodeError, DecodeResult};
 use super::delta::{self, DeltaReader, DeltaWriter};
 use super::subtick;
-use crate::camo::Camo;
-use crate::card::Card;
 use crate::chat;
 use crate::class::{Attachments, Class, Gun, Wildcards};
-use crate::cosmetics::{Cosmetics, MAX_CAMOS};
 use crate::custom;
 use crate::domination;
 use crate::equipment;
@@ -41,7 +38,6 @@ use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::radar;
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
-use crate::stats::{self, Stats};
 use crate::streak::{self, Streak};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
@@ -285,9 +281,6 @@ pub enum ClientMessage {
     Streaks(streak::Loadout),
     /// Call in a held `streak` (the first held one of its kind).
     UseStreak(Streak),
-    /// What we show others: prestige, calling card, and camos
-    /// (`crate::cosmetics`). Sent with the class; the server checks it.
-    Cosmetics(Cosmetics),
     /// In the lobby: move us to the other team. The server ignores it once the match counts down.
     SwitchTeam,
 }
@@ -457,14 +450,6 @@ pub enum GameEvent {
     Scavenger(ScavengerEvent),
     /// Scorestreaks (`crate::streak`).
     Streak(StreakEvent),
-    /// To one player, every couple of seconds while they change and at the
-    /// end of the match: their stats this match (`crate::stats`), which
-    /// their game adds to their career and checks challenges against.
-    Stats(Stats),
-    /// To everyone, when it changes and on joining for everyone already
-    /// there: what player `id` shows (`crate::cosmetics`), as the server
-    /// allows it.
-    Cosmetics { id: u8, cosmetics: Cosmetics },
 }
 
 /// Scorestreaks' news.
@@ -1268,11 +1253,6 @@ impl ClientMessage {
                 w.bits(1, MORE_TAG_BITS);
                 write_streak(&mut w, *streak);
             }
-            ClientMessage::Cosmetics(cosmetics) => {
-                w.bits(7, TAG_BITS);
-                w.bits(3, MORE_TAG_BITS);
-                write_cosmetics(&mut w, cosmetics);
-            }
             ClientMessage::SwitchTeam => {
                 w.bits(7, TAG_BITS);
                 w.bits(4, MORE_TAG_BITS);
@@ -1339,7 +1319,6 @@ impl ClientMessage {
             7 => match r.bits(MORE_TAG_BITS)? {
                 0 => Ok(ClientMessage::Streaks(read_loadout(&mut r)?)),
                 1 => Ok(ClientMessage::UseStreak(read_streak(&mut r)?)),
-                3 => Ok(ClientMessage::Cosmetics(read_cosmetics(&mut r)?)),
                 4 => Ok(ClientMessage::SwitchTeam),
                 _ => Err(DecodeError::Invalid("client message tag")),
             },
@@ -1991,24 +1970,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(STREAK_EVENT_TAG, EVENT_TAG_BITS);
             write_streak_event(w, event);
         }
-        GameEvent::Cosmetics { id, cosmetics } => {
-            w.bits(COSMETICS_EVENT_TAG, EVENT_TAG_BITS);
-            w.u8(*id);
-            write_cosmetics(w, cosmetics);
-        }
-        GameEvent::Stats(stats) => {
-            w.bits(STATS_EVENT_TAG, EVENT_TAG_BITS);
-            let entries: Vec<(&String, &u32)> = stats
-                .iter()
-                .filter(|(key, _)| stats::valid_key(key))
-                .take(stats::MAX_MATCH_KEYS)
-                .collect();
-            w.varint(entries.len() as u32);
-            for (key, count) in entries {
-                write_string(w, key, stats::MAX_KEY_LEN);
-                w.varint(*count);
-            }
-        }
         GameEvent::Scavenger(event) => {
             w.bits(23, EVENT_TAG_BITS);
             match *event {
@@ -2458,69 +2419,13 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             _ => return Err(DecodeError::Invalid("scavenger event")),
         })),
         STREAK_EVENT_TAG => Ok(GameEvent::Streak(read_streak_event(r)?)),
-        COSMETICS_EVENT_TAG => Ok(GameEvent::Cosmetics {
-            id: r.u8()?,
-            cosmetics: read_cosmetics(r)?,
-        }),
-        STATS_EVENT_TAG => {
-            let len = r.varint()? as usize;
-            if len > stats::MAX_MATCH_KEYS {
-                return Err(DecodeError::Invalid("stats length"));
-            }
-            let mut out = Stats::new();
-            for _ in 0..len {
-                let key = read_string(r, stats::MAX_KEY_LEN)?;
-                if !stats::valid_key(&key) {
-                    return Err(DecodeError::Invalid("stat key"));
-                }
-                out.insert(key, r.varint()?);
-            }
-            Ok(GameEvent::Stats(out))
-        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
 
 const STREAK_EVENT_TAG: u32 = 24;
-const STATS_EVENT_TAG: u32 = 25;
 /// Bits for a [`StreakEvent`]'s tag; room for sixteen.
 const STREAK_TAG_BITS: u32 = 4;
-const COSMETICS_EVENT_TAG: u32 = 26;
-/// Bits for a prestige (0 to `progression::MAX_PRESTIGE`).
-const PRESTIGE_BITS: u32 = 4;
-/// Bits for a camo code (`crate::camo`).
-const CAMO_BITS: u32 = 5;
-
-fn write_cosmetics(w: &mut BitWriter, cosmetics: &Cosmetics) {
-    w.bits(u32::from(cosmetics.prestige.min(15)), PRESTIGE_BITS);
-    w.u8(cosmetics.card.0);
-    let camos = &cosmetics.camos[..cosmetics.camos.len().min(MAX_CAMOS)];
-    w.bits(camos.len() as u32, 3);
-    for (weapon, camo) in camos {
-        write_weapon(w, *weapon);
-        w.bits(u32::from(camo.0.min(31)), CAMO_BITS);
-    }
-}
-
-fn read_cosmetics(r: &mut BitReader) -> DecodeResult<Cosmetics> {
-    let prestige = r.bits(PRESTIGE_BITS)? as u8;
-    let card = Card::from_code(r.u8()?).ok_or(DecodeError::Invalid("card"))?;
-    let count = r.bits(3)? as usize;
-    if count > MAX_CAMOS {
-        return Err(DecodeError::Invalid("camo count"));
-    }
-    let mut camos = Vec::with_capacity(count);
-    for _ in 0..count {
-        let weapon = read_weapon(r)?;
-        let camo = Camo::from_code(r.bits(CAMO_BITS)? as u8).ok_or(DecodeError::Invalid("camo"))?;
-        camos.push((weapon, camo));
-    }
-    Ok(Cosmetics {
-        prestige,
-        card,
-        camos,
-    })
-}
 /// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
 /// [`StreakEvent::Sky`] does.
 const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
@@ -4992,20 +4897,6 @@ mod tests {
                 headshot: false,
                 cause: KillCause::Equipment(equipment::Kind::Frag),
             },
-            GameEvent::Cosmetics {
-                id: 201,
-                cosmetics: Cosmetics {
-                    prestige: 3,
-                    card: Card(2),
-                    camos: vec![(WeaponId::expect("ak47"), Camo::FINAL)],
-                },
-            },
-            GameEvent::Stats(
-                [("kills", 12), ("w.m4.hs", 3), ("time", 600)]
-                    .into_iter()
-                    .map(|(k, v)| (k.to_owned(), v))
-                    .collect(),
-            ),
             GameEvent::Blast {
                 owner: Some(3),
                 shot: 41,
@@ -5483,14 +5374,6 @@ mod tests {
             ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,
             ClientMessage::SwitchTeam,
-            ClientMessage::Cosmetics(Cosmetics {
-                prestige: 11,
-                card: Card(5),
-                camos: vec![
-                    (WeaponId::expect("m4"), Camo::GOLD),
-                    (WeaponId::expect("pdw9"), Camo(3)),
-                ],
-            }),
             ClientMessage::Streaks(streak::Loadout::default()),
             ClientMessage::Streaks(streak::Loadout([None, Some(Streak::CounterUav), None])),
             ClientMessage::UseStreak(Streak::CounterUav),

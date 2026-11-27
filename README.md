@@ -98,7 +98,7 @@ The title menu (`godot/scripts/title_screen.gd`) groups its routes:
 - **Vs bots:** Team Deathmatch, Gun Game, Free-for-all, Capture the Flag, Hardpoint, Domination, and Search and Destroy. Each opens a setup card (map, team size or player count, bot skill, limits, and custom game rules), then starts a dedicated server in the background and joins it.
 - **Online:** Join Server (a dedicated server, by its address).
 - **Practice:** Testing Area (the training range) and Free Roam (walk any multiplayer map alone).
-- **Career** (challenges, camos, combat record), **Options**, and **Quit**.
+- **Options** and **Quit**.
 
 ### Modes
 
@@ -128,7 +128,7 @@ Search and Destroy plays on Breakwater. Each map's layout, objectives, and build
 
 - **Create-a-Class:** Black Ops 2's Pick 10: two weapons, up to two attachments (three with a wildcard), grenades, three perk tiers, and wildcards; weapons, and custom classes themselves, unlock with level ([docs/create-a-class.md](docs/create-a-class.md)).
 - **Scorestreaks:** UAV, Counter-UAV, and Care Package, with a minimap ([docs/scorestreaks.md](docs/scorestreaks.md)).
-- **Progression:** XP and 55 levels, prestige, challenges, weapon camos, calling cards, and a career record ([docs/progression.md](docs/progression.md)).
+- **Progression:** XP and 55 levels, with level and weapon-kill unlocks ([docs/progression.md](docs/progression.md)).
 - **Killcams:** the killer's view after a death, a round-winning killcam in Search and Destroy, and the final killcam at the end of a match ([docs/killcam.md](docs/killcam.md)).
 
 ### Online
@@ -261,7 +261,7 @@ Playing:
 - [weapons.md](docs/weapons.md): firing, recoil, aiming, reloads, equipment, and each class's time-to-kill band.
 - [settings.md](docs/settings.md): every setting, its default, and the Call of Duty option it follows.
 - [create-a-class.md](docs/create-a-class.md): Pick 10 classes, attachments, perks, wildcards, and unlocks.
-- [progression.md](docs/progression.md): XP, levels, prestige, challenges, camos, calling cards, and the career record.
+- [progression.md](docs/progression.md): XP and levels.
 - [scorestreaks.md](docs/scorestreaks.md): the streaks, how they are earned and used, and the minimap.
 - [killcam.md](docs/killcam.md): respawn, round-winning, and final killcams, and their Call of Duty timings.
 

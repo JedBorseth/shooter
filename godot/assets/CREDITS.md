@@ -20,7 +20,6 @@ MPFB 2 (MakeHuman for Blender, GPL-3.0) is used only as a build tool by `tools/b
 | The M870 (`tools/weapon_m870.py`), the SG-12 on the M870's receiver, trigger group, and stock (`tools/weapon_sg12.py`), the RL-4 and its rocket (`tools/weapon_rl4.py`), and the red dot and ACOG housings (`tools/weapon_optics.py`), modelled from real dimensions in Blender and painted by `tools/weapon_finish.py`; the cartridge texture, tritium glow, optics finish, lens, fired cases, suppressor, and foregrip, made by `tools/build_weapons.py` | `weapons/m870/*`, `weapons/sg12/*`, `weapons/rl4/*`, `weapons/optics/*`, `weapons/shared/*`, `weapons/suppressor/*`, `weapons/foregrip/*` | This repository | CC0 |
 | Combat knife, modelled in Blender by `tools/build_knife.py` | `weapons/knife/knife.glb` | This repository | CC0 |
 | Frag grenade (M67 pattern), flashbang (M84 pattern), and smoke grenade (M18 pattern), modelled in Blender by `tools/build_grenade.py` | `equipment/frag/`, `equipment/flash/`, `equipment/smoke/` | This repository | CC0 |
-| Weapon camo patterns (our own designs), painted by `tools/build_camos.py` | `camos/*.png` | This repository | CC0 |
 | Weapon silhouettes for the HUD and menus, rendered from the weapon models by `godot/tools/weapon_icons.gd` | `ui/weapons/*.png` | This repository | CC0 |
 
 ### Characters

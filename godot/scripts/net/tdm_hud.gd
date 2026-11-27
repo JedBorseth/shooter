@@ -429,12 +429,12 @@ func feed_lines() -> PackedStringArray:
 func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var parts := []
 	if killer != victim and killer >= 0:
-		parts.append_array(KillFeed.named(client, killer, _team_colour(killer)))
+		parts.append([client.name_of(killer), _team_colour(killer)])
 	var key := _weapon_key(weapon)
 	parts.append({"icon": key, "name": weapon.to_upper()})
 	if headshot:
 		parts.append({"headshot": true})
-	parts.append_array(KillFeed.named(client, victim, _team_colour(victim)))
+	parts.append([client.name_of(victim), _team_colour(victim)])
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
 	if victim == me and killer != victim and killer >= 0:
@@ -615,8 +615,6 @@ func _refresh_board() -> void:
 						# In Search and Destroy the dead sit out the round.
 						"faint": snd and not entry.alive,
 						"tag": "BOT" if entry.bot else "",
-						"prestige": KillFeed.prestige_of(client, int(entry.id)),
-						"card": KillFeed.card_of(client, int(entry.id)),
 					}
 				)
 			)
@@ -676,8 +674,6 @@ func _refresh_ladder_board() -> void:
 					],
 					"me": entry.me,
 					"tag": "BOT" if entry.bot else "",
-					"prestige": KillFeed.prestige_of(client, int(entry.id)),
-					"card": KillFeed.card_of(client, int(entry.id)),
 				}
 			)
 		)

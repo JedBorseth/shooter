@@ -2,8 +2,7 @@ extends PanelContainer
 ## The end-of-match XP card, beside the results scoreboard: the score made,
 ## the match bonus, the total, and the level bar filling from where the
 ## match started to where it ended, as Call of Duty's after-match screen
-## does. Challenges the match completed pay their XP on a line of their
-## own and are listed by name with what they awarded. A level reached says
+## does. A level reached says
 ## so and lists what it unlocked; weapons used show how far their next
 ## attachment is. Filled by `show_summary` with
 ## `match_xp.gd`'s summary.
@@ -14,8 +13,6 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 ## Seconds before the bar starts to fill, and how long it takes.
 const FILL_DELAY := 0.6
 const FILL_SECONDS := 1.6
-## Challenges listed by name; the rest are counted.
-const MAX_CHALLENGE_LINES := 4
 
 var _rows: VBoxContainer
 var _level_label: Label
@@ -86,21 +83,7 @@ func show_summary(summary: Dictionary) -> void:
 	_rows.add_child(_row("Score", _number(score), 17, MenuStyle.TEXT))
 	var bonus_name := "Match bonus  ·  win" if outcome == "win" else "Match bonus"
 	_rows.add_child(_row(bonus_name, "+" + _number(bonus), 17, MenuStyle.TEXT))
-	var challenge_xp := int(summary.get("challenge_xp", 0))
-	if challenge_xp > 0:
-		_rows.add_child(_row("Challenges", "+" + _number(challenge_xp), 17, MenuStyle.TEXT))
-	_rows.add_child(
-		_row("Total", "+" + _number(score + bonus + challenge_xp), 22, UiTheme.ROUTE_LIGHT)
-	)
-
-	var challenges: Array = summary.get("challenges", [])
-	if not challenges.is_empty():
-		_extras.add_child(_heading("CHALLENGES COMPLETE"))
-		for id: String in challenges.slice(0, MAX_CHALLENGE_LINES):
-			_extras.add_child(_line(_challenge_line(id), MenuStyle.TEXT))
-		if challenges.size() > MAX_CHALLENGE_LINES:
-			var more := challenges.size() - MAX_CHALLENGE_LINES
-			_extras.add_child(_line("and %d more" % more, MenuStyle.TEXT_DIM))
+	_rows.add_child(_row("Total", "+" + _number(score + bonus), 22, UiTheme.ROUTE_LIGHT))
 
 	var unlocks: Array = summary.get("unlocks", [])
 	if not unlocks.is_empty():
@@ -157,24 +140,6 @@ func _show_xp(xp: int) -> void:
 		_bar.max_value = 1
 		_bar.value = 1
 		_xp_label.text = "Top level"
-
-
-## A completed challenge as "M4A1 Headshots II  ·  Dune camo".
-static func _challenge_line(id: String) -> String:
-	var challenge := Progression.challenge(id)
-	if challenge.is_empty():
-		return id
-	var group: Dictionary = challenge.group
-	var text := String(challenge.name)
-	if String(group.kind) in ["weapon", "mode", "streak"]:
-		text = "%s %s" % [String(group.label), text]
-	var reward: Dictionary = challenge.reward
-	match String(reward.kind):
-		"camo":
-			text += "  ·  %s camo" % String(reward.name)
-		"card":
-			text += "  ·  %s card" % String(reward.name)
-	return text
 
 
 ## The next attachment the weapon's kills will unlock, as "Grip in 8".

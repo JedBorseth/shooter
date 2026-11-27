@@ -64,7 +64,7 @@ where it did.
 The client draws the replay with its own copies of the players, so the live
 ones keep following the match underneath, hidden and silent. The killer is
 drawn from their eyes: their body hides, and the local first-person rig
-plays their weapon, camo, aim, reloads, switches, shots, and knife
+plays their weapon, aim, reloads, switches, shots, and knife
 (`ViewDriver`). Grenades fly and burst in the replay. Bodies that fall in it
 go when it ends, and bodies already lying in the world hide while it plays.
 
@@ -75,11 +75,9 @@ While a killcam plays, the rest of the HUD steps aside and
 
 - the title at the top centre, with a thin bar filling as the replay plays;
 - the killer's card at the bottom centre: their name in the colour we see
-  them in, their prestige emblem, their calling card, the weapon and
-  attachment, and a headshot mark; an ending killcam also names the victim;
+  them in, the weapon and attachment, and a headshot mark; an ending
+  killcam also names the victim;
 - "[F] Skip" under the card, on a respawn killcam only.
-
-![A killcam's killer card on the killer's calling card](media/calling-card-killcam.jpg)
 
 Call of Duty shows the same parts: a KILLCAM title, the killer's name card
 with the weapon and attachments, and the skip prompt.

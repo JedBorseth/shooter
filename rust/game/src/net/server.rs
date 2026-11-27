@@ -70,7 +70,6 @@ use shooter_sim::bot::Skill;
 use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::class::{self, Class};
-use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::custom;
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
@@ -97,7 +96,6 @@ use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::progression::Outcome;
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -106,7 +104,6 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
-use shooter_sim::stats;
 use shooter_sim::streak::{self, Loadout, Sky, Streak, StreakState};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
@@ -120,7 +117,6 @@ use super::bots::{
     ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
 };
 use super::match_log::{MatchLog, RoundLog};
-use super::match_share::MatchShare;
 use super::query::QueryResponder;
 use super::snd_plan::{Intel, SndPlan};
 use super::transport::{self, NetEvent};
@@ -140,9 +136,6 @@ const CLIENT_ONLY_NODES: [&str; 5] = ["Player", "HUD", "PauseMenu", "Targets", "
 
 /// Seconds a new connection has to say hello.
 const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
-/// How often a player's match stats go to their game while they change:
-/// often enough for a challenge's popup to follow the kill that finished it.
-const STATS_INTERVAL_TICKS: Tick = 2 * TICK_RATE;
 /// A little more than the client's weapon rack reach (`FpsPlayer::interact_distance`).
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
@@ -446,8 +439,6 @@ struct ClientSlot {
     limit: PacketLimit,
     /// Disconnected for abuse: whatever it still sends is ignored.
     kicked: bool,
-    /// What the server lets them show (`shooter_sim::cosmetics`).
-    cosmetics: Cosmetics,
 }
 
 struct Avatar {
@@ -493,8 +484,6 @@ struct Avatar {
     streak_wanted: Loadout,
     streaks: StreakState,
     streak_seen: u32,
-    /// This match's playing time and stats.
-    share: MatchShare,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -820,7 +809,6 @@ impl INode3D for NetServer {
         if self.tick >= self.next_scoreboard {
             self.broadcast_scoreboard();
         }
-        self.send_stats(false);
         self.send_events();
         host.flush();
         drop(net_out);
@@ -1818,7 +1806,6 @@ impl NetServer {
                     chat: ChatLimiter::default(),
                     limit: PacketLimit::new(self.tick),
                     kicked: false,
-                    cosmetics: Cosmetics::default(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -1828,14 +1815,6 @@ impl NetServer {
                 let client = self.clients.swap_remove(index);
                 if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
-                    if self.match_state.phase == Phase::Playing && self.stats_on() {
-                        let tick = self.tick;
-                        let mode = self.game.key();
-                        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                            let seconds = avatar.share.seconds(tick);
-                            avatar.share.stats.finish(mode, seconds, None);
-                        }
-                    }
                     self.despawn_avatar(id);
                     self.broadcast_event(&GameEvent::Left { id });
                     self.next_scoreboard = self.tick;
@@ -1946,32 +1925,7 @@ impl NetServer {
         // Everyone already here, then the newcomer for everyone.
         let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
         self.clients[index].outbox.extend(roster);
-        let mut shown: Vec<GameEvent> = self
-            .clients
-            .iter()
-            .filter(|c| c.cosmetics != Cosmetics::default())
-            .filter_map(|c| {
-                c.player.map(|id| GameEvent::Cosmetics {
-                    id,
-                    cosmetics: c.cosmetics.clone(),
-                })
-            })
-            .collect();
-        shown.extend(
-            self.avatars
-                .iter()
-                .filter(|a| a.bot)
-                .map(|a| GameEvent::Cosmetics {
-                    id: a.id,
-                    cosmetics: bot_cosmetics(a.id),
-                }),
-        );
-        self.clients[index].outbox.extend(shown);
         self.spawn_avatar(id, false, &name, class, None);
-        if self.clients[index].cosmetics != Cosmetics::default() {
-            let cosmetics = self.clients[index].cosmetics.clone();
-            self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
-        }
         let streaks = self.clients[index].streaks;
         if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
             avatar.streak_wanted = streaks;
@@ -2070,7 +2024,6 @@ impl NetServer {
                     let _ = self.use_streak(id, streak);
                 }
             }
-            ClientMessage::Cosmetics(cosmetics) => self.apply_cosmetics(index, &cosmetics),
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
             ClientMessage::SwitchTeam => self.switch_team(index),
@@ -2109,82 +2062,6 @@ impl NetServer {
         {
             avatar.streak_wanted = loadout;
         }
-    }
-
-    /// Takes the cosmetics the client asked for, as far as the server allows
-    /// them. Everyone hears of them once the player is in.
-    fn apply_cosmetics(&mut self, index: usize, wanted: &Cosmetics) {
-        let checked = wanted.checked();
-        if checked == self.clients[index].cosmetics {
-            return;
-        }
-        self.clients[index].cosmetics = checked.clone();
-        if let Some(id) = self.clients[index].player {
-            self.broadcast_event(&GameEvent::Cosmetics {
-                id,
-                cosmetics: checked,
-            });
-        }
-    }
-
-    /// How the match that `winner` won ended for player `id`.
-    fn outcome_for(&self, id: u8, winner: Option<u8>) -> Outcome {
-        let won = if self.game.free_for_all() {
-            winner == Some(id)
-        } else {
-            self.avatars
-                .iter()
-                .find(|a| a.id == id)
-                .is_some_and(|a| winner == Some(a.team))
-        };
-        match winner {
-            None => Outcome::Draw,
-            Some(_) if won => Outcome::Win,
-            Some(_) => Outcome::Loss,
-        }
-    }
-
-    /// The match is over: each player's stats take its result and time, and
-    /// go to their game (which shows the challenges they finished).
-    fn finish_stats(&mut self, winner: Option<u8>) {
-        if !self.stats_on() {
-            return;
-        }
-        let ids: Vec<u8> = self.clients.iter().filter_map(|c| c.player).collect();
-        let mode = self.game.key();
-        for id in ids {
-            let outcome = self.outcome_for(id, winner);
-            let tick = self.tick;
-            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                let seconds = avatar.share.seconds(tick);
-                avatar.share.stats.finish(mode, seconds, Some(outcome));
-            }
-        }
-        self.send_stats(true);
-    }
-
-    /// Sends each player their match stats when they changed: at most every
-    /// [`STATS_INTERVAL_TICKS`], or now with `now`.
-    fn send_stats(&mut self, now: bool) {
-        let tick = self.tick;
-        let mut out = Vec::new();
-        for avatar in &mut self.avatars {
-            if avatar.bot || (!now && tick < avatar.share.stats_sent + STATS_INTERVAL_TICKS) {
-                continue;
-            }
-            if avatar.share.stats.take_changed() {
-                avatar.share.stats_sent = tick;
-                out.push((avatar.id, avatar.share.stats.stats().clone()));
-            }
-        }
-        for (id, stats) in out {
-            self.send_event(id, GameEvent::Stats(stats));
-        }
-    }
-
-    /// Whether stats count now: while a match is played.
-    fn stats_on(&self) -> bool {
-        matches!(self.match_state.phase, Phase::Playing | Phase::Ended { .. })
     }
 
     /// The client skipped its killcam: it respawns as soon as the respawn
@@ -2329,21 +2206,9 @@ impl NetServer {
             streak_wanted: if bot { BOT_STREAKS } else { Loadout::default() },
             streaks: StreakState::default(),
             streak_seen: 0,
-            share: MatchShare::default(),
         });
-        if self.match_state.phase == Phase::Playing
-            && let Some(avatar) = self.avatars.last_mut()
-        {
-            avatar.share.start(self.tick);
-        }
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
-        if bot {
-            self.broadcast_event(&GameEvent::Cosmetics {
-                id,
-                cosmetics: bot_cosmetics(id),
-            });
-        }
         // Before a match the team starts together; during one, or without
         // teams, somewhere safe. In a Search and Destroy round, at their
         // side: joiners in a round's freeze play it, and later ones wait for
@@ -3501,15 +3366,6 @@ impl NetServer {
             return;
         }
         let shooter_side = self.side(shooter);
-        let shooter_id = shooter.id;
-        if self.recording_stats()
-            && let Some(avatar) = self
-                .avatars
-                .iter_mut()
-                .find(|a| a.id == shooter_id && !a.bot)
-        {
-            avatar.share.stats.shot(shot.weapon);
-        }
         let Some(shooter) = self.avatars.iter().find(|a| a.id == shot.shooter) else {
             return;
         };
@@ -4606,7 +4462,6 @@ impl NetServer {
                 self.hardpoint = HardpointState::new(&self.hardpoint_rules);
                 self.dom = DominationState::new(self.dom_points.len());
                 for avatar in &mut self.avatars {
-                    avatar.share.start(self.tick);
                     avatar.score = ScoreState::default();
                     avatar.progress = Progress::default();
                     avatar.hill = HillTime::default();
@@ -4656,7 +4511,6 @@ impl NetServer {
                         self.match_state.scores[1]
                     );
                 }
-                self.finish_stats(winner);
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
                     client.ready = true;
@@ -5112,7 +4966,6 @@ impl NetServer {
     /// streaks, runs the UAVs' sweeps, and sends off what has left.
     fn update_streaks(&mut self) {
         let on = self.streaks_on();
-        let record = self.recording_stats();
         let mut changed = Vec::new();
         for avatar in &mut self.avatars {
             let points = avatar.score.score.saturating_sub(avatar.streak_seen);
@@ -5122,12 +4975,7 @@ impl NetServer {
             }
             let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
             let loadout = avatar.streak_loadout.usable(self.roofed);
-            let earned = avatar.streaks.on_points(loadout, points, hardline);
-            if record && !avatar.bot {
-                for streak in earned {
-                    avatar.share.stats.streak_earned(streak);
-                }
-            }
+            avatar.streaks.on_points(loadout, points, hardline);
             changed.push(avatar.id);
         }
         for id in changed {
@@ -6342,83 +6190,15 @@ impl NetServer {
 
     /// Queues an event for one player's client (bots have none).
     fn send_event(&mut self, id: u8, event: GameEvent) {
-        if self.recording_stats() {
-            self.record_sent(id, &event);
-        }
         if let Some(client) = self.clients.iter_mut().find(|c| c.player == Some(id)) {
             client.outbox.push(event);
         }
     }
 
     fn broadcast_event(&mut self, event: &GameEvent) {
-        if let GameEvent::Kill {
-            killer,
-            victim,
-            weapon,
-            headshot,
-            cause,
-        } = *event
-            && self.recording_stats()
-        {
-            self.record_kill(killer, victim, weapon, headshot, cause);
-        }
         for client in &mut self.clients {
             if client.player.is_some() {
                 client.outbox.push(event.clone());
-            }
-        }
-    }
-
-    /// Whether players' stats count now: while a match is played.
-    fn recording_stats(&self) -> bool {
-        self.match_state.phase == Phase::Playing
-    }
-
-    /// Counts what an event to player `id` says about their match: their
-    /// hits, and the awards a score event paid.
-    fn record_sent(&mut self, id: u8, event: &GameEvent) {
-        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id && !a.bot) else {
-            return;
-        };
-        match event {
-            GameEvent::Hit {
-                victim,
-                damage,
-                killed,
-                ..
-            } if *victim != id => {
-                let held = avatar.predicted.state.combat.weapon().id;
-                avatar.share.stats.hit(held, *victim, *damage, *killed);
-            }
-            GameEvent::Score { awards, .. } => avatar.share.stats.awards(awards),
-            _ => {}
-        }
-    }
-
-    /// Counts a kill toward the killer's and the victim's stats.
-    fn record_kill(
-        &mut self,
-        killer: u8,
-        victim: u8,
-        weapon: WeaponId,
-        headshot: bool,
-        cause: protocol::KillCause,
-    ) {
-        for avatar in &mut self.avatars {
-            if avatar.bot {
-                continue;
-            }
-            if avatar.id == victim {
-                let held = avatar.predicted.state.combat.weapon().id;
-                avatar.share.stats.died(killer, victim, held);
-            } else if avatar.id == killer {
-                avatar.share.stats.kill(stats::KillFacts {
-                    victim,
-                    weapon,
-                    cause,
-                    headshot,
-                    perkless: avatar.class.perks.is_empty(),
-                });
             }
         }
     }
@@ -7175,19 +6955,4 @@ fn fallback_zones(spawns: &[SpawnPoint]) -> Vec<Zone> {
         center: center + Vec3::new(0.0, 1.5, 0.0),
         half_extents: Vec3::new(5.0, 2.0, 5.0),
     }]
-}
-
-/// What a bot shows: a low prestige and one of the career calling cards,
-/// fixed by its id, as Call of Duty's bots wear ranks and cards of their own.
-fn bot_cosmetics(id: u8) -> Cosmetics {
-    let roll = rng::hash(u32::from(id), 0xCA2D);
-    let cards = shooter_sim::card::Card::all()
-        .filter(|c| !c.key().starts_with("prestige_"))
-        .take(14)
-        .collect::<Vec<_>>();
-    Cosmetics {
-        prestige: (roll % 4) as u8,
-        card: cards[(roll / 4) as usize % cards.len()],
-        camos: Vec::new(),
-    }
 }

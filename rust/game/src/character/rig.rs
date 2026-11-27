@@ -19,7 +19,6 @@ use godot::classes::{
     AnimationTree, INode3D, MeshInstance3D, Node3D, PhysicsRayQueryParameters3D, Skeleton3D,
 };
 use godot::prelude::*;
-use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::hitbox::Activity;
 use shooter_sim::hitbox::action;
 use shooter_sim::hitbox::carry::{self, Carry};
@@ -336,8 +335,6 @@ pub struct SoldierRig {
     tree: Option<Gd<AnimationTree>>,
     poser: Option<Gd<SoldierPoser>>,
     weapon: Option<(WeaponId, Gd<WeaponView>)>,
-    /// What the player shows: the camo on each weapon they hold.
-    cosmetics: Cosmetics,
     applied_team: Option<Team>,
 
     frame: SoldierFrame,
@@ -716,16 +713,6 @@ impl SoldierRig {
     pub fn set_team_index(&mut self, team: i32) {
         self.team = team;
         self.apply_team();
-    }
-}
-
-impl SoldierRig {
-    /// What the player shows: the weapon in their hands wears its camo.
-    pub fn set_cosmetics(&mut self, cosmetics: &Cosmetics) {
-        self.cosmetics = cosmetics.clone();
-        if let Some((id, view)) = &mut self.weapon {
-            view.bind_mut().set_camo(cosmetics.camo_for(*id));
-        }
     }
 }
 
@@ -1882,7 +1869,6 @@ impl SoldierRig {
             return;
         };
         view.set_name("Weapon");
-        view.bind_mut().set_camo(self.cosmetics.camo_for(id));
         self.base_mut().add_child(&view);
         crate::effects::keep_decals_off(&view.clone().upcast());
         if let Some(poser) = &mut self.poser {

@@ -38,7 +38,6 @@ const ROUTES := {
 	"JoinServer": ["BY IP", "Join a dedicated server by its address."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"FreeRoam": ["ANY MAP", "Walk Breakwater or Warehouse on your own."],
-	"Career": ["", "Challenges, camos, and your combat record."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -60,7 +59,6 @@ func _ready() -> void:
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
 	%Options.pressed.connect(_open_options)
-	%Career.pressed.connect(open_career)
 	%Quit.pressed.connect(get_tree().quit)
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
@@ -129,24 +127,6 @@ func _open_options() -> void:
 			%Options.grab_focus()
 	)
 	options.open_options()
-
-
-## Opens the career screen (challenges and the combat record) over the menu.
-func open_career() -> void:
-	if _loading:
-		return
-	_close_tdm(false)
-	var career := Control.new()
-	career.name = "CareerMenu"
-	career.set_script(load("res://scripts/ui/career_menu.gd"))
-	$Margin.hide()
-	add_child(career)
-	career.back_requested.connect(
-		func() -> void:
-			career.queue_free()
-			$Margin.show()
-			%Career.grab_focus()
-	)
 
 
 func _open_join(message := "") -> void:

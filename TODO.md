@@ -50,7 +50,7 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - #276: Search and Destroy's charge beeps, its own explosion, and the planted sting.
 - #288: Gun Game's weapon-up and set-back stings, and halftime and overtime stings.
 - #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
-- #403: a sting for a challenge completed mid-match.
+- #403 (a sting for a challenge completed mid-match): close; challenges were cut.
 
 #417 (a command-line `--connect` without `--map` loads the server's map) is also open.
 

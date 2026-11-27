@@ -14,8 +14,6 @@ use godot::classes::{
 };
 use godot::global::randf_range;
 use godot::prelude::*;
-use shooter_sim::camo::Camo;
-use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::hitbox::carry::MagazinePose;
 use shooter_sim::rng;
 use shooter_sim::weapon::{Attachment, Attachments, LoadStage, WeaponId};
@@ -24,7 +22,6 @@ use godot::classes::light_3d::Param;
 
 use crate::acoustics::{self, AudioEnvironment};
 use crate::audio;
-use crate::camo_look;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
 use crate::character::poser::{Held, LadderLimbs};
@@ -671,12 +668,6 @@ pub struct WeaponView {
     /// the view was ready.
     attachments: Attachments,
     pending_attachments: Option<Attachments>,
-    /// The camo it wears (`set_camo`), and whether its materials are ready
-    /// to take one (after `ready`).
-    camo: Camo,
-    camo_ready: bool,
-    /// Third person: the materials a camo replaced.
-    camo_originals: Vec<camo_look::Original>,
     /// Where the left hand held the weapon before a foregrip moved it.
     grip_left_rest: Option<Vector3>,
     /// The back of a fitted ACOG's eyepiece along the sight line (view
@@ -869,8 +860,6 @@ impl INode3D for WeaponView {
             if let Some(pending) = self.pending_attachments.take() {
                 self.set_attachments(pending);
             }
-            self.camo_ready = true;
-            self.refresh_camo();
             return;
         }
         let shader = load::<Shader>(VIEWMODEL_SHADER);
@@ -901,8 +890,6 @@ impl INode3D for WeaponView {
         self.find_parts();
         self.add_foley();
         crate::effects::keep_decals_off(&self.base().clone().upcast());
-        self.camo_ready = true;
-        self.refresh_camo();
     }
 
     fn process(&mut self, delta: f64) {
@@ -949,15 +936,6 @@ impl WeaponView {
             .filter_map(Attachment::from_key)
             .fold(Attachments::NONE, Attachments::with);
         self.set_attachments(set);
-    }
-
-    /// Paints the camo with this key (`shooter_sim::camo`; "none" for the
-    /// factory finish). For tests and captures; the game paints the camo the
-    /// player's cosmetics name (`ViewmodelRig::set_cosmetics`,
-    /// `SoldierRig::set_cosmetics`).
-    #[func]
-    fn apply_camo(&mut self, key: GString) {
-        self.set_camo(Camo::by_key(&key.to_string()).unwrap_or(Camo::NONE));
     }
 }
 
@@ -1476,31 +1454,6 @@ impl WeaponView {
             self.set_lens_clip(self.eyepiece_z.is_some() || self.scope_eyepiece.y > 0.0);
         }
         crate::effects::keep_decals_off(&parts.upcast());
-        // The new parts wear the camo too.
-        self.refresh_camo();
-    }
-
-    /// Paints `camo` on the weapon (`camo_look`), its attachments included;
-    /// the factory finish takes it off. Asked before the view is ready, it
-    /// applies once it is.
-    pub fn set_camo(&mut self, camo: Camo) {
-        if self.camo == camo {
-            return;
-        }
-        self.camo = camo;
-        self.refresh_camo();
-    }
-
-    fn refresh_camo(&mut self) {
-        if !self.camo_ready {
-            return;
-        }
-        let root = self.base().clone().upcast::<Node>();
-        if self.world_model {
-            camo_look::apply_world(&root, self.camo, &mut self.camo_originals);
-        } else {
-            camo_look::apply_viewmodel(&root, self.camo);
-        }
     }
 
     /// Draws this first-person weapon with the shader that cuts a magnified
@@ -2877,18 +2830,6 @@ impl ViewmodelRig {
 }
 
 impl ViewmodelRig {
-    /// Paints each weapon with the camo `cosmetics` gives it: ours, or a
-    /// killcam's killer's while it plays.
-    pub fn set_cosmetics(&mut self, cosmetics: &Cosmetics) {
-        for view in &mut self.views {
-            let camo = view
-                .bind()
-                .weapon_id()
-                .map_or(Camo::NONE, |id| cosmetics.camo_for(id));
-            view.bind_mut().set_camo(camo);
-        }
-    }
-
     fn view(&self, weapon: WeaponId) -> Option<Gd<WeaponView>> {
         let base = base_weapon(weapon);
         self.views

@@ -4,8 +4,8 @@ Players spawn with a class: two weapons with their attachments, grenades,
 perks, and wildcards. The rules follow Black Ops 2's Pick 10 (kept in Black
 Ops 3 and 4). They live in `rust/sim/src/class.rs` (slots, wildcards, default
 classes), `rust/sim/src/perk.rs` (perks), and `rust/sim/src/progression.rs`
-(unlocks). XP, levels, challenges, camos, calling cards, and prestige are in
-[progression.md](progression.md); the weapons themselves in
+(unlocks). XP and levels are in [progression.md](progression.md); the
+weapons themselves in
 [weapons.md](weapons.md).
 
 ## Pick 10
@@ -183,12 +183,11 @@ Choosing one equips it from the next spawn; hovering or focusing one shows
 what it carries and its points. The death screen's hint opens the same menu.
 
 A custom class opens in the editor: a name (up to 20 characters), then every
-item as a chip, grouped by slot, with ten pips for the points spent, and a
-camo for each weapon ([progression.md](progression.md)). A chip that would
-break a rule is greyed out: the menu asks `NetClient.check_class` about the
-class the chip would make, which runs the server's own rules. A locked item
-says what it needs ("Level 12", "8 kills"). Changing weapon keeps the
-attachments the new one takes; taking a wildcard off drops what only it
+item as a chip, grouped by slot, with ten pips for the points spent. A chip
+that would break a rule is greyed out: the menu asks `NetClient.check_class`
+about the class the chip would make, which runs the server's own rules. A
+locked item says what it needs ("Level 12", "8 kills"). Changing weapon keeps
+the attachments the new one takes; taking a wildcard off drops what only it
 allowed. Back leaves the editor without saving. Under the list sit the
 scorestreaks, up to three, shared by every class ([scorestreaks.md](scorestreaks.md)).
 
@@ -245,10 +244,6 @@ attachments (`rust/sim/src/progression.rs`).
 - **Attachments unlock by kills with that weapon**, as Black Ops 2's weapon
   levels do, in the same order on every weapon: red dot 5, grip 15, extended
   magazine 30, ACOG 50, suppressor 80 (`attachment_kills`).
-- **Prestige** sends the level back to 1, so level unlocks lock again
-  (Create-a-Class included). Each prestige pays a token that unlocks one item
-  for good, and the master's prestige unlocks everything
-  ([progression.md](progression.md)).
 - A custom class saved with something still locked plays without it: a locked
   weapon gives way to the first unlocked one of its slot, and locked
   attachments, tacticals, perks, and wildcards come off
