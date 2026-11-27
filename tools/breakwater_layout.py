@@ -46,7 +46,7 @@ import slamcity_layout as K
 from slamcity_layout import (  # noqa: F401 (re-exported for the builders and checks)
     COLLIDERS, DECALS, EFFECTS, LIGHTS, PARTS, PLACED, PROPS, SIGHT, T, TUBE, WARM, Wall, blocker, box, clip,
     coping, cyl, deco, decal, floor, light, line_clear, oriented, place, prism, prop, railing, road_paint, roof,
-    segment_hits, shell, solid, stair, t3, text, tp, tspan, tube, tyaw,
+    segment_hits, solid, stair, t3, text, tp, tspan, tube, tyaw,
 )
 
 PI = math.pi
@@ -193,6 +193,13 @@ def ladder_down(x, z, m, depth=2.4):
         tube([(x - 0.22, y, z - 0.35), (x + 0.22, y, z - 0.35)], 0.018, "steel_galv", m, sides=4)
 
 
+def shell(*args, **kw):
+    """Slamcity's `shell`, with Breakwater's windows glazed in steel frames
+    whose glass is shot out."""
+    kw.setdefault("glazing", "window_steel")
+    return K.shell(*args, **kw)
+
+
 def lamp(x, z, yaw, m, y=STREET):
     """A yard lamp (off in the day: no light)."""
     place("yard_lamp", x, y, z, yaw, m)
@@ -308,7 +315,9 @@ def stain(x, z, r, look, m, y=STREET, color=OIL, w=0.6, rough=0.45, seed=0, stre
     radii = [r * rng.uniform(0.65, 1.2) for _ in range(n)]
     radii = [(radii[k - 1] + 2 * radii[k] + radii[(k + 1) % n]) / 4 for k in range(n)]
     c, s = math.cos(yaw), math.sin(yaw)
-    yy = y + 0.003 + (seed % 4) * 0.0004
+    # 8 mm proud: closer, the bake's rays from the stain's texels started
+    # under the ground and left a dark box round it.
+    yy = y + 0.008 + (seed % 4) * 0.0004
     verts, mix = [(x, yy, z)], [(*color, w, rough)]
     rings = ((0.45, 0.9), (0.8, 0.45), (1.0, 0.0))
     for t, k_w in rings:
@@ -462,7 +471,8 @@ def basin(side: Side):
             t3(x, y, zz, m) for x, y, zz in ((-4.0 - r, SEA - 1.0, z - r), (-4.0 + r, SEA - 1.0, z - r),
                                              (-4.0 + r * 0.8, SEA - 1.0, z + r), (-4.0 - r, SEA - 1.0, z + r),
                                              (-4.0, SEA + r * 0.9, z), (-4.0 + r * 0.5, SEA + r * 0.6, z - r * 0.5))]})
-    deco(-4.0, 60.0, SEA - 1.0, STREET, -120.0, -37.0, "grass_dry", m, faces="top", chunk="far")
+    # East of the basin the mole runs on: the next berth's concrete apron.
+    deco(-4.0, 60.0, SEA - 1.0, STREET, -120.0, -37.0, "quay", m, faces="top", chunk="far")
     # Fenders hung on the face, bollards along the edge, and ladders down.
     for x in range(-40, -6, 5):
         place("fender", x + 0.5, STREET, -37.6, PI, m)
@@ -1082,7 +1092,7 @@ def rack_corners(side: Side):
 def backdrops(side: Side):
     m = side.m
     # West of the gate: the access road and dry ground, a fence line, sheds.
-    deco(-160.0, -42.0, -0.1, STREET, -37.6, 160.0, "grass_dry", m, faces="top", chunk="far")
+    deco(-160.0, -42.0, -0.1, STREET, -37.6, 160.0, "quay", m, faces="top", chunk="far")
     deco(-80.0, -42.0, STREET, 0.01, -3.0, 7.0, "road", m, faces="top", chunk="far")
     for x, z, w, d, h, look in ((-52.0, -20.0, 14.0, 9.0, 6.0, "clad_green"), (-58.0, 18.0, 18.0, 10.0, 7.5,
                                                                                  "clad_cream"),
@@ -1091,19 +1101,13 @@ def backdrops(side: Side):
         box(x - w / 2 - 0.2, x + w / 2 + 0.2, h, h + 0.3, z - d / 2 - 0.2, z + d / 2 + 0.2, "roof_sheet", None, m,
             chunk="far")
     # South of the tank farm: the main tank farm, far bigger tanks.
-    deco(-160.0, 4.0, -0.1, STREET, 37.0, 160.0, "grass_dry", m, faces="top", chunk="far")
+    deco(-160.0, 4.0, -0.1, STREET, 37.0, 160.0, "slab_old", m, faces="top", chunk="far")
     for x, z, r, h in ((-30.0, 62.0, 14.0, 16.0), (2.0, 66.0, 16.0, 18.0), (-62.0, 70.0, 12.0, 14.0),
                        (-8.0, 100.0, 18.0, 20.0), (-48.0, 105.0, 15.0, 15.0)):
         place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h, look="tank_white" if (x + z) % 3 else
               "tank_silver")
     # A bund wall in front of them, and the pipe bridge into the farm.
     box(-60.0, 4.0, STREET, 1.6, 42.0, 42.6, "quay_edge", None, m, chunk="far")
-    # Hills on the far side of the basin (north-west, over the water).
-    for x, z, w, h in ((-150.0, -230.0, 220.0, 38.0), (-20.0, -260.0, 260.0, 52.0), (120.0, -240.0, 200.0, 30.0)):
-        PARTS.append({"kind": "hull", "look": "grass_dry", "chunk": "far", "points": [
-            t3(px, py, pz, m) for px, py, pz in ((x - w / 2, SEA, z + 20.0), (x + w / 2, SEA, z + 20.0),
-                                                 (x - w / 2, SEA, z - 40.0), (x + w / 2, SEA, z - 40.0),
-                                                 (x - w * 0.15, h, z - 10.0), (x + w * 0.2, h * 0.85, z - 15.0))]})
 
 
 def dressing(side: Side):
@@ -1145,6 +1149,18 @@ def dressing(side: Side):
     prop("office_desk", -24.3, UPPER, -26.1, 0.0, m)
     prop("plastic_chair", -24.0, UPPER, -25.2, PI + 0.3, m)
     blocker(-25.3, -23.3, UPPER, UPPER + 0.8, -26.65, -25.6, m, "wood")
+    # The control room and office upstairs: chairs at the consoles, shelving
+    # with files, a second desk; the switch room's spares on a rack.
+    for x in (-29.5, -27.5, -25.5):
+        prop("plastic_chair", x, UPPER, -3.3, PI + (x + 27.5) * 0.15, m)
+    for x in (-31.6, -30.6):
+        prop("steel_shelves", x, UPPER, -11.75, PI, m)
+        prop("cardboard_box", x, UPPER + 1.32, -11.75, PI + 0.1, m)
+    blocker(-32.1, -30.1, UPPER, UPPER + 1.8, -11.88, -11.5, m)
+    prop("office_desk", -31.4, UPPER, -16.5, PI / 2, m)
+    blocker(-31.9, -30.9, UPPER, UPPER + 0.8, -17.5, -15.5, m, "wood")
+    prop("steel_shelves", -32.35, WALK, -23.0, PI / 2, m)
+    blocker(-32.65, -32.1, WALK, WALK + 1.8, -23.5, -22.5, m)
     # The workshop: a welding cart, a tool chest, gas bottles, a compressor.
     prop("welding_cart", -32.2, WALK, 17.4, PI / 2, m)
     blocker(-32.53, -31.87, WALK, WALK + 1.56, 16.98, 17.82, m)
@@ -1155,6 +1171,15 @@ def dressing(side: Side):
     blocker(-32.65, -32.15, WALK, WALK + 0.64, 6.75, 7.7, m)
     prop("compressor", -30.8, WALK, 6.65, PI / 2, m)
     blocker(-31.65, -29.95, WALK, WALK + 1.18, 6.35, 6.95, m)
+    # Roof plant: vents and a duct run on the control house (out of reach),
+    # vents and an extract fan on the pump house roofs.
+    for x, z in ((-23.0, -22.0), (-31.0, -13.5), (-23.5, -5.0)):
+        place("roof_vent", x, 7.65, z, 0.0, m)
+    for k in range(4):
+        prop("duct_long", -25.0, 7.65, -15.6 + k * 1.42, 0.0, m)
+    prop("duct_fan", -25.0, 7.65, -16.38, PI, m)
+    for x, z in ((-2.0, -31.5), (-4.5, -34.0), (5.0, -27.0), (7.0, -33.0)):
+        place("roof_vent", x, 5.05, z, 0.0, m)
     # A steel rack in the drum store.
     prop("metal_rack", -20.3, WALK, 12.4, PI / 2, m)
     blocker(-20.6, -20.0, WALK, WALK + 1.9, 11.94, 12.86, m)
@@ -1213,7 +1238,7 @@ def weathering(side: Side):
             if abs(a - PI / 2) < 0.45:
                 continue
             tank_streak(x, z, TANK_R, a, TANK_H - 0.25, rng.uniform(1.2, 4.0), rng.uniform(0.25, 0.5), side.tank,
-                        m, w=rng.uniform(0.35, 0.55), seed=i)
+                        m, w=rng.uniform(0.5, 0.7), seed=i)
     # The quay face: a weed-black tide line, a paler wet band over it, and
     # rust run from the bollards and down behind the ladders.
     band((-42.0, -37.6), (-4.0, -37.6), PI, SEA - 0.6, SEA + 0.7, "quay_edge", m, color=WEED, w=0.88, fade=0.45,
@@ -1230,11 +1255,15 @@ def weathering(side: Side):
     # down the black topsides from the deck edge and the fairleads.
     band((-98.0, -40.48), (-18.0, -40.48), 0.0, SEA - 0.2, SEA + 0.45, "hull_red", m, color=WEED, w=0.8, fade=0.3,
          step=1.5, chunk="far")
-    x = -96.0
-    while x < -22.0:
-        streak(x, SEA + 7.45, -40.5, 0.0, rng.uniform(0.25, 0.6), rng.uniform(1.5, 4.5), "hull_black", m,
-               w=rng.uniform(0.35, 0.6))
-        x += rng.uniform(4.0, 9.0)
+    # Rust run from the deck-edge scuppers, uneven in strength and length.
+    x = -94.0
+    while x < -24.0:
+        if rng.random() < 0.65:
+            length = rng.uniform(1.0, 5.0)
+            streak(x, SEA + 7.3, -40.5, 0.0, rng.uniform(0.18, 0.45), length, "hull_black", m,
+                   w=rng.uniform(0.2, 0.6))
+            turned_box(x, -40.47, 0.12, 0.03, 0.0, SEA + 7.25, SEA + 7.4, "trim_black", None, m, detail=True)
+        x += rng.uniform(3.0, 11.0)
     for x in (-44.0, -24.0):
         streak(x, SEA + 7.2, -40.5, 0.0, 0.7, 4.2, "hull_black", m, w=0.65, seed=3)
     # Foam and churned water where the sea meets the quay, the hull, and the

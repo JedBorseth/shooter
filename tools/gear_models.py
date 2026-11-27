@@ -300,11 +300,13 @@ LOOKS.update({
     # 5.3 m a repeat, not the slabs' 4 m: no two slabs show the same patch.
     "range_slab": _t("concrete_floor", 5.3, (0.8, 0.79, 0.77), grime=0.0),
     "range_joint": {"color": (0.24, 0.23, 0.22), "rough": 0.9},
-    "range_panel": _t("concrete_panels", 4.0, (0.97, 0.95, 0.9), grime=0.3),
+    # 5.3 m a repeat on 4 m panels, so no two neighbouring panels show the
+    # same stains (at 4 m every panel was the same picture).
+    "range_panel": _t("concrete_panels", 5.3, (0.97, 0.95, 0.9), grime=0.3),
     "range_coping": _t("concrete_smooth", 2.0, (0.92, 0.91, 0.9), grime=0.0),
     "range_block": _t("concrete_smooth", 1.6, (0.8, 0.79, 0.76), grime=0.35),
     "range_block_b": _t("concrete_smooth", 1.6, (0.7, 0.69, 0.67), grime=0.35),
-    "culvert": _t("concrete_stained", 3.0, (0.74, 0.73, 0.72), grime=0.3),
+    "culvert": _t("concrete_stained", 3.0, (0.6, 0.59, 0.57), grime=0.45),
     "culvert_lining": _t("corrugated", 1.2, (0.55, 0.57, 0.52), metal=0.6, grime=0.0),
     "tower_steel": _t("painted_metal", 2.0, (0.2, 0.33, 0.52), metal=0.5, rough=0.9, grime=0.3),
     "tower_panel": _t("corrugated", 1.5, (0.24, 0.38, 0.58), metal=0.5, grime=0.3),
