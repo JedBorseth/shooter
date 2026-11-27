@@ -34,6 +34,11 @@ func _post_import(scene: Node) -> Object:
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			instance.visible = false
+		elif chunk.ends_with("_stain"):
+			# Stains laid over the ground: a multiply-blend over the lit ground
+			# (shaders/stain_mul.gdshader), out of the bake and casting nothing.
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			instance.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		elif chunk.ends_with("_detail"):
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC

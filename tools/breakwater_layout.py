@@ -304,6 +304,12 @@ def shaded(look, verts, faces, mix, normal, m, chunk=None, uvs=None):
         part["uvs"] = out_uvs
     if chunk:
         part["chunk"] = chunk
+    elif look == "stain_mul":
+        # Stains on the ground go in a mesh of their own, a multiply-blend
+        # that darkens the lit ground (shaders/stain_mul.gdshader): lit and
+        # baked in the ground's own material, each small chart came out with
+        # dark rims. Streaks on walls stay in the surface's mesh.
+        part["stain"] = True
     PARTS.append(part)
 
 
@@ -315,8 +321,6 @@ def stain(x, z, r, look, m, y=STREET, color=OIL, w=0.6, rough=0.45, seed=0, stre
     radii = [r * rng.uniform(0.65, 1.2) for _ in range(n)]
     radii = [(radii[k - 1] + 2 * radii[k] + radii[(k + 1) % n]) / 4 for k in range(n)]
     c, s = math.cos(yaw), math.sin(yaw)
-    # 8 mm proud: closer, the bake's rays from the stain's texels started
-    # under the ground and left a dark box round it.
     yy = y + 0.008 + (seed % 4) * 0.0004
     verts, mix = [(x, yy, z)], [(*color, w, rough)]
     rings = ((0.45, 0.9), (0.8, 0.45), (1.0, 0.0))
@@ -330,7 +334,8 @@ def stain(x, z, r, look, m, y=STREET, color=OIL, w=0.6, rough=0.45, seed=0, stre
     for ring in range(len(rings) - 1):
         o = 1 + ring * n
         faces += [(o + k, o + (k + 1) % n, o + n + (k + 1) % n, o + n + k) for k in range(n)]
-    shaded(look, verts, faces, mix, (0.0, 1.0, 0.0), m)
+    # `look` is the ground's; the stain multiplies whatever ground is drawn.
+    shaded("stain_mul", verts, faces, mix, (0.0, 1.0, 0.0), m)
 
 
 def streak(x, y, z, yaw, width, length, look, m, color=RUST, w=0.55, rough=1.15, seed=0, out=0.004):

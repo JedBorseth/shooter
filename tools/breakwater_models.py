@@ -86,7 +86,7 @@ LOOKS: dict[str, dict] = {
     # Antifouling red below the waterline band: paint, its rust and weed are
     # stains and streaks laid over it (layout `basin`).
     "hull_red": _t("painted_metal", 4.0, (0.42, 0.11, 0.08), metal=0.3, grime=0.0),
-    "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.4, grime=0.0),
+    "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.2, rough=1.25, grime=0.0),
     "ship_white": _t("painted_metal", 3.0, (0.86, 0.86, 0.84), metal=0.3, grime=0.0),
     "deck_green": _t("painted_metal", 3.0, (0.3, 0.42, 0.34), metal=0.3, grime=0.0),
     # Paint and signs.
@@ -114,6 +114,8 @@ LOOKS: dict[str, dict] = {
     "sea": {"special": "sea"},
     # The foam and churned water along the walls the sea meets (layout `shore`).
     "sea_shore": {"special": "sea_shore"},
+    # Ground stains: multiply the lit ground by the vertex colour (layout `stain`).
+    "stain_mul": {"special": "stain_mul"},
 }
 
 
@@ -511,6 +513,19 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
             prev = p
         elif prev is None:
             prev = p
+    # The stair's outer stringer (a helix of channel under the treads' outer
+    # edge) and brackets back to the shell every few treads.
+    helix = []
+    for k in range(steps + 1):
+        f = k / steps
+        t = stair_from + f * 2 * PI * turns
+        y = 0.35 + f * (h - 0.35) - 0.12
+        helix.append((math.cos(t) * (rr + 0.3), y, math.sin(t) * (rr + 0.3)))
+        if k % 4 == 2:
+            b.tube([(math.cos(t) * (r + 0.02), y - 0.25, math.sin(t) * (r + 0.02)),
+                    (math.cos(t) * (rr + 0.28), y - 0.02, math.sin(t) * (rr + 0.28))], 0.035, "steel_dark", sides=5,
+                   detail=False)
+    b.tube(helix, 0.07, "steel_dark", sides=6, detail=False)
     # Nozzles and valves at the foot, facing +z.
     for a in (-0.35, 0.0, 0.35):
         c, s = math.cos(PI / 2 + a), math.sin(PI / 2 + a)
@@ -894,8 +909,11 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
                                               (hl - 1.4, 0.42, 0.2, 0.1, 0.03, -1.1, 1.8),
                                               (hl - 0.4, 0.12, 0.04, 0.02, 0.01, -0.5, 2.3)):
         top = free + 0.8 + (hl - x) * 0.05
+        # The deck edge is a pair of close points, so smoothing keeps it a
+        # crisp knuckle instead of rounding the bow into a blob.
         pts = [(-bot, keel, 0.0), (bot, keel, 0.0), (wl, 0.0, rake * 0.12), (mid, free * 0.55, rake * 0.55),
-               (deck, top, rake), (-deck, top, rake), (-mid, free * 0.55, rake * 0.55), (-wl, 0.0, rake * 0.12)]
+               (deck * 0.995, top - 0.1, rake * 0.98), (deck, top, rake), (-deck, top, rake),
+               (-deck * 0.995, top - 0.1, rake * 0.98), (-mid, free * 0.55, rake * 0.55), (-wl, 0.0, rake * 0.12)]
         rings.append([(x + dx, y, w * hb) for w, y, dx in pts])
     verts, faces = loft(rings)
     b.smooth(verts, faces, "hull_black", levels=1)
