@@ -127,7 +127,7 @@ Search and Destroy plays on Breakwater. Each map's layout, objectives, and build
 ### Classes, streaks, and progression
 
 - **Create-a-Class:** Black Ops 2's Pick 10: two weapons, up to two attachments (three with a wildcard), grenades, three perk tiers, and wildcards; weapons, and custom classes themselves, unlock with level ([docs/create-a-class.md](docs/create-a-class.md)).
-- **Scorestreaks:** UAV, Counter-UAV, Care Package, Airstrike, Sentry Gun, Guided Missile, and Attack Chopper, with a minimap ([docs/scorestreaks.md](docs/scorestreaks.md)).
+- **Scorestreaks:** UAV, Counter-UAV, and Care Package, with a minimap ([docs/scorestreaks.md](docs/scorestreaks.md)).
 - **Progression:** XP and 55 levels, prestige, challenges, weapon camos, calling cards, and a career record ([docs/progression.md](docs/progression.md)).
 - **Killcams:** the killer's view after a death, a round-winning killcam in Search and Destroy, and the final killcam at the end of a match ([docs/killcam.md](docs/killcam.md)).
 

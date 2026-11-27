@@ -15,9 +15,8 @@ extends Control
 ##   ONLINE", "ENEMY UAV OVERHEAD", "ENEMY COUNTER-UAV"), and when one is
 ##   shot down ("ENEMY UAV DESTROYED", "UAV SHOT DOWN").
 ##
-## The use key (4, or D-pad right) calls in the selected streak (an
-## Airstrike opens its target picker, `airstrike_view.gd`); the next key
-## (5, or D-pad left) selects another held one. The server decides
+## The use key (4, or D-pad right) calls in the selected streak; the next
+## key (5, or D-pad left) selects another held one. The server decides
 ## everything; this only draws what `NetClient.streak_info` says.
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
@@ -36,9 +35,6 @@ const CALL_SECONDS := 2.4
 
 var client: NetClient
 var player: FpsPlayer
-## The Airstrike's target picker (`airstrike_view.gd`), opened instead of
-## calling one straight in.
-var airstrike: Node
 ## Calls made, in order (tests).
 var calls: PackedStringArray = []
 
@@ -66,9 +62,6 @@ func _ready() -> void:
 	client.streaks_changed.connect(_on_streaks)
 	client.sky_changed.connect(_on_sky)
 	client.aircraft_downed.connect(_on_downed)
-	client.turret_gone.connect(_on_turret_gone)
-	client.chopper_called.connect(_on_chopper_called)
-	client.chopper_gone.connect(_on_chopper_gone)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -76,14 +69,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed(&"streak_use"):
 		get_viewport().set_input_as_handled()
-		var held: PackedStringArray = _info.get("held", PackedStringArray())
-		var selected := int(_info.get("selected", -1))
-		var key := held[selected] if selected >= 0 and selected < held.size() else ""
-		if key in ["airstrike", "attack_chopper"]:
-			if airstrike != null and not airstrike.get(&"picking"):
-				airstrike.call(&"open_picker", key)
-		else:
-			client.use_streak()
+		client.use_streak()
 	elif event.is_action_pressed(&"streak_next"):
 		get_viewport().set_input_as_handled()
 		client.cycle_streak()
@@ -101,13 +87,7 @@ func _process(delta: float) -> void:
 		bool(client.match_info().get("streaks_off", false))
 		or bool(client.match_info().get("spectator", false))
 	)
-	visible = (
-		mode != "gungame"
-		and not off
-		and not client.in_killcam()
-		and client.piloting() < 0
-		and not ended
-	)
+	visible = (mode != "gungame" and not off and not client.in_killcam() and not ended)
 	_info = client.streak_info()
 	# Under the HUD size setting the piece is scaled: keep it screen-sized.
 	size = get_viewport_rect().size / scale
@@ -142,31 +122,6 @@ func _on_downed(streak: String, ours: bool, _by_me: bool, _at: Vector3) -> void:
 		_say("%s SHOT DOWN" % name, "", UiTheme.ENEMY)
 	else:
 		_say("ENEMY %s DESTROYED" % name, "", UiTheme.ALLY)
-
-
-func _on_turret_gone(destroyed: bool, ours: bool, _by_me: bool, _at: Vector3) -> void:
-	if not destroyed:
-		return
-	if ours:
-		_say("SENTRY GUN DESTROYED", "", UiTheme.ENEMY)
-	else:
-		_say("ENEMY SENTRY GUN DESTROYED", "", UiTheme.ALLY)
-
-
-func _on_chopper_called(ours: bool) -> void:
-	if ours:
-		_say("ATTACK CHOPPER INBOUND", "", UiTheme.ALLY)
-	else:
-		_say("ENEMY ATTACK CHOPPER INBOUND", "", UiTheme.ENEMY)
-
-
-func _on_chopper_gone(destroyed: bool, ours: bool, _by_me: bool, _at: Vector3) -> void:
-	if not destroyed:
-		return
-	if ours:
-		_say("ATTACK CHOPPER SHOT DOWN", "", UiTheme.ENEMY)
-	else:
-		_say("ENEMY ATTACK CHOPPER DESTROYED", "", UiTheme.ALLY)
 
 
 func _say(text: String, sub: String, colour: Color) -> void:

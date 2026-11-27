@@ -142,8 +142,7 @@ impl RemotePlayer {
         self.alive
     }
 
-    /// Cold-Blooded: enemies aiming at this player see no red name, and
-    /// enemy Guided Missiles do not box them.
+    /// Cold-Blooded: enemies aiming at this player see no red name.
     #[func]
     pub fn is_unmarked(&self) -> bool {
         self.unmarked

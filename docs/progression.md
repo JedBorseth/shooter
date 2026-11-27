@@ -90,7 +90,7 @@ These are tiered, as Black Ops 2's are, and the last tier of most awards a calli
   - zone captures and defends in Hardpoint;
   - captures, returns, and carrier kills in Capture the Flag;
   - plants, defuses, Wire Cutters, Clutches, and Aces in Search and Destroy.
-- **Scorestreaks:** times the UAV, Counter-UAV, Care Package, and Airstrike are earned; kills with the Sentry Gun, Guided Missile, Attack Chopper, and Airstrike.
+- **Scorestreaks:** times the UAV, Counter-UAV, and Care Package are earned.
 
 ### Challenge XP
 

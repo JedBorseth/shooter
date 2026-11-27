@@ -67,8 +67,8 @@ func _run() -> void:
 		)
 	_check(_server.radar_ids(blues[0]).is_empty(), "the enemy's radar shows nobody")
 
-	# With the UAV, the Care Package, and the Airstrike chosen.
-	_server.debug_set_streaks(blues[1], PackedStringArray(["uav", "care_package", "airstrike"]))
+	# With the UAV and the Care Package chosen.
+	_server.debug_set_streaks(blues[1], PackedStringArray(["uav", "care_package"]))
 	_server.debug_score(blues[1], 560)
 	await _ticks(2)
 	_check(

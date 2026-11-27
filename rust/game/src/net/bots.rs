@@ -491,9 +491,6 @@ pub struct BotWorld<'a> {
     pub radar: &'a [RadarDot],
     /// Scorestreak aircraft overhead (`shooter_sim::streak::Sky`).
     pub aircraft: &'a [BotAircraft],
-    /// Sentry Guns set down (`shooter_sim::turret`): id, side, and the
-    /// centre of the gun.
-    pub turrets: &'a [(u16, u8, Vector3)],
 }
 
 /// A UAV or Counter-UAV overhead, as bots know it: which, whose side, where,
@@ -515,9 +512,6 @@ const AIR_RANGE: f32 = equipment::ROCKET_SPEED * equipment::ROCKET_FLIGHT * 0.9;
 /// between its rockets beyond the reload.
 const AIR_FIRE_CONE: f32 = 0.03;
 const AIR_FIRE_GAP: f32 = 1.0;
-/// How near an enemy Sentry Gun must be for a bot to turn on it (its own
-/// reach, about).
-const TURRET_RANGE: f32 = 45.0;
 
 /// An enemy on a bot's minimap: who, where, and since which tick.
 pub type RadarDot = (u8, Vector3, Tick);
@@ -589,10 +583,8 @@ pub struct BotBrain {
     engagement: Option<Engagement>,
     /// Whether the engaged target was in sight at the last check.
     in_sight: bool,
-    /// The enemy aircraft it is turning a launcher on (`anti_air`), and the
-    /// enemy Sentry Gun it is shooting at (`anti_turret`).
+    /// The enemy aircraft it is turning a launcher on (`anti_air`).
     air_target: Option<u16>,
-    turret_target: Option<u16>,
     /// An enemy's position when last seen, and the tick.
     last_seen: Option<(Vector3, Tick)>,
     /// Where the last shot that hurt this bot came from, and the tick.
@@ -690,7 +682,6 @@ impl BotBrain {
             engagement: None,
             in_sight: false,
             air_target: None,
-            turret_target: None,
             last_seen: None,
             hurt_from: None,
             goal: None,
@@ -949,9 +940,7 @@ impl BotBrain {
             self.keep_throwing(state, look_before, tick, &skill, &mut want);
             return self.press(want, state);
         }
-        if self.anti_air(me, state, world, &skill, &mut want)
-            || self.anti_turret(me, state, world, &skill, &mut want)
-        {
+        if self.anti_air(me, state, world, &skill, &mut want) {
             self.flee(me, world, &skill, &mut want);
             self.unstick(me, world, &mut want);
             return self.press(want, state);
@@ -1626,67 +1615,6 @@ impl BotBrain {
         if on && combat.ads >= 0.95 && world.tick >= self.pause_until {
             want.fire = true;
             self.pause_until = world.tick + (AIR_FIRE_GAP * TICK_RATE as f32) as Tick;
-        }
-        true
-    }
-
-    /// Black Ops 2's bots count an enemy's active Sentry Gun as a threat
-    /// (`_bot_combat.gsc`): with no enemy player in sight, a bot that can
-    /// see one within reach shoots it with what it holds, aiming at the
-    /// gun. Returns whether it is busy with one.
-    fn anti_turret(
-        &mut self,
-        me: &BotPlayer,
-        state: &Predicted,
-        world: &mut BotWorld,
-        skill: &SkillParams,
-        want: &mut Want,
-    ) -> bool {
-        if self.in_sight && self.engagement.is_some() {
-            self.turret_target = None;
-            return false;
-        }
-        let eye = me.eye(world.params);
-        if (world.tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL) {
-            let space = &mut *world.space;
-            self.turret_target = world
-                .turrets
-                .iter()
-                .filter(|(_, side, at)| *side != me.team && eye.distance_to(*at) <= TURRET_RANGE)
-                .filter(|(_, _, at)| clear_line(space, eye, *at))
-                .min_by(|a, b| eye.distance_to(a.2).total_cmp(&eye.distance_to(b.2)))
-                .map(|(id, _, _)| *id);
-        }
-        let Some(&(_, _, at)) = self
-            .turret_target
-            .and_then(|id| world.turrets.iter().find(|t| t.0 == id))
-        else {
-            self.turret_target = None;
-            return false;
-        };
-        let bearing = look::bearing(to_sim(eye), to_sim(at));
-        self.look = bot::turn_toward(self.look, bearing, skill.turn_rate, TICK_DT);
-        let distance = eye.distance_to(at);
-        let weapon = state.state.combat.weapon();
-        let def = weapon.id.def();
-        want.aim = distance > ADS_RANGE && def.pellets == 1;
-        if weapon.magazine == 0 {
-            want.reload = true;
-            return true;
-        }
-        let on = bot::view_gap(self.look, bearing) <= skill.fire_cone + 0.6 / distance.max(1.0);
-        let tick = world.tick;
-        if on {
-            match def.fire_mode {
-                FireMode::Auto => want.fire = true,
-                _ => {
-                    if tick >= self.pause_until {
-                        want.fire = true;
-                        let gap = (60.0 / def.rounds_per_minute).max(def.cycle_time).max(0.2);
-                        self.pause_until = tick + (gap * TICK_RATE as f32) as Tick;
-                    }
-                }
-            }
         }
         true
     }

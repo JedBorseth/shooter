@@ -792,60 +792,6 @@ fn streak_challenges(out: &mut Vec<Challenge>) {
                 card: Some("airdrop"),
             }],
         ),
-        (
-            Streak::SentryGun,
-            &[Tiered {
-                id: "streak.sentry_gun.kills",
-                name: "Watchful Eye",
-                detail: "Get {} kills with the Sentry Gun.",
-                stat: "s.sentry_gun.kills",
-                tiers: &[(25, 1500), (100, 3000)],
-                card: None,
-            }],
-        ),
-        (
-            Streak::GuidedMissile,
-            &[Tiered {
-                id: "streak.guided_missile.kills",
-                name: "Pilot",
-                detail: "Get {} kills with the Guided Missile.",
-                stat: "s.guided_missile.kills",
-                tiers: &[(25, 1500), (100, 3000)],
-                card: None,
-            }],
-        ),
-        (
-            Streak::AttackChopper,
-            &[Tiered {
-                id: "streak.attack_chopper.kills",
-                name: "Rotor Wash",
-                detail: "Get {} kills with the Attack Chopper.",
-                stat: "s.attack_chopper.kills",
-                tiers: &[(25, 1500), (100, 3000)],
-                card: None,
-            }],
-        ),
-        (
-            Streak::Airstrike,
-            &[
-                Tiered {
-                    id: "streak.airstrike.earned",
-                    name: "Air Support",
-                    detail: "Earn the Airstrike {} times.",
-                    stat: "s.airstrike.earned",
-                    tiers: &[(10, 1000)],
-                    card: None,
-                },
-                Tiered {
-                    id: "streak.airstrike.kills",
-                    name: "Thunder",
-                    detail: "Get {} kills with the Airstrike.",
-                    stat: "s.airstrike.kills",
-                    tiers: &[(25, 1500), (100, 3000)],
-                    card: Some("thunder"),
-                },
-            ],
-        ),
     ];
     for (streak, list) in list {
         tiered(out, Group::Scorestreak(*streak), list);

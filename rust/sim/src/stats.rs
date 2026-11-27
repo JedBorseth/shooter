@@ -229,10 +229,6 @@ impl Recorder {
                 self.last_weapon = None;
                 self.add("charge.kills", 1);
             }
-            KillCause::Streak(streak) => {
-                self.last_weapon = None;
-                self.add(&format!("s.{}.kills", streak.key()), 1);
-            }
         }
     }
 
@@ -275,9 +271,7 @@ impl Recorder {
                 Award::Streak(10) => self.add("merciless", 1),
                 Award::Collateral => self.add("collateral", 1),
                 Award::ShotDown(streak) => {
-                    if streak.is_aircraft() {
-                        self.add("aircraft", 1);
-                    }
+                    self.add("aircraft", 1);
                     self.add(&format!("s.{}.downed", streak.key()), 1);
                 }
                 Award::PointBlank => self.add("point_blank", 1),
@@ -427,16 +421,11 @@ mod tests {
             cause: KillCause::Equipment(equipment::Kind::Frag),
             ..kill(2, m4(), false)
         });
-        r.kill(KillFacts {
-            cause: KillCause::Streak(Streak::Airstrike),
-            ..kill(3, m4(), false)
-        });
         r.streak_earned(Streak::Uav);
         r.finish("tdm", 600, Some(Outcome::Win));
         r.finish("tdm", 30, None);
         let s = r.stats();
         assert_eq!(s.get("frag.kills"), Some(&1));
-        assert_eq!(s.get("s.airstrike.kills"), Some(&1));
         assert_eq!(s.get("s.uav.earned"), Some(&1));
         assert_eq!(s.get("wins"), Some(&1));
         assert_eq!(s.get("matches"), Some(&1));

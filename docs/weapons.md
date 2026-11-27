@@ -373,8 +373,8 @@ and the drawn model).
   through it (Black Ops 2: only a direct impact kills a Flak Jacket player). A
   body is hit only if the blast can see its shins, chest, or head. No friendly
   fire, but the firer's own rocket hurts them.
-- A rocket passing within 6 m of an enemy scorestreak aircraft (UAV,
-  Counter-UAV, Attack Chopper) or Guided Missile brings it down in one hit,
+- A rocket passing within 6 m of an enemy scorestreak aircraft (UAV or
+  Counter-UAV) brings it down in one hit,
   as Black Ops 2's `rocketdamageoneshot` does ([scorestreaks.md](scorestreaks.md)).
 - The kill is the launcher's: the feed shows the RL-4, and the kill counts
   toward its kills.

@@ -866,11 +866,8 @@ impl ICharacterBody3D for FpsPlayer {
             }
             self.camera.set_global_transform(view.camera);
             self.camera.set_fov(self.base_fov * view.zoom);
-            // A streak's killcam has no weapon in view.
-            self.viewmodel.set_visible(view.weapon);
-            if view.weapon {
-                self.viewmodel.bind_mut().update(&view.frame, dt);
-            }
+            self.viewmodel.set_visible(true);
+            self.viewmodel.bind_mut().update(&view.frame, dt);
             return;
         }
         let transform = if alive {

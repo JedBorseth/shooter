@@ -5,9 +5,7 @@
 //! - A player picks three streaks ([`Loadout`]), shared by every class, as
 //!   Black Ops 2's Scorestreaks menu is.
 //! - Score earned since the last spawn counts toward them: kills, their
-//!   bonuses, and objective play alike ([`StreakState::on_points`]). Kills
-//!   made with a streak score points but do not count toward streaks
-//!   (Black Ops 2's rule).
+//!   bonuses, and objective play alike ([`StreakState::on_points`]).
 //! - Each streak is earned once the life's score reaches its cost. After the
 //!   dearest one is earned the count starts again from nothing, so a long
 //!   life earns them all again.
@@ -25,10 +23,6 @@
 //! | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps enemies onto the team's minimaps every 3 s for 30 s |
 //! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
 //! | Care Package | 550 | Care Package, 550 | a crate from a flyover with a random streak inside ([`crate::care_package`]) |
-//! | Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera that splits into bomblets ([`crate::missile`]) |
-//! | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map ([`Strikes`]) |
-//! | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller ([`crate::turret`]) |
-//! | Attack Chopper | 1100 | Stealth Chopper, 1100 | an AI helicopter guarding a marked point for a minute ([`crate::chopper`]) |
 //!
 //! Every number here is an estimate where Black Ops 2's own files give none;
 //! the docs list which (`docs/scorestreaks.md`).
@@ -42,10 +36,6 @@ pub enum Streak {
     Uav,
     CounterUav,
     CarePackage,
-    Airstrike,
-    SentryGun,
-    GuidedMissile,
-    AttackChopper,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -61,15 +51,7 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 7] = [
-        Streak::Uav,
-        Streak::CounterUav,
-        Streak::CarePackage,
-        Streak::Airstrike,
-        Streak::SentryGun,
-        Streak::GuidedMissile,
-        Streak::AttackChopper,
-    ];
+    pub const ALL: [Streak; 3] = [Streak::Uav, Streak::CounterUav, Streak::CarePackage];
 
     /// Score to earn it.
     pub fn cost(self) -> u32 {
@@ -77,10 +59,6 @@ impl Streak {
             Streak::Uav => 425,
             Streak::CounterUav => 475,
             Streak::CarePackage => 550,
-            Streak::Airstrike => 750,
-            Streak::SentryGun => 800,
-            Streak::GuidedMissile => 700,
-            Streak::AttackChopper => 1100,
         }
     }
 
@@ -90,10 +68,6 @@ impl Streak {
         match self {
             Streak::Uav | Streak::CounterUav => 1,
             Streak::CarePackage => 7,
-            Streak::Airstrike => 13,
-            Streak::SentryGun => 16,
-            Streak::GuidedMissile => 10,
-            Streak::AttackChopper => 22,
         }
     }
 
@@ -103,10 +77,6 @@ impl Streak {
             Streak::Uav => "uav",
             Streak::CounterUav => "counter_uav",
             Streak::CarePackage => "care_package",
-            Streak::Airstrike => "airstrike",
-            Streak::SentryGun => "sentry_gun",
-            Streak::GuidedMissile => "guided_missile",
-            Streak::AttackChopper => "attack_chopper",
         }
     }
 
@@ -120,10 +90,6 @@ impl Streak {
             Streak::Uav => "UAV",
             Streak::CounterUav => "Counter-UAV",
             Streak::CarePackage => "Care Package",
-            Streak::Airstrike => "Airstrike",
-            Streak::SentryGun => "Sentry Gun",
-            Streak::GuidedMissile => "Guided Missile",
-            Streak::AttackChopper => "Attack Chopper",
         }
     }
 
@@ -133,37 +99,15 @@ impl Streak {
             Streak::Uav => "Shows enemies on your team's minimap for 30 seconds.",
             Streak::CounterUav => "Jams enemy minimaps for 30 seconds.",
             Streak::CarePackage => "Drops a crate where you aim, with a random scorestreak inside.",
-            Streak::Airstrike => "Calls three air strikes on points you mark on the map.",
-            Streak::SentryGun => {
-                "Sets down an automated gun that fires at enemies in front of it for four minutes."
-            }
-            Streak::GuidedMissile => {
-                "Fly a missile down from above; boost it, then split it into bomblets over your targets."
-            }
-            Streak::AttackChopper => {
-                "A helicopter guards a point you mark on the map for a minute, firing on enemies near it."
-            }
         }
     }
 
-    /// Whether it comes down from the sky onto a point on the map: a crate
-    /// from a flyover, strikes from a jet, or a missile from above. A map roofed over (Warehouse)
-    /// has nowhere for these to land, so they are left out there
+    /// Whether it comes down from the sky onto a point on the map: the
+    /// Care Package's crate, from a flyover. A map roofed over (Warehouse)
+    /// has nowhere for it to land, so it is left out there
     /// ([`Loadout::usable`]); the radar streaks still work.
     pub fn needs_open_sky(self) -> bool {
-        matches!(
-            self,
-            Streak::CarePackage | Streak::Airstrike | Streak::GuidedMissile | Streak::AttackChopper
-        )
-    }
-
-    /// Whether it flies: what shooting one down counts toward the
-    /// "aircraft" career stat (a Sentry Gun stands on the ground).
-    pub fn is_aircraft(self) -> bool {
-        matches!(
-            self,
-            Streak::Uav | Streak::CounterUav | Streak::AttackChopper
-        )
+        self == Streak::CarePackage
     }
 
     /// Whether it can be earned and called in on a map, `roofed` or not.
@@ -185,11 +129,7 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
-            Streak::CarePackage
-            | Streak::Airstrike
-            | Streak::SentryGun
-            | Streak::GuidedMissile
-            | Streak::AttackChopper => 0.0,
+            Streak::CarePackage => 0.0,
         };
         seconds_to_ticks(seconds)
     }
@@ -263,7 +203,7 @@ pub struct StreakState {
 }
 
 impl StreakState {
-    /// `points` of score earned this life (none from streak kills): counts
+    /// `points` of score earned this life: counts
     /// toward `loadout`'s streaks. Returns the streaks earned, in order.
     pub fn on_points(&mut self, loadout: Loadout, points: u32, hardline: bool) -> Vec<Streak> {
         let mut earned = Vec::new();
@@ -341,66 +281,6 @@ impl StreakState {
     /// The next streak the count is heading for, and its cost.
     pub fn next(&self, loadout: Loadout) -> Option<Streak> {
         loadout.streaks().find(|s| s.cost() > self.progress)
-    }
-}
-
-/// Airstrike: how many points the caller marks, seconds from the call to
-/// the first strike and between strikes, and each blast's reach and damage
-/// (Black Ops 2's Lightning Strike drops three strikes in turn; the
-/// timings and blast are estimates sized to kill anyone in the open near a
-/// mark).
-pub const AIRSTRIKE_TARGETS: usize = 3;
-pub const STRIKE_FIRST_SECONDS: f32 = 3.0;
-pub const STRIKE_GAP_SECONDS: f32 = 1.0;
-pub const STRIKE_RADIUS: f32 = 9.0;
-pub const STRIKE_DAMAGE: f32 = 250.0;
-pub const STRIKE_OUTER_DAMAGE: f32 = 40.0;
-
-/// One strike coming.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Strike {
-    pub owner: u8,
-    pub at: crate::Vec3,
-    pub tick: Tick,
-}
-
-/// The strikes called in and not yet landed.
-#[derive(Clone, Debug, Default)]
-pub struct Strikes {
-    pending: Vec<Strike>,
-}
-
-impl Strikes {
-    /// `owner` calls strikes onto `targets` (the first
-    /// [`AIRSTRIKE_TARGETS`]) at `now`. Returns them, in the order they land.
-    pub fn call(&mut self, owner: u8, targets: &[crate::Vec3], now: Tick) -> Vec<Strike> {
-        let first = now + seconds_to_ticks(STRIKE_FIRST_SECONDS);
-        let gap = seconds_to_ticks(STRIKE_GAP_SECONDS);
-        let called: Vec<Strike> = targets
-            .iter()
-            .take(AIRSTRIKE_TARGETS)
-            .enumerate()
-            .map(|(i, &at)| Strike {
-                owner,
-                at,
-                tick: first + gap * i as Tick,
-            })
-            .collect();
-        self.pending.extend(&called);
-        called
-    }
-
-    /// The strikes landing by `now`, taken off the list.
-    pub fn due(&mut self, now: Tick) -> Vec<Strike> {
-        let (due, later): (Vec<Strike>, Vec<Strike>) =
-            self.pending.iter().partition(|s| s.tick <= now);
-        self.pending = later;
-        due
-    }
-
-    /// Every strike still coming is called off (a new match).
-    pub fn clear(&mut self) {
-        self.pending.clear();
     }
 }
 
@@ -875,43 +755,33 @@ mod tests {
     }
 
     #[test]
-    fn strikes_land_in_turn_after_the_call() {
-        let mut strikes = Strikes::default();
-        let targets = [
-            crate::Vec3::X,
-            crate::Vec3::Y,
-            crate::Vec3::Z,
-            crate::Vec3::ONE,
-        ];
-        let called = strikes.call(4, &targets, 100);
-        assert_eq!(called.len(), AIRSTRIKE_TARGETS);
-        assert_eq!(called[0].tick, 100 + 360);
-        assert_eq!(called[2].tick, 100 + 360 + 240);
-        assert!(strikes.due(459).is_empty());
-        assert_eq!(strikes.due(460), vec![called[0]]);
-        assert_eq!(strikes.due(1000).len(), 2);
-        assert!(strikes.due(2000).is_empty());
-    }
-
-    #[test]
     fn a_roofed_map_leaves_out_the_streaks_that_need_open_sky() {
         let loadout = Loadout([
             Some(Streak::Uav),
+            Some(Streak::CounterUav),
             Some(Streak::CarePackage),
-            Some(Streak::Airstrike),
         ]);
         assert_eq!(loadout.usable(false), loadout);
         let roofed = loadout.usable(true);
-        assert_eq!(roofed, Loadout([Some(Streak::Uav), None, None]));
-        // The count loops on the UAV alone.
+        assert_eq!(
+            roofed,
+            Loadout([Some(Streak::Uav), Some(Streak::CounterUav), None])
+        );
+        // The count loops on the radar streaks alone: 1000 is two laps of
+        // 475 and 50 into a third.
         let mut state = StreakState::default();
         assert_eq!(
-            state.on_points(roofed, 900, false),
-            vec![Streak::Uav, Streak::Uav]
+            state.on_points(roofed, 1000, false),
+            vec![
+                Streak::Uav,
+                Streak::CounterUav,
+                Streak::Uav,
+                Streak::CounterUav
+            ]
         );
         assert_eq!(state.progress, 50);
         assert!(Streak::CounterUav.usable(true));
-        assert!(!Streak::Airstrike.usable(true));
+        assert!(!Streak::CarePackage.usable(true));
     }
 
     #[test]

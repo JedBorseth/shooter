@@ -119,7 +119,6 @@ pub fn perk_level(perk: Perk) -> u8 {
         Perk::Hardline => 8,
         Perk::Ghost => 15,
         Perk::HardWired => 18,
-        Perk::BlindEye => 12,
         Perk::ColdBlooded => 23,
         Perk::Engineer => 26,
     }

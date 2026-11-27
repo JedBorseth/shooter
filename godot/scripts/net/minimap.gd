@@ -93,9 +93,7 @@ func _process(delta: float) -> void:
 	var off: bool = (
 		info.get("radar_off", false) or info.get("hardcore", false) or info.get("spectator", false)
 	)
-	visible = (
-		has_plan() and not off and not client.in_killcam() and client.piloting() < 0 and not ended
-	)
+	visible = has_plan() and not off and not client.in_killcam() and not ended
 	if score_block != null:
 		var shown := has_plan() and not off
 		score_block.set(&"top", CORNER.y + SIZE + 10.0 if shown else CORNER.y)

@@ -35,7 +35,7 @@ The open work on this Call-of-Duty-style multiplayer FPS. The goal, the decision
 
 - [ ] Breakwater (7.3 ms) is over the 6.5 ms Medium GPU gate at its worst view because of Medium's own passes (SSAO's normal prepass about 1.4 ms, glow 0.75, SMAA 0.7). Turn one down on Medium (for example SSAO off where the lightmap already darkens corners, or FXAA in place of SMAA), or keep the allowances in `docs/perf/budgets.json` ([docs/performance.md](docs/performance.md)).
 - [ ] Inputs at 60 Hz, two ticks a packet: halves packet headers (about 19 kbps up) for up to 8 ms more input delay on every other tick ([docs/netcode.md](docs/netcode.md)).
-- [ ] Warehouse is marked `roofed`, so the Care Package, Airstrike, Guided Missile, and Attack Chopper are left out there ("NO OPEN SKY"). Decide whether it gets a skylight or roof hatch so they can come back.
+- [ ] Warehouse is marked `roofed`, so the Care Package is left out there ("NO OPEN SKY"). Decide whether it gets a skylight or roof hatch so it can come back.
 - [ ] The SG-12 rebuilt with the reproducible shape helpers (`tools/weapon_shapes.py` `canonical`) has a coarser atlas: `weapon_models_test`'s colour-detail proxy reads 0.064 against its 0.08 threshold. Settle the unwrap or the threshold before committing the rebuilt model; until then it keeps its old, non-reproducible files.
 - [ ] Confirm a custom-game choice: hardcore hides the score block.
 - [ ] Pistol attachments: the BP-9's file lists Red Dot, Suppressor, and Ext. Mag, but the class rules give a sidearm none (`rust/sim/src/class.rs`), so the editor greys them out. Allow them (Black Ops 2 lets pistols take attachments) or drop them from the file.
@@ -46,7 +46,7 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 - #344 to #348: the CQ-10, BP-9, KR-12, DM-7, and SG-12's own shots (they borrow the PDW-9's, M1911's, AK-47's, BR-3's, and M870's).
 - #396: the RL-4's launch and rocket flight (it fires with the M870's shot).
-- #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, Airstrike, Guided Missile, Attack Chopper, Sentry Gun, shoot-downs).
+- #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
 - #276: Search and Destroy's charge beeps, its own explosion, and the planted sting.
 - #288: Gun Game's weapon-up and set-back stings, and halftime and overtime stings.
 - #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
@@ -93,7 +93,6 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 
 ## Killcam
 
-- [ ] Streak killcams draw the live Sentry Gun and Attack Chopper, not where they were (the tape keeps no streaks), and a Guided Missile's killcam watches from above the blast instead of riding the missile down.
 - [ ] Hide the bodies of players who die while a killcam plays, and hide live grenades and smoke clouds under the replay (a cloud still hanging live shows twice).
 - [ ] First-person sounds for the killer's reloads and footsteps.
 
@@ -106,10 +105,7 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 ## Scorestreaks and perks
 
 - [ ] A damaged UAV's smoke trail, UAV assist points, and a full-map view for the dead and for spectators ([docs/scorestreaks.md](docs/scorestreaks.md)).
-- [ ] Attack Chopper: evading when locked on, and flares (Black Ops 2's).
-- [ ] Guided Missile: a warning to enemies under it, and restoring the pilot's view angle when it ends.
-- [ ] Sentry Gun: a minimap icon for our side's, and picking it up to move it (Black Ops 2 lets the owner carry it).
-- [ ] Engineer's Care Package reroll and booby trap, and Blind Eye's stand-still grace period once its value is known. A seventeenth perk needs a wider perk set on the wire (`perk::Perks` is a full `u16`).
+- [ ] Engineer's Care Package reroll and booby trap.
 
 ## Bots
 

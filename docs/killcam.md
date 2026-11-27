@@ -51,17 +51,6 @@ as soon as the respawn delay allows. A client that never answers is
 respawned after the death delay, the replay, and a second's margin
 (`killcam::respawn_wait`).
 
-## Scorestreak kills
-
-A kill by a scorestreak plays from the streak, as Black Ops 2 plays a kill
-from its inflictor (`getkillcamentity`): from just behind the Sentry Gun's or
-Attack Chopper's gun, or for the Airstrike and the Guided Missile, from 20 m
-above the blast and 8 m to its side, looking down at the victim
-(`killcam::streak_eye`). The killer is drawn as any other player, and no
-first-person weapon shows.
-
-![A Sentry Gun's kill replayed from the gun](media/killcam-sentry.jpg)
-
 ## How it plays
 
 The replay costs no bandwidth. Snapshots already carry every player to every
@@ -108,5 +97,3 @@ project's choice, and the round's last kill is replayed for everyone.
   deaths earn a killcam.
 - `godot/tests/killcam_test.gd`: a bot's kill replayed and skipped on a
   server.
-- `godot/tests/streak_killcam_test.gd`: a scorestreak's kill watched from
-  the streak.

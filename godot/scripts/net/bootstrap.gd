@@ -67,11 +67,7 @@ const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
 const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
 const SKY_VIEW_SCRIPT := "res://scripts/net/sky_view.gd"
-const SENTRY_VIEW_SCRIPT := "res://scripts/net/sentry_view.gd"
-const MISSILE_VIEW_SCRIPT := "res://scripts/net/missile_view.gd"
-const CHOPPER_VIEW_SCRIPT := "res://scripts/net/chopper_view.gd"
 const ENGINEER_VIEW_SCRIPT := "res://scripts/net/engineer_view.gd"
-const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
@@ -399,26 +395,18 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 		minimap, tdm_hud.find_child("ScoreBlock", true, false), tdm_hud.get("_feed")
 	]:
 		Settings.fit_hud(piece)
-	# The Airstrike: its target picker, jets, and blasts.
-	var airstrike := Node3D.new()
-	airstrike.name = "AirstrikeView"
-	airstrike.set_script(load(AIRSTRIKE_VIEW_SCRIPT))
-	airstrike.set("client", client)
-	airstrike.set("player", player)
-	main.add_child(airstrike)
 	# Scorestreaks: the chosen three, calls, and the use and next keys.
 	var streaks := Control.new()
 	streaks.name = "StreaksHud"
 	streaks.set_script(load(STREAKS_HUD_SCRIPT))
 	streaks.set("client", client)
 	streaks.set("player", player)
-	streaks.set("airstrike", airstrike)
 	tdm_hud.add_child(streaks)
 	# Under the match HUD's own pieces, so its menus and scoreboard cover them.
 	tdm_hud.move_child(streaks, 0)
 	tdm_hud.move_child(minimap, 0)
 	Settings.fit_hud(streaks)
-	# Engineer: enemy Sentry Guns and Care Packages through walls.
+	# Engineer: Care Packages not ours through walls.
 	var engineer := Control.new()
 	engineer.name = "EngineerView"
 	engineer.set_script(load(ENGINEER_VIEW_SCRIPT))
@@ -438,25 +426,6 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	sky.set_script(load(SKY_VIEW_SCRIPT))
 	sky.set("client", client)
 	main.add_child(sky)
-	# Sentry Guns set down, firing on whoever the server says.
-	var sentries := Node3D.new()
-	sentries.name = "SentryView"
-	sentries.set_script(load(SENTRY_VIEW_SCRIPT))
-	sentries.set("client", client)
-	main.add_child(sentries)
-	# Guided Missiles, their bomblets, and our own missile's camera.
-	var missiles := Node3D.new()
-	missiles.name = "MissileView"
-	missiles.set_script(load(MISSILE_VIEW_SCRIPT))
-	missiles.set("client", client)
-	missiles.set("player", player)
-	main.add_child(missiles)
-	# Attack Choppers guarding their points, and their wrecks.
-	var choppers := Node3D.new()
-	choppers.name = "ChopperView"
-	choppers.set_script(load(CHOPPER_VIEW_SCRIPT))
-	choppers.set("client", client)
-	main.add_child(choppers)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

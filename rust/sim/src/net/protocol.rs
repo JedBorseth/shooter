@@ -285,20 +285,8 @@ pub enum ClientMessage {
     /// The scorestreaks to bring from the next spawn on (`crate::streak`).
     /// The server keeps each streak once and sorts them by cost.
     Streaks(streak::Loadout),
-    /// Call in a held `streak` (the first held one of its kind). An
-    /// Airstrike carries the points (x, z) marked on the map.
-    UseStreak {
-        streak: Streak,
-        targets: Vec<Vec2>,
-    },
-    /// Flying a Guided Missile (`crate::missile`): where the pilot looks
-    /// (yaw, pitch), whether they boost, and whether they split it. Sent
-    /// about thirty times a second while they fly it.
-    SteerMissile {
-        view: Vec2,
-        boost: bool,
-        split: bool,
-    },
+    /// Call in a held `streak` (the first held one of its kind).
+    UseStreak(Streak),
     /// What we show others: prestige, calling card, and camos
     /// (`crate::cosmetics`). Sent with the class; the server checks it.
     Cosmetics(Cosmetics),
@@ -547,46 +535,6 @@ pub enum StreakEvent {
     CrateTaken { id: u16, by: u8, contents: Streak },
     /// To everyone: crate `id` ran out.
     CrateGone { id: u16 },
-    /// To everyone: player `owner` called an Airstrike: a strike lands on
-    /// each point at its tick.
-    Airstrike {
-        owner: u8,
-        strikes: Vec<(Vec3, Tick)>,
-    },
-    /// To everyone: a strike of `owner`'s Airstrike went off at `at`.
-    Strike { owner: u8, at: Vec3 },
-    /// To everyone, and on joining for each one up: a Sentry Gun was set
-    /// down (`crate::turret`).
-    Turret(TurretView),
-    /// To everyone: Sentry Gun `id` turned onto player `target` (none: it
-    /// has no one).
-    TurretTarget { id: u16, target: Option<u8> },
-    /// To everyone: Sentry Gun `id` is gone, destroyed by player `by` (none:
-    /// it ran out).
-    TurretGone { id: u16, by: Option<u8> },
-    /// To everyone, at launch and twenty times a second in flight: a
-    /// Guided Missile (`crate::missile`). `ended` is the last: its pilot's
-    /// camera goes back to them.
-    Missile(MissileView),
-    /// To everyone: Guided Missile `id` split into bomblets, each from
-    /// `from` to its point, fired at its tick.
-    Cluster {
-        id: u16,
-        from: Vec3,
-        bomblets: Vec<(Vec3, Tick)>,
-    },
-    /// To everyone: a scorestreak blast went off at `at`: a Guided
-    /// Missile's (`bomblet`: one of its bomblets).
-    MissileBlast { at: Vec3, bomblet: bool },
-    /// To everyone, and on joining for each one up: an Attack Chopper was
-    /// called in (`crate::chopper`). Its whole flight follows from these.
-    Chopper(ChopperView),
-    /// To everyone: Attack Chopper `id`'s gun turned onto player `target`
-    /// (none: it has no one).
-    ChopperTarget { id: u16, target: Option<u8> },
-    /// To everyone: Attack Chopper `id` was shot down by player `by` at
-    /// `at` (none: it left).
-    ChopperGone { id: u16, by: Option<u8>, at: Vec3 },
     /// To everyone: player `by` shot down aircraft `id` (`owner`'s
     /// `streak`) at `at`.
     Downed {
@@ -596,47 +544,6 @@ pub enum StreakEvent {
         by: u8,
         at: Vec3,
     },
-}
-
-/// An Attack Chopper: which, whose, on which side, the point it guards (at
-/// its flying height), when it was called, and the seed its spots and
-/// heading come from (`crate::chopper::Chopper::new`).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ChopperView {
-    pub id: u16,
-    pub owner: u8,
-    pub side: u8,
-    pub guard: Vec3,
-    pub called: Tick,
-    pub seed: u32,
-}
-
-/// A Guided Missile in flight: which, whose, on which side, where, its nose
-/// (yaw, pitch), whether it is boosting, whether it has split, and whether
-/// its flight (and its pilot's camera) is over.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MissileView {
-    pub id: u16,
-    pub owner: u8,
-    pub side: u8,
-    pub at: Vec3,
-    pub view: Vec2,
-    pub boosting: bool,
-    pub split: bool,
-    pub ended: bool,
-}
-
-/// A Sentry Gun set down: which, whose, on which side, its feet and the way
-/// it faces, and when it was set down and runs out.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TurretView {
-    pub id: u16,
-    pub owner: u8,
-    pub side: u8,
-    pub at: Vec3,
-    pub facing: f32,
-    pub placed: Tick,
-    pub until: Tick,
 }
 
 /// A UAV or Counter-UAV up: which, whose, on which side, when it was
@@ -953,8 +860,6 @@ pub enum KillCause {
     Equipment(equipment::Kind),
     /// Search and Destroy's charge going off.
     Charge,
-    /// A scorestreak (the Airstrike).
-    Streak(Streak),
 }
 
 /// Everything client prediction needs to restart from the server's result.
@@ -1051,8 +956,7 @@ pub struct PlayerView {
     /// Moves quietly (Dead Silence): other players hear its movement far
     /// quieter and only up close (`perk::heard`).
     pub quiet: bool,
-    /// Cold-Blooded: enemies aiming at them see no red name or crosshair,
-    /// and enemy Guided Missiles do not box them.
+    /// Cold-Blooded: enemies aiming at them see no red name or crosshair.
     pub unmarked: bool,
 }
 
@@ -1388,24 +1292,10 @@ impl ClientMessage {
                 w.bits(0, MORE_TAG_BITS);
                 write_loadout(&mut w, *loadout);
             }
-            ClientMessage::UseStreak { streak, targets } => {
+            ClientMessage::UseStreak(streak) => {
                 w.bits(7, TAG_BITS);
                 w.bits(1, MORE_TAG_BITS);
                 write_streak(&mut w, *streak);
-                let count = targets.len().min(streak::AIRSTRIKE_TARGETS);
-                w.varint(count as u32);
-                for t in &targets[..count] {
-                    w.f32(t.x);
-                    w.f32(t.y);
-                }
-            }
-            ClientMessage::SteerMissile { view, boost, split } => {
-                w.bits(7, TAG_BITS);
-                w.bits(2, MORE_TAG_BITS);
-                w.f32(view.x);
-                w.f32(view.y);
-                w.bool(*boost);
-                w.bool(*split);
             }
             ClientMessage::Cosmetics(cosmetics) => {
                 w.bits(7, TAG_BITS);
@@ -1481,23 +1371,7 @@ impl ClientMessage {
             6 => Ok(ClientMessage::SkipKillcam),
             7 => match r.bits(MORE_TAG_BITS)? {
                 0 => Ok(ClientMessage::Streaks(read_loadout(&mut r)?)),
-                1 => {
-                    let streak = read_streak(&mut r)?;
-                    let count = r.varint()? as usize;
-                    if count > streak::AIRSTRIKE_TARGETS {
-                        return Err(DecodeError::Invalid("streak targets"));
-                    }
-                    let mut targets = Vec::with_capacity(count);
-                    for _ in 0..count {
-                        targets.push(Vec2::new(read_finite(&mut r)?, read_finite(&mut r)?));
-                    }
-                    Ok(ClientMessage::UseStreak { streak, targets })
-                }
-                2 => Ok(ClientMessage::SteerMissile {
-                    view: Vec2::new(read_finite(&mut r)?, read_finite(&mut r)?),
-                    boost: r.bool()?,
-                    split: r.bool()?,
-                }),
+                1 => Ok(ClientMessage::UseStreak(read_streak(&mut r)?)),
                 3 => Ok(ClientMessage::Cosmetics(read_cosmetics(&mut r)?)),
                 4 => Ok(ClientMessage::SwitchTeam),
                 _ => Err(DecodeError::Invalid("client message tag")),
@@ -2109,15 +1983,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             write_weapon(w, k.weapon);
             write_cause(w, k.cause);
             w.bool(k.headshot);
-            match k.eye {
-                Some(eye) => {
-                    w.bool(true);
-                    for c in eye.to_array() {
-                        w.u32(c as u32);
-                    }
-                }
-                None => w.bool(false),
-            }
         }
         GameEvent::ChargeSites { sites } => {
             w.bits(19, EVENT_TAG_BITS);
@@ -2317,15 +2182,7 @@ fn write_cause(w: &mut BitWriter, cause: KillCause) {
             w.bits(2, 2);
             w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
         }
-        KillCause::Charge => {
-            w.bits(3, 2);
-            w.bool(false);
-        }
-        KillCause::Streak(streak) => {
-            w.bits(3, 2);
-            w.bool(true);
-            write_streak(w, streak);
-        }
+        KillCause::Charge => w.bits(3, 2),
     }
 }
 
@@ -2334,7 +2191,6 @@ fn read_cause(r: &mut BitReader) -> DecodeResult<KillCause> {
         0 => KillCause::Weapon,
         1 => KillCause::Knife,
         2 => KillCause::Equipment(read_equipment(r)?),
-        _ if r.bool()? => KillCause::Streak(read_streak(r)?),
         _ => KillCause::Charge,
     })
 }
@@ -2583,15 +2439,6 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 weapon: read_weapon(r)?,
                 cause: read_cause(r)?,
                 headshot: r.bool()?,
-                eye: if r.bool()? {
-                    let mut c = [0; 3];
-                    for v in &mut c {
-                        *v = r.u32()? as i32;
-                    }
-                    Some(glam::IVec3::from_array(c))
-                } else {
-                    None
-                },
             }))
         }
         19 => {
@@ -2717,8 +2564,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
 
 const STREAK_EVENT_TAG: u32 = 24;
 const STATS_EVENT_TAG: u32 = 25;
-/// Bits for a [`StreakEvent`]'s tag; room for thirty-two.
-const STREAK_TAG_BITS: u32 = 5;
+/// Bits for a [`StreakEvent`]'s tag; room for sixteen.
+const STREAK_TAG_BITS: u32 = 4;
 const COSMETICS_EVENT_TAG: u32 = 26;
 const CASTER_EVENT_TAG: u32 = 27;
 /// Bits for a prestige (0 to `progression::MAX_PRESTIGE`).
@@ -2760,8 +2607,6 @@ fn read_cosmetics(r: &mut BitReader) -> DecodeResult<Cosmetics> {
 /// [`StreakEvent::Sky`] does.
 const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
 const MAX_AIRBORNE: usize = 32;
-/// Most bomblets one [`StreakEvent::Cluster`] lists.
-const MAX_BOMBLETS: usize = crate::missile::CLUSTER_SIZE + 1;
 
 fn write_streak(w: &mut BitWriter, streak: Streak) {
     w.bits(u32::from(streak.code()), STREAK_BITS);
@@ -2857,21 +2702,6 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             w.bits(5, STREAK_TAG_BITS);
             w.u16(*id);
         }
-        StreakEvent::Airstrike { owner, strikes } => {
-            w.bits(6, STREAK_TAG_BITS);
-            w.u8(*owner);
-            let count = strikes.len().min(streak::AIRSTRIKE_TARGETS);
-            w.varint(count as u32);
-            for (at, tick) in &strikes[..count] {
-                write_vec3(w, *at);
-                w.u32(*tick);
-            }
-        }
-        StreakEvent::Strike { owner, at } => {
-            w.bits(7, STREAK_TAG_BITS);
-            w.u8(*owner);
-            write_vec3(w, *at);
-        }
         StreakEvent::Sky { orbit, up } => {
             w.bits(1, STREAK_TAG_BITS);
             write_vec3(w, orbit.centre);
@@ -2900,74 +2730,6 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             write_streak(w, *streak);
             w.u8(*owner);
             w.u8(*by);
-            write_vec3(w, *at);
-        }
-        StreakEvent::Turret(t) => {
-            w.bits(9, STREAK_TAG_BITS);
-            w.u16(t.id);
-            w.u8(t.owner);
-            w.u8(t.side);
-            write_vec3(w, t.at);
-            w.f32(t.facing);
-            w.u32(t.placed);
-            w.u32(t.until);
-        }
-        StreakEvent::TurretTarget { id, target } => {
-            w.bits(10, STREAK_TAG_BITS);
-            w.u16(*id);
-            write_option_u8(w, *target);
-        }
-        StreakEvent::TurretGone { id, by } => {
-            w.bits(11, STREAK_TAG_BITS);
-            w.u16(*id);
-            write_option_u8(w, *by);
-        }
-        StreakEvent::Missile(m) => {
-            w.bits(12, STREAK_TAG_BITS);
-            w.u16(m.id);
-            w.u8(m.owner);
-            w.u8(m.side);
-            write_vec3(w, m.at);
-            w.f32(m.view.x);
-            w.f32(m.view.y);
-            w.bool(m.boosting);
-            w.bool(m.split);
-            w.bool(m.ended);
-        }
-        StreakEvent::Cluster { id, from, bomblets } => {
-            w.bits(13, STREAK_TAG_BITS);
-            w.u16(*id);
-            write_vec3(w, *from);
-            let count = bomblets.len().min(MAX_BOMBLETS);
-            w.varint(count as u32);
-            for (to, tick) in &bomblets[..count] {
-                write_vec3(w, *to);
-                w.u32(*tick);
-            }
-        }
-        StreakEvent::MissileBlast { at, bomblet } => {
-            w.bits(14, STREAK_TAG_BITS);
-            write_vec3(w, *at);
-            w.bool(*bomblet);
-        }
-        StreakEvent::Chopper(c) => {
-            w.bits(15, STREAK_TAG_BITS);
-            w.u16(c.id);
-            w.u8(c.owner);
-            w.u8(c.side);
-            write_vec3(w, c.guard);
-            w.u32(c.called);
-            w.u32(c.seed);
-        }
-        StreakEvent::ChopperTarget { id, target } => {
-            w.bits(16, STREAK_TAG_BITS);
-            w.u16(*id);
-            write_option_u8(w, *target);
-        }
-        StreakEvent::ChopperGone { id, by, at } => {
-            w.bits(17, STREAK_TAG_BITS);
-            w.u16(*id);
-            write_option_u8(w, *by);
             write_vec3(w, *at);
         }
     }
@@ -3036,88 +2798,11 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             contents: read_streak(r)?,
         }),
         5 => Ok(StreakEvent::CrateGone { id: r.u16()? }),
-        6 => {
-            let owner = r.u8()?;
-            let count = r.varint()? as usize;
-            if count > streak::AIRSTRIKE_TARGETS {
-                return Err(DecodeError::Invalid("strikes"));
-            }
-            let mut strikes = Vec::with_capacity(count);
-            for _ in 0..count {
-                strikes.push((read_finite_vec3(r)?, r.u32()?));
-            }
-            Ok(StreakEvent::Airstrike { owner, strikes })
-        }
-        7 => Ok(StreakEvent::Strike {
-            owner: r.u8()?,
-            at: read_finite_vec3(r)?,
-        }),
         8 => Ok(StreakEvent::Downed {
             id: r.u16()?,
             streak: read_streak(r)?,
             owner: r.u8()?,
             by: r.u8()?,
-            at: read_finite_vec3(r)?,
-        }),
-        9 => Ok(StreakEvent::Turret(TurretView {
-            id: r.u16()?,
-            owner: r.u8()?,
-            side: r.u8()?,
-            at: read_finite_vec3(r)?,
-            facing: read_finite(r)?,
-            placed: r.u32()?,
-            until: r.u32()?,
-        })),
-        10 => Ok(StreakEvent::TurretTarget {
-            id: r.u16()?,
-            target: read_option_u8(r)?,
-        }),
-        11 => Ok(StreakEvent::TurretGone {
-            id: r.u16()?,
-            by: read_option_u8(r)?,
-        }),
-        12 => Ok(StreakEvent::Missile(MissileView {
-            id: r.u16()?,
-            owner: r.u8()?,
-            side: r.u8()?,
-            at: read_finite_vec3(r)?,
-            view: Vec2::new(read_finite(r)?, read_finite(r)?),
-            boosting: r.bool()?,
-            split: r.bool()?,
-            ended: r.bool()?,
-        })),
-        13 => {
-            let id = r.u16()?;
-            let from = read_finite_vec3(r)?;
-            let count = r.varint()? as usize;
-            if count > MAX_BOMBLETS {
-                return Err(DecodeError::Invalid("bomblets"));
-            }
-            let mut bomblets = Vec::with_capacity(count);
-            for _ in 0..count {
-                bomblets.push((read_finite_vec3(r)?, r.u32()?));
-            }
-            Ok(StreakEvent::Cluster { id, from, bomblets })
-        }
-        14 => Ok(StreakEvent::MissileBlast {
-            at: read_finite_vec3(r)?,
-            bomblet: r.bool()?,
-        }),
-        15 => Ok(StreakEvent::Chopper(ChopperView {
-            id: r.u16()?,
-            owner: r.u8()?,
-            side: r.u8()?,
-            guard: read_finite_vec3(r)?,
-            called: r.u32()?,
-            seed: r.u32()?,
-        })),
-        16 => Ok(StreakEvent::ChopperTarget {
-            id: r.u16()?,
-            target: read_option_u8(r)?,
-        }),
-        17 => Ok(StreakEvent::ChopperGone {
-            id: r.u16()?,
-            by: read_option_u8(r)?,
             at: read_finite_vec3(r)?,
         }),
         _ => Err(DecodeError::Invalid("streak event")),
@@ -3225,17 +2910,6 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         ),
         _ => return Err(DecodeError::Invalid("award")),
     })
-}
-
-fn write_option_u8(w: &mut BitWriter, value: Option<u8>) {
-    w.bool(value.is_some());
-    if let Some(v) = value {
-        w.u8(v);
-    }
-}
-
-fn read_option_u8(r: &mut BitReader) -> DecodeResult<Option<u8>> {
-    Ok(if r.bool()? { Some(r.u8()?) } else { None })
 }
 
 fn read_finite(r: &mut BitReader) -> DecodeResult<f32> {
@@ -4434,64 +4108,6 @@ mod tests {
                 by: 9,
                 at: Vec3::new(20.0, 50.5, -4.0),
             }),
-            GameEvent::Streak(StreakEvent::Turret(TurretView {
-                id: 3,
-                owner: 4,
-                side: 1,
-                at: Vec3::new(-3.0, 0.5, 12.25),
-                facing: -1.25,
-                placed: 5000,
-                until: 33_800,
-            })),
-            GameEvent::Streak(StreakEvent::TurretTarget {
-                id: 3,
-                target: Some(8),
-            }),
-            GameEvent::Streak(StreakEvent::TurretTarget {
-                id: 3,
-                target: None,
-            }),
-            GameEvent::Streak(StreakEvent::TurretGone { id: 3, by: Some(8) }),
-            GameEvent::Streak(StreakEvent::TurretGone { id: 4, by: None }),
-            GameEvent::Streak(StreakEvent::Missile(MissileView {
-                id: 2,
-                owner: 5,
-                side: 0,
-                at: Vec3::new(1.0, 110.0, -4.0),
-                view: Vec2::new(0.5, -1.2),
-                boosting: true,
-                split: false,
-                ended: false,
-            })),
-            GameEvent::Streak(StreakEvent::Cluster {
-                id: 2,
-                from: Vec3::new(1.0, 30.0, -4.0),
-                bomblets: vec![
-                    (Vec3::new(3.0, 0.5, 2.0), 900),
-                    (Vec3::new(-5.0, 0.0, 9.0), 906),
-                ],
-            }),
-            GameEvent::Streak(StreakEvent::MissileBlast {
-                at: Vec3::new(2.0, 0.0, 1.0),
-                bomblet: true,
-            }),
-            GameEvent::Streak(StreakEvent::Chopper(ChopperView {
-                id: 1,
-                owner: 9,
-                side: 1,
-                guard: Vec3::new(4.0, 26.0, -10.5),
-                called: 12_000,
-                seed: 0xdead_beef,
-            })),
-            GameEvent::Streak(StreakEvent::ChopperTarget {
-                id: 1,
-                target: Some(3),
-            }),
-            GameEvent::Streak(StreakEvent::ChopperGone {
-                id: 1,
-                by: None,
-                at: Vec3::new(0.0, 26.0, 1.0),
-            }),
             GameEvent::Streak(StreakEvent::CrateIncoming {
                 id: 600,
                 owner: 4,
@@ -4519,17 +4135,6 @@ mod tests {
                 contents: Streak::Uav,
             }),
             GameEvent::Streak(StreakEvent::CrateGone { id: 1 }),
-            GameEvent::Streak(StreakEvent::Airstrike {
-                owner: 2,
-                strikes: vec![
-                    (Vec3::new(1.0, 2.0, 3.0), 500),
-                    (Vec3::new(-4.0, 0.0, 9.5), 620),
-                ],
-            }),
-            GameEvent::Streak(StreakEvent::Strike {
-                owner: 2,
-                at: Vec3::new(1.0, 2.0, 3.0),
-            }),
         ]);
         assert_eq!(
             ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -5481,7 +5086,7 @@ mod tests {
                 CasterRow {
                     id: 3,
                     class: Class::default(),
-                    streaks: streak::Loadout([Some(Streak::Uav), None, Some(Streak::SentryGun)]),
+                    streaks: streak::Loadout([Some(Streak::Uav), None, Some(Streak::CarePackage)]),
                     progress: 250,
                     held: vec![Streak::Uav],
                 },
@@ -5514,20 +5119,6 @@ mod tests {
                     weapon: WeaponId::expect("m4"),
                     cause: KillCause::Equipment(equipment::Kind::Frag),
                     headshot: false,
-                    eye: None,
-                }
-                .killcam(killcam::Kind::Respawn),
-            ),
-            GameEvent::Killcam(
-                killcam::KillRecord {
-                    killer: 5,
-                    victim: 2,
-                    tick: 4_000,
-                    rewind: 0,
-                    weapon: WeaponId::expect("m4"),
-                    cause: KillCause::Streak(crate::streak::Streak::SentryGun),
-                    headshot: false,
-                    eye: Some(glam::IVec3::new(-1250, 180, 30_000)),
                 }
                 .killcam(killcam::Kind::Respawn),
             ),
@@ -5540,7 +5131,6 @@ mod tests {
                     weapon: WeaponId::expect("m40"),
                     cause: KillCause::Weapon,
                     headshot: true,
-                    eye: None,
                 }
                 .killcam(killcam::Kind::Final),
             ),
@@ -6003,19 +5593,8 @@ mod tests {
             }),
             ClientMessage::Streaks(streak::Loadout::default()),
             ClientMessage::Streaks(streak::Loadout([None, Some(Streak::CounterUav), None])),
-            ClientMessage::UseStreak {
-                streak: Streak::CounterUav,
-                targets: Vec::new(),
-            },
-            ClientMessage::UseStreak {
-                streak: Streak::Airstrike,
-                targets: vec![Vec2::new(1.5, -20.0), Vec2::new(30.25, 4.0)],
-            },
-            ClientMessage::SteerMissile {
-                view: Vec2::new(-2.5, -1.25),
-                boost: true,
-                split: false,
-            },
+            ClientMessage::UseStreak(Streak::CounterUav),
+            ClientMessage::UseStreak(Streak::CarePackage),
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
         }

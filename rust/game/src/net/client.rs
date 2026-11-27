@@ -259,17 +259,6 @@ pub struct NetClient {
     /// tick the world is drawn at, where they are drawn.
     sky_orbit: streak::Orbit,
     render_tick: f64,
-    /// Sentry Guns set down (`shooter_sim::turret`), and the player each is
-    /// on, as the server said.
-    turrets: Vec<(protocol::TurretView, Option<u8>)>,
-    /// Guided Missiles in the air (`shooter_sim::missile`), each with the
-    /// draw tick its state came at; their bomblets; and the one we fly.
-    missiles: Vec<(protocol::MissileView, f64)>,
-    bomblets: Vec<shooter_sim::missile::Bomblet>,
-    piloting: Option<u16>,
-    /// Attack Choppers called in (`shooter_sim::chopper`), rebuilt from
-    /// what the server said, and the player each one's gun is on.
-    choppers: Vec<(shooter_sim::chopper::Chopper, Option<u8>)>,
     /// The enemy under our crosshair, shown by name in red (`update_aimed`).
     aimed: Option<u8>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
@@ -613,44 +602,11 @@ impl NetClient {
     #[signal]
     fn aircraft_downed(streak: GString, ours: bool, by_me: bool, at: Vector3);
 
-    /// A Sentry Gun went (`turrets`): `destroyed` whether shot to pieces
-    /// rather than run out, `ours` whether it was our side's, `by_me`
-    /// whether we did it, and where it stood.
-    #[signal]
-    fn turret_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
-
-    /// An Attack Chopper was called in, `ours` whether by our side.
-    #[signal]
-    fn chopper_called(ours: bool);
-
-    /// An Attack Chopper went: `destroyed` whether shot down rather than
-    /// left, `ours` whether it was our side's, `by_me` whether we did it,
-    /// and where it was.
-    #[signal]
-    fn chopper_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
-
-    /// We started (`flying`) or stopped flying a Guided Missile.
-    #[signal]
-    fn missile_piloting(flying: bool);
-
-    /// A Guided Missile or one of its bomblets went off at `at`.
-    #[signal]
-    fn missile_blast(at: Vector3, bomblet: bool);
-
     /// A Care Package was called in, captured, taken, or ran out
     /// (`crates`). `taken_by` is who took one and `contents` the streak's
     /// key (-1 and "" otherwise).
     #[signal]
     fn crates_changed(taken_by: i32, contents: GString);
-
-    /// Player `owner` called an Airstrike: a strike lands on each of
-    /// `points` in `seconds`.
-    #[signal]
-    fn airstrike_called(owner: i32, points: PackedVector3Array, seconds: PackedFloat32Array);
-
-    /// A strike of `owner`'s Airstrike went off at `at`.
-    #[signal]
-    fn strike_landed(owner: i32, at: Vector3);
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -919,7 +875,6 @@ impl NetClient {
             KillCause::Knife => KNIFE_NAME.to_owned(),
             KillCause::Equipment(kind) => kind.name().to_owned(),
             KillCause::Charge => CHARGE_NAME.to_owned(),
-            KillCause::Streak(streak) => streak.label().to_owned(),
             KillCause::Weapon => base,
         };
         let attachment = match k.cause {
@@ -1081,27 +1036,7 @@ impl NetClient {
     #[func]
     fn use_streak(&mut self) {
         if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
-            self.send_reliable(&ClientMessage::UseStreak {
-                streak,
-                targets: Vec::new(),
-            });
-        }
-    }
-
-    /// Calls in the selected held Airstrike on `targets` (points on the
-    /// map; their y is ignored, and only the first three count).
-    #[func]
-    fn use_airstrike(&mut self, targets: PackedVector3Array) {
-        if self.streak_held.get(self.streak_selected) == Some(&Streak::Airstrike) {
-            let targets = targets
-                .as_slice()
-                .iter()
-                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
-                .collect();
-            self.send_reliable(&ClientMessage::UseStreak {
-                streak: Streak::Airstrike,
-                targets,
-            });
+            self.send_reliable(&ClientMessage::UseStreak(streak));
         }
     }
 
@@ -1230,146 +1165,6 @@ impl NetClient {
                 d
             })
             .collect()
-    }
-
-    /// The Sentry Guns set down, as dictionaries with `id`, `ours` (our
-    /// side's), `mine`, `position` (its feet), `facing` (yaw), `armed`
-    /// (past its arming delay), `seconds_left`, and `target` (the chest of
-    /// the player it is on, or null).
-    #[func]
-    fn turrets(&self) -> Array<VarDictionary> {
-        let arm = f64::from(streak::seconds_to_ticks(shooter_sim::turret::ARM_SECONDS));
-        self.turrets
-            .iter()
-            .map(|(t, on)| {
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(t.id));
-                d.set("ours", self.ours(t.side));
-                d.set("mine", Some(t.owner) == self.player_id);
-                d.set("position", to_godot(t.at));
-                d.set("facing", t.facing);
-                d.set("armed", self.render_tick >= f64::from(t.placed) + arm);
-                d.set("seconds_left", self.seconds_until(Some(t.until)));
-                let target = on
-                    .and_then(|id| self.carrier_feet(id))
-                    .map(|feet| feet + Vector3::UP * (shooter_sim::turret::BODY_HEIGHT * 0.7));
-                match target {
-                    Some(at) => d.set("target", at),
-                    None => d.set("target", &Variant::nil()),
-                }
-                d
-            })
-            .collect()
-    }
-
-    /// The Attack Choppers as drawn now, as dictionaries with `id`, `ours`,
-    /// `position`, `heading` (the way it moves, as a yaw), and `target`
-    /// (the chest of the player its gun is on, or null).
-    #[func]
-    fn choppers(&self) -> Array<VarDictionary> {
-        let now = self.render_tick;
-        self.choppers
-            .iter()
-            .map(|(c, on)| {
-                let at = c.position(now);
-                let ahead = c.position(now + f64::from(TICK_RATE) * 0.25) - at;
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(c.id));
-                d.set("ours", self.ours(c.side));
-                d.set("position", to_godot(at));
-                let heading = if ahead.length() > 0.05 {
-                    (-ahead.x).atan2(-ahead.z)
-                } else {
-                    f32::NAN
-                };
-                d.set("heading", heading);
-                let target = on
-                    .and_then(|id| self.carrier_feet(id))
-                    .map(|feet| feet + Vector3::UP * 1.2);
-                match target {
-                    Some(at) => d.set("target", at),
-                    None => d.set("target", &Variant::nil()),
-                }
-                d
-            })
-            .collect()
-    }
-
-    /// Calls in the selected held streak on `targets` (points on the map;
-    /// their y is ignored): an Attack Chopper's one mark.
-    #[func]
-    fn use_streak_at(&mut self, targets: PackedVector3Array) {
-        if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
-            let targets = targets
-                .as_slice()
-                .iter()
-                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
-                .collect();
-            self.send_reliable(&ClientMessage::UseStreak { streak, targets });
-        }
-    }
-
-    /// The Guided Missiles in the air as drawn now, as dictionaries with
-    /// `id`, `mine`, `ours`, `position` (carried on from its last state),
-    /// `yaw` and `pitch` (its nose), `boosting`, and `split`.
-    #[func]
-    fn missiles(&self) -> Array<VarDictionary> {
-        self.missiles
-            .iter()
-            .map(|(m, at)| {
-                let dir = shooter_sim::look::view_direction(m.view.x, m.view.y);
-                let speed = if m.boosting && !m.split {
-                    shooter_sim::missile::BOOST_SPEED
-                } else {
-                    shooter_sim::missile::SPEED
-                };
-                let seconds = ((self.render_tick - at) / f64::from(TICK_RATE)).clamp(0.0, 0.4);
-                let position = m.at + dir * speed * seconds as f32;
-                let mut d = VarDictionary::new();
-                d.set("id", i32::from(m.id));
-                d.set("mine", Some(m.owner) == self.player_id);
-                d.set("ours", self.ours(m.side));
-                d.set("position", to_godot(position));
-                d.set("yaw", m.view.x);
-                d.set("pitch", m.view.y);
-                d.set("boosting", m.boosting);
-                d.set("split", m.split);
-                d
-            })
-            .collect()
-    }
-
-    /// Where the bomblets in flight are drawn now.
-    #[func]
-    fn bomblets(&mut self) -> PackedVector3Array {
-        let now = self.render_tick;
-        self.bomblets
-            .retain(|b| f64::from(b.lands_at()) + f64::from(TICK_RATE) > now);
-        self.bomblets
-            .iter()
-            .filter(|b| f64::from(b.lands_at()) >= now)
-            .filter_map(|b| b.at(now))
-            .map(to_godot)
-            .collect()
-    }
-
-    /// The Guided Missile we fly, or -1.
-    #[func]
-    fn piloting(&self) -> i32 {
-        self.piloting.map_or(-1, i32::from)
-    }
-
-    /// Steers the Guided Missile we fly: toward `yaw` and `pitch`,
-    /// boosting while `boost`, and splitting it if `split`.
-    #[func]
-    fn steer_missile(&mut self, yaw: f32, pitch: f32, boost: bool, split: bool) {
-        if self.piloting.is_some() {
-            self.send_reliable(&ClientMessage::SteerMissile {
-                view: shooter_sim::Vec2::new(yaw, pitch),
-                boost,
-                split,
-            });
-        }
     }
 
     /// Whether the crosshair is on an enemy it may show as one: the
@@ -2150,7 +1945,6 @@ impl NetClient {
                     KillCause::Knife => GString::from(KNIFE_NAME),
                     KillCause::Equipment(kind) => GString::from(kind.name()),
                     KillCause::Charge => GString::from(CHARGE_NAME),
-                    KillCause::Streak(streak) => GString::from(streak.label()),
                     KillCause::Weapon => GString::from(&weapon.def().name),
                 };
                 self.signals().kill_reported().emit(
@@ -2447,17 +2241,6 @@ impl NetClient {
                 self.crates.retain(|c| c.id != id);
                 self.signals().crates_changed().emit(-1, "");
             }
-            GameEvent::Streak(StreakEvent::Airstrike { owner, strikes }) => {
-                let points: PackedVector3Array =
-                    strikes.iter().map(|(at, _)| to_godot(*at)).collect();
-                let seconds: PackedFloat32Array = strikes
-                    .iter()
-                    .map(|(_, tick)| self.seconds_until(Some(*tick)) as f32)
-                    .collect();
-                self.signals()
-                    .airstrike_called()
-                    .emit(i32::from(owner), &points, &seconds);
-            }
             GameEvent::Streak(StreakEvent::Downed {
                 id,
                 streak,
@@ -2478,97 +2261,6 @@ impl NetClient {
                 self.match_stats = stats;
                 self.signals().stats_changed().emit();
             }
-            GameEvent::Streak(StreakEvent::Missile(view)) => {
-                let mine = Some(view.owner) == self.player_id;
-                self.missiles.retain(|(m, _)| m.id != view.id);
-                if view.ended {
-                    if mine && self.piloting == Some(view.id) {
-                        self.piloting = None;
-                        self.signals().missile_piloting().emit(false);
-                    }
-                } else {
-                    self.missiles.push((view, self.render_tick));
-                    if mine && self.piloting.is_none() && !view.split {
-                        self.piloting = Some(view.id);
-                        self.signals().missile_piloting().emit(true);
-                    }
-                }
-            }
-            GameEvent::Streak(StreakEvent::Cluster { id, from, bomblets }) => {
-                for (to, fire_at) in bomblets {
-                    self.bomblets.push(shooter_sim::missile::Bomblet {
-                        missile: id,
-                        owner: 0,
-                        side: 0,
-                        from,
-                        to,
-                        fire_at,
-                    });
-                }
-            }
-            GameEvent::Streak(StreakEvent::MissileBlast { at, bomblet }) => {
-                if !bomblet {
-                    // The missile itself went off: it is drawn no more.
-                    let near = self
-                        .missiles
-                        .iter()
-                        .position(|(m, _)| m.at.distance(at) < 20.0 && !m.split);
-                    if let Some(i) = near {
-                        self.missiles.remove(i);
-                    }
-                }
-                self.signals().missile_blast().emit(to_godot(at), bomblet);
-            }
-            GameEvent::Streak(StreakEvent::Chopper(view)) => {
-                self.choppers.retain(|(c, _)| c.id != view.id);
-                let chopper = shooter_sim::chopper::Chopper::new(
-                    view.id,
-                    view.owner,
-                    view.side,
-                    view.guard,
-                    view.called,
-                    view.seed,
-                );
-                self.choppers.push((chopper, None));
-                let ours = self.ours(view.side);
-                self.signals().chopper_called().emit(ours);
-            }
-            GameEvent::Streak(StreakEvent::ChopperTarget { id, target }) => {
-                if let Some((_, on)) = self.choppers.iter_mut().find(|(c, _)| c.id == id) {
-                    *on = target;
-                }
-            }
-            GameEvent::Streak(StreakEvent::ChopperGone { id, by, at }) => {
-                let Some(index) = self.choppers.iter().position(|(c, _)| c.id == id) else {
-                    return;
-                };
-                let (c, _) = self.choppers.remove(index);
-                let ours = self.ours(c.side);
-                let by_me = by.is_some() && by == self.player_id;
-                self.signals()
-                    .chopper_gone()
-                    .emit(by.is_some(), ours, by_me, to_godot(at));
-            }
-            GameEvent::Streak(StreakEvent::Turret(view)) => {
-                self.turrets.retain(|(t, _)| t.id != view.id);
-                self.turrets.push((view, None));
-            }
-            GameEvent::Streak(StreakEvent::TurretTarget { id, target }) => {
-                if let Some((_, on)) = self.turrets.iter_mut().find(|(t, _)| t.id == id) {
-                    *on = target;
-                }
-            }
-            GameEvent::Streak(StreakEvent::TurretGone { id, by }) => {
-                let Some(index) = self.turrets.iter().position(|(t, _)| t.id == id) else {
-                    return;
-                };
-                let (view, _) = self.turrets.remove(index);
-                let ours = self.ours(view.side);
-                let by_me = by.is_some() && by == self.player_id;
-                self.signals()
-                    .turret_gone()
-                    .emit(by.is_some(), ours, by_me, to_godot(view.at));
-            }
             GameEvent::Caster(rows) => {
                 self.caster = rows;
             }
@@ -2582,11 +2274,6 @@ impl NetClient {
                 }
                 self.cosmetics.insert(id, cosmetics);
                 self.signals().cosmetics_changed().emit(i32::from(id));
-            }
-            GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
-                self.signals()
-                    .strike_landed()
-                    .emit(i32::from(owner), to_godot(at));
             }
             GameEvent::Streak(StreakEvent::Sky { orbit, up }) => {
                 let new = up
@@ -3219,7 +2906,6 @@ impl NetClient {
             camera,
             zoom,
             frame,
-            weapon: true,
         }));
         for cue in cues {
             match cue {

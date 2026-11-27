@@ -40,7 +40,7 @@ format is tested without the engine.
   spectate), then one `InputPacket` a tick. Each packet carries every input the server has not acknowledged, up
   to 24 (200 ms), so a lost packet costs nothing while a later one arrives.
   Reliable messages cover ready-up, the class, streaks, and cosmetics,
-  chat, skipping a killcam, steering a Guided Missile, and switching teams
+  chat, skipping a killcam, and switching teams
   in the lobby.
 - **Server to client.** A welcome (player id, tick, snapshot interval, the
   mode and its rules, the server's build, custom game settings, and whether

@@ -75,7 +75,6 @@ const CARDS: &[(&str, &str)] = &[
     ("watchtower", "Watchtower"),
     ("blackout", "Blackout"),
     ("airdrop", "Airdrop"),
-    ("thunder", "Thunder"),
     // Mastery.
     ("nebula", "Nebula"),
     // Prestige.

@@ -10,12 +10,6 @@
 //! reloads, switches, shots, and knife. Bodies that fall in the replay are
 //! taken away when it ends, and bodies already lying in the world hide
 //! while it plays (they may not have fallen yet at the replayed moment).
-//!
-//! A scorestreak's kill is watched from the streak instead
-//! (`Killcam::eye`, as Black Ops 2 plays it from the inflictor): a fixed
-//! camera just behind the Sentry Gun's or Attack Chopper's gun, or in the sky over an
-//! Airstrike's or Guided Missile's blast, turned on the victim, with the
-//! killer drawn as any other player and no first-person weapon.
 
 use godot::prelude::*;
 use shooter_sim::killcam::{Killcam, Playback, Tape};
@@ -39,8 +33,6 @@ pub struct KillcamView {
     pub zoom: f32,
     /// What the first-person weapon shows.
     pub frame: ViewFrame,
-    /// Whether the first-person weapon shows at all (not from a streak).
-    pub weapon: bool,
 }
 
 /// Something the killer's weapon did this frame, beyond its pose.
@@ -218,28 +210,6 @@ pub fn eye(s: &RemoteSample) -> (Transform3D, f32) {
     (Transform3D::new(basis, origin), zoom)
 }
 
-/// Height above the feet a streak's killcam looks at: the chest.
-const STREAK_LOOK_HEIGHT: f32 = 1.2;
-
-/// How far behind and above the streak's gun its killcam sits, so the gun
-/// shows in front of the camera instead of around it.
-const STREAK_BACK: f32 = 2.2;
-const STREAK_RISE: f32 = 0.7;
-
-/// A camera at `from` looking at `target`.
-fn streak_camera(from: Vector3, target: Vector3) -> Transform3D {
-    let to = target - from;
-    let up = if to.normalized().dot(Vector3::UP).abs() > 0.99 {
-        Vector3::BACK
-    } else {
-        Vector3::UP
-    };
-    Transform3D::new(Basis::IDENTITY, from)
-        .looking_at_ex(target)
-        .up(up)
-        .done()
-}
-
 /// A killcam being played.
 pub struct Playing {
     pub playback: Playback,
@@ -254,8 +224,6 @@ pub struct Playing {
     grenades: GrenadeShow,
     /// The replay tick grenades were last drawn at (blasts after it play).
     grenades_tick: f64,
-    /// Where a streak's killcam looks: the victim's chest.
-    watch: Option<Vector3>,
 }
 
 impl Playing {
@@ -281,7 +249,7 @@ impl Playing {
             {
                 let mut body = node.bind_mut();
                 body.set_replay();
-                body.set_first_person(id == killcam.killer && killcam.eye.is_none());
+                body.set_first_person(id == killcam.killer);
             }
             bodies.push((id, node));
         }
@@ -301,7 +269,6 @@ impl Playing {
             held: 0.0,
             grenades: GrenadeShow::default(),
             grenades_tick: Playback::new(killcam).others_tick(),
-            watch: None,
         }
     }
 
@@ -332,34 +299,11 @@ impl Playing {
         self.draw_grenades(tape, replay_dt);
         let sample = tape.sample(killer, self.playback.tick())?;
         let frame = self.driver.frame(&sample, replay_dt, cues);
-        if let Some(from) = self.playback.killcam().eye_position() {
-            // The killer's own gun is not what killed: no shots of theirs
-            // kick or sound in first person.
-            cues.clear();
-            // From the streak, turned on the victim (where they lay last,
-            // once they are off the tape).
-            let victim = self.playback.killcam().victim;
-            if let Some(v) = tape.sample(victim, self.playback.others_tick()) {
-                self.watch = Some(to_godot(v.position) + Vector3::UP * STREAK_LOOK_HEIGHT);
-            }
-            let gun = to_godot(from);
-            let target = self.watch.unwrap_or(gun + Vector3::FORWARD);
-            // Over the streak's shoulder rather than inside its model.
-            let back = (gun - target).normalized() * STREAK_BACK;
-            let from = gun + Vector3::new(back.x, 0.0, back.z) + Vector3::UP * STREAK_RISE;
-            return Some(KillcamView {
-                camera: streak_camera(from, target),
-                zoom: 1.0,
-                frame,
-                weapon: false,
-            });
-        }
         let (camera, zoom) = eye(&sample);
         Some(KillcamView {
             camera,
             zoom,
             frame,
-            weapon: true,
         })
     }
 

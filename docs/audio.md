@@ -13,7 +13,7 @@ The layout is `godot/default_bus_layout.tres`.
 | Bus | Sends to | What plays on it |
 | --- | --- | --- |
 | Master | | `MixCompressor` (off unless the audio mix turns it on), then a hard limiter at -0.5 dBFS. |
-| Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's and chopper's guns. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
+| Weapons | Master | Gunshots, yours and everyone else's near layers, slapback, the sentry's gun. A compressor (threshold -12 dB, 2 ms attack, 120 ms release). No engine reverb: tails are baked. |
 | WeaponsDistant | Weapons | Other players' `mid` and `far` layers. Ducked by close gunfire. |
 | Effects | Master | Impacts, near misses, case clinks, explosions, grenades. Gets the room reverb indoors. |
 | WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`), so a reload follows the Effects slider and never ducks anything. |
@@ -148,7 +148,7 @@ out from 140 to 220 m, and the `far` one in from 100 to 170 m, each falling 6 dB
 per doubling past its own reference (40 and 120 m), on WeaponsDistant
 (`gunfire::layer_weights`).
 
-The sentry and the attack chopper fire with `weapons/ak47_fire.ogg`.
+The sentry fires with `weapons/ak47_fire.ogg`.
 
 ## Weapon handling (foley)
 
@@ -292,10 +292,9 @@ except the medal chime.
 
 ## Equipment and streaks
 
-Frags, the Search and Destroy charge, airstrikes, guided missiles, and downed
-UAVs, choppers, and sentries play the distant explosion takes up close on
-Effects; a flashbang plays one of them as its bang, and a smoke grenade hisses
-with a wind gust. None of them has a recording of its own. Scavenger pickups
+Frags, the Search and Destroy charge, and downed UAVs play the distant
+explosion takes up close on Effects; a flashbang plays one of them as its
+bang, and a smoke grenade hisses with a wind gust. None of them has a recording of its own. Scavenger pickups
 play the pouch sound.
 
 ## The world and the match

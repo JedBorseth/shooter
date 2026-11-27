@@ -63,19 +63,18 @@ opens a second perk of that tier. The rules and numbers are in
 | 1 | Lightweight (Light Load) | moves 7% faster in every stance; no fall damage | `perk_speedMultiplier` 1.07 | 4 |
 | 1 | Flak Jacket (Blast Vest) | takes 35% of explosive damage | `perk_flakJacket` 35 | 7 |
 | 1 | Hardline (Fast Track) | score counts 20% more toward scorestreaks | +20% (Call of Duty wiki) | 8 |
-| 1 | Blind Eye (Cloud Cover) | an enemy Attack Chopper never targets them | `specialty_nottargetedbyairsupport` | 12 |
 | 1 | Ghost (Low Profile) | hidden from enemy UAV sweeps while moving faster than 0.5 m/s, planting, or defusing | moving: an estimate | 15 |
 | 2 | Toughness (Unshaken) | a hit's aim flinch is a quarter as strong | `perk_damageKickReduction` 0.25 | 4 |
 | 2 | Fast Hands (Quick Hands) | switches weapons in half the time; a throw's wind-up and follow-through take 60% | `perk_weapSwitchMultiplier` 0.5, `perk_weapEquipmentUseMultiplier` 0.6 | 5 |
 | 2 | Sleight of Hand (Fast Reload) | reloads in half the time | `perk_weapReloadMultiplier` 0.5 | 11 |
 | 2 | Scavenger (Scrounger) | refills ammo and grenades from packs dead enemies drop | one magazine, one lethal, one tactical per pack (`perk_scavenger_*`) | 17 |
 | 2 | Hard Wired (Jam Proof) | an enemy Counter-UAV does not jam the minimap | | 18 |
-| 2 | Cold-Blooded (Unmarked) | an enemy aiming at them sees no red name or crosshair; an enemy Guided Missile neither boxes them nor sends a bomblet at them | `specialty_nokillstreakreticle` | 23 |
+| 2 | Cold-Blooded (Unmarked) | an enemy aiming at them sees no red name or crosshair | `specialty_nokillstreakreticle` | 23 |
 | 3 | Dexterity (Climber) | mantles and vaults in 60% of the time, climbs ladders 1.75 x as fast, weapon up after a sprint in half the time | `perk_mantleReduction` 0.4, `perk_fastLadderClimbMultiplier` 1.75; the sprint-out share is an estimate | 4 |
 | 3 | Tactical Mask (Flash Guard) | flashbangs blind for half as long | `perk_shellShockReduction` 0.5 | 9 |
 | 3 | Dead Silence (Soft Step) | movement 12 dB quieter, heard at a quarter of the range | none published; an estimate | 14 |
 | 3 | Awareness (Keen Ears) | enemy movement 6 dB louder, heard 1.5 times as far | none published; an estimate | 20 |
-| 3 | Engineer (Field Tech) | sees enemy Sentry Guns and Care Packages through walls | | 26 |
+| 3 | Engineer (Field Tech) | sees Care Packages not their own through walls | | 26 |
 
 Where each one acts:
 
@@ -123,27 +122,22 @@ Where each one acts:
   decided ([scorestreaks.md](scorestreaks.md)): Hardline on each player's
   streak count, Ghost on which enemies a UAV's sweep finds, and Hard Wired on
   whose minimap a Counter-UAV jams.
-- **Blind Eye** acts on the server: an Attack Chopper's gun passes the player
-  by (`chopper::Candidate::ignored`). Black Ops 2's own descriptions name its
-  AI air streaks, not the Sentry Gun, so a Sentry Gun still fires on them.
-  Its script also lets a Blind Eye player who stays still too long be
-  targeted (`perk_nottargetedbyai_graceperiod`); the dvar's value is not in
-  the scripts, so that is left out.
 - **Cold-Blooded:** every view of the player carries `PlayerView::unmarked`.
-  An enemy's crosshair stays white on them and their name does not show, and
-  an enemy Guided Missile does not box them or send a bomblet at them. The aim
-  reveal it hides is Black Ops 2's too: aiming at any other enemy with no wall
+  An enemy's crosshair stays white on them and their name does not show. The
+  aim reveal it hides is Black Ops 2's too: aiming at any other enemy with no wall
   between turns the crosshair red and shows their name in red over them
   (`NetClient::update_aimed`, `RemotePlayer::set_marked`).
-- **Engineer:** a small red marker shows each enemy Sentry Gun and each landed
-  Care Package not ours, through walls (`godot/scripts/net/engineer_view.gd`),
+- **Engineer:** a small red marker shows each landed Care Package not ours,
+  through walls (`godot/scripts/net/engineer_view.gd`),
   as Black Ops 2's Engineer outlines enemy equipment and scorestreaks.
 
 Left out: Extreme Conditioning (sprint is unlimited, a recorded project
 decision against stamina). Parts of other perks whose targets do not exist
 here are left out too: Hard Wired's EMP shield, Cold-Blooded's thermal,
-sensor, and Target Finder immunity, and Engineer's booby-trapped and rerolled
-Care Packages and delayed enemy explosives. Sleight of Hand is not in Black
+sensor, and Target Finder immunity and its cover from enemy scorestreaks,
+Engineer's view of enemy Sentry Guns, its booby-trapped and rerolled Care
+Packages, and its delayed enemy explosives. Blind Eye is left out because
+the AI air support it hides from is not in the game. Sleight of Hand is not in Black
 Ops 2 (its Fast Mag attachment did the job); it takes Black Ops 1's Perk 2
 slot here, since there is no Fast Mag.
 
@@ -228,18 +222,18 @@ attachments (`rust/sim/src/progression.rs`).
   | 7 | Flak Jacket; Care Package |
   | 8 | M870; Hardline |
   | 9 | Tactical Mask |
-  | 10 | Extra Lethal; Guided Missile |
+  | 10 | Extra Lethal |
   | 11 | Sleight of Hand |
-  | 12 | BR-3; Blind Eye |
-  | 13 | BP-9; Airstrike |
+  | 12 | BR-3 |
+  | 13 | BP-9 |
   | 14 | Dead Silence |
   | 15 | Ghost |
-  | 16 | LSW-6; Sentry Gun |
+  | 16 | LSW-6 |
   | 17 | Scavenger |
   | 18 | Hard Wired |
   | 19 | Third Attachment, RL-4 |
   | 20 | Awareness |
-  | 22 | M40; Attack Chopper |
+  | 22 | M40 |
   | 23 | Cold-Blooded |
   | 25 | Extra Perk 1 |
   | 26 | Engineer |

@@ -36,7 +36,6 @@ const DESIGNS := {
 	"watchtower": ["0f2a18", "7bd389", "rings"],
 	"blackout": ["0b0b0d", "e5484d", "grid"],
 	"airdrop": ["4a3818", "ffcf3a", "chevrons"],
-	"thunder": ["1c1846", "ffd84a", "blade"],
 	"nebula": ["120a24", "b48cff", "star"],
 }
 ## Prestige cards: the prestige's emblem on a band of its metal.

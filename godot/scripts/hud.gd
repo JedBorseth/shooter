@@ -171,12 +171,9 @@ func _process(delta: float) -> void:
 	# The results screen clears the play HUD, as in Call of Duty; the final
 	# killcam before it still needs the scope.
 	visible = killcam or not _match_ended()
-	# Flying a Guided Missile shows its own view and overlay only, as Black
-	# Ops 2's Hellstorm does (`missile_view.gd`).
-	var aside := killcam or _piloting()
 	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
-		piece.visible = not aside
-	if aside:
+		piece.visible = not killcam
+	if killcam:
 		return
 	_crosshair.visible = true
 	_centre.visible = true
@@ -263,13 +260,6 @@ func _match_ended() -> bool:
 		return false
 	var info: Dictionary = client.call(&"match_info")
 	return String(info.get("phase", "")) == "ended"
-
-
-## Whether we fly a Guided Missile (see `_match_ended` for the look-up).
-func _piloting() -> bool:
-	var net := get_node_or_null(^"/root/Net")
-	var client: Object = net.call(&"client") if net != null else null
-	return client != null and int(client.call(&"piloting")) >= 0
 
 
 ## The legend's [key, label] pairs for the current device.

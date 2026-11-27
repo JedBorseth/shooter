@@ -1,9 +1,8 @@
 extends Control
 ## Engineer on the HUD (`shooter_sim::perk::Perk::Engineer`), added by `Net`
-## to the match HUD: with the perk, every enemy Sentry Gun and every Care
-## Package not ours shows through walls as a small red marker, as Black Ops
-## 2's Engineer outlines enemy equipment and scorestreaks. Without it,
-## nothing draws.
+## to the match HUD: with the perk, every landed Care Package not ours shows
+## through walls as a small red marker, as Black Ops 2's Engineer outlines
+## enemy equipment and scorestreaks. Without it, nothing draws.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
@@ -27,9 +26,6 @@ func _process(_delta: float) -> void:
 	if client.has_perk("engineer"):
 		var camera := get_viewport().get_camera_3d()
 		if camera != null:
-			for t: Dictionary in client.turrets():
-				if not bool(t.ours):
-					_mark(camera, (t.position as Vector3) + Vector3.UP * 1.3, "SENTRY")
 			for c: Dictionary in client.crates():
 				if not bool(c.ours) and float(c.land_seconds) <= 0.0:
 					_mark(camera, (c.position as Vector3) + Vector3.UP * 0.9, "CRATE")

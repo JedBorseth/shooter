@@ -45,16 +45,9 @@ pub const MAX_CRATES: usize = 8;
 
 /// The streaks a crate may hold and their weights: Black Ops 2's own
 /// (`_supplydrop.gsc` `registercratetype`) for the streaks this game has:
-/// UAV 100, Counter-UAV 100, Hellstorm Missile 85, Lightning Strike 80,
-/// Sentry Gun 80, Stealth Chopper 20. A crate never holds a Care Package.
-pub const CONTENTS: [(Streak, u32); 6] = [
-    (Streak::Uav, 100),
-    (Streak::CounterUav, 100),
-    (Streak::GuidedMissile, 85),
-    (Streak::Airstrike, 80),
-    (Streak::SentryGun, 80),
-    (Streak::AttackChopper, 20),
-];
+/// UAV 100 and Counter-UAV 100, so an even chance of each. A crate never
+/// holds a Care Package.
+pub const CONTENTS: [(Streak, u32); 2] = [(Streak::Uav, 100), (Streak::CounterUav, 100)];
 
 /// Rolls what a crate holds from `seed`.
 pub fn roll(seed: u32) -> Streak {
@@ -329,17 +322,16 @@ mod tests {
     #[test]
     fn contents_follow_the_weights() {
         let mut uavs = 0;
-        let mut choppers = 0;
+        let mut counters = 0;
         for seed in 0..4000 {
             match roll(seed) {
                 Streak::Uav => uavs += 1,
-                Streak::AttackChopper => choppers += 1,
+                Streak::CounterUav => counters += 1,
                 Streak::CarePackage => panic!("a crate in a crate"),
-                _ => {}
             }
         }
-        // 100 of 465 (about 21.5%), and 20 of 465 (about 4.3%).
-        assert!((760..960).contains(&uavs), "{uavs}");
-        assert!((120..230).contains(&choppers), "{choppers}");
+        // 100 of 200 each: about half and half.
+        assert!((1850..2150).contains(&uavs), "{uavs}");
+        assert_eq!(uavs + counters, 4000);
     }
 }
