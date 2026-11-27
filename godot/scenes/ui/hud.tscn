@@ -6,7 +6,7 @@
 [ext_resource type="Script" path="res://scripts/hud_weapon.gd" id="5_weapon"]
 [ext_resource type="Script" path="res://scripts/scope_overlay.gd" id="6_scope"]
 [ext_resource type="Script" path="res://scripts/hud_centre.gd" id="9_centre"]
-[ext_resource type="FontFile" path="res://assets/fonts/ChakraPetch-SemiBold.ttf" id="10_label"]
+[ext_resource type="FontFile" path="res://assets/fonts/BarlowCondensed-SemiBold.ttf" id="10_label"]
 [ext_resource type="Script" path="res://scripts/damage_overlay.gd" id="7_damage"]
 [ext_resource type="Shader" path="res://shaders/damage_vignette.gdshader" id="8_vignette"]
 [ext_resource type="Script" path="res://scripts/score_feed.gd" id="17_score"]
@@ -73,19 +73,22 @@ theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.6)
 theme_override_constants/shadow_offset_x = 0
 theme_override_constants/shadow_offset_y = 1
 theme_override_fonts/font = ExtResource("10_label")
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 15
 text = "60 FPS"
 horizontal_alignment = 2
 
 [node name="HealthBlock" type="Control" parent="."]
 layout_mode = 3
-anchors_preset = 2
+anchors_preset = 3
+anchor_left = 1.0
 anchor_top = 1.0
+anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 40.0
-offset_top = -134.0
-offset_right = 320.0
-offset_bottom = -34.0
+offset_left = -164.0
+offset_top = -154.0
+offset_right = -40.0
+offset_bottom = -30.0
+grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("4_vitals")
@@ -97,10 +100,10 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -420.0
-offset_top = -134.0
+offset_left = -500.0
+offset_top = -200.0
 offset_right = -40.0
-offset_bottom = -34.0
+offset_bottom = -30.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2

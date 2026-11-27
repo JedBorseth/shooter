@@ -14,6 +14,8 @@ const HudPaint := preload("res://scripts/ui/hud_paint.gd")
 ## The colour split on big words: cyan to the left, red to the right.
 const SPLIT_LEFT := Color(0.25, 0.95, 1.0, 0.5)
 const SPLIT_RIGHT := Color(1.0, 0.22, 0.2, 0.5)
+## How much the HUD corner clusters lift toward the screen's centre (`tilt`).
+const TILT := 0.045
 
 
 ## The corners of a hexagon centred on `centre`, `radius` from centre to
@@ -214,3 +216,45 @@ static func pointer(
 	var tip := at + direction * size * 0.5
 	var back := at - direction * size * 0.5
 	item.draw_colored_polygon(PackedVector2Array([tip, back + side, back - side]), colour)
+
+
+## The slight turn of a HUD corner cluster toward the screen's centre, as
+## Black Ops 3 draws its corners on planes yawed toward the middle: a
+## vertical skew that lifts points `rise` pixels per pixel away from
+## `pivot_x` (the cluster's outer edge). A left cluster rises to the right
+## (`rise` > 0), a right cluster to the left (`rise` < 0). Use it with
+## `draw_set_transform_matrix`, and reset to `Transform2D.IDENTITY` after.
+static func tilt(pivot_x: float, rise: float) -> Transform2D:
+	return Transform2D(Vector2(1, -rise), Vector2(0, 1), Vector2(0, rise * pivot_x))
+
+
+## `draw_rect` for pieces drawn under `tilt`: a skewed rectangle's edges step
+## in whole pixels, so this draws it as a polygon with a thin anti-aliased
+## edge (filled), or as an anti-aliased outline `width` thick.
+static func smooth_rect(
+	item: CanvasItem, rect: Rect2, colour: Color, filled := true, width := 1.0
+) -> void:
+	var points := PackedVector2Array(
+		[
+			rect.position,
+			Vector2(rect.end.x, rect.position.y),
+			rect.end,
+			Vector2(rect.position.x, rect.end.y)
+		]
+	)
+	if filled:
+		item.draw_colored_polygon(points, colour)
+		points.append(points[0])
+		item.draw_polyline(points, Color(colour, colour.a * 0.5), 1.0, true)
+		return
+	var inset := rect.grow(-width / 2.0)
+	var outline := PackedVector2Array(
+		[
+			inset.position,
+			Vector2(inset.end.x, inset.position.y),
+			inset.end,
+			Vector2(inset.position.x, inset.end.y),
+			inset.position,
+		]
+	)
+	item.draw_polyline(outline, colour, width, true)

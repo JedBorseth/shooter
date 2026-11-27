@@ -98,9 +98,10 @@ Domination and Search and Destroy on their pages. Shooting down an enemy
 scorestreak pays 100 and a "Destroyed ..." medal
 ([scorestreaks.md](scorestreaks.md)).
 
-Headshots, distance bonuses, and objective ticks show as "+N" lines under
-the crosshair; the rarer awards are medals with their own drawn emblem and
-chime (`Award::is_medal`, `godot/scripts/score_feed.gd`). A suicide, a fall,
+Points show as one "+N" just above the crosshair that adds up awards coming
+close together, with headshots, distance bonuses, and objective ticks as
+small lines under it; the rarer awards are medals along the top centre with
+their own drawn emblem, their name, and a chime (`Award::is_medal`, `godot/scripts/score_feed.gd`). A suicide, a fall,
 or a teamkill scores nothing. Score earned counts toward scorestreaks.
 
 ## Team Deathmatch

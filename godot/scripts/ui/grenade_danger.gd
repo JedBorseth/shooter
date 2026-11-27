@@ -1,14 +1,15 @@
 extends Control
-## The grenade danger indicator: for each live grenade within its blast, a
-## frag on a small plate round the crosshair, on the side the grenade lies,
-## with a pointer toward it. It pulses faster and burns redder the closer the
-## grenade is. Quiet otherwise: nothing shows without a grenade near.
+## The grenade danger indicator, as Call of Duty draws it: for each live
+## grenade within its blast, a white frag on a small dark disk round the
+## crosshair, on the side the grenade lies, with a red pointer toward it. It
+## pulses faster the closer the grenade is, and its rim turns red. Quiet
+## otherwise: nothing shows without a grenade near.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
 ## Pixels from the screen centre to each marker.
-const RING := 150.0
+const RING := 140.0
 ## Grenades farther than this (metres) show nothing: the frag's blast radius.
 const RANGE := 8.0
 
@@ -44,14 +45,14 @@ func _draw() -> void:
 		var spot := centre + direction * RING
 		var pulse := 0.5 + 0.5 * sin(_time * lerpf(6.0, 16.0, closeness))
 		var alpha := lerpf(0.65, 1.0, pulse)
-		var colour := UiTheme.TEXT.lerp(UiTheme.HARM, 0.4 + 0.6 * closeness)
-		draw_circle(spot, 26.0, Color(Paint.PLATE, 0.7 * alpha))
-		draw_arc(spot, 26.0, 0.0, TAU, 40, Color(colour, 0.55 * alpha), 2.0, true)
-		Paint.grenade(self, spot, 28.0, Color(colour, alpha))
-		# The pointer, outside the plate, toward the grenade.
-		var tip := spot + direction * 39.0
-		var side := Vector2(-direction.y, direction.x) * 8.0
-		var base := spot + direction * 30.0
+		var rim := Color(1, 1, 1, 0.5).lerp(UiTheme.HARM, closeness)
+		draw_circle(spot, 24.0, Color(0, 0, 0, 0.55 * alpha), true, -1.0, true)
+		draw_arc(spot, 24.0, 0.0, TAU, 40, Color(rim, 0.9 * alpha), 2.0, true)
+		Paint.grenade(self, spot, 26.0, Color(UiTheme.TEXT, alpha))
+		# The pointer, outside the disk, toward the grenade.
+		var tip := spot + direction * 38.0
+		var side := Vector2(-direction.y, direction.x) * 7.0
+		var base := spot + direction * 28.0
 		draw_colored_polygon(
-			PackedVector2Array([tip, base + side, base - side]), Color(colour, alpha)
+			PackedVector2Array([tip, base + side, base - side]), Color(UiTheme.HARM, alpha)
 		)

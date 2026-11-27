@@ -22,12 +22,13 @@ extends Node3D
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const HudCentre := preload("res://scripts/hud_centre.gd")
 ## Built in Blender (tools/gear_models.py `charge`), origin at its underside.
 const CHARGE_MODEL := preload("res://assets/models/charge/charge.gltf")
 const CHARGE := Color("ffb347")
-const NEUTRAL := Color("e8eef2")
 ## Matches `snd::SndRules::plant_time` and `defuse_time`: the local bar fills
 ## over these, from the moment we start holding.
 const PLANT_SECONDS := 4.0
@@ -207,100 +208,69 @@ func _draw_overlay() -> void:
 	var status: String = info.status
 	var sites: Array = info.sites
 	var alive := player != null and is_instance_valid(player) and player.is_alive()
+	var marks: Array = []
 	for i in sites.size():
 		var site: Dictionary = sites[i]
 		var label := ""
-		var colour := TeamColours.ally
+		# Sand until the plant; the planted site beats red.
+		var colour := UiTheme.NEUTRAL
 		if status == "planted" or status == "defused" or status == "detonated":
 			if i != int(info.site):
 				continue
 			label = "DEFEND" if attacking else "DEFUSE"
-			colour = TeamColours.enemy if not attacking else TeamColours.ally
+			colour = UiTheme.HARM
 			if status != "planted":
 				label = ""
+				colour = UiTheme.NEUTRAL
 		else:
 			label = "PLANT" if attacking else "DEFEND"
-			colour = TeamColours.enemy if attacking else TeamColours.ally
 		var center: Vector3 = site.center
 		var size: Vector3 = site.size
 		var ground := Vector3(center.x, center.y - size.y / 2.0, center.z)
 		if alive and camera.global_position.distance_to(ground) < SITE_HIDE_DISTANCE:
 			continue
-		_draw_marker(camera, ground + Vector3.UP * MARKER_LIFT, String(site.name), label, colour)
+		marks.append(
+			_mark(camera, ground + Vector3.UP * MARKER_LIFT, String(site.name), label, colour)
+		)
 	# The attackers see where the charge is: lying (PICK UP) or with a
 	# teammate (ESCORT).
 	if attacking and info.has_position and not info.carrying:
 		if status == "dropped":
-			_draw_marker(camera, info.position + Vector3.UP * 0.6, "", "PICK UP", CHARGE)
+			marks.append(
+				_mark(camera, info.position + Vector3.UP * 0.6, "", "PICK UP", UiTheme.NEUTRAL)
+			)
 		elif status == "carried":
-			_draw_marker(camera, info.position + Vector3.UP * 2.3, "", "ESCORT", CHARGE)
+			marks.append(
+				_mark(camera, info.position + Vector3.UP * 2.3, "", "ESCORT", TeamColours.ally)
+			)
+	var screen := get_viewport().get_visible_rect().size
+	Marks.draw_world(_overlay, camera, marks, screen, camera.global_position)
 	_draw_use(info, alive)
 
 
-## A diamond at `point` with a letter in it (or a dot), and what to do and how
-## far it is above it, clamped inside the screen's edges when off screen.
-func _draw_marker(
+## A hexagon at `point` with a site's letter in it (or the charge), what to
+## do over it, and how far it is under it. A planted site beats, with the
+## fuse under it.
+func _mark(
 	camera: Camera3D, point: Vector3, letter: String, label: String, colour: Color
-) -> void:
-	var screen := get_viewport().get_visible_rect().size
-	var ui := screen.y / 900.0
-	var behind := camera.is_position_behind(point)
-	var at := Paint.screen_point(camera, point)
-	if behind:
-		at = screen - at
-	var margin := Vector2(60, 70) * ui
-	var clamped := at.clamp(margin, screen - margin)
-	if behind:
-		clamped.y = screen.y - margin.y
-	var off_screen := behind or clamped != at
-	var r := (15.0 if letter != "" else 9.0) * ui
-	var diamond := PackedVector2Array(
-		[
-			clamped + Vector2(0, -r),
-			clamped + Vector2(r, 0),
-			clamped + Vector2(0, r),
-			clamped + Vector2(-r, 0),
-		]
-	)
-	_overlay.draw_colored_polygon(diamond, Color(0, 0, 0, 0.5))
-	var inner := PackedVector2Array()
-	for p in diamond:
-		inner.append(clamped + (p - clamped) * 0.78)
-	_overlay.draw_colored_polygon(inner, Color(colour, 0.9))
+) -> Dictionary:
+	var planted := colour == UiTheme.HARM
+	var mark := {
+		"world": point,
+		"fill": colour,
+		"action": label,
+		"distance": int(round(camera.global_position.distance_to(point))),
+		"alpha": 0.7 + 0.3 * cos(_blink * TAU) if planted else 1.0,
+	}
 	if letter != "":
-		var letter_size := int(17 * ui)
-		var letter_w := (
-			FONT_BOLD.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, letter_size).x
-		)
-		_overlay.draw_string(
-			FONT_BOLD,
-			clamped + Vector2(-letter_w / 2.0, letter_size * 0.36),
-			letter,
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			letter_size,
-			Color(0.04, 0.05, 0.06)
-		)
-	if label == "":
-		return
-	var distance := int(round(camera.global_position.distance_to(point)))
-	var text := "%s  %dm" % [label, distance]
-	var font_size := int(14 * ui)
-	var width := FONT_BOLD.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	var text_at := clamped + Vector2(-width / 2.0, -r - 7.0 * ui)
-	if off_screen and clamped.y < screen.y / 2.0:
-		text_at.y = clamped.y + r + 18.0 * ui
-	_overlay.draw_string_outline(
-		FONT_BOLD,
-		text_at,
-		text,
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		font_size,
-		int(5 * ui),
-		Color(0, 0, 0, 0.75)
-	)
-	_overlay.draw_string(FONT_BOLD, text_at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, colour)
+		mark.letter = letter
+	else:
+		mark.glyph = "charge"
+	if planted:
+		mark.distance = -1
+		var fuse := int(ceil(float(client.round_info().seconds_left)))
+		mark.under = "%d:%02d" % [fuse / 60, fuse % 60]
+	return mark
 
 
 ## Under the crosshair: what holding interact does here, our own plant or
@@ -315,7 +285,7 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 		var defusing := spot == "defuse"
 		var seconds := DEFUSE_SECONDS if defusing else PLANT_SECONDS
 		_draw_bar(
-			centre + Vector2(0, 70) * ui,
+			centre + Vector2(0, 150) * ui,
 			"DEFUSING" if defusing else "PLANTING",
 			clampf(_using_for / seconds, 0.0, 1.0),
 			TeamColours.ally if defusing else CHARGE,
@@ -327,8 +297,8 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 		var key := Settings.prompt_key(&"interact")
 		var text := "Hold [%s] to %s the charge" % [key, "defuse" if spot == "defuse" else "plant"]
 		# Where and how every interact prompt draws (`hud_centre.gd`).
-		Paint.prompt(
-			_overlay, {"text": text, "colour": NEUTRAL}, centre.x, centre.y + 104.0 * ui, 19
+		HudCentre.draw_prompt(
+			_overlay, {"text": text, "colour": UiTheme.TEXT}, centre.x, centre.y + 118.0 * ui, 19
 		)
 		return
 	# A teammate at it: a smaller bar with their name.
@@ -336,7 +306,7 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 	if user >= 0 and user != client.player_id():
 		var defuse: bool = info.use_kind == "defuse"
 		_draw_bar(
-			centre + Vector2(0, 110) * ui,
+			centre + Vector2(0, 150) * ui,
 			"%s %s" % [client.name_of(user).to_upper(), "DEFUSING" if defuse else "PLANTING"],
 			float(info.use_progress),
 			TeamColours.ally if defuse else CHARGE,
@@ -345,25 +315,22 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 		)
 
 
+## A progress bar under the crosshair with what is happening over it, as
+## Black Ops 3's capture bar: 260 by 8 pixels on a dark rim.
 func _draw_bar(
 	at: Vector2, label: String, progress: float, colour: Color, ui: float, scale: float
 ) -> void:
-	var size := Vector2(240, 8) * ui * scale
+	var size := Vector2(260, 8) * ui * scale
 	var rect := Rect2(at - Vector2(size.x / 2.0, 0), size)
-	_overlay.draw_rect(rect.grow(2.0 * ui), Color(0, 0, 0, 0.55))
+	_overlay.draw_rect(rect.grow(1.0), Color(0, 0, 0, 0.5))
+	_overlay.draw_rect(rect, Color(1, 1, 1, 0.15))
 	_overlay.draw_rect(Rect2(rect.position, Vector2(size.x * progress, size.y)), colour)
-	var font_size := int(14 * ui * scale)
-	var pos := Vector2(rect.position.x, rect.position.y - 7.0 * ui)
-	_overlay.draw_string_outline(
-		FONT_BOLD,
-		pos,
+	Paint.text_centred(
+		_overlay,
+		Paint.LABEL,
 		label,
-		HORIZONTAL_ALIGNMENT_CENTER,
-		size.x,
-		font_size,
-		int(5 * ui),
-		Color(0, 0, 0, 0.75)
-	)
-	_overlay.draw_string(
-		FONT_BOLD, pos, label, HORIZONTAL_ALIGNMENT_CENTER, size.x, font_size, colour
+		Vector2(at.x, rect.position.y - 9.0 * ui),
+		int(17 * ui * scale),
+		UiTheme.TEXT,
+		1.5 * ui
 	)

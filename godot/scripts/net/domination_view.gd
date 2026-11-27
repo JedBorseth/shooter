@@ -5,14 +5,15 @@ extends Node3D
 ## - In the world: each flag's circle as a glowing ring on the ground (a
 ##   decal, so it follows ramps and steps) and a low wall of light around it
 ##   that fades upward, both in the owner's colour (white while neutral).
-## - On screen: a lettered marker over each flag in its owner's colour, with
-##   its distance and a thin bar for a capture under way, held at the
+## - On screen, as Black Ops 3 marks its flags: a lettered hexagon over each
+##   flag in its owner's colour (sand while neutral; flashing between the two
+##   sides while contested) with CAPTURE or DEFEND over it, its distance under
+##   it, and a ring filling round it with a capture under way, held at the
 ##   screen's edge when the flag is off screen (the flag we stand in has
-##   none); a row of the three letters under the score block's level, top
-##   centre, each filling in the colour of the team capturing it; and in a
-##   circle, a bar under the crosshair: CAPTURING, CONTESTED, LOSING (the
-##   enemy's capture of our flag, which we stop by standing on it), or
-##   SECURED.
+##   none); a row of the three letters under the minimap, each with the same
+##   ring; and in a circle, a bar under the crosshair: CAPTURING, CONTESTED,
+##   LOSING (the enemy's capture of our flag, which we stop by standing on
+##   it), or SECURED.
 ## - Calls in the middle of the screen with a short sting until there is an
 ##   announcer: "WE'VE TAKEN B", "WE'VE LOST B", and "ENEMY TOOK B". The
 ##   match HUD calls halftime, when the teams swap sides (the second half).
@@ -22,6 +23,8 @@ extends Node3D
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const Marks := preload("res://scripts/ui/objective_marks.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 const CONTESTED := UiTheme.ACCENT
@@ -31,8 +34,6 @@ const WALL_HEIGHT := 1.1
 ## How high over a flag's floor its marker floats, in metres.
 const MARKER_LIFT := 2.6
 const CALL_SECONDS := 2.6
-## Pixels kept clear at the screen's edges for clamped markers.
-const SCREEN_MARGIN := 64.0
 ## Segments in each circle's wall.
 const WALL_SEGMENTS := 48
 
@@ -355,131 +356,93 @@ func _draw_overlay() -> void:
 	var ui := size.y / 900.0
 	var camera := get_viewport().get_camera_3d()
 	if camera != null:
+		var marks: Array = []
 		for i in flags.size():
-			if i != here:
-				_draw_marker(camera, flags[i], size, ui)
-	_draw_row(flags, size, ui)
+			if i == here:
+				continue
+			var flag: Dictionary = flags[i]
+			var center: Vector3 = flag.center
+			var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
+			var mark := _marker(flag)
+			mark.world = world
+			mark.action = "DEFEND" if flag.owner == "ally" else "CAPTURE"
+			mark.distance = int(round(_eye(camera).distance_to(world)))
+			marks.append(mark)
+		Marks.draw_world(_overlay, camera, marks, size, _eye(camera))
+	if _row_shown():
+		_draw_row(flags, size, ui)
 	if here >= 0:
 		_draw_capture_bar(flags[here], size, ui)
 
 
-## The flag's letter on a small square in its colour, with a capture bar
-## under it and its distance, held at the screen's edge when off screen.
-func _draw_marker(camera: Camera3D, flag: Dictionary, size: Vector2, ui: float) -> void:
-	var center: Vector3 = flag.center
-	var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
-	var point := Paint.screen_point(camera, world)
-	var behind := camera.is_position_behind(world)
-	var margin := SCREEN_MARGIN * ui
-	var bounds := Rect2(Vector2.ONE * margin, size - Vector2.ONE * margin * 2.0)
-	if behind or not bounds.has_point(point):
-		# Push it out from the centre to the edge, the way it lies.
-		var middle := size / 2.0
-		var direction := point - middle
-		if behind:
-			direction = -direction
-			if direction.length() < 1.0:
-				direction = Vector2.DOWN
-		var half := bounds.size / 2.0
-		var scale := minf(
-			half.x / maxf(absf(direction.x), 0.001), half.y / maxf(absf(direction.y), 0.001)
-		)
-		point = middle + direction * scale
-	var colour := flag_colour(flag)
-	if flag.contested:
-		colour.a = 0.65 + 0.35 * sin(_time * 7.0)
-	var s := 26.0 * ui
-	var rect := Rect2(point - Vector2(s, s) / 2.0, Vector2(s, s))
-	_draw_tile(rect, flag, colour, ui)
-	var distance := 0
+## Where distances are measured from: the player, or the camera.
+func _eye(camera: Camera3D) -> Vector3:
 	if player != null and is_instance_valid(player):
-		distance = int(round(player.global_position.distance_to(world)))
-	Paint.text_centred(
-		_overlay,
-		Paint.LABEL,
-		"%dm" % distance,
-		Vector2(point.x, rect.end.y + 15.0 * ui),
-		int(12 * ui),
-		Color(UiTheme.TEXT, 0.85 * colour.a)
-	)
+		return player.global_position
+	return camera.global_position
 
 
-## A letter tile: a dark plate, the owner's colour on the edge and letter,
-## and the capture filling up from the bottom in the capturing team's colour.
-func _draw_tile(rect: Rect2, flag: Dictionary, colour: Color, ui: float) -> void:
-	_overlay.draw_rect(rect, Color(UiTheme.INK, 0.6 * colour.a))
-	var owned: bool = flag.owner != "neutral"
-	if owned:
-		_overlay.draw_rect(rect, Color(colour, 0.28 * colour.a))
+## The row of letters shows with the minimap (hidden in a killcam).
+func _row_shown() -> bool:
+	var minimap := get_tree().current_scene.get_node_or_null("TdmHud/Minimap") as CanvasItem
+	return minimap == null or minimap.is_visible_in_tree()
+
+
+## A flag's hexagon: its letter, its owner's colour (sand while neutral,
+## flashing between the sides twice a second while contested), and a ring
+## for a capture under way in the capturing side's colour.
+func _marker(flag: Dictionary) -> Dictionary:
+	var fill := side_colour(flag.owner) if flag.owner != "neutral" else UiTheme.NEUTRAL
+	if flag.contested:
+		fill = TeamColours.ally if fmod(_time * 2.0, 1.0) < 0.5 else TeamColours.enemy
+	var marker := {"fill": fill, "letter": String(flag.name)}
 	var progress: float = flag.progress
 	if progress > 0.0 and flag.claim != "neutral":
-		var fill := rect.size.y * progress
-		_overlay.draw_rect(
-			Rect2(rect.position.x, rect.end.y - fill, rect.size.x, fill),
-			Color(side_colour(flag.claim), 0.55 * colour.a)
-		)
-	_overlay.draw_rect(rect, colour, false, maxf(1.5 * ui, 1.0))
-	var font_size := int(rect.size.y * 0.66)
-	var baseline := rect.position.y + rect.size.y / 2.0 + Paint.DISPLAY.get_ascent(font_size) * 0.36
-	Paint.text_centred(
-		_overlay,
-		Paint.DISPLAY,
-		String(flag.name),
-		Vector2(rect.get_center().x, baseline),
-		font_size,
-		Color(UiTheme.TEXT if owned else colour, colour.a)
-	)
+		marker.progress = progress
+		marker.progress_colour = side_colour(flag.claim)
+	return marker
 
 
-## The three letters side by side, top centre.
-func _draw_row(flags: Array, size: Vector2, ui: float) -> void:
-	var s := 30.0 * ui
-	var gap := 8.0 * ui
-	var width := flags.size() * s + (flags.size() - 1) * gap
-	var x := size.x / 2.0 - width / 2.0
-	var y := 22.0 * ui
+## The three letters side by side under the minimap, on the minimap's slope.
+func _draw_row(flags: Array, _size: Vector2, ui: float) -> void:
+	var x := 60.0 * ui
+	var y := 264.0 * ui
 	for flag: Dictionary in flags:
-		var colour := flag_colour(flag)
-		if flag.contested:
-			colour.a = 0.65 + 0.35 * sin(_time * 7.0)
-		_draw_tile(Rect2(x, y, s, s), flag, colour, ui)
-		x += s + gap
+		var drop := (x - 60.0 * ui) * Shapes.TILT
+		Marks.badge(_overlay, Vector2(x, y + drop), _marker(flag), 14.0 * ui, ui)
+		x += 38.0 * ui
 
 
 ## In a circle: what is happening to it, over a bar filling with the capture.
 func _draw_capture_bar(flag: Dictionary, size: Vector2, ui: float) -> void:
 	var letter := String(flag.name)
 	var text := ""
-	var colour := NEUTRAL
 	var progress: float = flag.progress
 	if flag.contested:
 		text = "CONTESTED"
-		colour = CONTESTED
 	elif flag.claim == "ally":
 		text = "CAPTURING %s" % letter
-		colour = TeamColours.ally
 	elif flag.claim == "enemy":
 		text = "LOSING %s" % letter
-		colour = TeamColours.enemy
 	elif flag.owner == "ally":
 		text = "%s SECURED" % letter
-		colour = TeamColours.ally
 		progress = 1.0
 	else:
 		return
-	var width := 220.0 * ui
-	var top := size.y * 0.62
-	var bar := Rect2(size.x / 2.0 - width / 2.0, top, width, 5.0 * ui)
+	var width := 260.0 * ui
+	var top := size.y * 0.667
+	var bar := Rect2(size.x / 2.0 - width / 2.0, top, width, 8.0 * ui)
 	Paint.text_centred(
 		_overlay,
 		Paint.LABEL,
 		text,
 		Vector2(size.x / 2.0, top - 9.0 * ui),
-		int(16 * ui),
-		colour,
+		int(17 * ui),
+		UiTheme.TEXT,
 		1.5 * ui
 	)
-	_overlay.draw_rect(bar, Paint.TRACK)
+	_overlay.draw_rect(bar.grow(1.0), Color(0, 0, 0, 0.5))
+	_overlay.draw_rect(bar, Color(1, 1, 1, 0.15))
 	if flag.claim != "neutral" or flag.owner == "ally":
 		var fill_colour := side_colour(flag.claim) if flag.claim != "neutral" else TeamColours.ally
 		_overlay.draw_rect(Rect2(bar.position, Vector2(width * progress, bar.size.y)), fill_colour)

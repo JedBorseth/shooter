@@ -1,24 +1,27 @@
 extends Control
-## Dynamic crosshair and hit marker, drawn at the centre of the screen.
-## The crosshair is four thin ticks whose gap tracks the weapon's real spread
-## cone; it fades out when aiming. Every stroke has a faint dark edge so it
-## reads on a bright sky as well as a dark wall.
-## Hit markers are four short diagonal strokes that pop in oversized and
-## settle: white for a hit, a little bigger for a headshot, and bigger, thicker,
-## and red for a kill.
+## Dynamic crosshair and hit marker, drawn at the centre of the screen, as
+## Black Ops 3 draws them. The crosshair is four short white ticks whose gap
+## tracks the weapon's real spread cone; it fades out when aiming. Every
+## stroke has a thin dark edge so it reads on a bright sky as well as a dark
+## wall. The hit marker is an X of four short diagonal strokes round the
+## crosshair: white for a hit, held 160 ms then fading over 80 ms, each new hit
+## restarting it a touch bigger for a moment; red for a kill, held 260 ms.
 
-const EDGE := Color(0, 0, 0, 0.45)
-const KILL := Color(1.0, 0.24, 0.2)
+const EDGE := Color(0, 0, 0, 0.5)
+const KILL := Color("ff3a2c")
 const ENEMY := Color(1.0, 0.3, 0.25)
+## Hit marker: hold, fade, the kill's hold, and the strokes' inner radius and
+## length.
+const HIT_HOLD := 0.16
+const HIT_FADE := 0.08
+const KILL_HOLD := 0.26
+const HIT_INNER := 8.0
+const HIT_LENGTH := 10.0
 
-@export var length: float = 8.0
+@export var length: float = 9.0
 @export var thickness: float = 2.0
 @export var min_gap: float = 5.0
-@export var color: Color = Color(1, 1, 1, 0.92)
-@export var hit_marker_time: float = 0.22
-## Starting size of a hit marker relative to its resting size.
-@export var hit_pop: float = 1.4
-@export var kill_pop: float = 1.7
+@export var color: Color = Color(1, 1, 1, 0.88)
 
 var gap: float = 8.0
 ## The crosshair is on an enemy (online, `NetClient.aiming_at_enemy`): it
@@ -26,25 +29,26 @@ var gap: float = 8.0
 var enemy := false
 var alpha: float = 1.0
 var _hit_left: float = 0.0
-var _hit_time: float = 0.22
+var _hit_hold: float = HIT_HOLD
 var _hit_color: Color = Color.WHITE
-var _hit_scale: float = 1.0
+## How long ago the last hit landed, for its brief grow.
+var _hit_age: float = 1.0
 var _hit_rest: float = 1.0
 var _hit_width: float = 2.0
 
 
 func show_hit(killed: bool, headshot: bool) -> void:
-	_hit_time = hit_marker_time * (2.2 if killed else 1.0)
-	_hit_left = _hit_time
+	_hit_hold = KILL_HOLD if killed else HIT_HOLD
+	_hit_left = _hit_hold + HIT_FADE
 	_hit_color = KILL if killed else Color.WHITE
-	_hit_rest = 1.3 if killed else (1.12 if headshot else 1.0)
-	_hit_scale = _hit_rest * (kill_pop if killed else hit_pop)
-	_hit_width = 3.0 if killed else 2.0
+	_hit_rest = 1.15 if killed else (1.06 if headshot else 1.0)
+	_hit_age = 0.0
+	_hit_width = 2.5 if killed else 2.0
 
 
 func _process(delta: float) -> void:
 	_hit_left = maxf(_hit_left - delta, 0.0)
-	_hit_scale = lerpf(_hit_scale, _hit_rest, 1.0 - exp(-30.0 * delta))
+	_hit_age += delta
 	queue_redraw()
 
 
@@ -59,13 +63,19 @@ func _draw() -> void:
 			var to := from + direction * length
 			_stroke(from, to, c, edge, thickness)
 	if _hit_left > 0.0:
-		var fade := clampf(_hit_left / (_hit_time * 0.5), 0.0, 1.0)
+		var fade := clampf(_hit_left / HIT_FADE, 0.0, 1.0)
 		var c := Color(_hit_color, fade)
 		var edge := Color(EDGE, EDGE.a * fade)
+		# Each new hit lands 10% bigger and settles in 60 ms.
+		var scale := _hit_rest * (1.0 + 0.1 * (1.0 - clampf(_hit_age / 0.06, 0.0, 1.0)))
 		for diagonal: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 			var d := diagonal.normalized()
 			_stroke(
-				centre + d * 8.0 * _hit_scale, centre + d * 17.0 * _hit_scale, c, edge, _hit_width
+				centre + d * HIT_INNER * scale,
+				centre + d * (HIT_INNER + HIT_LENGTH) * scale,
+				c,
+				edge,
+				_hit_width
 			)
 
 

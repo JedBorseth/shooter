@@ -1,13 +1,15 @@
 extends Control
-## Damage feedback: a red vignette that deepens as health drops, flashes darker
-## on each hit, and beats with the heart when health is low, and red crescents
-## around the crosshair that point toward whoever hit you.
+## Damage feedback, as Black Ops 3 gives it: a red vignette that deepens as
+## health drops, flashes darker on each hit, and beats with the heart when
+## health is low, and a thin red arc round the crosshair for each hit,
+## pointing toward whoever fired, fading over 1.2 seconds.
 
-const INDICATOR_TIME := 1.6
-const INDICATOR_RADIUS := 120.0
-const INDICATOR_WIDTH := deg_to_rad(40.0)
-## Thickness at the middle of each crescent.
-const INDICATOR_THICKNESS := 11.0
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const INDICATOR_TIME := 1.2
+const INDICATOR_RADIUS := 118.0
+const INDICATOR_WIDTH := deg_to_rad(32.0)
+## Thickness at the middle of each arc.
+const INDICATOR_THICKNESS := 5.0
 ## Health, as a fraction, below which the vignette starts to show.
 const HURT_START := 0.7
 ## Health below which the vignette beats with the heart.
@@ -92,11 +94,11 @@ func _draw() -> void:
 		var screen := -bearing - PI / 2.0
 		# Lands a little further out and settles in, so a fresh hit catches the eye.
 		var settle := 1.0 - clampf(age / 0.18, 0.0, 1.0)
-		_draw_wedge(centre, INDICATOR_RADIUS + 18.0 * settle, screen, alpha)
+		_draw_wedge(centre, INDICATOR_RADIUS + 12.0 * settle, screen, alpha)
 
 
-## A crescent pointing at the shooter: thick in the middle and tapering to
-## points, dark red at the inner edge and bright at the outer.
+## A thin arc pointing at the shooter, thickest in the middle and tapering
+## to points, with a dark rim inside so it holds on a bright wall.
 func _draw_wedge(centre: Vector2, radius: float, angle: float, alpha: float) -> void:
 	var steps := 18
 	var outer := PackedVector2Array()
@@ -104,16 +106,20 @@ func _draw_wedge(centre: Vector2, radius: float, angle: float, alpha: float) -> 
 	for i in steps + 1:
 		var t := float(i) / steps
 		var a := angle + (t - 0.5) * INDICATOR_WIDTH
-		var swell := sin(t * PI)
+		var swell := pow(sin(t * PI), 0.6)
 		var direction := Vector2(cos(a), sin(a))
 		outer.append(centre + direction * (radius + INDICATOR_THICKNESS * swell))
 		inner.append(centre + direction * radius)
 	var points := PackedVector2Array(outer)
 	var colours := PackedColorArray()
 	for i in outer.size():
-		colours.append(Color(1.0, 0.22, 0.16, 0.9 * alpha))
+		colours.append(Color(UiTheme.HARM.lightened(0.1), 0.92 * alpha))
 	inner.reverse()
 	points.append_array(inner)
 	for i in inner.size():
-		colours.append(Color(0.55, 0.02, 0.0, 0.55 * alpha))
+		colours.append(Color(UiTheme.HARM.darkened(0.35), 0.8 * alpha))
+	var rim := PackedVector2Array()
+	for p in inner:
+		rim.append(centre + (p - centre).normalized() * (radius - 1.5))
+	draw_polyline(rim, Color(0, 0, 0, 0.35 * alpha), 1.5, true)
 	draw_polygon(points, colours)

@@ -1,14 +1,20 @@
 extends Control
-## The middle of the screen and the bottom edge: the ammo warning and the
-## interact prompt under the crosshair, the death card, and the controls
-## legend. `hud.gd` sets what to show each frame; this only draws it.
+## The middle of the screen and the bottom edge, as Black Ops 3 lays them
+## out: the ammo warning just under the crosshair (blinking), the interact
+## prompt below it on a dark plate that hugs it, the death card in the lower
+## third, the "Killed" name plate at the bottom centre after each kill of ours,
+## and the controls legend. `hud.gd` sets what to show each frame; this only
+## draws it.
 ##
 ## Prompts show their key as a cap ("[F] Take M870" draws an F cap, then the
-## text), on a band that fades out at both ends.
+## text).
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
+## Seconds the "Killed" plate holds after a kill.
+const KILLED_SECONDS := 2.0
 
 ## The legend wraps to rows no wider than this, between the corner clusters.
 const LEGEND_WIDTH := 760.0
@@ -29,101 +35,201 @@ var legend: Array = []
 var legend_alpha := 0.0
 
 var _dead_for := 0.0
+var _time := 0.0
+## The last player we killed, for the "Killed" plate, and its time left.
+var _victim := ""
+var _victim_colour := TeamColours.enemy
+var _victim_left := 0.0
+## The top of the controls legend's band, as last drawn.
+var _legend_top := INF
+
+
+## Names the player we just killed on the "Killed" plate.
+func show_victim(victim_name: String, colour: Color) -> void:
+	_victim = victim_name
+	_victim_colour = colour
+	_victim_left = KILLED_SECONDS
 
 
 func _process(delta: float) -> void:
 	_dead_for = _dead_for + delta if dead else 0.0
+	_time += delta
+	_victim_left = maxf(_victim_left - delta, 0.0)
 	queue_redraw()
 
 
 func _draw() -> void:
 	var centre := size / 2.0
 	if not warning.is_empty():
-		_draw_prompt(warning, centre.y + 58.0, 17)
+		# Blinks twice a second, as Call of Duty's ammo warnings do.
+		var blink := 1.0 if warning.get("steady", false) else 0.7 + 0.3 * cos(_time * TAU * 2.0)
+		# On a dark plate that hugs it, as the interact prompt sits, so it
+		# holds over bright ground.
+		var width := prompt_width(warning, 18)
+		var baseline := centre.y + 74.0
+		draw_rect(
+			Rect2(centre.x - width / 2.0 - 10.0, baseline - 26.0, width + 20.0, 34.0),
+			Color(0, 0, 0, 0.45)
+		)
+		Paint.prompt(self, warning, centre.x, baseline, 18, blink, false)
 	if not prompt.is_empty():
-		_draw_prompt(prompt, centre.y + 104.0, 19)
-	if dead:
-		_draw_death(Vector2(centre.x, size.y * 0.68))
+		_draw_prompt(prompt, centre.y + 118.0, 19)
 	if legend_alpha > 0.01 and not legend.is_empty():
 		_draw_legend()
+	if dead:
+		_draw_death(Vector2(centre.x, size.y * 0.68))
+	elif _victim_left > 0.0 and _victim != "":
+		_draw_killed()
 
 
-## One prompt row, centred: an optional key cap, then the text.
+## One prompt row, centred on a dark plate that hugs it: an optional key
+## cap, then the text.
 func _draw_prompt(row: Dictionary, baseline: float, text_size: int) -> void:
-	Paint.prompt(self, row, size.x / 2.0, baseline, text_size)
+	draw_prompt(self, row, size.x / 2.0, baseline, text_size)
+
+
+## Draws a prompt row as the HUD's interact prompt is drawn, centred on
+## `centre_x` on a dark plate that hugs it (mode views use it for theirs).
+static func draw_prompt(
+	item: CanvasItem, row: Dictionary, centre_x: float, baseline: float, text_size: int
+) -> void:
+	var width := prompt_width(row, text_size)
+	var cap_h := text_size + 7.0
+	var plate := Rect2(
+		centre_x - width / 2.0 - 12.0, baseline - cap_h - 1.0, width + 24.0, cap_h + 10.0
+	)
+	item.draw_rect(plate, Color(0, 0, 0, 0.55))
+	Paint.prompt(item, row, centre_x, baseline, text_size, 1.0, false)
+
+
+## How wide `Paint.prompt` draws a row: its caps and words, 9 px apart.
+static func prompt_width(row: Dictionary, text_size: int) -> float:
+	var cap_h := text_size + 7.0
+	var widths: Array[float] = []
+	if String(row.get("key", "")) != "":
+		widths.append(Paint.cap_width(String(row.key), cap_h))
+	for part: Array in Glyphs.segments(String(row.text)):
+		var piece: String = part[1] if part[0] else String(part[1]).strip_edges()
+		if piece == "":
+			continue
+		widths.append(
+			(
+				Paint.cap_width(piece, cap_h)
+				if part[0]
+				else Paint.text_width(Paint.LABEL, piece, text_size, 1.0)
+			)
+		)
+	var total := 0.0
+	for width in widths:
+		total += width
+	return total + 9.0 * maxi(widths.size() - 1, 0)
 
 
 func _band(rect: Rect2, alpha: float) -> void:
 	Paint.band(self, rect, alpha)
 
 
-func _draw_death(at: Vector2) -> void:
-	var alpha := clampf(_dead_for / 0.35, 0.0, 1.0)
-	var rise := (1.0 - alpha) * 10.0
-	at.y += rise
-	_band(Rect2(at.x - 300.0, at.y - 62.0, 600.0, 118.0), 0.5 * alpha)
-
-	var headline := killer.to_upper() if killer != "" else "KILLED"
-	var headline_colour := killer_colour if killer != "" else UiTheme.TEXT
-	if killer != "":
-		var eyebrow := "KILLED BY"
-		var eyebrow_w := Paint.text_centred(
-			self,
-			Paint.LABEL,
-			eyebrow,
-			Vector2(at.x, at.y - 34.0),
-			14,
-			Color(UiTheme.TEXT_DIM, UiTheme.TEXT_DIM.a * alpha),
-			3.0
-		)
-		for side: float in [-1.0, 1.0]:
-			var inner := at.x + side * (eyebrow_w / 2.0 + 12.0)
-			var line := Rect2(minf(inner, inner + side * 70.0), at.y - 39.0, 70.0, 1.0)
-			Paint.fade(self, line, Color(UiTheme.TEXT, 0.35 * alpha), side < 0.0)
-	# The killer's name, with their weapon's silhouette beside it.
-	var name_size := 36
-	var name_w := Paint.text_width(Paint.DISPLAY, headline, name_size, 1.0)
-	var icon_w := 0.0
-	if killer_weapon != "" and Paint.weapon_icon(killer_weapon) != null:
-		var icon := Paint.weapon_icon(killer_weapon)
-		icon_w = icon.get_width() * (26.0 / icon.get_height()) + 16.0
-	var left := at.x - (name_w + icon_w) / 2.0
+## After a kill of ours: "KILLED" over a dark plate at the bottom centre
+## with the victim's name in their colour, for two seconds (Black Ops 3's
+## kill card, as a plain name plate: this game has no calling cards).
+func _draw_killed() -> void:
+	var alpha := clampf(_victim_left / 0.25, 0.0, 1.0)
+	alpha *= clampf((KILLED_SECONDS - _victim_left) / 0.12, 0.0, 1.0)
+	var name_w := Paint.text_width(Paint.LABEL, _victim, 22)
+	# Above the controls legend while it shows.
+	var bottom := size.y - 58.0
+	if legend_alpha > 0.01 and not legend.is_empty():
+		bottom = minf(bottom, _legend_top - 20.0)
+	# The plate hugs the name.
+	var plate_w := maxf(name_w + 40.0, 120.0)
+	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
 	Paint.text(
 		self,
-		Paint.DISPLAY,
+		Paint.LABEL,
+		"KILLED",
+		plate.position + Vector2(0, -6.0),
+		14,
+		Color(UiTheme.TEXT, 0.9 * alpha),
+		1.5
+	)
+	draw_rect(plate, Color(0, 0, 0, 0.6 * alpha))
+	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1.0)), Color(1, 1, 1, 0.3 * alpha))
+	draw_rect(Rect2(plate.position, Vector2(4.0, plate.size.y)), Color(_victim_colour, alpha))
+	Paint.text(
+		self,
+		Paint.LABEL,
+		_victim,
+		plate.position + Vector2(20.0, 28.0),
+		22,
+		Color(_victim_colour.lerp(Color.WHITE, 0.25), alpha)
+	)
+
+
+## The death card in the lower third: "KILLED BY" over a dark plate with a
+## tab in the killer's colour, their name, and their weapon's silhouette;
+## the respawn countdown and its bar under it.
+func _draw_death(at: Vector2) -> void:
+	var alpha := clampf(_dead_for / 0.25, 0.0, 1.0)
+	var rise := (1.0 - alpha) * 10.0
+	at.y += rise
+	var known := killer != ""
+	# One card either way: who killed us, or (not knowing) that we died.
+	var headline := killer if known else "Killed in action"
+	var colour := killer_colour if known else UiTheme.ENEMY
+	var name_size := 26
+	var name_w := Paint.text_width(Paint.LABEL, headline, name_size)
+	var icon_w := 0.0
+	var icon := Paint.weapon_icon(killer_weapon) if killer_weapon != "" else null
+	if known and icon != null:
+		icon_w = icon.get_width() * (22.0 / icon.get_height()) + 22.0
+	var width := maxf(name_w + icon_w + 52.0, 300.0)
+	var plate := Rect2(at.x - width / 2.0, at.y - 26.0, width, 50.0)
+	Paint.text(
+		self,
+		Paint.LABEL,
+		"KILLED BY" if known else "YOU DIED",
+		plate.position + Vector2(0, -7.0),
+		14,
+		Color(UiTheme.TEXT, 0.85 * alpha),
+		1.5
+	)
+	draw_rect(plate, Color(0, 0, 0, 0.62 * alpha))
+	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1.0)), Color(1, 1, 1, 0.3 * alpha))
+	draw_rect(Rect2(plate.position, Vector2(4.0, plate.size.y)), Color(colour, alpha))
+	Paint.text(
+		self,
+		Paint.LABEL,
 		headline,
-		Vector2(left, at.y + 6.0),
+		Vector2(plate.position.x + 22.0, plate.end.y - 15.0),
 		name_size,
-		Color(headline_colour, alpha),
-		1.0
+		Color(colour.lerp(Color.WHITE, 0.2) if known else UiTheme.TEXT, alpha)
 	)
 	if icon_w > 0.0:
 		Paint.weapon(
 			self,
 			killer_weapon,
-			Vector2(left + name_w + icon_w, at.y - 7.0),
-			26.0,
-			Color(1, 1, 1, 0.85 * alpha)
+			Vector2(plate.end.x - 18.0, plate.get_center().y),
+			22.0,
+			Color(1, 1, 1, 0.9 * alpha)
 		)
 
 	# Respawn countdown and its bar.
 	if respawn_total > 0.0:
-		var label := "RESPAWN  %.1f" % maxf(respawn_left, 0.0)
-		Paint.text_centred(
-			self,
-			Paint.LABEL,
-			label,
-			Vector2(at.x, at.y + 34.0),
-			14,
-			Color(UiTheme.TEXT_DIM, UiTheme.TEXT_DIM.a * alpha),
-			2.0
-		)
-		var bar := Rect2(at.x - 110.0, at.y + 44.0, 220.0, 3.0)
+		var bar := Rect2(at.x - 110.0, plate.end.y + 14.0, 220.0, 3.0)
 		var progress := clampf(1.0 - respawn_left / respawn_total, 0.0, 1.0)
 		draw_rect(bar, Color(Paint.TRACK, Paint.TRACK.a * alpha))
 		draw_rect(
 			Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)),
 			Color(UiTheme.TEXT, 0.9 * alpha)
+		)
+		Paint.text_centred(
+			self,
+			Paint.LABEL,
+			"RESPAWN  %.1f" % maxf(respawn_left, 0.0),
+			Vector2(at.x, bar.end.y + 18.0),
+			14,
+			Color(UiTheme.TEXT, 0.8 * alpha),
+			1.5
 		)
 
 
@@ -148,6 +254,7 @@ func _draw_legend() -> void:
 	var row_h := 28.0
 	var top := size.y - 30.0 - row_h * (rows.size() - 1)
 	var widest: float = widths.max()
+	_legend_top = top - 24.0
 	_band(
 		Rect2(
 			size.x / 2.0 - widest / 2.0 - 50.0,

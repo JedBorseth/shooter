@@ -3,19 +3,24 @@ extends CanvasLayer
 ## (which keeps the score bar, kill feed, scoreboard, and loadout menu). It
 ## stays hidden in other modes. It shows:
 ##
-## - who is still alive on each team, as pips at the top centre, and under
-##   them the round number and whether we attack or defend;
+## - who is still alive on each team, as Black Ops 3 shows it: a row per
+##   team under the minimap (ours first), a square in the team's colour with
+##   a figure, the count, and ALIVE, and under them whether we attack or
+##   defend (the round number is beside the clock, in the score block);
 ## - the round banners: the freeze before each round, and the round's result
 ##   (with a halftime note when the teams are about to swap sides);
 ## - spectating: once we die, a camera follows a living teammate over the
-##   shoulder until the next round. Fire switches to the next teammate.
+##   shoulder until the next round, and the lower centre says so: SPECTATING
+##   over their name on a dark plate, and the key for the next teammate under
+##   it. Fire switches to the next teammate.
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const LABEL_FONT := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
+const HudCentre := preload("res://scripts/hud_centre.gd")
 
-const DEAD := Color(0.35, 0.38, 0.4, 0.55)
 ## Seconds after dying before the camera moves to a teammate.
 const SPECTATE_DELAY := 1.5
 ## Over-the-shoulder offset from a teammate's eyes: back, right, and up.
@@ -28,11 +33,17 @@ var client: NetClient
 var player: FpsPlayer
 
 var _root: Control
-var _round_label: Label
-## Round banners and the spectating hint (`match_banner.gd`).
+## Round banners (`match_banner.gd`).
 var _overlay: Control
-var _ally_pips: HBoxContainer
-var _enemy_pips: HBoxContainer
+## The alive rows and the spectating plate, drawn.
+var _rows: Control
+## [alive, total] for our team and theirs.
+var _alive := [[0, 0], [0, 0]]
+## "ATTACKING" or "DEFENDING" under the rows; empty outside a round.
+var _side := ""
+## Who we watch, and the line under their name ("" while not spectating).
+var _watching := ""
+var _watch_hint := ""
 var _camera: Camera3D
 var _dead_for := 0.0
 ## Player id being spectated, or -1.
@@ -71,14 +82,12 @@ func _process(delta: float) -> void:
 	var round := client.round_info()
 	var playing: bool = info.phase == "playing"
 	var has_round: bool = round.number > 0
-	_round_label.visible = playing and has_round
-	if has_round:
-		_round_label.text = (
-			"ROUND %d  ·  %s" % [round.number, "ATTACKING" if round.attacking else "DEFENDING"]
-		)
-		_round_label.modulate = TeamColours.enemy if round.attacking else TeamColours.ally
+	_side = ""
+	if playing and has_round:
+		_side = "ATTACKING" if round.attacking else "DEFENDING"
 	_update_banner(round, playing)
 	_update_spectating(delta, playing and has_round)
+	_rows.queue_redraw()
 
 
 func _active() -> bool:
@@ -132,32 +141,119 @@ func _refresh_pips() -> void:
 	if client == null or not is_instance_valid(client):
 		return
 	var my_team: int = client.match_info().my_team
-	var rows := [[], []]
+	_alive = [[0, 0], [0, 0]]
+	# No team yet (my_team -1) leaves both rows at nothing.
+	if my_team < 0 or my_team > 1:
+		return
 	for entry: Dictionary in client.roster():
-		if entry.team == 0 or entry.team == 1:
-			rows[entry.team].append(entry)
-	for i in 2:
-		var team := my_team if i == 0 else 1 - my_team
-		var box := _ally_pips if i == 0 else _enemy_pips
-		for child in box.get_children():
-			child.queue_free()
-		# No team yet (my_team -1) leaves both rows empty; 1 - -1 would be 2.
-		if team < 0 or team > 1:
+		if entry.team != 0 and entry.team != 1:
 			continue
-		var colour := TeamColours.of(i == 0)
-		# The living first, nearest the score.
-		var entries: Array = rows[team]
-		entries.sort_custom(
-			func(a: Dictionary, b: Dictionary) -> bool: return a.alive and not b.alive
+		var row: Array = _alive[0 if entry.team == my_team else 1]
+		row[1] += 1
+		if entry.alive:
+			row[0] += 1
+
+
+## Under the minimap: a row per team, ours first, and whether we attack or
+## defend under them; and while spectating, the plate in the lower centre.
+func _draw_rows() -> void:
+	var ui := _rows.size.y / 900.0
+	if _alive[0][1] + _alive[1][1] > 0:
+		for i in 2:
+			var at := Vector2(44.0, 246.0 + i * 30.0) * ui
+			_draw_alive_row(at, i == 0, int(_alive[i][0]), ui)
+		if _side != "":
+			Paint.text(
+				_rows,
+				Paint.LABEL,
+				_side,
+				Vector2(48.0, 324.0) * ui,
+				int(14 * ui),
+				Color(UiTheme.TEXT, 0.85),
+				1.5 * ui
+			)
+	if _watching != "" or _watch_hint != "":
+		_draw_spectating(ui)
+
+
+func _draw_alive_row(at: Vector2, ours: bool, alive: int, ui: float) -> void:
+	var colour := TeamColours.of(ours)
+	var row_h := 26.0 * ui
+	Paint.fade(_rows, Rect2(at, Vector2(150.0, 26.0) * ui), Color(0, 0, 0, 0.55))
+	var square := Rect2(at + Vector2(2.0, 2.0) * ui, Vector2(22.0, 22.0) * ui)
+	_rows.draw_rect(square, colour if alive > 0 else Color(colour.darkened(0.5), 0.8))
+	# A figure: head and shoulders.
+	var c := square.get_center()
+	_rows.draw_circle(c + Vector2(0, -3.5) * ui, 3.6 * ui, UiTheme.INK, true, -1.0, true)
+	(
+		_rows
+		. draw_colored_polygon(
+			PackedVector2Array(
+				[
+					c + Vector2(-6.5, 8.0) * ui,
+					c + Vector2(-4.0, 1.5) * ui,
+					c + Vector2(4.0, 1.5) * ui,
+					c + Vector2(6.5, 8.0) * ui,
+				]
+			),
+			UiTheme.INK
 		)
-		if i == 0:
-			entries.reverse()
-		for entry: Dictionary in entries:
-			var pip := ColorRect.new()
-			pip.custom_minimum_size = Vector2(9, 20)
-			pip.color = colour if entry.alive else DEAD
-			pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			box.add_child(pip)
+	)
+	var baseline := at.y + row_h / 2.0 + 6.5 * ui
+	Paint.text(
+		_rows,
+		Paint.DISPLAY,
+		str(alive),
+		Vector2(square.end.x + 10.0 * ui, baseline),
+		int(18 * ui),
+		UiTheme.TEXT
+	)
+	Paint.text(
+		_rows,
+		Paint.LABEL,
+		"ALIVE",
+		Vector2(square.end.x + 34.0 * ui, baseline - 1.0 * ui),
+		int(15 * ui),
+		Color(UiTheme.TEXT, 0.9),
+		1.0
+	)
+
+
+## Spectating, in the lower centre: SPECTATING, the teammate's name on a dark
+## plate, and the key for the next one under it.
+func _draw_spectating(ui: float) -> void:
+	var centre_x := _rows.size.x / 2.0
+	var top := _rows.size.y * 0.74
+	Paint.text_centred(
+		_rows,
+		Paint.LABEL,
+		"SPECTATING",
+		Vector2(centre_x, top),
+		int(16 * ui),
+		UiTheme.TEXT,
+		1.5 * ui
+	)
+	var name := _watching if _watching != "" else "Back next round"
+	var name_w := Paint.text_width(Paint.LABEL, name, int(21 * ui))
+	var plate := Rect2(
+		centre_x - maxf(260.0 * ui, name_w + 40.0 * ui) / 2.0,
+		top + 10.0 * ui,
+		maxf(260.0 * ui, name_w + 40.0 * ui),
+		34.0 * ui
+	)
+	_rows.draw_rect(plate, Color(0, 0, 0, 0.58))
+	Paint.text_centred(
+		_rows,
+		Paint.LABEL,
+		name,
+		Vector2(centre_x, plate.end.y - 10.0 * ui),
+		int(21 * ui),
+		UiTheme.TEXT if _watching != "" else Color(UiTheme.TEXT, 0.75)
+	)
+	if _watch_hint.strip_edges() != "":
+		HudCentre.draw_prompt(
+			_rows, {"text": _watch_hint}, centre_x, plate.end.y + 34.0 * ui, int(16 * ui)
+		)
 
 
 # --- Spectating -----------------------------------------------------------------
@@ -166,14 +262,16 @@ func _refresh_pips() -> void:
 func _update_spectating(delta: float, in_round: bool) -> void:
 	var dead := player != null and is_instance_valid(player) and not player.is_alive()
 	_dead_for = _dead_for + delta if dead and in_round else 0.0
+	_overlay.hint = ""
+	_watching = ""
+	_watch_hint = ""
 	if _dead_for < SPECTATE_DELAY:
 		_stop_spectating()
-		_overlay.hint = ""
 		return
 	var teammates := _living_teammates()
 	if teammates.is_empty():
 		_stop_spectating()
-		_overlay.hint = "Back next round"
+		_watch_hint = " "
 		return
 	if not teammates.has(_target) or Input.is_action_just_pressed(&"fire"):
 		var at := teammates.find(_target)
@@ -182,10 +280,8 @@ func _update_spectating(delta: float, in_round: bool) -> void:
 	if remote == null:
 		return
 	_follow(remote, delta)
-	_overlay.hint = (
-		"[%s] Next teammate  ·  Spectating %s"
-		% [Settings.prompt_key(&"fire"), client.name_of(_target)]
-	)
+	_watching = client.name_of(_target)
+	_watch_hint = "[%s] Next teammate" % Settings.prompt_key(&"fire")
 
 
 ## Ids of living teammates in a stable order.
@@ -261,48 +357,15 @@ func _build() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	# Who is alive on each side, top centre, with the round under them.
-	# Offsets from the centre anchor: `position` would place them from the
-	# left edge, which put the pips in the minimap's corner.
-	_ally_pips = _pip_row(BoxContainer.ALIGNMENT_END, -12.0 - 240.0)
-	_enemy_pips = _pip_row(BoxContainer.ALIGNMENT_BEGIN, 12.0)
-	_round_label = _label("", Color.WHITE, 14)
-	_root.add_child(_round_label)
-	_round_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_round_label.offset_left = -200.0
-	_round_label.offset_right = 200.0
-	_round_label.offset_top = 50.0
+	# Who is alive on each side, under the minimap, and the spectating plate.
+	_rows = Control.new()
+	_rows.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rows.draw.connect(_draw_rows)
+	_root.add_child(_rows)
 
 	_overlay = Control.new()
 	_overlay.set_script(MatchBanner)
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_overlay)
-
-
-## A row of pips 240 wide, `left` from the top centre.
-func _pip_row(alignment: BoxContainer.AlignmentMode, left: float) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.alignment = alignment
-	row.add_theme_constant_override("separation", 4)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(row)
-	row.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	row.offset_left = left
-	row.offset_right = left + 240.0
-	row.offset_top = 24.0
-	row.offset_bottom = 44.0
-	return row
-
-
-func _label(text: String, colour: Color, size: int) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", colour)
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_font_override("font", LABEL_FONT)
-	label.add_theme_constant_override("outline_size", 4)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label

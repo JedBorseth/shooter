@@ -1,19 +1,24 @@
 extends Control
-## The weapon cluster, bottom right: the weapon's name (and attachment) over
-## its silhouette, a big magazine count beside a smaller reserve, and a strip
-## with a tick for every round in the magazine (a plain bar for belt-fed
-## weapons), and above it the frag grenades carried. It sits on a shade that
-## fades in from the screen's corner.
+## The weapon cluster, bottom right, as Black Ops 3 lays out its own (left of
+## the health ring, `hud_vitals.gd`): the ammo on a dark plate with a light
+## bracket edge, the magazine count big and the reserve smaller in two cells,
+## the weapon's name under it, and above it two small bordered slots for the
+## tactical and lethal grenades with their counts (a thin cross when empty).
+## The cluster is turned a little toward the screen's centre.
 ##
-## Low on ammo, the count and the strip turn red; while reloading they dim.
+## Low on ammo, the magazine count turns red; with no reserve left, the
+## reserve does too; while reloading both dim.
 
-const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 
-## Magazines bigger than this show a plain bar rather than a tick per round.
-const MAX_TICKS := 40
-const STRIP_WIDTH := 236.0
+## Room kept on the right for the health ring.
+const RING_SPACE := 146.0
+const MAG_W := 88.0
+const RESERVE_W := 78.0
+const PLATE_H := 56.0
+const SLOT := 42.0
 
 var player: FpsPlayer
 
@@ -36,97 +41,125 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if player == null:
 		return
-	var right := size.x
+	var right := size.x - RING_SPACE
 	var bottom := size.y
-
-	# Shade from the corner of the screen, under the whole cluster.
+	# A soft shade from the screen's corner, so the name holds over a bright
+	# scene.
 	Paint.corner_shade(
-		self, Rect2(right - 520.0, bottom - 170.0, 560.0, 204.0), Vector2(1, 1), 0.55
+		self, Rect2(size.x - 560.0, bottom - 190.0, 600.0, 224.0), Vector2(1, 1), 0.4
 	)
+	draw_set_transform_matrix(Shapes.tilt(size.x, -Shapes.TILT))
 
+	var plate := Rect2(right - MAG_W - RESERVE_W, bottom - 112.0, MAG_W + RESERVE_W, PLATE_H)
+	_draw_plate(plate)
 	var magazine := player.magazine()
 	var reserve := player.reserve()
-	var capacity := maxi(player.magazine_size(), 1)
 	var low := magazine <= player.low_ammo_threshold()
 	var reloading := player.is_reloading()
-	var count_colour := TeamColours.enemy if low else UiTheme.TEXT
+	var mag_colour := UiTheme.HARM if low else UiTheme.TEXT
+	var reserve_colour := UiTheme.HARM if reserve == 0 else Color(UiTheme.TEXT, 0.82)
 	if reloading:
-		count_colour = Color(UiTheme.TEXT, 0.45)
-
-	# Rounds strip along the bottom.
-	var strip := Rect2(right - STRIP_WIDTH, bottom - 5.0, STRIP_WIDTH, 4.0)
-	var strip_colour := TeamColours.enemy if low else Color(UiTheme.TEXT, 0.9)
-	if reloading:
-		strip_colour = Color(UiTheme.TEXT, 0.35)
-	if capacity <= MAX_TICKS:
-		var gap := 2.0 if capacity > 12 else 4.0
-		Paint.segments(self, strip, capacity, float(magazine) / capacity, strip_colour, gap)
-	else:
-		Paint.segments(self, strip, 1, float(magazine) / capacity, strip_colour, 0.0)
-
-	# Magazine, divider, reserve, right to left.
-	var baseline := bottom - 16.0
-	var reserve_w := Paint.text_right(
+		mag_colour = Color(UiTheme.TEXT, 0.45)
+		reserve_colour = Color(UiTheme.TEXT, 0.4)
+	var baseline := plate.end.y - 12.0
+	Paint.text_centred(
 		self,
-		Paint.LABEL,
+		Paint.DISPLAY,
+		str(magazine),
+		Vector2(plate.position.x + MAG_W / 2.0 + 3.0, baseline + 2.0),
+		44,
+		mag_colour
+	)
+	Paint.text_centred(
+		self,
+		Paint.DISPLAY,
 		str(reserve),
-		Vector2(right, baseline),
-		24,
-		Color(UiTheme.TEXT, 0.4 if reserve == 0 else 0.62)
-	)
-	var divider_x := right - reserve_w - 11.0
-	draw_rect(Rect2(divider_x, baseline - 24.0, 1.5, 26.0), Color(UiTheme.TEXT, 0.35))
-	var mag_w := Paint.text_right(
-		self, Paint.DISPLAY, str(magazine), Vector2(divider_x - 10.0, baseline), 54, count_colour
-	)
-	var numbers_left := divider_x - 10.0 - mag_w
-
-	# Silhouette left of the numbers; it brightens as the weapon comes up.
-	var icon_colour := Color(1, 1, 1, lerpf(0.82, 1.0, _flash))
-	Paint.weapon(self, _key, Vector2(numbers_left - 20.0, baseline - 18.0), 34.0, icon_colour)
-
-	# Frags carried, above the name: a grenade and the count, dim when none.
-	var frags := player.lethals()
-	var frag_colour := Color(UiTheme.TEXT, 0.85 if frags > 0 else 0.3)
-	var frag_line := bottom - 100.0
-	var frag_w := Paint.text_right(
-		self, Paint.LABEL, str(frags), Vector2(right, frag_line), 16, frag_colour
-	)
-	Paint.grenade(self, Vector2(right - frag_w - 12.0, frag_line - 6.0), 16.0, frag_colour)
-	# The tactical to its left: a can and its count.
-	var tacticals := player.tacticals()
-	var tactical_colour := Color(UiTheme.TEXT, 0.85 if tacticals > 0 else 0.3)
-	var tactical_right := right - frag_w - 34.0
-	var tactical_w := Paint.text_right(
-		self, Paint.LABEL, str(tacticals), Vector2(tactical_right, frag_line), 16, tactical_colour
-	)
-	Paint.canister(
-		self,
-		Vector2(tactical_right - tactical_w - 11.0, frag_line - 6.0),
-		16.0,
-		tactical_colour,
-		player.tactical_key() == "smoke"
+		Vector2(plate.end.x - RESERVE_W / 2.0, baseline - 2.0),
+		27,
+		reserve_colour
 	)
 
-	# Name, with the attachment after it in quieter type.
+	_draw_name(Vector2(plate.end.x, plate.end.y + 24.0))
+	_draw_slots(Vector2(plate.end.x, plate.position.y - 6.0))
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## The ammo plate: dark, with its top-left corner cut, a light edge along the
+## top and the cut, and a thin divider between the two counts.
+func _draw_plate(rect: Rect2) -> void:
+	var cut := 12.0
+	var points := PackedVector2Array(
+		[
+			rect.position + Vector2(cut, 0),
+			Vector2(rect.end.x, rect.position.y),
+			rect.end,
+			Vector2(rect.position.x, rect.end.y),
+			rect.position + Vector2(0, cut),
+		]
+	)
+	draw_colored_polygon(points, Color(0, 0, 0, 0.55))
+	# A bracket: the cut and the top bright, the right side fainter.
+	var edge := PackedVector2Array(
+		[Vector2(rect.position.x, rect.end.y - 10.0), points[4], points[0], points[1]]
+	)
+	draw_polyline(edge, Color(1, 1, 1, 0.6), 1.0, true)
+	draw_line(points[1], points[2] - Vector2(0, 10.0), Color(1, 1, 1, 0.35), 1.0, true)
+	var divider := rect.position.x + MAG_W
+	draw_line(
+		Vector2(divider, rect.position.y + 9.0),
+		Vector2(divider, rect.end.y - 9.0),
+		Color(1, 1, 1, 0.35),
+		1.0,
+		true
+	)
+
+
+## The weapon's name under the plate, mixed case as Black Ops 3 writes it,
+## with its attachments after it in quieter type. It brightens on a swap.
+func _draw_name(right: Vector2) -> void:
 	var parts := Paint.split_weapon_name(_key, player.weapon_name())
-	var name := parts[0].to_upper()
-	var attachment := parts[1].to_upper()
-	var name_line := bottom - 72.0
-	var name_size := 18
-	var tag_size := 13
-	var name_w := Paint.text_width(Paint.LABEL, name, name_size, 1.5)
-	var tag := ("  ·  " + attachment) if attachment != "" else ""
-	var tag_w := Paint.text_width(Paint.LABEL_LIGHT, tag, tag_size, 1.0)
-	var x := right - name_w - tag_w
-	Paint.text(self, Paint.LABEL, name, Vector2(x, name_line), name_size, UiTheme.TEXT, 1.5)
+	var name := parts[0]
+	var attachment := parts[1]
+	var name_size := 19
+	var tag_size := 16
+	var tag := ("  " + attachment) if attachment != "" else ""
+	var name_w := Paint.text_width(Paint.LABEL, name, name_size)
+	var tag_w := Paint.text_width(Paint.LABEL_LIGHT, tag, tag_size)
+	var x := right.x - name_w - tag_w
+	var colour := UiTheme.TEXT.lerp(Color.WHITE, _flash)
+	Paint.text(self, Paint.LABEL, name, Vector2(x, right.y), name_size, colour)
 	if tag != "":
 		Paint.text(
 			self,
 			Paint.LABEL_LIGHT,
 			tag,
-			Vector2(x + name_w, name_line),
+			Vector2(x + name_w, right.y),
 			tag_size,
-			UiTheme.TEXT_DIM,
-			1.0
+			Color(UiTheme.TEXT, 0.75)
+		)
+
+
+## The tactical and lethal slots above the plate's right end: small dark
+## squares with a thin border, the grenade and its count, or a cross when
+## none are left.
+func _draw_slots(bottom_right: Vector2) -> void:
+	var lethal := Rect2(bottom_right - Vector2(SLOT, SLOT), Vector2(SLOT, SLOT))
+	var tactical := Rect2(lethal.position - Vector2(SLOT + 6.0, 0), lethal.size)
+	var frags := player.lethals()
+	var tacticals := player.tacticals()
+	for slot: Array in [[lethal, frags, false], [tactical, tacticals, true]]:
+		var rect: Rect2 = slot[0]
+		var count: int = slot[1]
+		Shapes.smooth_rect(self, rect, Color(0, 0, 0, 0.52))
+		Shapes.smooth_rect(self, rect, Color(1, 1, 1, 0.36), false, 1.0)
+		if count <= 0:
+			Shapes.empty_cross(self, rect.grow(-5.0), Color(1, 1, 1, 0.32))
+			continue
+		var centre := rect.get_center() + Vector2(-3.0, 1.0)
+		if slot[2]:
+			Paint.canister(self, centre, 26.0, UiTheme.TEXT, player.tactical_key() == "smoke")
+		else:
+			Paint.grenade(self, centre, 26.0, UiTheme.TEXT)
+		Paint.text_right(
+			self, Paint.LABEL, str(count), rect.end - Vector2(3.0, 3.0), 13, UiTheme.TEXT
 		)
