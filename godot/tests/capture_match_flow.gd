@@ -244,7 +244,6 @@ func _results() -> void:
 	board.visible = true
 	board.top = 214.0
 	board.title = "TEAM DEATHMATCH"
-	board.title_colour = UiTheme.TEXT_DIM
 	board.sections = _sections(false, [], [])
 	var card: PanelContainer = XpSummary.new()
 	card.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)

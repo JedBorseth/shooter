@@ -33,17 +33,15 @@ extends CanvasLayer
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
-const LobbyTeams := preload("res://scripts/net/lobby_teams.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const ScoreBlock := preload("res://scripts/net/score_block.gd")
 const KillFeed := preload("res://scripts/net/kill_feed.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const MatchResults := preload("res://scripts/net/match_results.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
-const ClassMenu := preload("res://scripts/net/class_menu.gd")
+const MatchMenu := preload("res://scripts/net/match_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
-const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 const CALLOUT_SECONDS := 2.2
 ## Seconds the result banner shows with the team strip before the scoreboard.
@@ -63,7 +61,6 @@ var _overlay: Control
 var _feed: Control
 var _board: Control
 var _menu: Control
-var _menu_panel: PanelContainer
 ## Create-a-Class: the class list and editor (`class_menu.gd`).
 var _class_menu: VBoxContainer
 ## Earns the match's XP (`match_xp.gd`).
@@ -75,13 +72,9 @@ var _xp_ready := false
 var _xp_bonus := 0
 ## Seconds of results seen (outside the final killcam), for the team strip.
 var _results_age := 0.0
+## The final killcam has played: the strip has had its moment.
+var _final_killcam_seen := false
 var _ready_button: Button
-var _menu_status: Label
-var _menu_eyebrow: Label
-var _menu_title: Label
-var _loadout_box: VBoxContainer
-var _ladder_box: VBoxContainer
-var _ladder_labels: Array[Label] = []
 var _ladder_marked := -1
 var _callout_left := 0.0
 var _is_ready := false
@@ -145,6 +138,8 @@ func _process(delta: float) -> void:
 	# A killcam has its own overlay; the match HUD comes back after it (the
 	# results board after the final killcam, as in Call of Duty).
 	_root.visible = _joined() and not client.in_killcam()
+	if _joined() and client.in_killcam() and client.match_info().phase == "ended":
+		_final_killcam_seen = true
 	if not _root.visible:
 		return
 	var info := client.match_info()
@@ -157,7 +152,11 @@ func _process(delta: float) -> void:
 	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
 	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
-	_score.visible = not bool(info.get("hardcore", false))
+	# The score block steps aside for the scoreboard and the results.
+	var board_up := (
+		phase == "ended" or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
+	)
+	_score.visible = not bool(info.get("hardcore", false)) and not board_up
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
@@ -180,36 +179,40 @@ func _process(delta: float) -> void:
 		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
 	_update_banner(phase, info)
 	_age_callout(delta)
-	_loadout_box.visible = not ladder
-	_ladder_box.visible = ladder
-	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
-	_menu_title.text = "Weapon ladder" if ladder else "Choose class"
-	_menu_panel.custom_minimum_size.x = 560.0 if ladder else 900.0
+	_menu.ladder = ladder
+	_menu.mode_name = String(info.get("mode_name", "Team Deathmatch"))
 	_age_chat(delta)
 
 	if phase == "lobby" and not _opened_for_lobby:
 		_opened_for_lobby = true
 		_set_menu_open(true)
-	if phase != "lobby" and _ready_button.visible:
-		_ready_button.visible = false
-	elif phase == "lobby":
-		_ready_button.visible = true
+	_menu.ready_allowed = phase == "lobby"
 
 	var results := phase == "ended"
 	if not results:
 		_xp_ready = false
 		_results_age = 0.0
+		_final_killcam_seen = false
 	else:
 		_results_age += delta
 	# After a match: the result banner and the team strip first, then the
-	# scoreboard and the match report under the banner, as Black Ops 3 does.
-	var strip_stage := results and _results_age < STRIP_SECONDS
+	# final killcam, then the scoreboard and the match report under the
+	# banner, as Black Ops 3 does.
+	var strip_stage := results and _results_age < STRIP_SECONDS and not _final_killcam_seen
 	_xp_card.visible = results and not strip_stage and _xp_ready and not _menu.visible
 	var held := Input.is_action_pressed(&"scoreboard") and not _menu.visible
 	_board.visible = (results and not strip_stage) or held
+	# The header: the mode and its goal ("FIRST TO 75 KILLS"), or the round.
 	_board.title = String(info.get("mode_name", "")).to_upper()
-	_board.title_colour = MenuStyle.TEXT_DIM
+	if snd and phase == "playing":
+		_board.title += " : ROUND %d" % int(client.round_info().get("number", 0))
+	elif _score.footer != "":
+		_board.title += " : " + String(_score.footer)
 	_board.clock = _score.clock
+	# The match report under the results board is as wide as it.
+	var report_w := maxf(_board.panel_width(), 900.0)
+	_xp_card.offset_left = -report_w / 2.0
+	_xp_card.offset_right = report_w / 2.0
 	_board.top = 214.0 if results else Scoreboard.TOP
 
 	_overlay.strip = MatchResults.strip(info) if strip_stage and not held else {}
@@ -232,14 +235,14 @@ func _process(delta: float) -> void:
 					Scoreboard.ready_count(client.roster())
 				]
 			)
-		_menu_status.text = Scoreboard.ready_count(client.roster())
+		_menu.status = Scoreboard.ready_count(client.roster())
 	else:
 		if show_hint:
 			_overlay.hint = "[%s] Choose class for your next spawn" % key
 		if snd:
-			_menu_status.text = "Applies at once before a round starts, otherwise next round."
+			_menu.status = "Applies at once before a round starts, otherwise next round."
 		else:
-			_menu_status.text = "" if ladder else "Applies from your next spawn."
+			_menu.status = "" if ladder else "Applies from your next spawn."
 
 
 ## Our own score plate (in the shared HUD) gives the corner to the match's.
@@ -347,13 +350,13 @@ func _mark_ladder(level: int) -> void:
 	if level == _ladder_marked:
 		return
 	_ladder_marked = level
-	for i in _ladder_labels.size():
+	for i in _menu.ladder_labels.size():
 		var colour := MenuStyle.TEXT
 		if i == level:
-			colour = MenuStyle.ACCENT
+			colour = Paint.UiTheme.SELF
 		elif i < level:
 			colour = MenuStyle.TEXT_FAINT
-		_ladder_labels[i].add_theme_color_override("font_color", colour)
+		_menu.ladder_labels[i].add_theme_color_override("font_color", colour)
 
 
 func _clock_text(phase: String, seconds_left: float) -> String:
@@ -547,14 +550,14 @@ func _refresh_board() -> void:
 	var snd: bool = info.mode == "snd"
 	var headings := ["Name", "Score", "Kills", "Deaths", "Ping"]
 	if ctf:
-		headings = ["Name", "Score", "Captures", "Returns", "Kills", "Deaths", "Ping"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Captures", "Returns", "Ping"]
 	if snd:
 		# Plants and defuses ride in the captures and returns columns.
-		headings = ["Name", "Score", "Plants", "Defuses", "Kills", "Deaths", "Ping"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Plants", "Defuses", "Ping"]
 	if hardpoint:
 		headings.insert(headings.size() - 1, "Time")
 	if dom:
-		headings = ["Name", "Score", "Captures", "Defends", "Kills", "Deaths", "Ping"]
+		headings = ["Name", "Score", "Kills", "Deaths", "Captures", "Defends", "Ping"]
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = info.scores
@@ -564,15 +567,14 @@ func _refresh_board() -> void:
 		for entry: Dictionary in client.roster():
 			if entry.team != team:
 				continue
-			var cells := [entry.name, str(entry.score)]
+			# Score, kills, and deaths first, then the mode's own columns.
+			var cells := [entry.name, str(entry.score), str(entry.kills), str(entry.deaths)]
 			if ctf or snd:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("returns", 0)))
 			if dom:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("defends", 0)))
-			cells.append(str(entry.kills))
-			cells.append(str(entry.deaths))
 			if hardpoint:
 				var hill := int(entry.get("hill_seconds", 0))
 				cells.append("%d:%02d" % [hill / 60, hill % 60])
@@ -665,13 +667,13 @@ func _refresh_ladder_board() -> void:
 
 func _set_menu_open(open: bool) -> void:
 	_menu.visible = open
-	if open and _loadout_box.visible:
+	if open and not _menu.ladder:
 		_class_menu.show_list()
 	if player != null and is_instance_valid(player):
 		player.set_input_enabled(not open)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 	if open:
-		if _loadout_box.visible:
+		if not _menu.ladder:
 			_class_menu.focus_first()
 		elif _ready_button.visible:
 			_ready_button.grab_focus.call_deferred()
@@ -854,94 +856,13 @@ func _on_match_finished(summary: Dictionary) -> void:
 
 
 func _build_menu() -> void:
-	_menu = Control.new()
-	_menu.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Full screen: Create-a-Class (or Gun Game's ladder), the lobby's teams,
+	# and Ready (`match_menu.gd`).
+	_menu = MatchMenu.new()
+	_menu.client = client
 	_menu.visible = false
 	_root.add_child(_menu)
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.01, 0.015, 0.02, 0.6)
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_menu.add_child(backdrop)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_menu.add_child(center)
-	var lobby_teams := LobbyTeams.new()
-	lobby_teams.client = client
-	_menu.add_child(lobby_teams)
-	lobby_teams.ready_pressed.connect(_toggle_ready)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(560, 0)
-	panel.add_theme_stylebox_override("panel", MenuStyle.panel())
-	center.add_child(panel)
-	_menu_panel = panel
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 10)
-	panel.add_child(layout)
-
-	_menu_eyebrow = Label.new()
-	_menu_eyebrow.text = "TEAM DEATHMATCH"
-	_menu_eyebrow.add_theme_color_override("font_color", MenuStyle.ACCENT)
-	_menu_eyebrow.add_theme_font_size_override("font_size", 15)
-	layout.add_child(_menu_eyebrow)
-	_menu_title = Label.new()
-	_menu_title.text = "Choose class"
-	_menu_title.add_theme_font_size_override("font_size", 34)
-	layout.add_child(_menu_title)
-	_build_ladder(layout)
-	_loadout_box = VBoxContainer.new()
-	_loadout_box.add_theme_constant_override("separation", 10)
-	layout.add_child(_loadout_box)
-	_class_menu = ClassMenu.new()
-	_class_menu.client = client
-	_loadout_box.add_child(_class_menu)
-
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 8)
-	layout.add_child(spacer)
-	_menu_status = Label.new()
-	_menu_status.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	_menu_status.add_theme_font_size_override("font_size", 16)
-	layout.add_child(_menu_status)
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 10)
-	layout.add_child(buttons)
-	_ready_button = Button.new()
-	_ready_button.text = "READY"
-	_ready_button.custom_minimum_size = Vector2(0, 52)
-	_ready_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_ready_button.add_theme_font_size_override("font_size", 20)
-	MenuStyle.style_button(_ready_button)
+	_class_menu = _menu.class_menu
+	_ready_button = _menu.ready_button
 	_ready_button.pressed.connect(_toggle_ready)
-	buttons.add_child(_ready_button)
-	var close := Button.new()
-	Glyphs.key_button(close, "Close", Settings.prompt_key(&"loadout"))
-	close.custom_minimum_size = Vector2(0, 52)
-	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	close.add_theme_font_size_override("font_size", 20)
-	MenuStyle.style_button(close)
-	close.pressed.connect(_set_menu_open.bind(false))
-	buttons.add_child(close)
-
-
-## Gun Game's ladder, top to bottom, with our weapon marked as it changes.
-func _build_ladder(layout: VBoxContainer) -> void:
-	_ladder_box = VBoxContainer.new()
-	_ladder_box.add_theme_constant_override("separation", 4)
-	_ladder_box.visible = false
-	layout.add_child(_ladder_box)
-	var detail := Label.new()
-	detail.text = (
-		"No loadouts: everyone climbs the same weapons. Kills move you up, a fall"
-		+ " moves you down, and the last weapon's last kill wins."
-	)
-	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	detail.add_theme_font_size_override("font_size", 16)
-	_ladder_box.add_child(detail)
-	var ladder := NetClient.gun_game_ladder()
-	for i in ladder.size():
-		var label := Label.new()
-		label.text = "%d   %s" % [i + 1, ladder[i]]
-		label.add_theme_font_size_override("font_size", 20)
-		_ladder_box.add_child(label)
-		_ladder_labels.append(label)
+	_menu.close_pressed().connect(_set_menu_open.bind(false))

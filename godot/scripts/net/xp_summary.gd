@@ -29,7 +29,6 @@ var _rows: HBoxContainer
 var _level_label: Label
 var _bar: Control
 var _xp_label: Label
-var _earned_label: Label
 var _level_up: Label
 var _extras: HBoxContainer
 var _from := 0
@@ -54,8 +53,6 @@ func _ready() -> void:
 	var title := _label("MATCH REPORT", UiTheme.TEXT_DIM, 15, UiTheme.tracked(UiTheme.LABEL, 3))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(title)
-	_level_label = _label("", UiTheme.TEXT, 17, UiTheme.tracked(UiTheme.DISPLAY, 1))
-	head.add_child(_level_label)
 	_level_up = _label("LEVEL UP", UiTheme.LABEL_INK, 15, UiTheme.tracked(UiTheme.LABEL, 2))
 	_level_up.add_theme_stylebox_override("normal", UiTheme.plate(UiTheme.LEVEL_CYAN, 10.0, 1.0))
 	_level_up.visible = false
@@ -78,9 +75,9 @@ func _ready() -> void:
 	var indent := Control.new()
 	indent.custom_minimum_size = Vector2(BAR_INSET, 0)
 	line.add_child(indent)
-	_earned_label = _label("", UiTheme.LEVEL, 16, UiTheme.font(UiTheme.LABEL))
-	_earned_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(_earned_label)
+	_level_label = _label("", UiTheme.TEXT, 17, UiTheme.tracked(UiTheme.DISPLAY, 1))
+	_level_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(_level_label)
 	_xp_label = _label("", UiTheme.TEXT, 16, UiTheme.font(UiTheme.LABEL_LIGHT))
 	line.add_child(_xp_label)
 	var inset := Control.new()
@@ -112,7 +109,6 @@ func show_summary(summary: Dictionary) -> void:
 	var bonus_name := "Match bonus  ·  win" if outcome == "win" else "Match bonus"
 	_rows.add_child(_stat(bonus_name, "+" + _number(bonus), UiTheme.TEXT))
 	_rows.add_child(_stat("Total", "+" + _number(score + bonus), UiTheme.LEVEL))
-	_earned_label.text = "XP earned  +%s" % _number(score + bonus)
 
 	var unlocks: Array = summary.get("unlocks", [])
 	if not unlocks.is_empty():
@@ -184,10 +180,10 @@ func _draw_bar() -> void:
 	var span := int(rank.level_span)
 	var pop := 1.0 + 0.4 * (1.0 - clampf(_since_level / 0.2, 0.0, 1.0))
 	_bar.draw_set_transform(Vector2(22, middle), 0.0, Vector2(pop, pop))
-	MatchPaint.level_badge(_bar, Vector2.ZERO, 40.0, level)
+	MatchPaint.level_badge(_bar, Vector2.ZERO, 40.0, 0)
 	_bar.draw_set_transform(Vector2.ZERO)
 	if span > 0:
-		MatchPaint.level_badge(_bar, Vector2(width - 22.0, middle), 40.0, level + 1, false)
+		MatchPaint.level_badge(_bar, Vector2(width - 22.0, middle), 40.0, 0, false)
 	var track := Rect2(BAR_INSET, middle - 6.0, width - BAR_INSET * 2.0, 12.0)
 	_bar.draw_rect(track, TRACK)
 	var now := 1.0 if span <= 0 else float(rank.into_level) / span
@@ -197,7 +193,7 @@ func _draw_bar() -> void:
 	if int(from_rank.level) == level and span > 0:
 		start = float(from_rank.into_level) / span
 	_bar.draw_rect(
-		Rect2(track.position, Vector2(track.size.x * start, track.size.y)), UiTheme.ACCENT
+		Rect2(track.position, Vector2(track.size.x * start, track.size.y)), Color(UiTheme.TEXT, 0.5)
 	)
 	_bar.draw_rect(
 		Rect2(
@@ -214,7 +210,8 @@ func _draw_bar() -> void:
 		_bar.draw_rect(track, Color(1, 1, 1, flash))
 
 
-## The next attachment the weapon's kills will unlock, as "Grip in 8".
+## The next attachment the weapon's kills will unlock, as "Grip unlocks in
+## 8 kills".
 func _next_attachment(weapon: Dictionary) -> String:
 	var best := ""
 	var fewest := 1 << 30
@@ -223,7 +220,7 @@ func _next_attachment(weapon: Dictionary) -> String:
 		var left := needed - ProgressStore.weapon_kills(String(weapon.key))
 		if left > 0 and left < fewest:
 			fewest = left
-			best = "%s in %d" % [String(item.name), left]
+			best = "%s unlocks in %d kills" % [String(item.name), left]
 	return best
 
 

@@ -40,7 +40,8 @@ static func fill(
 			var draw := int(info.winner) < 0
 			banner.title = "DRAW" if draw else ("VICTORY" if won else "DEFEAT")
 			banner.detail = reason(info, won, winner_name)
-			banner.footnote = "Next match in %d" % int(ceil(info.seconds_left))
+			var left := int(ceil(info.seconds_left))
+			banner.footnote = "Next match  %d:%02d" % [left / 60, left % 60]
 			if not draw:
 				banner.plate = UiTheme.VICTORY if won else UiTheme.DEFEAT
 				banner.colour = TeamColours.of(won)

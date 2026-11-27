@@ -186,17 +186,44 @@ static func result_banner(
 		var split := lerpf(5.0, 1.5, _ease((age - 0.08) / 0.2))
 		var appear := clampf((age - 0.08) / 0.1, 0.0, 1.0)
 		var baseline := centre.y + HudPaint.DISPLAY.get_ascent(text_size) * 0.36
-		HudShapes.split_text_centred(
+		big_word(
 			item,
-			HudPaint.DISPLAY,
 			word,
 			Vector2(centre.x, baseline),
 			text_size,
 			Color(word_colour, word_colour.a * appear),
-			split,
-			spacing
+			split
 		)
 	return Rect2(centre - Vector2(width / 2.0, height / 2.0), Vector2(width, height))
+
+
+## A big squared word centred on `centre.x` (its baseline at `centre.y`):
+## a soft shadow under it, then the thin cyan and red split at its edges.
+## Returns its width.
+static func big_word(
+	item: CanvasItem, word: String, centre: Vector2, size: int, colour: Color, split := 1.5
+) -> float:
+	var spacing := size * 0.06
+	var width := HudPaint.text_width(HudPaint.DISPLAY, word, size, spacing)
+	var at := centre - Vector2(width / 2.0, 0)
+	var shade := Color(0, 0, 0, 0.16 * colour.a)
+	for offset: Vector2 in [Vector2(0, 2), Vector2(-1.5, 3), Vector2(1.5, 3), Vector2(0, 4)]:
+		HudPaint.text(item, HudPaint.DISPLAY, word, at + offset, size, shade, spacing, false)
+	if split > 0.0:
+		for side: Array in [[-split, HudShapes.SPLIT_LEFT], [split, HudShapes.SPLIT_RIGHT]]:
+			var tint: Color = side[1]
+			HudPaint.text(
+				item,
+				HudPaint.DISPLAY,
+				word,
+				at + Vector2(side[0], 0),
+				size,
+				Color(tint, tint.a * colour.a),
+				spacing,
+				false
+			)
+	HudPaint.text(item, HudPaint.DISPLAY, word, at, size, colour, spacing, false)
+	return width
 
 
 ## The grey reason plate under a banner ("Score limit reached"), its top
@@ -207,7 +234,7 @@ static func reason_plate(
 	var size := 22
 	var width := HudPaint.text_width(HudPaint.LABEL_LIGHT, text, size, 0.6) + 36.0
 	var rect := Rect2(top.x - width / 2.0, top.y, width, 36.0)
-	item.draw_rect(rect, Color(0.2, 0.21, 0.23, 0.72 * alpha))
+	item.draw_rect(rect, Color(0.16, 0.17, 0.19, 0.92 * alpha))
 	item.draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)), Color(edge, 0.9 * alpha))
 	HudPaint.text_centred(
 		item,
@@ -249,8 +276,8 @@ static func xp_badge(item: CanvasItem, centre: Vector2, size: float, alpha := 1.
 	)
 
 
-## A level badge: a hexagon with the level number, `size` across, in `fill`
-## with dark type (the next level is drawn hollow).
+## A level badge: a cyan hexagon with the level number in dark type, or two
+## chevrons for a `level` of 0 (the next level is drawn hollow).
 static func level_badge(
 	item: CanvasItem, centre: Vector2, size: float, level: int, filled := true, alpha := 1.0
 ) -> void:
@@ -258,8 +285,22 @@ static func level_badge(
 	var fill := Color(UiTheme.LEVEL_CYAN, alpha) if filled else Color(0, 0, 0, 0.55 * alpha)
 	var edge := Color(UiTheme.LEVEL_CYAN, (1.0 if filled else 0.7) * alpha)
 	HudShapes.hexagon(item, centre, r, fill, edge, 1.5, true)
-	var text_size := int(size * 0.42)
 	var ink := Color(UiTheme.LABEL_INK, alpha) if filled else Color(UiTheme.TEXT, alpha)
+	if level <= 0:
+		# No number: two stacked chevrons, a rank mark.
+		for i in 2:
+			var y := centre.y - r * 0.12 + i * r * 0.36
+			var w := r * 0.46
+			var points := PackedVector2Array(
+				[
+					Vector2(centre.x - w, y + r * 0.2),
+					Vector2(centre.x, y - r * 0.14),
+					Vector2(centre.x + w, y + r * 0.2)
+				]
+			)
+			item.draw_polyline(points, ink, maxf(r * 0.16, 2.0), true)
+		return
+	var text_size := int(size * 0.42)
 	HudPaint.text_centred(
 		item,
 		HudPaint.DISPLAY,
@@ -304,6 +345,34 @@ static func skull(item: CanvasItem, centre: Vector2, size: float, colour: Color)
 	for i in 2:
 		var x := centre.x - r * 0.2 + i * r * 0.4
 		item.draw_rect(Rect2(x - 0.5, centre.y + r * 0.55, 1.0, r * 0.5), hole)
+
+
+## The match's XP under the result: one dark plate holding the blue XP badge
+## on its left, "MATCH XP" in small caps, and the value in big squared
+## numerals, centred on `centre`.
+static func xp_plate(item: CanvasItem, centre: Vector2, value: int, alpha := 1.0) -> void:
+	var text := "+%d" % value
+	var value_w := HudPaint.text_width(HudPaint.DISPLAY, text, 30)
+	var width := maxf(value_w, HudPaint.text_width(HudPaint.LABEL, "MATCH XP", 15, 2.5)) + 96.0
+	var rect := Rect2(centre.x - width / 2.0, centre.y - 32.0, width, 64.0)
+	item.draw_rect(rect, Color(0.03, 0.04, 0.05, 0.9 * alpha))
+	item.draw_rect(
+		Rect2(rect.position, Vector2(rect.size.x, 2)), Color(UiTheme.XP_BLUE, 0.9 * alpha)
+	)
+	xp_badge(item, Vector2(rect.position.x + 36.0, centre.y), 46.0, alpha)
+	var left := rect.position.x + 72.0
+	HudPaint.text(
+		item,
+		HudPaint.LABEL,
+		"MATCH XP",
+		Vector2(left, centre.y - 8.0),
+		15,
+		Color(UiTheme.TEXT_DIM, alpha),
+		2.5
+	)
+	HudPaint.text(
+		item, HudPaint.DISPLAY, text, Vector2(left, centre.y + 24.0), 30, Color(XP_BOX_TEXT, alpha)
+	)
 
 
 ## A dark band behind text that fades out on all four sides, so no hard

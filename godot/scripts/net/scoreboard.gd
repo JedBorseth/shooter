@@ -26,7 +26,7 @@ const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 ## its columns, centred.
 const WIDTH := 1290.0
 ## Room for the name, left of the number columns.
-const NAME_W := 330.0
+const NAME_W := 290.0
 const HEADER_H := 38.0
 const TEAM_W := 250.0
 const ROW_H := 31.0
@@ -40,7 +40,6 @@ const PING_W := 58.0
 const TOP := 206.0
 
 var title := ""
-var title_colour := UiTheme.TEXT
 var clock := ""
 ## The panel's top at the design size (lower under the result banner).
 var top := TOP
@@ -94,7 +93,7 @@ func _draw() -> void:
 	_left = 0.0
 	var columns := _columns(headings)
 	var used := WIDTH - float(columns[0][0]) + float(columns[0][1])
-	_width = clampf(used + NAME_W + (0.0 if ffa else TEAM_W), 900.0, WIDTH)
+	_width = clampf(used + NAME_W + (0.0 if ffa else TEAM_W), 760.0, WIDTH)
 	_left = (MatchPaint.DESIGN.x - _width) / 2.0
 	columns = _columns(headings)
 	_draw_header(headings, columns)
@@ -154,7 +153,13 @@ func _draw_header(headings: Array, columns: Array) -> void:
 			+ 26.0
 		)
 	Paint.text(
-		self, Paint.LABEL, title.to_upper(), Vector2(x, baseline - 1.0), 18, _a(title_colour), 2.0
+		self,
+		Paint.LABEL,
+		title.to_upper(),
+		Vector2(x, baseline - 1.0),
+		18,
+		_a(UiTheme.TEXT_DIM),
+		2.0
 	)
 	for i in range(1, headings.size()):
 		var heading := String(headings[i])
@@ -177,28 +182,43 @@ func _draw_team_block(section: Dictionary, rect: Rect2) -> void:
 	draw_rect(rect, _a(Color(0, 0, 0, 0.5)))
 	draw_rect(Rect2(rect.position, Vector2(3, rect.size.y)), _a(Color(colour, 0.85)))
 	# The team's mark, faint, behind the score on the right.
+	# The team's mark, a faint watermark behind and right of the score.
 	var mark := minf(rect.size.y - 6.0, 130.0)
 	MatchPaint.team_mark(
 		self,
-		Vector2(rect.end.x - mark * 0.55 - 6.0, rect.get_center().y),
+		Vector2(rect.position.x + 150.0, rect.get_center().y + 6.0),
 		mark,
 		int(section.get("team", 0)),
-		_a(Color(colour, 0.4))
+		_a(Color(colour, 0.35))
 	)
 	MatchPaint.label_plate(
 		self, rect.position + Vector2(10, 8), String(section.name).to_upper(), 28.0
 	)
 	var score := String(section.get("score", ""))
 	if score != "":
-		Shapes.split_text(
+		var width := Paint.text_width(Paint.DISPLAY, score, 52, 3.1)
+		MatchPaint.big_word(
 			self,
-			Paint.DISPLAY,
 			score,
-			Vector2(rect.position.x + 12.0, rect.position.y + 88.0),
+			Vector2(rect.position.x + 14.0 + width / 2.0, rect.position.y + 88.0),
 			52,
-			_a(UiTheme.TEXT),
-			1.5
+			_a(UiTheme.TEXT)
 		)
+
+
+## Whether any row can be out of the round (Search and Destroy).
+func _round_mode() -> bool:
+	for section: Dictionary in sections:
+		for row: Dictionary in section.rows:
+			if row.get("faint", false):
+				return true
+	return title.begins_with("SEARCH")
+
+
+## The panel's width this frame, at the design size (the match report under
+## it matches it).
+func panel_width() -> float:
+	return _width
 
 
 func _draw_row(
@@ -235,7 +255,8 @@ func _draw_row(
 		text_colour = Color(text_colour, 0.5)
 	var baseline := rect.position.y + rect.size.y / 2.0 + 7.0
 	var cells: Array = row.cells
-	var name_x := rect.position.x + 40.0
+	# Round modes keep room on the left for the skull.
+	var name_x := rect.position.x + (40.0 if _round_mode() else 16.0)
 	if ffa:
 		# Place: the top three brighter.
 		var place_colour := UiTheme.TEXT if index < 3 else UiTheme.TEXT_DIM

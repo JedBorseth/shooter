@@ -197,8 +197,21 @@ func _draft(menu: Node) -> Dictionary:
 	return menu.get("_draft")
 
 
-## The editor's chip with this text, or null.
+## The button with this text on screen, or null. In the editor, each slot's
+## items show beside the grid one slot at a time, so this opens the slot that
+## holds it, as a player would.
 func _chip(menu: Node, text: String) -> Button:
+	var found := _find(menu, text)
+	if found == null and menu.editing():
+		for slot: String in ClassMenu.SLOTS:
+			menu.call("_pick_slot", slot)
+			found = _find(menu, text)
+			if found != null:
+				break
+	return found
+
+
+func _find(menu: Node, text: String) -> Button:
 	for node in menu.find_children("*", "Button", true, false):
 		var button := node as Button
 		if button.text == text and button.is_visible_in_tree():

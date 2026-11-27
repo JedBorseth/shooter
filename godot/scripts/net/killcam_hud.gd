@@ -36,6 +36,9 @@ var preview := {}
 var _canvas: Control
 var _info := {}
 var _age := 0.0
+## Frames since the killcam started: the cut's flash lasts three frames, so
+## a slow first frame cannot skip it.
+var _frames := 0
 
 
 func _ready() -> void:
@@ -47,7 +50,7 @@ func _ready() -> void:
 	_canvas.draw.connect(_draw_overlay)
 	add_child(_canvas)
 	if client != null:
-		client.killcam_started.connect(func(_started: Dictionary) -> void: _age = 0.0)
+		client.killcam_started.connect(_on_started)
 
 
 func _process(delta: float) -> void:
@@ -59,9 +62,16 @@ func _process(delta: float) -> void:
 	_canvas.visible = not _info.is_empty()
 	if _canvas.visible:
 		_age += delta
+		_frames += 1
 		_canvas.queue_redraw()
 	else:
 		_age = 0.0
+		_frames = 0
+
+
+func _on_started(_started: Dictionary) -> void:
+	_age = 0.0
+	_frames = 0
 
 
 func _title() -> String:
@@ -118,15 +128,14 @@ func _draw_overlay() -> void:
 		_draw_title(alpha)
 	_draw_weapon(alpha)
 	_draw_strip(alpha, ending)
-	# Skip, after a death only.
+	# Skip, after a death only: in the strip's right end, clear of the cards.
 	if bool(_info.get("skippable", false)):
 		var key := Settings.prompt_key(&"interact")
-		Paint.prompt(
-			_canvas, Paint.split_key("[%s] Skip" % key, UiTheme.TEXT), 800.0, 748.0, 16, alpha
-		)
+		var row := Paint.split_key("[%s] Skip" % key, UiTheme.TEXT)
+		Paint.prompt(_canvas, row, 1440.0, 816.0, 16, alpha)
 	_canvas.draw_set_transform(Vector2.ZERO)
-	# The cut into the replay: a quick white flash.
-	var flash := 1.0 - clampf(_age / 0.07, 0.0, 1.0)
+	# The cut into the replay: a white flash for its first frames.
+	var flash := 1.0 - clampf((_frames - 1) / 3.0, 0.0, 1.0)
 	if flash > 0.0:
 		_canvas.draw_rect(Rect2(Vector2.ZERO, view), Color(1, 1, 1, 0.45 * flash))
 
@@ -152,38 +161,30 @@ func _draw_title(alpha: float) -> void:
 	points.append(points[0])
 	_canvas.draw_polyline(points, Color(0.55, 0.68, 0.76, 0.6 * alpha), 1.0, true)
 	if open >= 1.0:
-		Shapes.leader_lines(
-			_canvas,
-			Vector2(plate.position.x, plate.get_center().y),
-			-1.0,
-			Color(STEEL, 0.9 * alpha)
-		)
+		var from := Vector2(plate.position.x, plate.get_center().y)
+		Shapes.leader_lines(_canvas, from, -1.0, Color(STEEL.lightened(0.3), 0.9 * alpha))
 	var split := lerpf(5.0, 1.5, clampf(_age / 0.25, 0.0, 1.0))
-	Shapes.split_text_centred(
-		_canvas,
-		Paint.DISPLAY,
-		"KILLCAM",
-		Vector2(800, 76),
-		44,
-		Color(UiTheme.TEXT, alpha * open),
-		split,
-		2.0
-	)
+	var word := Color(UiTheme.TEXT, alpha * open)
+	MatchPaint.big_word(_canvas, "KILLCAM", Vector2(800, 76), 44, word, split)
 	_draw_progress(
 		Rect2(plate.position.x + 30.0, plate.end.y + 6.0, plate.size.x - 30.0, 2.0), alpha
 	)
 
 
-## FINAL KILLCAM or ROUND WINNING KILL on a dark band, the winners top left.
+## FINAL KILLCAM or ROUND WINNING KILL on a dark plate with leader lines,
+## the winners (the killer's side) named under it.
 func _draw_ending_title(alpha: float) -> void:
 	var title := _title()
-	MatchPaint.soft_band(_canvas, Rect2(400, 22, 800, 84), 0.55 * alpha, 18.0)
+	var width := Paint.text_width(Paint.DISPLAY, title, 40, 2.4)
+	var plate := Rect2(800.0 - width / 2.0 - 44.0, 32.0, width + 88.0, 58.0)
+	_canvas.draw_rect(plate, Color(0.02, 0.03, 0.04, 0.84 * alpha))
+	_canvas.draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1)), Color(1, 1, 1, 0.16 * alpha))
+	for side: float in [-1.0, 1.0]:
+		var from := Vector2(800.0 + side * plate.size.x / 2.0, plate.get_center().y)
+		Shapes.leader_lines(_canvas, from, side, Color(0.55, 0.6, 0.66, 0.8 * alpha))
 	var split := lerpf(5.0, 1.5, clampf(_age / 0.25, 0.0, 1.0))
-	var width := Shapes.split_text_centred(
-		_canvas, Paint.DISPLAY, title, Vector2(800, 76), 40, Color(UiTheme.TEXT, alpha), split, 2.0
-	)
-	_draw_progress(Rect2(800.0 - width / 2.0, 98.0, width, 2.0), alpha)
-	# The winners (the killer's side), centred under the title.
+	MatchPaint.big_word(_canvas, title, Vector2(800, 76), 40, Color(UiTheme.TEXT, alpha), split)
+	_draw_progress(Rect2(plate.position.x, plate.end.y, plate.size.x, 2.0), alpha)
 	var killer := int(_info.get("killer", -1))
 	var team := _team_of(killer)
 	var colour := _colour_of(killer)
@@ -193,17 +194,14 @@ func _draw_ending_title(alpha: float) -> void:
 	name = name.to_upper()
 	var label_w := Paint.text_width(Paint.LABEL, "WINNERS", 15, 2.5)
 	var plate_w := Paint.text_width(Paint.DISPLAY, name, 19, 1.0) + 18.0
-	var left := 800.0 - (34.0 + 10.0 + label_w + 12.0 + plate_w) / 2.0
-	MatchPaint.team_mark(
-		_canvas, Vector2(left + 17.0, 128), 34.0, maxi(team, 0), Color(colour, alpha)
-	)
-	left += 44.0
-	Paint.text(
-		_canvas, Paint.LABEL, "WINNERS", Vector2(left, 134), 15, Color(UiTheme.READY, alpha), 2.5
-	)
-	MatchPaint.label_plate(
-		_canvas, Vector2(left + label_w + 12.0, 114), name, 28.0, Paint.DISPLAY, alpha
-	)
+	var left := 800.0 - (44.0 + 12.0 + label_w + 12.0 + plate_w) / 2.0
+	var mark := Vector2(left + 22.0, 130)
+	MatchPaint.team_mark(_canvas, mark, 44.0, maxi(team, 0), Color(colour, alpha))
+	left += 56.0
+	var ink := Color(UiTheme.TEXT, alpha)
+	Paint.text(_canvas, Paint.LABEL, "WINNERS", Vector2(left, 136), 15, ink, 2.5)
+	var at := Vector2(left + label_w + 12.0, 116)
+	MatchPaint.label_plate(_canvas, at, name, 28.0, Paint.DISPLAY, alpha)
 
 
 func _draw_progress(rect: Rect2, alpha: float) -> void:
@@ -240,48 +238,26 @@ func _draw_weapon(alpha: float) -> void:
 	)
 	# A dark plate fading out to the left, so the row reads on a bright sky.
 	var plate := Rect2(right - row_w - 70.0, baseline - 24.0, row_w + 82.0, 34.0)
-	Paint.fade(
-		_canvas,
-		Rect2(plate.position, Vector2(60, plate.size.y)),
-		Color(0, 0, 0, 0.55 * alpha),
-		true
-	)
+	var shade := Color(0, 0, 0, 0.7 * alpha)
+	Paint.fade(_canvas, Rect2(plate.position, Vector2(60, plate.size.y)), shade, true)
 	_canvas.draw_rect(
-		Rect2(plate.position.x + 60.0, plate.position.y, plate.size.x - 60.0, plate.size.y),
-		Color(0, 0, 0, 0.55 * alpha)
+		Rect2(plate.position.x + 60.0, plate.position.y, plate.size.x - 60.0, plate.size.y), shade
 	)
-	right -= Paint.text_right(
-		_canvas, Paint.LABEL, name, Vector2(right, baseline), 20, Color(UiTheme.TEXT, alpha), 1.0
-	)
+	var ink := Color(UiTheme.TEXT, alpha)
+	right -= Paint.text_right(_canvas, Paint.LABEL, name, Vector2(right, baseline), 20, ink, 1.0)
 	if icon_w > 0.0:
 		right -= 14.0
-		right -= Paint.weapon(
-			_canvas, key, Vector2(right, baseline - 7.0), 24.0, Color(1, 1, 1, 0.92 * alpha)
-		)
+		var tint := Color(1, 1, 1, 0.92 * alpha)
+		right -= Paint.weapon(_canvas, key, Vector2(right, baseline - 7.0), 24.0, tint)
+	var dim := Color(UiTheme.TEXT, 0.82 * alpha)
 	Paint.text_right(
-		_canvas,
-		Paint.LABEL,
-		label,
-		Vector2(right - 14.0, baseline - 1.0),
-		15,
-		Color(UiTheme.TEXT_DIM, alpha),
-		2.0
+		_canvas, Paint.LABEL, label, Vector2(right - 14.0, baseline - 1.0), 15, dim, 2.0
 	)
 	if bool(_info.get("headshot", false)):
 		var tag := "HEADSHOT"
 		var tag_w := Paint.text_width(Paint.LABEL, tag, 14, 2.0) + 16.0
-		_canvas.draw_rect(
-			Rect2(1544.0 - tag_w, baseline + 12.0, tag_w, 22.0), Color(0, 0, 0, 0.55 * alpha)
-		)
-		Paint.text_right(
-			_canvas,
-			Paint.LABEL,
-			tag,
-			Vector2(1536.0, baseline + 28.0),
-			14,
-			Color(UiTheme.TEXT, alpha),
-			2.0
-		)
+		_canvas.draw_rect(Rect2(1544.0 - tag_w, baseline + 12.0, tag_w, 22.0), shade)
+		Paint.text_right(_canvas, Paint.LABEL, tag, Vector2(1536.0, baseline + 28.0), 14, ink, 2.0)
 
 
 ## The silhouette key for a weapon's display name ("AK-47" is `ak47`).
@@ -300,7 +276,7 @@ func _draw_strip(alpha: float, ending: bool) -> void:
 	var top := 762.0
 	var height := 90.0
 	var slide := 1.0 - pow(1.0 - clampf((_age - 0.1) / 0.25, 0.0, 1.0), 3.0)
-	_canvas.draw_rect(Rect2(0, top, 1600, height), Color(0, 0, 0, 0.55 * alpha))
+	_canvas.draw_rect(Rect2(0, top, 1600, height), Color(0, 0, 0, 0.62 * alpha * slide))
 	var killer := int(_info.get("killer", -1))
 	var victim := int(_info.get("victim", -1))
 	var killer_label := "YOU" if _is_me(killer) else "KILLER"
@@ -334,39 +310,28 @@ func _card_width(name: String) -> float:
 
 
 ## A player's name plate: a label above, their team's mark and colour on the
-## outer edge, the name in big condensed type (ours in yellow).
+## outer edge, the name in big condensed type (ours in yellow). The text runs
+## from the mark inward, so the right-hand card is mirrored.
 func _name_card(
 	rect: Rect2, label: String, name: String, id: int, alpha: float, right_side: bool
 ) -> void:
 	var colour := _colour_of(id)
-	_canvas.draw_rect(rect, Color(0.06, 0.07, 0.08, 0.85 * alpha))
+	_canvas.draw_rect(rect, Color(0.06, 0.07, 0.08, 0.88 * alpha))
 	var edge_x := rect.end.x - 4.0 if right_side else rect.position.x
 	_canvas.draw_rect(Rect2(edge_x, rect.position.y, 4, rect.size.y), Color(colour, alpha))
 	var mark_x := rect.end.x - 34.0 if right_side else rect.position.x + 34.0
-	MatchPaint.team_mark(
-		_canvas,
-		Vector2(mark_x, rect.get_center().y),
-		42.0,
-		maxi(_team_of(id), 0),
-		Color(colour, alpha)
-	)
-	var text_x := rect.position.x + 16.0 if right_side else rect.position.x + 66.0
-	Paint.text(
-		_canvas,
-		Paint.LABEL,
-		label,
-		Vector2(text_x, rect.position.y - 8.0),
-		15,
-		Color(UiTheme.TEXT_DIM, alpha),
-		2.5
-	)
-	var ink := MatchPaint.SELF_ROW if _is_me(id) else UiTheme.TEXT
-	Paint.text(
-		_canvas,
-		Paint.LABEL,
-		name if name != "" else "Unknown",
-		Vector2(text_x, rect.get_center().y + 11.0),
-		30,
-		Color(ink, alpha),
-		0.5
-	)
+	var mark := Vector2(mark_x, rect.get_center().y)
+	MatchPaint.team_mark(_canvas, mark, 42.0, maxi(_team_of(id), 0), Color(colour, alpha))
+	var ink := Color(MatchPaint.SELF_ROW if _is_me(id) else UiTheme.TEXT, alpha)
+	var dim := Color(UiTheme.TEXT_DIM, alpha)
+	var shown := name if name != "" else "Unknown"
+	var top := rect.position.y - 8.0
+	var baseline := rect.get_center().y + 11.0
+	if right_side:
+		var edge := rect.end.x - 66.0
+		Paint.text_right(_canvas, Paint.LABEL, label, Vector2(edge, top), 15, dim, 2.5)
+		Paint.text_right(_canvas, Paint.LABEL, shown, Vector2(edge, baseline), 30, ink, 0.5)
+	else:
+		var text_x := rect.position.x + 66.0
+		Paint.text(_canvas, Paint.LABEL, label, Vector2(text_x, top), 15, dim, 2.5)
+		Paint.text(_canvas, Paint.LABEL, shown, Vector2(text_x, baseline), 30, ink, 0.5)
