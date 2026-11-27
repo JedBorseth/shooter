@@ -5,11 +5,20 @@ extends Node3D
 ## different places, so the West and East gates face the same routes
 ## (tools/breakwater_layout.py).
 
+## Props no longer than this (metres) cast no sun shadow in the game and hide
+## beyond DETAIL_RANGE: drums, cans, downpipe lengths, wall boxes. Their
+## shadows are in the lightmap; drawing them into every shadow cascade cost a
+## draw call each.
+const SMALL_PROP := 1.3
+## Matches the map mesh's `_detail` chunks (tools/breakwater_import.gd).
+const DETAIL_RANGE := 45.0
+
 var _respawning := false
 
 
 func _ready() -> void:
 	_use_shadow_proxies()
+	_quiet_small_props()
 
 
 ## The map's meshes (tools/build_breakwater_city.py) come with a shadow-only
@@ -26,6 +35,22 @@ func _use_shadow_proxies() -> void:
 			mesh.visible = true
 		elif not mesh.name.ends_with("_detail"):
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The library props (tools/breakwater_layout.py `prop`): small ones cast no
+## sun shadow and fade out at a distance, like the map's own detail. The
+## editor leaves them alone, so the lightmap bake still sees their shadows.
+func _quiet_small_props() -> void:
+	var props := get_node_or_null("Props")
+	if props == null:
+		return
+	for node in props.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		var size := mesh.get_aabb().size * mesh.global_transform.basis.get_scale()
+		if maxf(size.x, maxf(size.y, size.z)) < SMALL_PROP:
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mesh.visibility_range_end = DETAIL_RANGE
+			mesh.visibility_range_end_margin = 4.0
 
 
 ## Called by the dedicated server before it removes the local player.

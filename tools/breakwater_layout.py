@@ -198,6 +198,63 @@ def lamp(x, z, yaw, m, y=STREET):
     place("yard_lamp", x, y, z, yaw, m)
 
 
+def local(x, z, yaw, lx, lz):
+    """(x, z) of a point lx along and lz across a model at (x, z) turned `yaw`
+    (Godot's convention: local x runs along (cos yaw, -sin yaw))."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    return x + lx * c + lz * s, z - lx * s + lz * c
+
+
+BARRELS = ("barrel_blue", "barrel_red", "barrel_steel", "barrel_blue", "barrel_steel")
+
+
+def drums(x, z, yaw, count, m, base=STREET):
+    """Library oil drums in two rows of `count` on a spill pallet along local x
+    (the old procedural drum rack's footprint, 0.66 m a drum)."""
+    place("spill_pallet", x, base, z, yaw, m, count=count)
+    rng = random.Random(round(x * 13 + z * 7 + count))
+    for i in range(count):
+        lx = -0.33 * count + 0.33 + i * 0.66
+        for lz in (-0.35, 0.35):
+            px, pz = local(x, z, yaw, lx + rng.uniform(-0.02, 0.02), lz + rng.uniform(-0.02, 0.02))
+            prop(rng.choice(BARRELS), px, base + 0.15, pz, rng.uniform(0.0, 2 * PI), m)
+
+
+def downpipe(x, z, yaw, top, m, base=STREET):
+    """A library downpipe on a wall: the wall's face at (x, z), facing `yaw`
+    (0 faces +z). A shoe at the foot, 1 m lengths up to a hopper head under a
+    scupper through the parapet at `top`, and a bracket every other length."""
+    out = 0.17
+    px, pz = local(x, z, yaw, 0.0, out)
+    n = int(top - base - 0.4 - 0.363 - 0.25)
+    prop("drainpipe_shoe", px, base, pz, yaw, m)
+    for k in range(n):
+        prop("drainpipe", px, base + 0.4 + k, pz, yaw, m)
+        if k % 2 == 1:
+            bx, bz = local(x, z, yaw, 0.0, 0.14)
+            prop("drainpipe_bracket", bx, base + 0.4 + k + 0.5, bz, yaw, m)
+    head = base + 0.4 + n
+    prop("drainpipe_funnel", px, head, pz, yaw, m)
+    cx, cz = local(x, z, yaw, 0.0, 0.16)
+    turned_box(cx, cz, 0.09, 0.16, yaw, head + 0.4, head + 0.52, "steel_galv", None, m, detail=True)
+
+
+def fence_run(x, z0, z1, m):
+    """A chain-link fence from the library kit along z at x: posts and double
+    panels about 1.9 m apart."""
+    n = max(1, math.ceil((z1 - z0) / 1.96))
+    step = (z1 - z0) / n
+    for k in range(n + 1):
+        prop("fence_post", x, STREET, z0 + k * step, 0.0, m)
+        if k < n:
+            prop("fence_panel_double", x, STREET, z0 + (k + 0.5) * step, PI / 2, m)
+
+
+def extinguisher(x, z, yaw, m, base=WALK):
+    """A library fire extinguisher stood on the floor against a wall."""
+    prop("fire_extinguisher", x, base, z, yaw, m)
+
+
 # --- Ground ---------------------------------------------------------------------------
 def ground():
     x0, x1, z0, z1 = BOUNDS
@@ -284,7 +341,7 @@ def yard(side: Side):
     # The boom gate across the way out to the west, and the fence beside it.
     place("gate_barrier", -41.5, STREET, -2.0, -PI / 2, m, length=7.5)
     for z0, z1 in ((-27.0, -8.0), (6.0, 21.0)):
-        place("fence", -41.8, STREET, (z0 + z1) / 2, PI / 2, m, length=z1 - z0)
+        fence_run(-41.8, z0, z1, m)
     # A tanker parked along the west side, waiting for the rack.
     place("tanker_truck", -39.4, STREET, 5.0, 0.0, m, livery=0 if not m else 2)
     blocker(-40.65, -38.15, STREET, 3.5, 0.0, 10.0, m)
@@ -345,7 +402,7 @@ def gate_lane(side: Side):
     name_board("LUBE OILS", -36.93, 3.0, 17.5, PI / 2, m, size=0.26)
     place("fuel_bowser", -36.3, STREET, 17.5, 0.0, m)
     blocker(-37.0, -35.6, STREET, 1.75, 16.0, 19.0, m)
-    place("drum_rack", -34.0, STREET, 20.3, 0.0, m, count=2)
+    drums(-34.0, 20.3, 0.0, 2, m)
     blocker(-34.75, -33.25, STREET, 1.1, 19.5, 21.0, m)
 
 
@@ -447,7 +504,7 @@ def control_house(side: Side):
     deco(-30.6, -27.8, 2.5, 2.62, z1, z1 + 1.2, "steel_grey", m, bevel=0.02)
     name_board(side.control, -24.0, 6.6, z1 + 0.06, 0.0, m, size=0.45, look="sign_blue" if not m else "sign_green")
     for x in (x0 + 0.3, x1 - 0.3):
-        tube([(x, 0.1, z1 + 0.12), (x, 7.4, z1 + 0.12)], 0.055, "steel_grey", m)
+        downpipe(x, z1, 0.0, top, m)
     # Inside, downstairs: the switch room (north) and the mess (south).
     for x, z, tint in ((-27.0, -20.0, TUBE), (-27.0, -8.0, TUBE)):
         place("ceiling_tube", x, ceil, z, 0.0, m)
@@ -462,7 +519,7 @@ def control_house(side: Side):
     place("kitchen_counter", -32.3, WALK, -10.0, PI / 2, m)
     blocker(-32.65, -32.0, WALK, 0.95, -12.0, -8.0, m, "wood")
     place("notice_board", -21.4, WALK + 1.4, -11.0, -PI / 2, m)
-    place("fire_extinguisher", -21.5, WALK + 1.0, -4.0, -PI / 2, m)
+    extinguisher(-21.6, -4.0, -PI / 2, m)
     # Upstairs: the control room (Blue) or the test lab (Red), and the office.
     for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
         place("ceiling_tube", x, 7.4, z, 0.0, m)
@@ -508,7 +565,7 @@ def meter_shed(side: Side):
     if not m:
         place("meter_skid", -15.0, WALK, -11.0, PI / 2, m, length=2.4)
     else:
-        place("drum_rack", -15.0, WALK, -11.2, 0.0, m, count=4)
+        drums(-15.0, -11.2, 0.0, 4, m, WALK)
     blocker(-16.3, -13.7, WALK, 1.1, -11.9, -10.3, m)
     place("switch_panel", -16.6, WALK, -4.0, PI / 2, m, length=2.4)
     blocker(-16.65, -16.0, WALK, 2.35, -5.2, -2.8, m)
@@ -571,9 +628,9 @@ def pump_house(side: Side):
         place("foam_unit", 4.5, WALK, -34.2, 0.0, m)
     else:
         place("switch_panel", 4.5, WALK, -35.3, 0.0, m, length=3.0, look="steel_blue")
-        place("drum_rack", 4.5, WALK, -33.9, 0.0, m, count=3)
+        drums(4.5, -33.9, 0.0, 3, m, WALK)
     blocker(3.0, 6.0, WALK, 2.35, -35.6, -33.0, m)
-    place("fire_extinguisher", -5.6, WALK + 1.0, -28.0, PI / 2, m)
+    extinguisher(-5.4, -28.0, PI / 2, m)
 
 
 # --- The main road ---------------------------------------------------------------------------
@@ -656,7 +713,7 @@ def workshop(side: Side):
     for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
         place("ceiling_tube", x, ROOF_DECK - 0.25, z, 0.0, m)
         light(x, ROOF_DECK - 0.55, z, 1.4, TUBE, 8.0, m)
-    place("fire_extinguisher", -21.5, WALK + 1.0, 8.0, -PI / 2, m)
+    extinguisher(-21.6, 8.0, -PI / 2, m)
 
 
 # --- The drum store (Red: spares) and the pump shed -----------------------------------------------
@@ -669,9 +726,9 @@ def drum_store(side: Side):
     roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.4, m, look="steel_grey", top="roof_sheet")
     coping(x0, x1, z0, z1, 3.8, m, look="quay_edge")
     name_board(side.drums, -17.0, 3.15, z0 - 0.06, PI, m, size=0.28)
-    place("drum_rack", -19.2, WALK, 8.2, PI / 2, m, count=4)
+    drums(-19.2, 8.2, PI / 2, 4, m, WALK)
     blocker(-20.0, -18.4, WALK, 1.1, 6.6, 9.8, m)
-    place("drum_rack", -14.6, WALK, 11.2, PI / 2, m, count=3)
+    drums(-14.6, 11.2, PI / 2, 3, m, WALK)
     blocker(-15.4, -13.8, WALK, 1.1, 10.1, 12.3, m)
     place("ceiling_tube", -17.0, 3.4, 10.0, 0.0, m)
     light(-17.0, 3.1, 10.0, 1.2, TUBE, 6.0, m)
@@ -899,6 +956,60 @@ def backdrops(side: Side):
                                                  (x - w * 0.15, h, z - 10.0), (x + w * 0.2, h * 0.85, z - 15.0))]})
 
 
+def dressing(side: Side):
+    """Library props round the buildings: downpipes, bins, tyres, cans, and
+    workshop kit. Anything a player could stand behind gets a blocker."""
+    m = side.m
+    # Downpipes: the garage row, the workshop, the pump house, the meter shed.
+    for z in (-22.3, -13.1):
+        downpipe(-35.0, z, -PI / 2, 4.0, m)
+    downpipe(-32.6, 6.0, PI, ROOF_DECK + 1.05, m)
+    downpipe(-21.0, 20.6, PI / 2, ROOF_DECK + 1.05, m)
+    downpipe(-5.6, -27.0, 0.0, PUMP_TOP, m)
+    downpipe(8.6, -22.0, 0.0, PUMP_TOP, m)
+    downpipe(-13.0, -12.6, PI / 2, 3.6, m)
+    # Flood lights over the garage doors and the pump house doors, and
+    # isolator boxes beside them.
+    for k in range(4):
+        zc = -27.0 + 2.4 + k * 4.6
+        prop("security_light", -35.21, 3.55, zc, -PI / 2, m)
+    prop("power_box", -35.2, 1.3, -22.3 + 0.7, -PI / 2, m)
+    for x, zf in ((-3.0, -27.0), (5.0, -22.0)):
+        prop("security_light", x, 3.05, zf + 0.21, 0.0, m)
+        prop("power_box", x + 1.6, 1.25, zf + 0.2, 0.0, m)
+    # A bin and bags behind the gatehouse.
+    prop("trash_can", -40.3, STREET, -8.45, 0.0, m)
+    prop("trash_bag", -39.55, STREET, -8.5, 0.5, m)
+    blocker(-40.65, -39.95, STREET, 0.9, -8.75, -8.15, m)
+    # Old tyres and a rim against the garage row, a sack truck by its end.
+    for k, dx in enumerate((0.09, 0.26, 0.43)):
+        prop("tyre", -35.0 - dx, STREET, -17.6 + k * 0.03, PI / 2 + k * 0.08, m)
+    prop("wheel_rim", -35.15, STREET, -16.75, PI / 2, m)
+    prop("hand_truck", -35.45, STREET, -12.2, -PI / 2, m)
+    # Jerrycans by the lube store's door.
+    for k in range(2):
+        prop("jerrycan", -36.85, STREET, 15.45 + k * 0.42, PI / 2 + k * 0.1, m)
+    # The control house: a bin in the mess, a desk under the office window.
+    prop("trash_can", -21.75, WALK, -13.45, -PI / 2, m)
+    blocker(-22.1, -21.35, WALK, WALK + 0.9, -13.85, -13.1, m)
+    prop("office_desk", -24.3, UPPER, -26.1, 0.0, m)
+    prop("plastic_chair", -24.0, UPPER, -25.2, PI + 0.3, m)
+    blocker(-25.3, -23.3, UPPER, UPPER + 0.8, -26.65, -25.6, m, "wood")
+    # The workshop: a welding cart, a tool chest, gas bottles, a compressor.
+    prop("welding_cart", -32.2, WALK, 17.4, PI / 2, m)
+    blocker(-32.53, -31.87, WALK, WALK + 1.56, 16.98, 17.82, m)
+    prop("tool_chest", -29.5, WALK, 20.4, PI, m)
+    blocker(-29.85, -29.15, WALK, WALK + 0.65, 20.2, 20.65, m)
+    for z in (7.0, 7.45):
+        prop("gas_bottle", -32.4, WALK, z, z, m)
+    blocker(-32.65, -32.15, WALK, WALK + 0.64, 6.75, 7.7, m)
+    prop("compressor", -30.8, WALK, 6.65, PI / 2, m)
+    blocker(-31.65, -29.95, WALK, WALK + 1.18, 6.35, 6.95, m)
+    # A steel rack in the drum store.
+    prop("metal_rack", -20.3, WALK, 12.4, PI / 2, m)
+    blocker(-20.6, -20.0, WALK, WALK + 1.9, 11.94, 12.86, m)
+
+
 def litter_pass():
     """Litter on the ground in the open."""
     rng = random.Random(7)
@@ -936,6 +1047,7 @@ def build():
         pump_shed(side)
         tank_farm(side)
         rack_corners(side)
+        dressing(side)
     rack()
     litter_pass()
 

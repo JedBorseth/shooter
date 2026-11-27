@@ -1521,15 +1521,47 @@ def dumpster(b: Model, color=0):
 
 
 @model
+def euro_pallet(b: Model, x=0.0, y=0.0, z=0.0, yaw=0.0, seed=0, detail=False):
+    """A EUR pallet (1.2 x 0.8 m, 0.144 m tall), its long side along x and its
+    feet at y: three bottom boards, nine blocks, three stringer boards, and
+    five deck boards, each board a slightly different weathered wood. The
+    blocks are inset so light shows under the deck and the bottom boards sit
+    flat on the ground."""
+    rng = random.Random(seed)
+    c, s = math.cos(yaw), math.sin(yaw)
+    woods = ("pallet_wood", "pallet_wood_grey", "pallet_wood_dark")
+
+    def plank(x0, x1, y0, y1, z0, z1, look):
+        b.hull([(x + px * c + pz * s, y + py, z - px * s + pz * c) for px in (x0, x1) for py in (y0, y1)
+                for pz in (z0, z1)], look, detail)
+
+    def wood():
+        return woods[0] if rng.random() < 0.6 else rng.choice(woods[1:])
+
+    # Bottom boards along x under each row of blocks.
+    for zz in (-0.3275, 0.0, 0.3275):
+        plank(-0.6, 0.6, 0.0, 0.022, zz - 0.0725, zz + 0.0725, wood())
+    # Blocks: 145 mm along x (the corners), 100 mm in the middle.
+    for xx, w in ((-0.5275, 0.0725), (0.0, 0.0725), (0.5275, 0.0725)):
+        for zz in (-0.3275, 0.0, 0.3275):
+            plank(xx - w, xx + w, 0.022, 0.1, zz - 0.0725 + 0.004, zz + 0.0725 - 0.004, "pallet_block")
+    # Stringer boards across the blocks, along x.
+    for zz in (-0.3275, 0.0, 0.3275):
+        plank(-0.6, 0.6, 0.1, 0.122, zz - 0.0725, zz + 0.0725, wood())
+    # Deck boards across z: wide at the ends, narrow between, with gaps.
+    for xx, w in ((-0.5275, 0.0725), (-0.2425, 0.05), (0.0, 0.0725), (0.2425, 0.05), (0.5275, 0.0725)):
+        lift = rng.uniform(0.0, 0.002)
+        plank(xx - w, xx + w, 0.122, 0.144 + lift, -0.4, 0.4, wood())
+
+
+@model
 def pallet_stack(b: Model, count=10):
+    """Pallets stacked flat (long side along x), each turned and shifted a
+    little off the one under it, as a forklift leaves them."""
     rng = random.Random(count)
     for i in range(count):
-        y = i * 0.18
-        dx, dz = rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05)
-        rot = rng.uniform(-0.05, 0.05)
-        b.box(-0.6 + dx, 0.6 + dx, y + 0.1, y + 0.14, -0.5 + dz + rot, 0.5 + dz + rot, "pallet_wood")
-        for x in (-0.55, 0.0, 0.55):
-            b.box(x - 0.05 + dx, x + 0.05 + dx, y, y + 0.1, -0.5 + dz, 0.5 + dz, "pallet_wood")
+        euro_pallet(b, rng.uniform(-0.03, 0.03), i * 0.144, rng.uniform(-0.03, 0.03), rng.uniform(-0.035, 0.035),
+                    seed=count * 31 + i)
 
 
 @model

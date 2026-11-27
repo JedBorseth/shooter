@@ -70,6 +70,21 @@ Objectives (all in `tools/breakwater_layout.py`):
   B on Red's quay by the containers on the south route.
 - **Bots** follow three lanes: North, Middle, South.
 
+**Dressing.** Besides the terminal's own modelled plant, Breakwater places
+props from the library (`prop()` in the layout; the scene points kit pieces
+at their kit's folder): oil drums on yellow spill pallets (`drums()`), the
+chain-link fence kit along the west boundary (`fence_run()`), kit downpipes
+with a shoe, hopper head, and scupper on the garage row, the control house,
+the workshop, the pump house, and the meter shed (`downpipe()`), flood lights
+and isolator boxes over doors, and bins, tyres, jerrycans, gas bottles, a
+compressor, a welding cart, a tool chest, a steel rack, and an office desk
+(`dressing()`). Pallets are modelled EUR pallets (1.2 x 0.8 m: bottom boards,
+nine blocks, stringers, five deck boards in three weathered woods), stacked
+with a little turn and shift each. Anything a player could stand behind has a
+blocker, so collision stays twinned. In the game, props shorter than 1.3 m
+cast no sun shadow (theirs is in the lightmap) and hide beyond 45 m
+(`scripts/breakwater.gd`), like the map mesh's detail.
+
 **Built with:** the shared generator kit first written for Slamcity, a cut
 map: the primitives in `tools/slamcity_layout.py`, the models in
 `tools/slamcity_models.py`, the mesh builder in `tools/build_slamcity_city.py`,
