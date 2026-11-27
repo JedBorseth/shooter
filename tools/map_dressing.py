@@ -225,15 +225,23 @@ def _bag(b: Model, cx, cy, cz, yaw, rng, length=0.8, height=0.24, depth=0.44):
     triangles; a subdivided one cost three times as many)."""
     from build_slamcity_city import hull_geo  # noqa: PLC0415 (Blender-only import)
 
-    hx, hy, hz = length / 2, height / 2, depth / 2
+    hx, hy, hz = length / 2, height * 0.85 / 2, depth * 1.06 / 2
     pts = []
-    for x in (-hx, -hx * 0.7, 0.0, hx * 0.7, hx):
-        end = abs(x) == hx
-        pinch = 0.55 if end else 1.0
-        sag = rng.uniform(0.0, 0.03) if not end else 0.0
-        for a in range(6):
-            t = a * PI / 3 + PI / 6
-            pts.append((x, math.sin(t) * hy * pinch - (sag if math.sin(t) > 0 else 0.0), math.cos(t) * hz * pinch))
+    # A filled bag slumps: a flat top and bottom, sides bulging out, the
+    # sewn end square and the folded end pinched into a flap.
+    for x, pinch, flat in ((-hx, 0.62, 0.5), (-hx * 0.85, 0.9, 0.85), (-hx * 0.45, 1.0, 1.0), (0.0, 1.0, 1.0),
+                           (hx * 0.45, 1.0, 1.0), (hx * 0.82, 0.86, 0.8), (hx, 0.4, 0.35)):
+        sag = rng.uniform(0.0, 0.025) if abs(x) < hx * 0.9 else 0.0
+        for a in range(8):
+            t = a * PI / 4 + PI / 8
+            sy, cz = math.sin(t), math.cos(t)
+            # Superellipse: squarer than a pillow.
+            yy = math.copysign(abs(sy) ** 0.55, sy) * hy * flat
+            zz = math.copysign(abs(cz) ** 0.7, cz) * hz * pinch
+            pts.append((x + rng.uniform(-0.006, 0.006), yy - (sag if sy > 0 else 0.0) + rng.uniform(-0.004, 0.004),
+                        zz + rng.uniform(-0.006, 0.006)))
+    # The folded end's flap, tucked under.
+    pts += [(hx + 0.05, -hy * 0.75, z) for z in (-hz * 0.3, hz * 0.3)]
     c, s = math.cos(yaw), math.sin(yaw)
     pts = [(cx + x * c + z * s, cy + y, cz - x * s + z * c) for x, y, z in pts]
     verts, faces = hull_geo(pts)
@@ -658,13 +666,16 @@ for _i in range(16):
         if TA.random() < 0.07:
             SLAB_SHADES[(_i, _j)] = (1.1, 1.1, 1.08, 0.8)
         else:
-            m = TA.uniform(0.86, 1.05)
-            warm = TA.uniform(-0.025, 0.025)
+            m = TA.uniform(0.8, 1.07)
+            warm = TA.uniform(-0.035, 0.035)
             SLAB_SHADES[(_i, _j)] = (m * (1 + warm), m, m * (1 - warm), TA.uniform(0.9, 1.12))
 # Damp and oil (x, z, radius, darkness, roughness scale) and the tall cover
 # that dirt banks against.
 TA_BLOTCHES = [(TA.uniform(-28, 28), TA.uniform(-28, 28), TA.uniform(2.5, 6.0), TA.uniform(-0.05, 0.1), 1.0)
                for _ in range(14)]
+# Smaller, darker patches: spilt water drying out, oil drips, tyre scrub.
+TA_BLOTCHES += [(TA.uniform(-29, 29), TA.uniform(-29, 29), TA.uniform(0.8, 2.2), TA.uniform(0.06, 0.17),
+                 TA.uniform(0.7, 1.0)) for _ in range(22)]
 TA_BLOTCHES += [
     (28.5, 2.5, 2.0, 0.16, 0.7),     # in front of the container's doors
     (24.0, 9.0, 3.0, 0.08, 0.85),    # the vehicle route

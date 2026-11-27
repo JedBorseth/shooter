@@ -339,10 +339,12 @@ class Wall:
         if frame:
             self._frame(a0, a1, y0, y1, sill=False)
 
-    def window(self, a0, a1, y0, y1, frame=True, sill=True, bars=False):
+    def window(self, a0, a1, y0, y1, frame=True, sill=True, bars=False, glazing=None):
         self.holes.append((a0, a1, y0, y1, True))
         if frame:
             self._frame(a0, a1, y0, y1, sill=sill)
+        if glazing:
+            self._glazing(a0, a1, y0, y1, glazing)
         if bars:
             n = max(2, int((a1 - a0) / 0.14))
             for i in range(1, n):
@@ -370,6 +372,41 @@ class Wall:
             pane(a0, a1, y0, y1, plane, "z", self.out, self.m, look)
         if mullion:
             self._mullion(a0, a1, y0, y1, plane)
+
+    def _glazing(self, a0, a1, y0, y1, look):
+        """A metal window frame set in an open window's reveal, its glass shot
+        out: a perimeter frame, a mullion and transom, and jagged shards left
+        in the corners (players still see and shoot through)."""
+        rng = random.Random(round(a0 * 100 + y0 * 10 + self.t0 * 7))
+        mid = (self.t0 + self.t1) / 2
+        t0, t1 = mid - 0.035, mid + 0.035
+        w = 0.05
+        for b0, b1, c0, c1 in ((a0, a1, y0, y0 + w), (a0, a1, y1 - w, y1), (a0, a0 + w, y0, y1),
+                               (a1 - w, a1, y0, y1)):
+            self._box(b0, b1, c0, c1, t0, t1, look, bevel=0.005, detail=True)
+        am = (a0 + a1) / 2
+        if a1 - a0 > 1.2:
+            self._box(am - 0.025, am + 0.025, y0, y1, t0, t1, look, detail=True)
+        ym = y0 + (y1 - y0) * 0.62
+        self._box(a0, a1, ym - 0.025, ym + 0.025, t0, t1, look, detail=True)
+        # Shards in some corners of each pane.
+        panes = [(a0 + w, am if a1 - a0 > 1.2 else a1 - w, y0 + w, ym - 0.025),
+                 (a0 + w, am if a1 - a0 > 1.2 else a1 - w, ym + 0.025, y1 - w)]
+        if a1 - a0 > 1.2:
+            panes += [(am, a1 - w, y0 + w, ym - 0.025), (am, a1 - w, ym + 0.025, y1 - w)]
+        for p0, p1, q0, q1 in panes:
+            for ca, cy, da, dy in ((p0, q0, 1, 1), (p1, q0, -1, 1), (p0, q1, 1, -1), (p1, q1, -1, -1)):
+                if rng.random() < 0.45:
+                    continue
+                la, ly = rng.uniform(0.08, 0.3) * (p1 - p0), rng.uniform(0.08, 0.35) * (q1 - q0)
+                tri = [(ca, cy), (ca + da * la, cy), (ca + da * la * rng.uniform(0.1, 0.5), cy + dy * ly * 0.6),
+                       (ca, cy + dy * ly)]
+                pts = []
+                for a, y in tri:
+                    for t in (mid - 0.003, mid + 0.003):
+                        pts.append((a, y, t) if self.axis == "x" else (t, y, a))
+                PARTS.append({"kind": "hull", "look": "glass_clear", "detail": True,
+                              "points": [t3(*q, self.m) for q in pts]})
 
     def _tube_v(self, a, y0, y1, t, r):
         if self.axis == "x":
@@ -667,9 +704,11 @@ def yaw_along(dx, dz):
 
 
 def shell(x0, x1, z0, z1, top, look, m, doors=None, windows=None, fakes=None, inner=None, inner_top=None,
-          door_h=2.45, base=STREET, thresholds=True, updoors=None):
+          door_h=2.45, base=STREET, thresholds=True, updoors=None, glazing=None):
     """A building's four outside walls, with doors, windows (open: you can
-    shoot and see through), and fake windows (a pane with a room behind it).
+    shoot and see through; `glazing` is the look of a shot-out metal frame in
+    them, or None for a bare opening), and fake windows (a pane with a room
+    behind it).
     doors: {"N": [(a0, a1)], ...}; windows: {"N": [(a0, a1, y0, y1)]};
     fakes: {"N": [(a0, a1, y0, y1, look)]}. N faces -z, S +z, W -x, E +x;
     a0..a1 run along x for N and S, along z for W and E."""
@@ -690,7 +729,7 @@ def shell(x0, x1, z0, z1, top, look, m, doors=None, windows=None, fakes=None, in
                     t0, t1 = (x0, x0 + T) if key == "W" else (x1 - T, x1)
                     deco(t0, t1, STREET, WALK, a0, a1, "stone_trim", m)
         for a0, a1, y0, y1 in (windows or {}).get(key, []):
-            wall.window(a0, a1, y0, y1)
+            wall.window(a0, a1, y0, y1, glazing=glazing)
         for a0, a1, y0, y1 in (updoors or {}).get(key, []):
             wall.door(a0, a1, y1, y0=y0)
         for a0, a1, y0, y1, pane_look in (fakes or {}).get(key, []):

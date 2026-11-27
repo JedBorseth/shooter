@@ -127,3 +127,8 @@ offline, `T` refills all ammo here.
 container, targets, sandbags, floodlights), built by
 `blender -b --python tools/build_models.py`. Hidden CSG in the scene keeps the
 collision. The dressing is described in [art-direction.md](art-direction.md).
+The perimeter wall's precast texture repeats every 5.3 m on 4 m panels, so
+neighbouring panels never show the same stains; the floor's slabs vary more in
+shade and carry small damp and oil patches as well as the broad ones; the
+sandbags are slumped and squarer, with the folded end tucked under; the
+culvert is darker, weathered concrete.

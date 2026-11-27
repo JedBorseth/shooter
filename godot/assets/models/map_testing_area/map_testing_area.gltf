@@ -87,7 +87,7 @@
 		},
 		{
 			"doubleSided":true,
-			"name":"painted_metal_1",
+			"name":"painted_metal_0",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
 					0.800000011920929,

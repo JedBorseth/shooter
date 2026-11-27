@@ -16,6 +16,7 @@ rather than in world_looks.py, whose bytes are part of Slamcity's mesh hash.
 from __future__ import annotations
 
 import math
+import random
 
 import world_looks as W
 from slamcity_models import Model, loft, model
@@ -59,8 +60,10 @@ LOOKS: dict[str, dict] = {
     "floor_epoxy_grey": _t("concrete_smooth", 3.0, (0.55, 0.58, 0.6), rough=0.5, grime=0.0),
     "floor_epoxy_green": _t("concrete_smooth", 3.0, (0.36, 0.5, 0.42), rough=0.5, grime=0.0),
     # Plant: tanks, pipes, steel.
-    "tank_white": _t("painted_metal", 3.0, (0.88, 0.88, 0.86), metal=0.3, rough=0.8, grime=0.3),
-    "tank_silver": _t("painted_metal", 3.0, (0.74, 0.76, 0.77), metal=0.8, grime=0.25),
+    # Storage tanks: the painted_metal scan at a large scale with its relief
+    # turned down, so it reads as painted plate, not concrete grain.
+    "tank_white": _t("painted_metal", 6.0, (0.86, 0.86, 0.84), metal=0.3, rough=0.75, grime=0.3, normal=0.45),
+    "tank_silver": _t("painted_metal", 6.0, (0.72, 0.74, 0.75), metal=0.8, grime=0.25, normal=0.45),
     "tank_roof": _t("painted_metal", 2.0, (0.62, 0.62, 0.6), metal=0.3, grime=0.0),
     "steel_red": _t("painted_metal", 2.0, (0.6, 0.12, 0.08), metal=0.3, rough=0.8, grime=0.2),
     "steel_blue": _t("painted_metal", 2.0, (0.14, 0.3, 0.55), metal=0.3, rough=0.8, grime=0.2),
@@ -91,7 +94,17 @@ LOOKS: dict[str, dict] = {
     # Road tanker: a polished aluminium barrel (plain metal, smudged by the
     # shared wear map, so no texture seams round its curves), amber lenses,
     # and the orange ADR plates.
-    "tank_alu": _p((0.8, 0.81, 0.82), 0.3, 1),
+    "tank_alu": _p((0.62, 0.63, 0.64), 0.3, 1),
+    # Steel window frames in the buildings' open windows (their glass shot out).
+    "window_steel": _p((0.3, 0.31, 0.32), 0.45, 1),
+    # Control-room kit: monitor screens (dim, a process display), keys.
+    "screen_process": _g((0.16, 0.2, 0.22), 0.8),
+    "screen_header": _g((0.5, 0.55, 0.6), 0.9),
+    "screen_line": _g((0.3, 0.75, 0.45), 1.0),
+    "screen_level": _g((0.35, 0.6, 0.85), 1.0),
+    "screen_alarm": _g((0.95, 0.3, 0.15), 1.4),
+    "key_grey": _p((0.55, 0.56, 0.57), 0.5),
+    "paper_white": _p((0.88, 0.88, 0.85), 0.8),
     "lens_amber": _p((0.85, 0.42, 0.05), 0.1),
     "adr_orange": _p((0.95, 0.45, 0.05), 0.6),
     "sign_blue": _p((0.12, 0.28, 0.58), 0.5),
@@ -375,7 +388,7 @@ def pickup(b: Model, color=0):
     b.smooth(verts, faces, look, levels=2)
     # The glasshouse (two rows of doors), its pillars, and the roof.
     gl = [(-0.58, 1.1), (-0.5, 1.78), (0.95, 1.78), (1.55, 1.1)]
-    b.hull([(s * (hw - 0.06 if y < 1.2 else hw - 0.17), y, z) for z, y in gl for s in (-1, 1)], "glass_tint")
+    b.hull([(s * (hw - 0.06 if y < 1.2 else hw - 0.17), y, z) for z, y in gl for s in (-1, 1)], "glass_car")
     rw_ = hw - 0.15
     roof = [[(k * rw_, y, z) for k, y in ((1.0, 1.74), (-1.0, 1.74), (-0.92, 1.85), (0.92, 1.85))]
             for z in (-0.56, -0.48, 0.9, 1.0)]
@@ -712,17 +725,61 @@ def lathe(b: Model, look="steel_green"):
 
 @model
 def console(b: Model, length=3.0):
-    """A control-room desk with screens, facing -z (the operator sits at +z)."""
+    """A control-room operator desk facing -z (the operator sits at +z): a
+    laminate top on cabinets with vents, a row of monitors on stands (thin
+    bezels, dim process displays), keyboards with key rows, mice, a phone,
+    and a binder and papers."""
     hl = length / 2
-    b.box(-hl, hl, 0.0, 0.74, -0.45, 0.45, "trim_dark", bevel=0.02)
-    b.box(-hl, hl, 0.74, 0.78, -0.5, 0.5, "counter_top", bevel=0.01)
-    n = max(1, int(length / 0.75))
+    b.box(-hl, hl, 0.0, 0.72, -0.45, 0.42, "trim_dark", bevel=0.02)
+    b.box(-hl + 0.05, hl - 0.05, 0.0, 0.08, -0.43, 0.44, "trim_black", detail=True)
+    b.box(-hl - 0.02, hl + 0.02, 0.72, 0.76, -0.5, 0.5, "counter_top", bevel=0.012)
+    for k in range(int(length / 0.6)):
+        x = -hl + 0.3 + k * 0.6
+        b.box(x - 0.22, x + 0.22, 0.2, 0.62, 0.42, 0.425, "trim_black", detail=True)
+        for j in range(5):
+            y = 0.3 + j * 0.06
+            b.box(x - 0.18, x + 0.18, y, y + 0.02, 0.425, 0.43, "steel_dark", detail=True)
+    n = max(1, int(length / 0.62))
     for k in range(n):
         x = -hl + (k + 0.5) * length / n
-        b.box(x - 0.3, x + 0.3, 0.88, 1.24, -0.32, -0.28, "screen_blue", detail=True)
-        b.box(x - 0.32, x + 0.32, 0.86, 1.26, -0.36, -0.32, "trim_black", detail=True)
-        b.box(x - 0.04, x + 0.04, 0.78, 0.88, -0.36, -0.3, "trim_black", detail=True)
-        b.box(x - 0.2, x + 0.2, 0.78, 0.8, 0.0, 0.15, "trim_black", detail=True)
+        turn = (x / hl) * 0.18
+        c, s = math.cos(turn), math.sin(turn)
+
+        def at(lx, ly, lz):
+            return (x + lx * c + lz * s, ly, -0.3 - lx * s + lz * c)
+
+        def panel(x0, x1, y0, y1, z0, z1, look, detail=True):
+            b.hull([at(px, py, pz) for px in (x0, x1) for py in (y0, y1) for pz in (z0, z1)], look, detail)
+
+        panel(-0.29, 0.29, 0.86, 1.2, -0.03, 0.0, "trim_black", detail=False)
+        panel(-0.275, 0.275, 0.875, 1.185, 0.0, 0.004, "screen_process")
+        # A process display: a header bar, pipe runs, tank levels, alarms.
+        rng = random.Random(k * 13 + int(length * 10))
+        panel(-0.27, 0.27, 1.16, 1.18, 0.004, 0.006, "screen_header")
+        for j in range(3):
+            y = 0.92 + j * 0.07
+            panel(-0.24, rng.uniform(-0.05, 0.2), y, y + 0.006, 0.004, 0.006, "screen_line")
+        for j in range(3):
+            xx = 0.06 + j * 0.07
+            h = rng.uniform(0.05, 0.16)
+            panel(xx - 0.02, xx + 0.02, 0.9, 0.9 + h, 0.004, 0.006, "screen_level")
+        if rng.random() < 0.35:
+            panel(0.2, 0.25, 1.12, 1.15, 0.004, 0.007, "screen_alarm")
+        panel(-0.03, 0.03, 0.76, 0.9, -0.06, -0.03, "steel_dark")
+        panel(-0.13, 0.13, 0.76, 0.775, -0.14, 0.02, "steel_dark")
+        # Keyboard and its key rows, a mouse.
+        b.box(x - 0.22, x + 0.22, 0.76, 0.785, 0.02, 0.18, "trim_black", bevel=0.004, detail=True)
+        for j in range(4):
+            z = 0.04 + j * 0.035
+            b.box(x - 0.2, x + 0.2, 0.785, 0.795, z, z + 0.026, "key_grey", detail=True)
+        b.box(x + 0.27, x + 0.33, 0.76, 0.79, 0.06, 0.16, "trim_black", bevel=0.01, detail=True)
+    # A desk phone, a binder, and loose papers.
+    b.box(-hl + 0.1, -hl + 0.32, 0.76, 0.84, 0.15, 0.36, "trim_black", bevel=0.01, detail=True)
+    b.box(hl - 0.45, hl - 0.15, 0.76, 0.8, 0.12, 0.42, "steel_blue", detail=True)
+    for k in range(3):
+        x = -hl * 0.3 + k * 0.17
+        b.box(x - 0.105, x + 0.105, 0.76 + 0.002 * k, 0.762 + 0.002 * k, 0.22 + k * 0.03, 0.5 + k * 0.03 - 0.0,
+              "paper_white", detail=True)
 
 
 @model
@@ -825,9 +882,23 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
     accommodation block aft. Origin on the waterline at midships."""
     hl, hb = length / 2, beam / 2
     free = 7.5  # hull above the water
-    bow = [(hl, free + 1.2, 0.0), (hl - 10.0, free + 0.8, hb), (hl - 10.0, free + 0.8, -hb),
-           (hl - 4.0, -2.0, 0.0), (hl - 14.0, -2.0, hb), (hl - 14.0, -2.0, -hb)]
-    b.hull(bow, "hull_black")
+    # The bow: sections from the parallel body to a raked stem, fine at the
+    # waterline and flared under the deck; each pair of neighbouring
+    # sections is one convex piece, so the stem stays sharp.
+    rings = []
+    for x, deck, mid, wl, bot, keel, rake in ((hl - 10.5, 1.0, 1.0, 1.0, 1.0, -2.0, 0.0),
+                                              (hl - 8.5, 0.99, 0.96, 0.9, 0.75, -2.0, 0.1),
+                                              (hl - 6.5, 0.94, 0.85, 0.72, 0.48, -2.0, 0.35),
+                                              (hl - 4.5, 0.84, 0.66, 0.5, 0.26, -1.9, 0.75),
+                                              (hl - 2.8, 0.66, 0.43, 0.28, 0.1, -1.6, 1.25),
+                                              (hl - 1.4, 0.42, 0.2, 0.1, 0.03, -1.1, 1.8),
+                                              (hl - 0.4, 0.12, 0.04, 0.02, 0.01, -0.5, 2.3)):
+        top = free + 0.8 + (hl - x) * 0.05
+        pts = [(-bot, keel, 0.0), (bot, keel, 0.0), (wl, 0.0, rake * 0.12), (mid, free * 0.55, rake * 0.55),
+               (deck, top, rake), (-deck, top, rake), (-mid, free * 0.55, rake * 0.55), (-wl, 0.0, rake * 0.12)]
+        rings.append([(x + dx, y, w * hb) for w, y, dx in pts])
+    verts, faces = loft(rings)
+    b.smooth(verts, faces, "hull_black", levels=1)
     b.box(-hl + 6.0, hl - 10.0, -2.0, free, -hb, hb, "hull_black")
     b.hull([(-hl, free + 0.6, hb - 1.0), (-hl, free + 0.6, -hb + 1.0), (-hl + 6.0, free, hb),
             (-hl + 6.0, free, -hb), (-hl + 2.0, -2.0, hb - 2.0), (-hl + 2.0, -2.0, -hb + 2.0),
