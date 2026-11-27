@@ -73,6 +73,9 @@ var _heading := 0.0
 ## Our yaw, or the watched teammate's while spectating.
 var _yaw := 0.0
 var _watching := false
+## The objective under our arrow, drawn as a hollow ring: [point, letter,
+## colour, flag], or empty.
+var _ring_mark: Array = []
 
 
 func _ready() -> void:
@@ -232,10 +235,14 @@ func _draw_icons() -> void:
 			var feet := remote.feet()
 			var at := to_window(Vector2(feet.x, feet.z))
 			if _inside(at):
-				_chevron(at, window_angle(remote.view_angles().x), TeamColours.ally)
+				# Dimmed by our arrow, so a crowd at the spawn stays one arrow.
+				var by_us := at.distance_to(WINDOW / 2.0) < 20.0
+				var colour := Color(TeamColours.ally, 0.5 if by_us else 1.0)
+				_chevron(at, window_angle(remote.view_angles().x), colour)
 	_draw_crates()
 	if _arrow_shown():
 		_arrow(WINDOW / 2.0, window_angle(_yaw), SELF_ARROW)
+	_draw_ring()
 	_draw_sky()
 	_draw_frame()
 	_draw_compass()
@@ -342,6 +349,27 @@ func _draw_sky() -> void:
 		x += width + 4.0
 
 
+## The objective under our arrow: a hollow ring round the arrow in its
+## colour, so the arrow does not erase it, and what it is in a small tag at
+## the ring's top right (its letter, or a flag's or zone's glyph).
+func _draw_ring() -> void:
+	if _ring_mark.is_empty():
+		return
+	var mark := _ring_mark
+	var ring := Marks.hex_points(WINDOW / 2.0, 15.0)
+	ring.append(ring[0])
+	_icons.draw_polyline(ring, Color(0, 0, 0, 0.6), 4.5, true)
+	_icons.draw_polyline(ring, mark[2], 2.2, true)
+	var tag := WINDOW / 2.0 + Vector2(14.0, -14.0)
+	_icons.draw_circle(tag, 7.0, Color(0, 0, 0, 0.8), true, -1.0, true)
+	if mark[1] != "":
+		Paint.text_centred(
+			_icons, Paint.LABEL, mark[1], tag + Vector2(0, 4.0), 11, mark[2], 0.0, false
+		)
+	else:
+		Marks.glyph(_icons, "flag" if mark[3] else "zone", tag, 0.55, mark[2])
+
+
 func _arrow_shown() -> bool:
 	return player.is_alive() or _watching
 
@@ -368,9 +396,9 @@ func _arrow(at: Vector2, angle: float, colour: Color) -> void:
 ## A teammate: an open chevron in their colour, with a dark rim.
 func _chevron(at: Vector2, angle: float, colour: Color) -> void:
 	var points := _arrow_points(at, angle, ARROW - 3.5)
-	_icons.draw_colored_polygon(points, Color(0, 0, 0, 0.45))
+	_icons.draw_colored_polygon(points, Color(0, 0, 0, 0.45 * colour.a))
 	points.append(points[0])
-	_icons.draw_polyline(points, Color(0, 0, 0, 0.6), 3.6, true)
+	_icons.draw_polyline(points, Color(0, 0, 0, 0.6 * colour.a), 3.6, true)
 	_icons.draw_polyline(points, colour, 1.8, true)
 
 
@@ -400,6 +428,7 @@ func _diamond(at: Vector2, fade: float) -> void:
 
 
 func _draw_objectives() -> void:
+	_ring_mark = []
 	# Each: [point, letter, colour, flag]; drawn after spreading any held at
 	# the edge so none sits on another.
 	var marks: Array = []
@@ -436,22 +465,9 @@ func _draw_objectives() -> void:
 	for mark: Array in marks:
 		var at: Vector2 = mark[0]
 		if _arrow_shown() and at.distance_to(WINDOW / 2.0) < 12.0:
-			# Under our arrow: a hollow ring round it, so the arrow does not
-			# erase the letter (the row under the minimap names it).
-			var ring := Marks.hex_points(WINDOW / 2.0, 14.0)
-			ring.append(ring[0])
-			_icons.draw_polyline(ring, Color(0, 0, 0, 0.6), 4.0, true)
-			_icons.draw_polyline(ring, mark[2], 2.0, true)
-			# What it is, in a small tag at the ring's top right: its letter,
-			# or a flag's or zone's glyph.
-			var tag := WINDOW / 2.0 + Vector2(13.0, -13.0)
-			_icons.draw_circle(tag, 7.0, Color(0, 0, 0, 0.75), true, -1.0, true)
-			if mark[1] != "":
-				Paint.text_centred(
-					_icons, Paint.LABEL, mark[1], tag + Vector2(0, 4.0), 11, mark[2], 0.0, false
-				)
-			else:
-				Marks.glyph(_icons, "flag" if mark[3] else "zone", tag, 0.55, mark[2])
+			# Under our arrow: drawn as a hollow ring over the arrow and the
+			# teammates by it (`_draw_ring`), so it reads clearly.
+			_ring_mark = mark
 			continue
 		_hex(mark[0], mark[1], mark[2], mark[3])
 	if charge.get("has_position", false) and String(charge.status) != "carried":

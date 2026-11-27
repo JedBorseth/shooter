@@ -199,10 +199,21 @@ static func glyph(item: CanvasItem, kind: String, at: Vector2, scale: float, col
 				colour
 			)
 		"charge":
-			var case := Rect2(at - Vector2(7.0, 4.5) * scale, Vector2(14.0, 9.0) * scale)
+			# A charge: a case with a dark timer window, a red lamp, and a
+			# short antenna (not a box with a red dot, which reads as first aid).
+			var case := Rect2(at - Vector2(7.5, 3.5) * scale, Vector2(15.0, 9.0) * scale)
 			item.draw_rect(case, colour)
+			var window := Rect2(at + Vector2(-5.5, -1.5) * scale, Vector2(7.0, 4.0) * scale)
+			item.draw_rect(window, Color(0, 0, 0, 0.75 * colour.a))
 			item.draw_circle(
-				at + Vector2(3.5, -1.0) * scale, 1.8 * scale, Color(UiTheme.HARM, colour.a)
+				at + Vector2(4.2, 0.5) * scale, 1.4 * scale, Color(UiTheme.HARM, colour.a)
+			)
+			item.draw_line(
+				at + Vector2(5.0, -3.5) * scale,
+				at + Vector2(7.5, -8.0) * scale,
+				colour,
+				1.4 * scale,
+				true
 			)
 		"zone":
 			for i in 2:
@@ -359,7 +370,8 @@ static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vecto
 			options.append(Vector2(rect.end.x, point.y))
 		if rect.position.y > 1.0:
 			options.append(Vector2(point.x, rect.position.y))
-		if rect.end.y < screen.y - 1.0:
+		if rect.end.y < minf(screen.y - 1.0, HOLD_BOTTOM * ui):
+			# Never down into the bottom clusters and the controls legend.
 			options.append(Vector2(point.x, rect.end.y))
 		var best := point
 		var best_d := INF

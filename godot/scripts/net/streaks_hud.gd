@@ -286,6 +286,12 @@ func _draw_ready() -> void:
 	var alpha := clampf(_ready_age / 0.15, 0.0, 1.0)
 	alpha *= clampf((READY_SECONDS + 0.3 - _ready_age) / 0.3, 0.0, 1.0)
 	var centre := Vector2(size.x / 2.0, size.y - READY_UP + rise * 12.0)
+	# Above the "Killed" plate when both show, as one stack: the plate, its
+	# prompt, a gap, then the kill.
+	var killed_top := _killed_top()
+	var prompt_foot := centre.y + READY_SIZE.y / 2.0 + 34.0
+	if prompt_foot + 6.0 > killed_top:
+		centre.y -= prompt_foot + 6.0 - killed_top
 	var title := "%s READY" % _ready_name.to_upper()
 	var width := maxf(READY_SIZE.x, Paint.text_width(Paint.DISPLAY, title, 21, 2.0) + 80.0)
 	var plate := Rect2(centre - Vector2(width, READY_SIZE.y) / 2.0, Vector2(width, READY_SIZE.y))
@@ -311,6 +317,14 @@ func _draw_ready() -> void:
 		alpha,
 		false
 	)
+
+
+## Where the "Killed" plate's caption starts (`hud_centre.gd`), or INF.
+func _killed_top() -> float:
+	if player == null or not is_instance_valid(player):
+		return INF
+	var centre := player.get_parent().get_node_or_null(^"HUD/Centre")
+	return float(centre.get(&"killed_top")) if centre != null else INF
 
 
 ## Notices under the minimap, newest at the bottom: a short line in the

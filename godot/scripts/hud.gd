@@ -53,7 +53,7 @@ var _dead_time := 0.0
 var _controls_forced := false
 ## The longest respawn wait seen this death, to fill the respawn bar.
 var _respawn_total := 0.0
-## The layer the crosshair and damage arcs draw on, over objective markers.
+## The layer the crosshair draws on, over objective markers.
 var _top: CanvasLayer
 
 ## Hit marker sounds by name, built on first use.
@@ -93,13 +93,13 @@ func _ready() -> void:
 	# The health ring draws after the weapon cluster, so the cluster's corner
 	# shade does not dim its number.
 	move_child(_health, _weapon.get_index())
-	# The crosshair, hit markers, and damage arcs sit above everything else
-	# drawn over the world, objective markers included (they are on layer 4).
+	# The crosshair and hit markers sit above everything else drawn over the
+	# world, objective markers included (they are on layer 4). The damage
+	# overlay stays under the HUD, so its tint never dims the numbers.
 	_top = CanvasLayer.new()
 	_top.name = "HudTop"
 	_top.layer = 5
 	add_child(_top)
-	_damage.reparent(_top)
 	_crosshair.reparent(_top)
 
 
