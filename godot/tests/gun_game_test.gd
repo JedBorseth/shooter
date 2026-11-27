@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless Gun Game test: runs a dedicated server in this process on Slamcity
+## Headless Gun Game test: runs a dedicated server in this process on Breakwater
 ## in Gun Game mode with six bots at normal skill, one kill per weapon, and a
 ## 45-second clock, and checks that everyone is on one team with the ladder's
 ## first weapon, that kills move bots up the ladder and swap their weapon on
@@ -21,8 +21,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.bots = BOTS

@@ -1,12 +1,11 @@
 @tool
 extends EditorScenePostImport
 ## Import script for Breakwater's meshes (assets/maps/breakwater/city.gltf,
-## written by tools/build_breakwater_city.py), as Slamcity's
-## (tools/slamcity_import.gd): each surface's placeholder material is swapped
-## for the shared material of that name in materials/breakwater/ (or a look in
-## materials/world/). `*_detail` chunks cast no shadow, are hidden beyond
-## 45 m, and take light from the lightmap's probes; `*_shadow` chunks are
-## shadow-only proxies (see scripts/breakwater.gd). The `far` chunk (the
+## written by tools/build_breakwater_city.py): each surface's placeholder
+## material is swapped for the shared material of that name in
+## materials/breakwater/ (or a look in materials/world/). `*_detail` chunks
+## cast no shadow, are hidden beyond 45 m, and take light from the lightmap's
+## probes; `*_shadow` chunks are shadow-only proxies (see scripts/breakwater.gd). The `far` chunk (the
 ## basin's water, the moored tanker, the shore and the far tank farm) is too
 ## big for lightmap texels: it takes the probes' light and casts no shadow.
 

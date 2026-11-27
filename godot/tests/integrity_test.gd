@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of the server's integrity checks (docs/netcode.md): runs a
-## dedicated server in this process on Slamcity with twelve hard bots and
+## dedicated server in this process on Breakwater with twelve hard bots and
 ## checks that
 ##
 ## - a 6v6 of the best bots, which turn as fast as a quick player, raises no
@@ -10,7 +10,7 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/integrity_test.gd
 
 const SERVER_SCENE := "res://scenes/server.tscn"
-const SLAMCITY := "res://scenes/slamcity.tscn"
+const BREAKWATER := "res://scenes/breakwater.tscn"
 const BOTS := 12
 const SECONDS := 45
 
@@ -25,8 +25,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
-	_server.map_scene = load(SLAMCITY) as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load(BREAKWATER) as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

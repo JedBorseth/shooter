@@ -32,7 +32,6 @@ const WEAPONS := [
 	"m1911",
 	"bp9",
 	"rl4",
-	"laser",
 ]
 ## How far (mm) a finger or a palm may go into its weapon. A glove gives a
 ## little; the palm is tested as a flat plate, which a fist wrapped round a

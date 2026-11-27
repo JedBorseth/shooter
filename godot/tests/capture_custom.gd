@@ -33,7 +33,7 @@ func _run() -> void:
 		. call(
 			"start_local_match",
 			{
-				"map": "slamcity",
+				"map": "breakwater",
 				"bots": 5,
 				"bot_skill": "normal",
 				"auto_start": true,

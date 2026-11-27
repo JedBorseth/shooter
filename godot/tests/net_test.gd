@@ -30,6 +30,8 @@ func _run() -> void:
 			ProjectSettings.globalize_path("res://"),
 			"--",
 			"--server",
+			"--map",
+			"arena",
 			"--port",
 			str(_port),
 			# No LAN answers: its port (ours + 1) could be another test's.

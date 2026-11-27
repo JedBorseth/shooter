@@ -69,7 +69,6 @@ use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
 use super::killcam::{KillcamView, Playing, ViewDriver, WeaponCue};
-use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
 use crate::convert::{to_godot, to_sim};
@@ -221,12 +220,6 @@ pub struct NetClient {
     /// said.
     dom_points: Vec<FlagPointView>,
     dom: Option<DominationView>,
-    /// The map's interactive props manager, when the map has one.
-    props: PropsBridge,
-    /// Physics ticks until trying to find the props manager again.
-    props_retry: u32,
-    /// Population last sent to the props manager.
-    props_population: Option<i32>,
     /// The current Search and Destroy round, while a match is being played.
     round: Option<Round>,
     /// The last few seconds of snapshots, ourselves included, for killcams.
@@ -349,7 +342,6 @@ impl INode for NetClient {
         self.base_mut().set_physics_process_priority(1);
         crate::body::check_tick_rate();
         self.clock = Some(SnapshotClock::new(self.interpolation_ms / 1000.0));
-        self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
         let path = self.player_path.clone();
         self.player = self.base().try_get_node_as::<FpsPlayer>(&path);
         if self.player.is_none() {
@@ -408,8 +400,6 @@ impl INode for NetClient {
         };
         let paused = self.base().get_tree().is_paused();
         let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
-        self.sync_props();
-
         if !paused {
             for bytes in std::mem::take(&mut self.paused_packets) {
                 self.handle_packet(&bytes);
@@ -2228,7 +2218,6 @@ impl NetClient {
                 period,
             } => {
                 if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
-                    self.props.reset();
                     // A new match counts its stats from nothing.
                     self.match_stats.clear();
                 }
@@ -2315,11 +2304,6 @@ impl NetClient {
                     attackers,
                     halftime_after,
                 }));
-            }
-            GameEvent::PropState { id, stage, impulse } => {
-                // The server owns prop damage: clients only show the states
-                // it sends, never damage props themselves online.
-                self.props.apply_state(&PropSnapshot { id, stage, impulse });
             }
             GameEvent::Chat { from, text, team } => {
                 let name = self.name_of(i32::from(from));
@@ -2697,30 +2681,6 @@ impl NetClient {
                 interact: true,
             },
         )
-    }
-
-    /// Finds the props manager if the map has one and it is not loaded yet,
-    /// and keeps its population equal to the roster (bots included).
-    fn sync_props(&mut self) {
-        if !self.props.is_active() {
-            if self.props_retry == 0 {
-                self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
-                // A replacement manager needs the population again.
-                self.props_population = None;
-                // Maps without props need no quicker retry than this.
-                self.props_retry = 2 * TICK_RATE;
-            } else {
-                self.props_retry -= 1;
-            }
-            if !self.props.is_active() {
-                return;
-            }
-        }
-        let population = self.roster.len().min(i32::MAX as usize) as i32;
-        if self.props_population != Some(population) {
-            self.props.set_population(population);
-            self.props_population = Some(population);
-        }
     }
 
     /// Keeps the round, and holds the local player still during its freeze.
@@ -3366,10 +3326,6 @@ impl NetClient {
         self.zone_moves_at = None;
         self.dom_points.clear();
         self.dom = None;
-        if self.props.is_active() {
-            self.props.set_population(0);
-            self.props_population = Some(0);
-        }
         self.set_round(None);
         self.charge_sites.clear();
         self.charge = None;

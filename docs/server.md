@@ -20,7 +20,7 @@ matches the players' build.
 ```sh
 docker run -d --name shooter --restart unless-stopped \
   -p 27015:27015/udp -p 27016:27016/udp \
-  -e SHOOTER_NAME="Friday night" -e SHOOTER_MAP=slamcity -e SHOOTER_MODE=tdm \
+  -e SHOOTER_NAME="Friday night" -e SHOOTER_MAP=breakwater -e SHOOTER_MODE=tdm \
   -e SHOOTER_BOTS=6 -e SHOOTER_BOT_SKILL=normal \
   ghcr.io/jedborseth/shooter-server:nightly
 ```
@@ -48,7 +48,7 @@ go that way. Every server option is in [multiplayer.md](multiplayer.md).
 | --- | --- | --- |
 | `SHOOTER_PORT` | 27015 | `--port`: the UDP game port |
 | `SHOOTER_QUERY_PORT` | the game port + 1 | `--query-port`: where joining games and the health check ask |
-| `SHOOTER_MAP` | `slamcity` | `--map`: `arena`, `nuketown`, `slamcity`, `warehouse`, `breakwater` |
+| `SHOOTER_MAP` | `breakwater` | `--map`: `breakwater`, `warehouse`, `arena` |
 | `SHOOTER_MODE` | `tdm` | `--mode`: `tdm`, `ffa`, `gungame`, `ctf`, `hardpoint`, `dom`, or `snd` |
 | `SHOOTER_NAME` | "Shooter server" | `--name`: the name joining games show |
 | `SHOOTER_BOTS` | 0 | `--bots`: bots that fill the teams; each player who joins takes one's place |

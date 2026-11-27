@@ -28,7 +28,7 @@ COPY --chmod=755 entrypoint.sh /usr/local/bin/shooter-entrypoint
 
 USER shooter
 ENV SHOOTER_PORT=27015 \
-    SHOOTER_MAP=slamcity \
+    SHOOTER_MAP=breakwater \
     SHOOTER_MODE=tdm
 EXPOSE 27015/udp 27016/udp
 

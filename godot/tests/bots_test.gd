@@ -1,23 +1,18 @@
 extends SceneTree
-## Headless bots test: runs a dedicated server in this process on Slamcity
+## Headless bots test: runs a dedicated server in this process on Breakwater
 ## with six bots at normal skill and no players, starts the match without a
 ## ready-up, and checks that the bots bake a navigation mesh, find each other
 ## across the map, and score kills within a minute of play, and that the
 ## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
 ## With `-- --warehouse` the team match runs on Warehouse instead, whose teams
-## start north and south rather than west and east, with `-- --breakwater` on
-## Breakwater, and with `-- --nuketown`
-## on Nuketown, which has no lanes (the free-for-all part stays on Slamcity).
-## Nuketown's backdrop mountains once stopped its navigation mesh baking on a
-## headless server, so its bots stood still; this run guards that.
-## godot --headless --path godot --script res://tests/bots_test.gd [-- --<map>]
+## start north and south rather than west and east (the free-for-all part
+## stays on Breakwater).
+## godot --headless --path godot --script res://tests/bots_test.gd [-- --warehouse]
 
 const SECONDS := 60
 ## Loaded at run time: preloading needs the autoloads a test script lacks.
 const SERVER_SCENE := "res://scenes/server.tscn"
-const SLAMCITY := "res://scenes/slamcity.tscn"
 const WAREHOUSE := "res://scenes/warehouse.tscn"
-const NUKETOWN := "res://scenes/nuketown.tscn"
 const BREAKWATER := "res://scenes/breakwater.tscn"
 
 ## A port per process, so test runs in parallel on one machine don't meet.
@@ -32,19 +27,12 @@ func _initialize() -> void:
 func _run() -> void:
 	var bots := int(OS.get_environment("BOTS")) if OS.get_environment("BOTS") != "" else 6
 	var args := OS.get_cmdline_user_args()
-	var map_name := "Slamcity"
-	var map_path := SLAMCITY
+	var map_name := "Breakwater"
+	var map_path := BREAKWATER
 	if args.has("--warehouse"):
 		map_name = "Warehouse"
 		map_path = WAREHOUSE
-	elif args.has("--breakwater"):
-		map_name = "Breakwater"
-		map_path = BREAKWATER
-	elif args.has("--nuketown"):
-		map_name = "Nuketown"
-		map_path = NUKETOWN
-	# Nuketown is small enough to play without lanes.
-	var lanes := 0 if map_name == "Nuketown" else 3
+	var lanes := 3
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
 	server.map_scene = load(map_path) as PackedScene
 	server.map_name = map_name
@@ -90,12 +78,11 @@ func _run() -> void:
 	_check(killers >= 2, "kills come from several bots, %d of %d" % [killers, bots])
 	var tactics: Dictionary = server.bot_tactics()
 	print("bots: tactics %s" % tactics)
-	if lanes > 0:
-		_check(int(tactics.lanes) >= bots, "the bots follow the lanes, %d routes" % tactics.lanes)
+	_check(int(tactics.lanes) >= bots, "the bots follow the lanes, %d routes" % tactics.lanes)
 	_check(int(tactics.cover) >= 1, "hurt bots take cover, %d times" % tactics.cover)
 	server.queue_free()
 	await process_frame
-	if map_name == "Slamcity":
+	if map_name == "Breakwater":
 		await _free_for_all()
 	_finish()
 
@@ -104,8 +91,8 @@ func _run() -> void:
 ## match ends with the player who got there as the winner.
 func _free_for_all() -> void:
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
-	server.map_scene = load(SLAMCITY) as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load(BREAKWATER) as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.bots = 4

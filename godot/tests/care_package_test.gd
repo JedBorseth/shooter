@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless Care Package test (`shooter_sim::care_package`) on a Team
-## Deathmatch server in this process on Slamcity with four passive bots:
+## Deathmatch server in this process on Breakwater with four passive bots:
 ## calling one in drops a crate under open sky that lands after the flyover,
 ## nobody can take it in the air, a teammate holding use on it takes it in
 ## three seconds and gets the streak inside, and the caller takes their own
@@ -22,8 +22,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

@@ -1167,18 +1167,3 @@ fn a_refill_keeps_an_undrawn_weapons_first_raise() {
         }
     ));
 }
-
-#[test]
-fn a_weapon_without_a_first_raise_just_draws() {
-    let mut s = CombatState::new([id("laser"), id("m1911")]).first_draw();
-    assert_eq!(id("laser").def().first_raise_time, 0.0);
-    assert!(matches!(
-        s.action,
-        Action::Raising {
-            kind: Raise::Draw,
-            ..
-        }
-    ));
-    run(&mut s, CombatInput::default(), CombatContext::default(), 60);
-    assert_eq!(s.action, Action::Ready);
-}

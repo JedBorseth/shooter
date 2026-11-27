@@ -43,9 +43,7 @@ Reload is tactical / empty. Attachments: RD red dot, AC ACOG, S suppressor, G
 grip, EM extended magazine. The BP-9's file lists three attachments, but a
 class gives a sidearm no attachment slots, so the class editor cannot fit them
 ([create-a-class.md](create-a-class.md)). The BR-3, PDW-9, and CQ-10 carry
-their own reflex sights, so they take no red dot. The secret PRISM LASER
-(`laser.ron`, the Nuketown easter egg in `godot/scripts/secret_laser.gd`) kills
-anything in one hit and is never in a class.
+their own reflex sights, so they take no red dot.
 
 What each one is for (breakpoints worked out from the files):
 

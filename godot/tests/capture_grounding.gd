@@ -6,7 +6,7 @@ extends SceneTree
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/capture_grounding.gd
-## CAPTURE_ONLY picks maps (comma list of testing, slamcity).
+## CAPTURE_ONLY picks maps (comma list of testing, breakwater).
 ## CAPTURE_PATCHES=off hides the contact-shadow patches, to see what they add.
 ## CAPTURE_ENV sets Environment properties after the map loads, for trying
 ## values side by side: "ssao_radius=0.6,ssao_detail=1.5".
@@ -42,10 +42,10 @@ func _run() -> void:
 		await _group(scene, "testing_sun_side", Vector3(-6, 0, 4), Vector3(1, 0, 0))
 		await _props(scene, "testing_props")
 		await _close(scene)
-	if _wants("slamcity"):
-		var scene := await _open("res://scenes/slamcity.tscn")
-		await _group(scene, "slamcity_shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0))
-		await _group(scene, "slamcity_street", Vector3(-30, 0, 1), Vector3(-1, 0, 0.2))
+	if _wants("breakwater"):
+		var scene := await _open("res://scenes/breakwater.tscn")
+		await _group(scene, "breakwater_quay", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0))
+		await _group(scene, "breakwater_road", Vector3(-30, 0, 1), Vector3(-1, 0, 0.2))
 		await _close(scene)
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_grounding.cfg"))

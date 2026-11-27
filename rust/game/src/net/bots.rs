@@ -296,7 +296,7 @@ impl BotNavigation {
     ///
     /// `area` limits the bake to the part of the map players use (see
     /// [`bake_area`]). Without it, a backdrop with collision kilometres away
-    /// (Nuketown's mountains) makes the voxel grid so large that Godot's
+    /// (mountains round a map) makes the voxel grid so large that Godot's
     /// crash check stops the bake ("Baking interrupted") and the bots get
     /// no mesh at all.
     pub fn bake(parent: &mut Gd<Node>, map: &Gd<Node>, area: Option<Aabb>) -> Option<Self> {
@@ -309,8 +309,8 @@ impl BotNavigation {
         let settings: [(&str, Variant); 8] = [
             // About the player capsule's radius, and voxels fine enough that a
             // 1.4 m doorway stays open whatever the grid's alignment: at
-            // 0.25 m with a 0.4 m radius, one of Slamcity's mirrored
-            // tenement doors baked shut and the other open, so bots that
+            // 0.25 m with a 0.4 m radius, one of two mirrored doorways on a
+            // half-turn map baked shut and the other open, so bots that
             // wandered into the shut room never found the way out.
             ("agent_radius", AGENT_RADIUS.to_variant()),
             ("cell_size", CELL_SIZE.to_variant()),

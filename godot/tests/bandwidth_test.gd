@@ -3,7 +3,7 @@ extends SceneTree
 ## measures what each bot would cost on the wire if it were a client 80 ms of
 ## round trip away (`NetServer.bandwidth_report`): every snapshot and input
 ## packet is encoded with the real wire format and counted: Team Deathmatch on
-## Slamcity with twelve bots (a full 6v6).
+## Breakwater with twelve bots (a full 6v6).
 ##
 ## Prints kilobits per second per client, down and up, payload alone and with
 ## IP, UDP, and ENet headers, and fails if a direction grows past its budget.
@@ -12,7 +12,7 @@ extends SceneTree
 ## BOTS, RTT_MS, and SECONDS change the match.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
-const SLAMCITY := "res://scenes/slamcity.tscn"
+const BREAKWATER := "res://scenes/breakwater.tscn"
 ## Seconds of play before counting, after the countdown.
 const WARM_UP := 5
 ## Payload budgets per client, in kilobits per second (docs/netcode.md).
@@ -31,7 +31,7 @@ func _run() -> void:
 	var rtt := _env_int("RTT_MS", 80)
 	var bots := _env_int("BOTS", 12)
 	var seconds := _env_int("SECONDS", 60)
-	var r := await _measure(SLAMCITY, "tdm", bots, seconds, rtt)
+	var r := await _measure(BREAKWATER, "tdm", bots, seconds, rtt)
 	_report("Team Deathmatch", bots, rtt, r)
 	_check(float(r.seconds) > seconds * bots * 0.9, "every bot was measured")
 	_budget("down", float(r.down_kbps), DOWN_BUDGET)

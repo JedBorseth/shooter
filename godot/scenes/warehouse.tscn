@@ -169,7 +169,6 @@
 [ext_resource type="Texture2D" uid="uid://b4jshb52kpieo" path="res://assets/props/warehouse_outdoors/textures/weed_plant_02_diff-weed_plant_02_alpha_cutout.png" id="151_7aepb"]
 [ext_resource type="LightmapGIData" uid="uid://dmk3tpl4rumjr" path="res://scenes/warehouse.lmbake" id="165_lksdq"]
 [ext_resource type="PackedScene" path="res://scenes/effects/tracer.tscn" id="167_tthrg"]
-[ext_resource type="PackedScene" path="res://scenes/effects/laser_beam.tscn" id="168_nlvs1"]
 [ext_resource type="Script" uid="uid://ctj75r4rqaqsy" path="res://scripts/hud.gd" id="170_ef1a5"]
 [ext_resource type="Script" uid="uid://b7ab70h6arhro" path="res://scripts/pause_menu.gd" id="172_e0mjs"]
 
@@ -54289,7 +54288,6 @@ base_fov = 69.56998
 stick_yaw_speed = 240.0
 stick_pitch_speed = 180.0
 tracer_scene = ExtResource("167_tthrg")
-beam_scene = ExtResource("168_nlvs1")
 transform = Transform3D(-0.98162717, 0, -0.19080901, 0, 1, 0, 0.19080901, 0, -0.98162717, 6.5, 0.05, -32.5)
 collision_layer = 2
 collision_mask = 81

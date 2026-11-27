@@ -430,17 +430,6 @@ pub enum GameEvent {
         holder: Holder,
         moves_at: Option<Tick>,
     },
-    /// To everyone: a damageable map prop changed interactive stage, with the
-    /// impulse that hit it. The server owns prop health; clients only present
-    /// the state and never damage props themselves online.
-    PropState {
-        /// The prop's id, from its `prop_id` metadata.
-        id: u16,
-        /// The prop manager's opaque stage (intact, damaged, destroyed, ...).
-        stage: u8,
-        /// Direction and strength of the hit that changed it.
-        impulse: Vec3,
-    },
     /// A chat message from player `from`, cleaned by the server. `team`
     /// messages go only to the sender's team.
     Chat { from: u8, text: String, team: bool },
@@ -2054,12 +2043,6 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             }
             write_option_tick(w, *moves_at);
         }
-        GameEvent::PropState { id, stage, impulse } => {
-            w.bits(14, EVENT_TAG_BITS);
-            w.varint(u32::from(*id));
-            w.u8(*stage);
-            write_vec3(w, *impulse);
-        }
         GameEvent::Chat { from, text, team } => {
             w.bits(15, EVENT_TAG_BITS);
             w.u8(*from);
@@ -2539,14 +2522,6 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             },
             moves_at: read_option_tick(r)?,
         }),
-        14 => {
-            let id = u16::try_from(r.varint()?).map_err(|_| DecodeError::Invalid("prop id"))?;
-            Ok(GameEvent::PropState {
-                id,
-                stage: r.u8()?,
-                impulse: read_finite_vec3(r)?,
-            })
-        }
         15 => {
             let from = r.u8()?;
             let team = r.bool()?;
@@ -5694,16 +5669,6 @@ mod tests {
                 play: FlagPlay::Returned,
                 player: None,
             },
-            GameEvent::PropState {
-                id: 0,
-                stage: 0,
-                impulse: Vec3::ZERO,
-            },
-            GameEvent::PropState {
-                id: 65_535,
-                stage: 255,
-                impulse: Vec3::new(-1.5, 2.25, -0.125),
-            },
             GameEvent::Chat {
                 from: 7,
                 text: "nice shot".to_owned(),
@@ -5990,51 +5955,6 @@ mod tests {
                 msg
             );
         }
-    }
-
-    #[test]
-    fn prop_states_round_trip_across_the_whole_range() {
-        let events: Vec<GameEvent> = [0u16, 1, 255, 256, 4096, 65_535]
-            .into_iter()
-            .enumerate()
-            .map(|(i, id)| GameEvent::PropState {
-                id,
-                stage: (i * 51) as u8,
-                impulse: Vec3::new(i as f32 * 12.5, -(i as f32), 0.001 * i as f32),
-            })
-            .collect();
-        let msg = ServerMessage::Events(events);
-        assert_eq!(
-            ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
-            msg
-        );
-    }
-
-    #[test]
-    fn oversized_prop_ids_are_rejected() {
-        let mut w = BitWriter::new();
-        // An event tag of 14, then a varint id that does not fit `u16`.
-        w.bits(14, EVENT_TAG_BITS);
-        w.varint(70_000);
-        w.u8(1);
-        write_vec3(&mut w, Vec3::ZERO);
-        assert_eq!(
-            read_event(&mut BitReader::new(&w.finish())),
-            Err(DecodeError::Invalid("prop id"))
-        );
-    }
-
-    #[test]
-    fn non_finite_prop_impulses_are_rejected() {
-        let mut w = BitWriter::new();
-        w.bits(14, EVENT_TAG_BITS);
-        w.varint(4);
-        w.u8(2);
-        write_vec3(&mut w, Vec3::new(f32::NAN, 0.0, 0.0));
-        assert_eq!(
-            read_event(&mut BitReader::new(&w.finish())),
-            Err(DecodeError::Invalid("non-finite number"))
-        );
     }
 
     #[test]

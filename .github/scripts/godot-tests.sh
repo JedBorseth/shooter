@@ -36,8 +36,8 @@ REALTIME_OWN_PORT=(net_test killcam_test custom_games_test spectator_test lobby_
 # with no arguments.
 declare -A RUNS=(
   [join_server_test]="|-- --warehouse"
-  [bots_test]="-- --slamcity|-- --warehouse|-- --breakwater|-- --nuketown"
-  [domination_bots_test]="|-- --warehouse|-- --breakwater"
+  [bots_test]="|-- --warehouse"
+  [domination_bots_test]="|-- --warehouse"
   [killcam_test]="-- --tdm|-- --snd"
 )
 # Generous per-run limit; a hung test fails instead of using the job timeout.

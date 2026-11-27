@@ -94,24 +94,23 @@ sample the scene's real collision: `godot/tests/warehouse_grid.gd` writes a
 0.5 m grid of it and `tools/map_blockout/warehouse_measure.py` reports the
 same targets (one floor per cell, so upper floors are not measured).
 
-Approved plans stay in `tools/map_blockout/`: `slamcity_2026_11.py`,
-`breakwater_2026_11.py`, and `warehouse_2026_11b.py` (Warehouse's
+Approved plans stay in `tools/map_blockout/`: `breakwater_2026_11.py` and `warehouse_2026_11b.py` (Warehouse's
 asymmetric plan; `warehouse_2026_11.py`, a turned-twin plan, is kept for
 comparison).
 
 ## Generator checks
 
-Slamcity and Breakwater are generated from one layout file each, and the
-generator refuses a layout that breaks the map's rules
-(`tools/slamcity_checks.py`, `tools/breakwater_checks.py`; CI runs both
-through `tools/test_slamcity_layout.py` and `tools/test_breakwater_layout.py`):
+Breakwater is generated from one layout file, and the generator refuses a
+layout that breaks the map's rules (`tools/breakwater_checks.py`, which reuses
+the sight tests in the shared kit's `tools/slamcity_checks.py`; CI runs them
+through `tools/test_breakwater_layout.py`):
 
 - collision is the same on both halves, turned about the centre (rooms
   dressed differently on each side are exempt);
-- no spawn point is in sight of the enemy's spawns or high ground, and on
-  Breakwater no eye-height line runs from one spawn yard into the other;
-- no ground line at eye height runs past 50 m (Slamcity) or 55 m
-  (Breakwater), nor past 50 m between the two teams' high ground;
+- no spawn point is in sight of the enemy's spawns or high ground, and no
+  eye-height line runs from one spawn yard into the other;
+- no ground line at eye height runs past 55 m, nor past 50 m between the two
+  teams' high ground;
 - every Hardpoint move goes at least 16 m, to a zone that does not overlap
   the last one seen from above;
 - whichever of our high ground or streets the enemy takes, some spawn points
@@ -123,9 +122,9 @@ roof deck all exist to pass them.
 
 ## Lessons from our maps
 
-- **Strips fail.** A three-strip Slamcity, 124 x 61 m and mirrored, measured
-  118 m spawn to spawn with 45% of its floor seeing past 40 m and a 120 m
-  longest line: the alley, the avenue, and the space under the El ran into one
+- **Strips fail.** A three-strip city map (Slamcity, since cut), 124 x 61 m
+  and mirrored, measured 118 m spawn to spawn with 45% of its floor seeing
+  past 40 m and a 120 m longest line: the alley, the avenue, and the space under the El ran into one
   open field. The owner rejected it and a redesign drawn the same way. The
   city-block plan that replaced it meets every target.
 - **A turned twin can still read as a mirror.** Warehouse's halves were one
@@ -152,7 +151,7 @@ Collision follows Call of Duty's player clip, not the visible mesh:
 - Anything a sprinting or sliding player could catch a foot on either never
   collides (litter, debris, cones, tape, signs, weeds, wall dressing) or gets
   one smooth shape (a rubble mound is one low hull, slopes under 20 degrees).
-- A map edge that needs player clip (Nuketown's) is tall, thin walls on the
+- A map edge that needs player clip is tall, thin walls on the
   movement-only layer (16): they stop players, while bullets pass through.
 
 Heights and widths that matter (`MoveParams` in `rust/sim/src/movement.rs`):
@@ -192,7 +191,7 @@ root (`rust/game/src/net/server.rs`). Each is optional and has a fallback.
 | `ChargeSites` | Search and Destroy sites | `size` (default 5 x 3.6 x 5 m), `label` | Two sites on the defenders' side of the middle, one to each flank |
 
 A map script can build its markers in `prepare_server()`, which the server
-calls before reading them (Nuketown builds `SpawnPoints` from a JSON file). A
+calls before reading them. A
 `roofed` metadata of `true` on the root takes out the scorestreaks that need
 open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
 ([audio.md](audio.md)).
@@ -201,8 +200,8 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
 
 - **Look at a map.** With a display, `just capture <map> <dir>` saves
   eye-level PNGs with the game's lighting (`godot/tests/capture_view.gd`).
-  `<map>` is a server key (`arena`, `nuketown`, `slamcity`, `warehouse`,
-  `breakwater`), `testing`, or a `res://` scene path. It picks up
+  `<map>` is a server key (`breakwater`, `warehouse`, `arena`), `testing`, or
+  a `res://` scene path. It picks up
   to 12 viewpoints from the map's spawn, lane, and objective markers, at
   standing eye height on the floor below. Environment variables:
   `CAPTURE_AUTO` (number of views), `CAPTURE_TOP=1` (adds an overhead
@@ -215,7 +214,7 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
   ([editor-mcp.md](editor-mcp.md)).
 - **Minimaps.** `godot --headless --path godot --script
   res://tools/build_minimaps.gd` renders each multiplayer map's minimap from
-  its collision (`MINIMAPS=slamcity,warehouse` limits it) into
+  its collision (`MINIMAPS=breakwater,warehouse` limits it) into
   `godot/assets/minimaps/` and `godot/scripts/net/minimap_data.gd`. Rebuild it
   whenever a map's collision changes.
 - **Props.** `python3 tools/prop_catalog.py --find <tags>` searches
@@ -227,10 +226,10 @@ open sky. `ReverbZones` and a `Soundscape` set the map's acoustics
   `godot/assets/textures/decals/catalog.json`.
 - **Dressing the generated maps.** `tools/map_dressing.py` dresses the Testing
   Area and shades its slabs and panels per vertex;
-  Slamcity and Breakwater place props from their layout files; Warehouse from
+  Breakwater places props from its layout file; Warehouse from
   its layout scripts in `tools/map_blockout/`.
 - **Lightmaps.** `tools/bake_lightmaps.sh [res://scenes/<map>.tscn ...]` bakes
-  (with no argument: the Testing Area, Slamcity, and Warehouse).
+  (with no argument: the Testing Area, Warehouse, and Breakwater).
   Lights that exist only for the bake go under a `BakedLights` node
   (`scripts/baked_lights.gd`), which frees them in the game. A LightmapGI bakes
   only what is under its parent, so it sits at the scene's root; keep lamp
@@ -269,8 +268,9 @@ The owner made these; follow them unless the owner changes them.
 
 - Maps play like real Call of Duty maps, and every layout is approved as a
   minimap before it is built.
-- Slamcity: CoD4 city blocks with BO2 compact loops, and two sides that are
-  different but balanced rather than mirrored.
+- City maps: CoD4 city blocks with BO2 compact loops, and two sides that are
+  different but balanced rather than mirrored (the owner's answer for
+  Slamcity, since cut).
 - Warehouse: flow like a real 6v6 map rather than match the real building,
   with Atlas Superstore as the model of a warehouse map; a grassy start, and
   two sides that play differently.

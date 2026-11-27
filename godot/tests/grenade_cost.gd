@@ -1,19 +1,19 @@
 extends SceneTree
 ## Measures what a grenade fight costs the GPU: at a benchmark viewpoint on
-## the arena and on Slamcity, at each graphics preset, the frame's GPU time
+## the arena and on Breakwater, at each graphics preset, the frame's GPU time
 ## with nothing going on, then while three frag blasts go off a third of a
 ## second apart 6 to 10 m ahead (their flash, fireball, dust, and debris).
 ## Then a smoke cloud 7 m ahead, fully grown, and the view from inside it.
 ## Prints the mean and the worst frame of each. Needs a GPU:
 ##   xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/grenade_cost.gd
-## GRENADE_COST_ONLY=testing/medium,slamcity/high measures only those.
+## GRENADE_COST_ONLY=testing/medium,breakwater/high measures only those.
 
 const BLAST := preload("res://scenes/equipment/frag_blast.tscn")
 const SMOKE := preload("res://scenes/equipment/smoke_cloud.tscn")
 const VIEWS := {
 	"testing": ["res://scenes/main.tscn", Vector3(0, 0.1, 4), 0.0],
-	"slamcity": ["res://scenes/slamcity.tscn", Vector3(-37, 0.05, 3), -PI / 2],
+	"breakwater": ["res://scenes/breakwater.tscn", Vector3(-37, 0.05, 3), -PI / 2],
 }
 const PRESETS := {"low": 0, "medium": 1, "high": 2}
 const FRAMES := 150

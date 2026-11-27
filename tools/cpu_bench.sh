@@ -3,7 +3,7 @@
 # in the background and this client in the match, then prints each system's
 # CPU time per frame (client) and per tick (server).
 #
-#   tools/cpu_bench.sh [--map slamcity] [--mode tdm] [--bots 11] [--seconds 20] [--out cpu.json]
+#   tools/cpu_bench.sh [--map breakwater] [--mode tdm] [--bots 11] [--seconds 20] [--out cpu.json]
 #
 # Without a display it runs under xvfb-run. Build the extension first
 # (cargo build in rust/). The numbers are for the build you run: the dev

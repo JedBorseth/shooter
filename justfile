@@ -28,7 +28,7 @@ edit: build
 agent-editor *args:
     tools/agent_editor.sh {{args}}
 
-# Run a dedicated server, for example `just server --map slamcity --bots 5 --bot-skill normal`.
+# Run a dedicated server, for example `just server --map breakwater --bots 5 --bot-skill normal`.
 server *args: build
     {{godot}} --headless --path godot -- --server {{args}}
 

@@ -124,7 +124,6 @@ use super::bots::{
 };
 use super::match_log::{MatchLog, RoundLog};
 use super::match_share::MatchShare;
-use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::query::QueryResponder;
 use super::snd_plan::{Intel, SndPlan};
 use super::transport::{self, NetEvent};
@@ -140,14 +139,7 @@ use crate::target::WORLD_LAYER;
 /// player and its UI, practice targets, and the sentry turret (it would damage
 /// players without the server knowing). Weapon racks stay: they are solid, and
 /// players take weapons from them through their input.
-const CLIENT_ONLY_NODES: [&str; 6] = [
-    "Player",
-    "HUD",
-    "PauseMenu",
-    "Targets",
-    "Sentry",
-    "SecretLaser",
-];
+const CLIENT_ONLY_NODES: [&str; 5] = ["Player", "HUD", "PauseMenu", "Targets", "Sentry"];
 
 /// Seconds a new connection has to say hello.
 const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
@@ -426,13 +418,6 @@ pub struct NetServer {
     /// Hardpoint: living players of each team in the live zone, as of the
     /// last tick (for overtime).
     hill_presence: [u32; tdm::TEAM_COUNT],
-    /// The map's interactive props manager, when the map has one.
-    props: PropsBridge,
-    /// Population last sent to the props manager, to avoid redundant calls.
-    props_population: Option<i32>,
-    /// Ticks until looking for the props manager again (maps without props
-    /// never pay more than a group lookup every couple of seconds).
-    props_retry: u32,
     /// Every live grenade.
     grenades: GrenadeSim,
     /// Smoke clouds still hanging, oldest first: bots see through them
@@ -617,13 +602,16 @@ struct Fighter {
     spawned_at: Tick,
 }
 
-/// One pellet's hit on a damageable prop, before player hits are known.
-struct PropHit {
-    id: u16,
-    /// Distance from the eye, to compare with player hits.
-    distance: f32,
-    direction: Vec3,
+/// An explosion the server applies to players (a scorestreak's strike or a
+/// planted charge).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Blast {
+    position: Vec3,
+    radius: f32,
     damage: f32,
+    outer_damage: f32,
+    /// The player credited with the explosion, if any.
+    attacker: Option<u8>,
 }
 
 #[godot_api]
@@ -854,7 +842,6 @@ impl INode3D for NetServer {
         self.update_scavenger();
         self.update_streaks();
         self.update_match();
-        self.update_props();
         drop(modes);
         self.tick += 1;
         if self
@@ -1969,14 +1956,9 @@ impl NetServer {
         map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
         // The map is the server's first child (`get_child(0)` finds it for
-        // the bots' navigation and the props), even when helpers were added
-        // before the server entered the tree.
+        // the bots' navigation), even when helpers were added before the
+        // server entered the tree.
         self.base_mut().move_child(&map, 0);
-        // Groups register when a node enters the tree, so find the props
-        // manager after the map is a child.
-        self.props = PropsBridge::discover_under(&map);
-        self.props_population = None;
-        self.props_retry = 0;
     }
 
     fn handle_event(&mut self, event: NetEvent) {
@@ -2237,11 +2219,6 @@ impl NetServer {
             self.send_event(id, flags);
             let status = self.domination_event();
             self.send_event(id, status);
-        }
-        // A late joiner needs the props as they are now: everyone
-        // already here saw each change as it happened.
-        for state in self.props.snapshot_states() {
-            self.send_event(id, prop_event(&state));
         }
         if let Some(event) = self.round_event() {
             self.send_event(id, event);
@@ -3893,9 +3870,6 @@ impl NetServer {
         };
         let def = shot.weapon.def();
         let origin = to_sim(shot.eye);
-        // Maps without props skip the metadata walk entirely.
-        let track_props = self.props.is_active();
-        let mut prop_hits: Vec<PropHit> = Vec::new();
         let pellets: Vec<Pellet> = (0..def.pellets)
             .map(|pellet| {
                 let offset =
@@ -3921,18 +3895,6 @@ impl NetServer {
                     {
                         scale = hit.damage_scale;
                         *wall = (shot.eye.distance_to(hit.position), scale);
-                    }
-                    // Props are hit in the present like walls; whether the
-                    // pellet reached one is decided below, once player hits
-                    // are known.
-                    if track_props && let Some(id) = prop_id_of(hit.collider.as_ref()) {
-                        let distance = shot.eye.distance_to(hit.position);
-                        prop_hits.push(PropHit {
-                            id,
-                            distance,
-                            direction,
-                            damage: def.damage_at(distance) * hit.damage_scale,
-                        });
                     }
                 }
                 pellet
@@ -4093,7 +4055,6 @@ impl NetServer {
             }
         }
         self.apply_hits(&attack, &hits);
-        self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
     }
 
     /// Applies the hits decided for one attack (a shot's pellets or a knife
@@ -4315,103 +4276,10 @@ impl NetServer {
         }
     }
 
-    /// Damages the props this shot struck, once player hits are known. A
-    /// pellet that hit a player closer than the prop never reached it. The
-    /// manager owns prop health and stages; what it queues is broadcast on
-    /// the next tick.
-    fn damage_props(
-        &self,
-        attacker: u8,
-        weapon: WeaponId,
-        prop_hits: &[PropHit],
-        target_hits: &[lag::TargetHit],
-    ) {
-        if prop_hits.is_empty() || !self.props.is_active() {
-            return;
-        }
-        // Conservative: if anyone was hit closer than a prop, the prop is
-        // behind cover from the shooter's point of view on that pellet.
-        let nearest_player = target_hits
-            .iter()
-            .map(|hit| hit.distance)
-            .fold(f32::INFINITY, f32::min);
-        let mut totals: Vec<(u16, f32, Vec3)> = Vec::new();
-        for hit in prop_hits {
-            if hit.distance >= nearest_player || hit.damage <= 0.0 {
-                continue;
-            }
-            match totals.iter_mut().find(|(id, _, _)| *id == hit.id) {
-                Some((_, damage, impulse)) => {
-                    *damage += hit.damage;
-                    *impulse += hit.direction * hit.damage;
-                }
-                None => totals.push((hit.id, hit.damage, hit.direction * hit.damage)),
-            }
-        }
-        for (id, damage, impulse) in totals {
-            self.props
-                .damage_prop(id, damage, impulse, attacker, weapon);
-        }
-    }
-
-    /// Drains the props manager once a tick: population, changed prop states
-    /// for every client, and explosions to apply to players.
-    fn update_props(&mut self) {
-        if !self.props.is_active() {
-            if self.props_retry > 0 {
-                self.props_retry -= 1;
-                return;
-            }
-            self.props_retry = 2 * TICK_RATE;
-            // The map manager may have been added after the map loaded (or a
-            // map without props may stay that way).
-            if let Some(map) = self.base().get_child(0) {
-                self.props = PropsBridge::discover_under(&map);
-                // A replacement manager needs the population again.
-                self.props_population = None;
-            }
-            if !self.props.is_active() {
-                return;
-            }
-        }
-        let population = self.avatars.len().min(i32::MAX as usize) as i32;
-        if self.props_population != Some(population) {
-            self.props.set_population(population);
-            self.props_population = Some(population);
-        }
-        for state in self.props.drain_events() {
-            self.broadcast_event(&prop_event(&state));
-        }
-        for blast in self.props.drain_explosions() {
-            self.resolve_explosion(&blast, protocol::KillCause::Weapon);
-        }
-    }
-
-    /// Resets every prop and tells clients only the ones that changed. Called
-    /// when a match starts and when the server falls back to the lobby, so a
-    /// fresh match never inherits last match's debris.
-    fn reset_props(&mut self) {
-        if !self.props.is_active() {
-            return;
-        }
-        let before = self.props.snapshot_states();
-        self.props.reset();
-        // The reset may queue the same changes as events; the diff below is
-        // complete, so drop them to avoid sending every change twice.
-        let _ = self.props.drain_events();
-        for state in self.props.snapshot_states() {
-            let previous = before.iter().find(|old| old.id == state.id);
-            if previous != Some(&state) {
-                self.broadcast_event(&prop_event(&state));
-            }
-        }
-    }
-
-    /// Applies one prop explosion on the server: distance falloff, obstruction
-    /// by the map, no friendly fire (but self-damage counts), kill credit, and
-    /// the same scoring paths as gunfire. Prop-to-prop damage stays in the
-    /// manager's chain reaction, so this never feeds back into it.
-    fn resolve_explosion(&mut self, blast: &PropExplosion, cause: protocol::KillCause) {
+    /// Applies one explosion on the server: distance falloff, obstruction by
+    /// the map, no friendly fire (but self-damage counts), kill credit, and
+    /// the same scoring paths as gunfire.
+    fn resolve_explosion(&mut self, blast: &Blast, cause: protocol::KillCause) {
         if matches!(
             self.match_state.phase,
             Phase::Countdown | Phase::Ended { .. }
@@ -4497,7 +4365,7 @@ impl NetServer {
                 self.hurt_turret(id, TurretHit::Explosive, damage, attacker, u32::MAX);
             }
         }
-        let weapon = blast.weapon.unwrap_or_else(default_primary);
+        let weapon = default_primary();
         let victims = self.split_friendly_damage(attacker, victims);
         self.hurt_players(
             attacker,
@@ -4763,8 +4631,6 @@ impl NetServer {
         if humans.is_empty() && !self.auto_start {
             if self.match_state.phase != Phase::Lobby {
                 self.match_state.reset();
-                // Back in the lobby, put the map back the way it started.
-                self.reset_props();
                 self.round = None;
                 self.charge = None;
             }
@@ -5239,7 +5105,6 @@ impl NetServer {
                         },
                     );
                 }
-                self.reset_props();
             }
             Transition::Ended { winner } => {
                 if self.game.free_for_all() {
@@ -6389,13 +6254,12 @@ impl NetServer {
                 owner: strike.owner,
                 at: strike.at,
             }));
-            let blast = PropExplosion {
+            let blast = Blast {
                 position: strike.at + Vec3::Y * 0.3,
                 radius: streak::STRIKE_RADIUS,
                 damage: streak::STRIKE_DAMAGE,
                 outer_damage: streak::STRIKE_OUTER_DAMAGE,
                 attacker: Some(strike.owner),
-                weapon: None,
             };
             self.streak_blast(&blast, Streak::Airstrike);
         }
@@ -6404,7 +6268,7 @@ impl NetServer {
     /// A scorestreak's blast: hurts as any explosion does, its kills shown
     /// as `streak`'s, and the score it earns its owner counts nothing toward
     /// their streaks (Black Ops 2).
-    fn streak_blast(&mut self, blast: &PropExplosion, streak: Streak) {
+    fn streak_blast(&mut self, blast: &Blast, streak: Streak) {
         let owner = blast.attacker;
         let before = self
             .avatars
@@ -6587,13 +6451,12 @@ impl NetServer {
                     missile::BLAST_OUTER_DAMAGE,
                 )
             };
-            let blast = PropExplosion {
+            let blast = Blast {
                 position: at + Vec3::Y * 0.3,
                 radius,
                 damage,
                 outer_damage: outer,
                 attacker: Some(owner),
-                weapon: None,
             };
             self.streak_blast(&blast, Streak::GuidedMissile);
             if bomblet
@@ -6680,13 +6543,12 @@ impl NetServer {
             at: m.position,
             bomblet: false,
         }));
-        let blast = PropExplosion {
+        let blast = Blast {
             position: m.position,
             radius: missile::BLAST_RADIUS,
             damage: missile::BLAST_DAMAGE,
             outer_damage: missile::BLAST_OUTER_DAMAGE,
             attacker: Some(m.owner),
-            weapon: None,
         };
         self.streak_blast(&blast, Streak::GuidedMissile);
         if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
@@ -7149,13 +7011,12 @@ impl NetServer {
         let planter = self
             .charge_planter
             .filter(|id| self.avatars.iter().any(|a| a.id == *id));
-        let blast = PropExplosion {
+        let blast = Blast {
             position: at + Vec3::Y * 0.3,
             radius: CHARGE_BLAST_RADIUS,
             damage: CHARGE_BLAST_DAMAGE,
             outer_damage: CHARGE_BLAST_EDGE_DAMAGE,
             attacker: planter,
-            weapon: None,
         };
         self.resolve_explosion(&blast, protocol::KillCause::Charge);
     }
@@ -8156,24 +8017,6 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
     .quantized()
 }
 
-/// The damageable prop a collider belongs to, from `prop_id` metadata on it
-/// or any of its ancestors.
-fn prop_id_of(collider: Option<&Gd<Node>>) -> Option<u16> {
-    let mut node = collider.cloned();
-    while let Some(current) = node {
-        // Reading a missing key logs an error, so check first.
-        if current.has_meta("prop_id") {
-            return current
-                .get_meta("prop_id")
-                .try_to::<i32>()
-                .ok()
-                .and_then(|id| u16::try_from(id).ok());
-        }
-        node = current.get_parent();
-    }
-    None
-}
-
 /// Where a ray from `from` to `to` first meets the map, if it does. Players
 /// are on their own layer, so only walls, floors, and props count.
 fn world_hit(
@@ -8359,15 +8202,6 @@ fn joined_event(avatar: &Avatar) -> GameEvent {
         name: avatar.name.clone(),
         team: avatar.team,
         bot: avatar.bot,
-    }
-}
-
-/// A prop state as the reliable event clients apply.
-fn prop_event(state: &PropSnapshot) -> GameEvent {
-    GameEvent::PropState {
-        id: state.id,
-        stage: state.stage,
-        impulse: state.impulse,
     }
 }
 
@@ -8710,7 +8544,7 @@ fn site_letter(index: usize) -> String {
 }
 
 /// Two sites for maps without `ChargeSites`: on the defenders' side (side 1)
-/// of the middle, one to each flank, so the testing area and Nuketown play.
+/// of the middle, one to each flank, so the testing area plays.
 fn fallback_charge_sites(spawns: &[SpawnPoint]) -> Vec<(String, Site)> {
     let side = |team: Team| {
         let points: Vec<Vec3> = spawns

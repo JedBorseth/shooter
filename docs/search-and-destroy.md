@@ -67,11 +67,6 @@ a box centred on the marker (`size` metadata, full size) named by a `label`
 metadata (A, B). Maps without them get two sites on the defenders' side of
 the middle, one to each flank (`fallback_charge_sites` in the server).
 
-Slamcity's (`CHARGE_SITES` in `tools/slamcity_layout.py`):
-
-- **A**: the pawn shop's back room on the north street, east of the El.
-- **B**: the ticket hall's front room on the market side.
-
 Breakwater's (`CHARGE_SITES` in `tools/breakwater_layout.py`), on Red's half:
 
 - **A**: the pump house's east room on the north route, by the export pumps.
@@ -79,10 +74,8 @@ Breakwater's (`CHARGE_SITES` in `tools/breakwater_layout.py`), on Red's half:
 
 Each has a solid marker crate with its letter on every side
 (`gear_models.charge_site_a` and `_b`, built in Blender), which stands in
-every mode as set dressing. On Slamcity the defenders reach either site in
-about 7 s at a sprint, the attackers in about 11 s. Nuketown, Warehouse, and
-the Testing Area mark no sites, and the title screen offers Search and
-Destroy only on Slamcity and Breakwater.
+every mode as set dressing. Warehouse and the Testing Area mark no sites,
+and the title screen offers Search and Destroy only on Breakwater.
 
 ## Bots
 

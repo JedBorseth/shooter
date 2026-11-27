@@ -193,7 +193,13 @@ func _tdm() -> void:
 	var net := root.get_node("Net")
 	net.call(
 		"start_local_match",
-		{"map": "slamcity", "bots": 5, "bot_skill": "normal", "score_limit": 25, "time_limit": 1.0}
+		{
+			"map": "breakwater",
+			"bots": 5,
+			"bot_skill": "normal",
+			"score_limit": 25,
+			"time_limit": 1.0
+		}
 	)
 	# The connecting panel shows until the server accepts us.
 	for i in 600:
@@ -265,7 +271,7 @@ func _tdm() -> void:
 ## Frames without any UI, as backdrops for design mockups.
 func _clean() -> void:
 	for entry in [
-		["res://scenes/slamcity.tscn", "clean_slamcity"],
+		["res://scenes/breakwater.tscn", "clean_breakwater"],
 		["res://scenes/main.tscn", "clean_arena"],
 	]:
 		var scene := await _open(entry[0])
@@ -277,7 +283,7 @@ func _clean() -> void:
 
 
 ## Art for design mockups: weapon side profiles and soldiers on a transparent
-## background, and cinematic backdrops of Slamcity.
+## background, and cinematic backdrops of Breakwater.
 func _art() -> void:
 	var stage := Node3D.new()
 	stage.name = "Stage"
@@ -345,8 +351,8 @@ func _art() -> void:
 	root.transparent_bg = false
 	await _frames(2)
 
-	# Slamcity from a free camera above the spawn, in eight directions.
-	var city := await _open("res://scenes/slamcity.tscn")
+	# Breakwater from a free camera above the spawn, in eight directions.
+	var city := await _open("res://scenes/breakwater.tscn")
 	await _seconds(1.5)
 	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
 		layer.visible = false
@@ -369,7 +375,7 @@ func _art() -> void:
 ## its player spawn in eight directions, at eye height and from higher up.
 ## Only on request (CAPTURE_PHASE=stills).
 func _stills() -> void:
-	for map: String in ["slamcity", "nuketown", "main"]:
+	for map: String in ["breakwater", "warehouse", "main"]:
 		var scene := await _open("res://scenes/%s.tscn" % map)
 		await _seconds(1.5)
 		for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):

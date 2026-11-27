@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless Hardpoint test: runs a dedicated server in this process on
-## Slamcity in Hardpoint with six bots at normal skill and no players, starts
+## Breakwater in Hardpoint with six bots at normal skill and no players, starts
 ## the match without a ready-up, and checks that the server finds the map's
 ## four zones, that the bots go to the live zone and score by holding it, that
 ## kills alone score nothing, and that the zone moves on after its minute.
@@ -21,8 +21,8 @@ func _initialize() -> void:
 func _run() -> void:
 	var bots := 6
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.mode = "hardpoint"
 	server.port = _port
 	server.query_port = -1
@@ -33,7 +33,7 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 	_check(server.game_mode() == "hardpoint", "the server plays Hardpoint")
-	_check(server.zone_count() == 4, "Slamcity has four zones, got %d" % server.zone_count())
+	_check(server.zone_count() == 4, "Breakwater has four zones, got %d" % server.zone_count())
 	_check(server.active_zone() == 0, "the first zone is live first")
 
 	# Through the countdown and into play.

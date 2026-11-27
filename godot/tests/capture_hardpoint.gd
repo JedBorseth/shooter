@@ -1,5 +1,5 @@
 extends SceneTree
-## Captures reference screenshots of Hardpoint on Slamcity on a local server
+## Captures reference screenshots of Hardpoint on Breakwater on a local server
 ## with bots: the zone marker and strip from the spawn, the scoreboard with
 ## time on the hill, the capture medal, and the live zone from above as the
 ## bots fight over it. Starts its own server process. Needs a GPU and a
@@ -37,7 +37,7 @@ func _run() -> void:
 			"--query-port",
 			"-1",
 			"--map",
-			"slamcity",
+			"breakwater",
 			"--mode",
 			"hardpoint",
 			"--bots",
@@ -47,7 +47,7 @@ func _run() -> void:
 		]
 	)
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
-	net.join("127.0.0.1:%d" % PORT, {"map": "slamcity", "name": "Local server"})
+	net.join("127.0.0.1:%d" % PORT, {"map": "breakwater", "name": "Local server"})
 	var client: NetClient = null
 	for i in 1200:
 		client = net.client()

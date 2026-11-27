@@ -2,8 +2,7 @@
 """Generate godot/scenes/breakwater.tscn from tools/breakwater_layout.py.
 
 The layout describes the map once (see its docstring for the lanes); this
-writes the scene the way tools/build_slamcity.py writes Slamcity's: collision
-boxes and hulls grouped by surface, occluders, the mesh that
+writes the scene: collision boxes and hulls grouped by surface, occluders, the mesh that
 tools/build_breakwater_city.py builds in Blender, props, decals, baked-only
 lights, spawns, flags, bot lanes, objectives for every mode, practice
 targets, reverb zones, and the late-morning sky. It refuses a layout that

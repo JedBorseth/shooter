@@ -29,8 +29,8 @@ Servers take `--score-limit N` (0 keeps the mode's), `--time-limit MINUTES`,
 to 10), all parsed in `godot/scripts/net/bootstrap.gd`. The title screen's
 match setup (`godot/scripts/tdm_setup.gd`) offers each mode with its own
 limits, a map, team sizes, bot difficulty, and the custom game settings.
-Search and Destroy's setup lists only Slamcity and Breakwater, the maps with
-charge sites. An unknown `--mode` runs Team Deathmatch.
+Search and Destroy's setup lists only Breakwater, the map with charge
+sites. An unknown `--mode` runs Team Deathmatch.
 
 A server accepts up to 12 connections (players and spectators; bots are not connections). In team modes a new player joins the
 smaller team (ties go to team 0 for humans and team 1 for bots,
@@ -148,9 +148,7 @@ one's, and most of each footprint standable.
 
 | Map | Rotation |
 | --- | --- |
-| Slamcity | Junction, Pawn Shop, The Platforms, Ticket Hall |
 | Testing Area | Crossroads, The Platform, Tunnel, Target Range |
-| Nuketown | Cul-de-sac, West House, Front Lot, East House |
 | Warehouse | Mid Stockpile, Receiving, Pick Mezzanine, Catwalk, Quality Control |
 | Breakwater | Loading Rack, Pump House, Rack Deck, Fire Pumps |
 
@@ -205,7 +203,7 @@ Reference game: **Black Ops 2**, as for Domination.
 The scoreboard adds CAPS and RET columns.
 
 **Bases.** A map marks them with `Marker3D` children of a `Flags` node with
-`team` metadata 0 or 1 (Slamcity and Breakwater). Other maps put each base
+`team` metadata 0 or 1 (Breakwater). Other maps put each base
 at the middle of that team's spawn points.
 
 **On screen** (`godot/scripts/net/ctf_view.gd`): each flag on a modelled

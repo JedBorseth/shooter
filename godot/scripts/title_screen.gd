@@ -1,13 +1,11 @@
 extends Control
 ## The title screen: a grouped list of routes on the left over a still of
-## Slamcity. Local match modes open their setup as a card on the right; the
+## a map. Local match modes open their setup as a card on the right; the
 ## Join screen and Options take the whole screen.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
-const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
-const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 const WAREHOUSE_PATH := "res://scenes/warehouse.tscn"
 const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const JOIN_PATH := "res://scenes/join_server.tscn"
@@ -24,10 +22,8 @@ const SETUP_BUTTONS := {
 }
 ## The scene each Free Roam map loads, and its name in the loading line.
 const FREE_ROAM := {
-	"slamcity": [SLAMCITY_PATH, "Slamcity"],
-	"nuketown": [NUKETOWN_PATH, "Nuketown"],
-	"warehouse": [WAREHOUSE_PATH, "Warehouse"],
 	"breakwater": [BREAKWATER_PATH, "Breakwater"],
+	"warehouse": [WAREHOUSE_PATH, "Warehouse"],
 }
 ## The short tag on the right of each route, and the line the status shows
 ## while it has focus.
@@ -41,7 +37,7 @@ const ROUTES := {
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
 	"JoinServer": ["BY IP", "Join a dedicated server by its address."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
-	"FreeRoam": ["ANY MAP", "Walk Slamcity, Nuketown, Warehouse, or Breakwater on your own."],
+	"FreeRoam": ["ANY MAP", "Walk Breakwater or Warehouse on your own."],
 	"Career": ["", "Challenges, camos, and your combat record."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
@@ -228,8 +224,7 @@ func _start_tdm(options: Dictionary) -> void:
 	Net.start_local_match(options)
 
 
-## Loads a multiplayer map to walk alone ("slamcity", "nuketown", "warehouse",
-## or "breakwater").
+## Loads a multiplayer map to walk alone ("breakwater" or "warehouse").
 func start_free_roam(map: String) -> void:
 	if not FREE_ROAM.has(map):
 		return
@@ -246,12 +241,6 @@ func _start_scene(path: String, destination: String) -> void:
 		return
 	_scene_path = path
 	_destination = destination
-	if (
-		path == NUKETOWN_PATH
-		and not FileAccess.file_exists("res://assets/maps/nuketown/generated/nuketown_world.scn")
-	):
-		_status.text = "Nuketown is not installed in this build."
-		return
 	_loading = true
 	_set_buttons_disabled(true)
 	_status.text = "Loading %s…" % _destination

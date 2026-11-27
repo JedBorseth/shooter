@@ -91,7 +91,7 @@ Watching a player is first person, from their eyes, with their weapon. Their bod
 
 ![Watching a bot from its eyes, with both teams down the sides and its class below](media/spectate-follow.jpg)
 
-![The free camera over Slamcity](media/spectate-free.jpg)
+![The free camera over Slamcity, a map since cut](media/spectate-free.jpg)
 
 ### The caster's view
 

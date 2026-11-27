@@ -213,7 +213,7 @@ encoded in the real wire format and counted, payload alone and with IPv4,
 UDP, and ENet headers (40 bytes a packet). Reliable game events are not
 counted: they are rare next to 60 snapshots and 120 input packets a second.
 
-The run is a 6v6 of Normal bots playing Team Deathmatch on Slamcity for
+The run is a 6v6 of Normal bots playing Team Deathmatch on Breakwater for
 60 s. It fails past its budget, so CI catches a regression:
 
 | Run | Down budget | Up budget |

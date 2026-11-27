@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless Airstrike test (`shooter_sim::streak::Strikes`) on a Team
-## Deathmatch server in this process on Slamcity with four passive bots: a
+## Deathmatch server in this process on Breakwater with four passive bots: a
 ## strike on an enemy in the open kills them a few seconds after the call,
 ## spares a teammate standing on another mark (no friendly fire), credits
 ## the caller with the kill's score, and adds nothing to their streak count
@@ -23,8 +23,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

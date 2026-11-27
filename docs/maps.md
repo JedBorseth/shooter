@@ -7,84 +7,17 @@ objectives is under "Map markers" there.
 
 | Map | Scene | Server key | Modes in the menu | Built from |
 | --- | --- | --- | --- | --- |
-| Slamcity | `scenes/slamcity.tscn` | `slamcity` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Search and Destroy, Free Roam | `tools/slamcity_layout.py` |
-| Warehouse | `scenes/warehouse.tscn` | `warehouse` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Free Roam | `tools/map_blockout/warehouse_photo_layout.py` |
 | Breakwater | `scenes/breakwater.tscn` | `breakwater` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Search and Destroy, Free Roam | `tools/breakwater_layout.py` |
-| Nuketown | `scenes/nuketown.tscn` | `nuketown` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Free Roam | `tools/import_nuketown.py` (Black Ops 2's Nuketown 2025) |
+| Warehouse | `scenes/warehouse.tscn` | `warehouse` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Free Roam | `tools/map_blockout/warehouse_photo_layout.py` |
 | Testing Area | `scenes/main.tscn` | `arena` | Its own title-screen route; TDM, FFA, Gun Game, CTF, Domination, Hardpoint as "Testing Arena" | `map_testing_area` in `tools/gear_models.py` |
 
 The menu lists come from `godot/scripts/tdm_setup.gd` (`MAPS`, `SND_MAPS`,
 `FREE_ROAM_MAPS`); a dedicated server takes
-`--map arena|nuketown|slamcity|warehouse|breakwater`
-(`godot/scripts/net/bootstrap.gd`). Search and Destroy is offered only on maps
-that mark their sites. Every map has a minimap
+`--map breakwater|warehouse|arena`
+(`godot/scripts/net/bootstrap.gd`), Breakwater by default, and Breakwater is
+first in every menu list. Search and Destroy is offered only on Breakwater,
+the one map that marks its sites. Every map has a minimap
 (`godot/assets/minimaps/`).
-
-## Slamcity
-
-![Slamcity: the avenue toward Slam Junction, the train under the El, a platform, the north street's alley, the diner, and the market](media/slamcity-junction.jpg)
-
-A city block at dusk, just after rain, round Slam Junction, a station on an
-elevated railway (the El). 84 x 68 m. It follows Call of Duty 4's city blocks
-(Crash, Strike, District, Backlot) with Black Ops 2's compact loops (Raid,
-Standoff, Slums). The plan is `tools/map_blockout/slamcity_2026_11.py`.
-
-- **Spawns.** Blue (team 0) starts in the bus depot yard on the west edge, Red
-  (team 1) in the depot on the east edge; 20 spawn points per team, the first
-  ones in the yard, the rest along the depot lanes and in the ground floors
-  nearby.
-- **Three routes.** Slam Avenue (mid range) runs from each depot into Junction
-  Plaza, where a car of the stalled train has fallen from the El and lies
-  diagonally under the platforms. Each team has its own stair up to its
-  platform (6.6 m), and the stalled train between the platforms is the way
-  across. The north street runs past the tenement and the loading dock,
-  through the pawn shop under the El, into the far market (close quarters).
-  The market runs past the diner, through the ticket hall, into the far south
-  street.
-- **Buildings you can enter** join the routes: the tenement (an upper floor
-  and a fire escape), the bodega, the diner (a roof terrace), the record
-  store, and the subway hall.
-- **Balance.** Red's half is Blue's turned 180 degrees about the centre,
-  dressed as different places: the tenement is a hotel, the diner a
-  laundromat, the pawn shop the ticket hall.
-
-| Measure (plan, `blockout.py`) | Value |
-| --- | --- |
-| Spawn to spawn | 79.4 m (10.7 s sprinting) |
-| Spawn to the plaza | 5.6 s, both teams |
-| Median longest eye-height line | 30.2 m |
-| Floor that sees past 40 m | 8% |
-| Longest line | 59.5 m |
-
-Objectives (all in `tools/slamcity_layout.py`):
-
-- **Capture the Flag:** each flag in its depot yard, by the shed at the
-  avenue's mouth.
-- **Domination:** A and C on Slam Avenue between each depot and the plaza
-  (about 17 m from their spawn), B round the plaza's kiosk with a wider
-  circle (4.5 m).
-- **Hardpoint:** Junction, Pawn Shop, The Platforms, Ticket Hall, in that
-  order.
-- **Search and Destroy:** A in the pawn shop's back room on the north street,
-  B in the ticket hall's front room on the market side, both on the east half
-  where the defenders spawn (sides swap at halftime).
-- **Bots** follow three lanes: North, Middle, South.
-
-**Built with:** `tools/slamcity_layout.py` describes the map once; Blender
-builds its meshes (`tools/build_slamcity_city.py`, models in
-`tools/slamcity_models.py`, signs from `tools/build_slamcity_signs.py`) into
-`godot/assets/maps/slamcity/city.gltf`; `tools/build_slamcity.py` writes the
-scene and refuses a layout that fails `tools/slamcity_checks.py` (also run in
-CI by `tools/test_slamcity_layout.py`). The look and its grade are in
-[art-direction.md](art-direction.md).
-
-```sh
-uv run tools/build_slamcity_signs.py
-blender -b --python tools/build_slamcity_city.py
-python3 tools/build_slamcity.py
-tools/bake_lightmaps.sh res://scenes/slamcity.tscn
-MINIMAPS=slamcity godot --headless --path godot --script res://tools/build_minimaps.gd
-```
 
 ## Warehouse
 
@@ -254,8 +187,12 @@ Objectives (all in `tools/breakwater_layout.py`):
   B on Red's quay by the containers on the south route.
 - **Bots** follow three lanes: North, Middle, South.
 
-**Built with:** the same pipeline as Slamcity, reusing its primitives and
-models. `tools/breakwater_layout.py` describes the map;
+**Built with:** the shared generator kit first written for Slamcity, a cut
+map: the primitives in `tools/slamcity_layout.py`, the models in
+`tools/slamcity_models.py`, the mesh builder in `tools/build_slamcity_city.py`,
+the looks in `tools/world_looks.py`, and the chain-link pattern from
+`tools/build_slamcity_signs.py`. They keep their names because Breakwater's
+mesh hash covers their bytes. `tools/breakwater_layout.py` describes the map;
 `tools/breakwater_models.py` models the terminal (tankers, storage tanks with
 spiral stairs, pipe racks, loading arms, the moored tanker, the far tank
 farm); `tools/build_breakwater_city.py` builds
@@ -270,35 +207,6 @@ python3 tools/build_breakwater.py
 tools/bake_lightmaps.sh res://scenes/breakwater.tscn
 MINIMAPS=breakwater godot --headless --path godot --script res://tools/build_minimaps.gd
 ```
-
-## Nuketown
-
-Black Ops 2's Nuketown 2025 (`mp_nuketown_2020`), converted from the game's
-files: two houses facing each other across a cul-de-sac, with yards, garages,
-the bus, and the population sign. Its geometry and materials are the
-original's. The runtime assets live in Git LFS under
-`godot/assets/maps/nuketown/`; a build without them shows "Nuketown is not
-installed in this build." and does not load it.
-
-- **Spawns.** `scripts/nuketown.gd` builds `SpawnPoints` from
-  `godot/data/nuketown_spawns.json` (29 points over both yards, houses, and
-  lanes). The six outermost ground points on each side are that team's
-  starts; every point is a respawn.
-- **Capture the Flag:** no flag markers; each flag stands at the centre of its
-  team's starts.
-- **Domination:** three authored flags (A, B, C).
-- **Hardpoint:** Cul-de-sac, West House, Front Lot, East House.
-- **Bots** have no lanes; they move on the navigation mesh baked round the
-  playable area.
-- **Interactive props** from the original: cars that smoke, burn, and explode;
-  mannequins and loose props that break into debris; the population sign,
-  which counts the players on the server.
-- **Easter egg:** a wall near the spawn leads to a vault holding the Prism
-  Laser.
-
-Its look is a graded desert noon (`scripts/looks.gd`); lighting in
-[nuketown-lighting.md](nuketown-lighting.md). The conversion, collision
-fixes, props, and the easter egg are in [assets/nuketown.md](assets/nuketown.md).
 
 ## Testing Area
 

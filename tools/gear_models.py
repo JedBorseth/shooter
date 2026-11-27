@@ -272,82 +272,11 @@ def flag_plinth(b: Model):
         b.cyl("y", 0.138, 0.152, (math.cos(a) * 0.2, math.sin(a) * 0.2), 0.018, "steel_galv", sides=6)
 
 
-# --- The secret laser: its vault and pedestal ------------------------------------------
-LOOKS["laser_glow"] = {"color": (1.0, 0.18, 0.82), "glow": 4.0}
-LOOKS["vault_wall"] = _t("metal_plates", 2.0, (0.2, 0.2, 0.24), metal=0.8, grime=0.0)
-LOOKS["vault_floor"] = _t("tread_plate", 1.5, (0.32, 0.32, 0.36), metal=1.0, grime=0.0)
-LOOKS["vault_trim"] = _t("painted_metal", 1.5, (0.07, 0.07, 0.09), metal=0.6, grime=0.0)
-
-
-@model
-def laser_vault(b: Model):
-    """The hidden vault's inside (scripts/secret_laser.gd), 8 x 4 x 8 m, origin
-    at the floor's centre: plated walls between ribs, a tread-plate floor, a
-    coffered ceiling, glowing strips round the floor and ceiling, and the
-    glowing exit ring in a bulkhead frame on the +z wall."""
-    sx, sy, sz = 4.0, 4.0, 4.0
-    b.box(-sx, sx, -0.02, 0.0, -sz, sz, "vault_floor")
-    b.box(-sx, sx, sy, sy + 0.02, -sz, sz, "vault_trim")
-    for axis, sign in (("x", -1), ("x", 1), ("z", -1), ("z", 1)):
-        if axis == "x":
-            b.box(sign * sx - (0.02 if sign > 0 else 0.0), sign * sx + (0.02 if sign < 0 else 0.0), 0.0, sy, -sz, sz,
-                  "vault_wall")
-        else:
-            b.box(-sx, sx, 0.0, sy, sign * sz - (0.02 if sign > 0 else 0.0), sign * sz + (0.02 if sign < 0 else 0.0),
-                  "vault_wall")
-    # Ribs up the walls every 2 m, a skirting and a cornice, and the strips.
-    for t in (-2.0, 0.0, 2.0):
-        for sign in (-1, 1):
-            b.box(t - 0.08, t + 0.08, 0.0, sy, sign * (sz - 0.12), sign * sz, "vault_trim", bevel=0.02)
-            b.box(sign * (sx - 0.12), sign * sx, 0.0, sy, t - 0.08, t + 0.08, "vault_trim", bevel=0.02)
-    for sign in (-1, 1):
-        for y0, y1 in ((0.0, 0.18), (sy - 0.22, sy)):
-            b.box(-sx, sx, y0, y1, sign * (sz - 0.06), sign * sz, "vault_trim", bevel=0.01)
-            b.box(sign * (sx - 0.06), sign * sx, y0, y1, -sz, sz, "vault_trim", bevel=0.01)
-        for y in (0.2, sy - 0.24):
-            b.box(-sx + 0.06, sx - 0.06, y, y + 0.04, sign * (sz - 0.075), sign * (sz - 0.06), "laser_glow")
-            b.box(sign * (sx - 0.075), sign * (sx - 0.06), y, y + 0.04, -sz + 0.06, sz - 0.06, "laser_glow")
-    # Ceiling coffers: a grid of beams with a light panel in the middle one.
-    for t in (-2.0, 0.0, 2.0):
-        b.box(-sx, sx, sy - 0.25, sy, t - 0.1, t + 0.1, "vault_trim", bevel=0.02)
-        b.box(t - 0.1, t + 0.1, sy - 0.25, sy, -sz, sz, "vault_trim", bevel=0.02)
-    b.box(-0.8, 0.8, sy - 0.02, sy, -0.8, 0.8, "lamp_tube")
-    # The exit: a bulkhead frame on the +z wall holding the glowing ring
-    # (centre 1.1 m up, 0.15 m in front of the wall), and a pad before it.
-    b.box(-1.15, 1.15, 0.0, 2.3, sz - 0.1, sz, "vault_trim", bevel=0.03)
-    ring = [(math.cos(a) * 0.825, 1.1 + math.sin(a) * 0.825, sz - 0.15) for a in (k * 2 * PI / 32 for k in range(33))]
-    b.tube(ring, 0.075, "laser_glow", sides=10, detail=False)
-    b.box(-0.7, 0.7, 0.0, 0.02, sz - 1.1, sz - 0.1, "laser_glow")
-
-
-@model
-def laser_pedestal(b: Model):
-    """The laser's pedestal: a fluted column 0.6 m square and 0.9 m tall on a
-    plinth, its top a glowing plate the gun floats over."""
-    b.box(-0.36, 0.36, 0.0, 0.08, -0.36, 0.36, "vault_trim", bevel=0.02)
-    b.box(-0.3, 0.3, 0.08, 0.86, -0.3, 0.3, "steel_white", bevel=0.03)
-    for k in range(4):
-        for t in (-0.15, 0.0, 0.15):
-            a = k * PI / 2
-            c, s = math.cos(a), math.sin(a)
-            x, z = c * 0.301 + -s * t, s * 0.301 + c * t
-            b.box(x - 0.02 * abs(s) - 0.003, x + 0.02 * abs(s) + 0.003, 0.14, 0.8, z - 0.02 * abs(c) - 0.003,
-                  z + 0.02 * abs(c) + 0.003, "vault_trim")
-    b.box(-0.33, 0.33, 0.86, 0.9, -0.33, 0.33, "vault_trim", bevel=0.01)
-    b.box(-0.32, 0.32, 0.9, 0.94, -0.32, 0.32, "laser_glow", bevel=0.01)
-
-
-# --- The Prism Laser ------------------------------------------------------------------
-# The weapon itself draws through the viewmodel shader, which reads standard
-# materials (rust/game/src/viewmodel.rs), so tools/build_models.py exports it
-# with plain glTF materials: STANDARD_LOOKS, not world looks.
-STANDARD = {"laser_gun", "sentry_eye"}
+# --- Standard materials ---------------------------------------------------------------
+# Models whose materials code drives at run time export plain glTF materials
+# (tools/build_models.py): STANDARD_LOOKS, not world looks.
+STANDARD = {"sentry_eye"}
 STANDARD_LOOKS = {
-    "laser_shell": {"color": (0.13, 0.13, 0.16), "rough": 0.3, "metal": 0.85},
-    "laser_trim": {"color": (0.82, 0.83, 0.88), "rough": 0.2, "metal": 0.9},
-    "laser_glow": {"color": (1.0, 0.3, 0.85), "emission": (1.0, 0.18, 0.82), "energy": 7.0},
-    "laser_core": {"color": (1.0, 0.85, 0.97), "emission": (1.0, 0.7, 0.95), "energy": 10.0},
-    "laser_dark": {"color": (0.03, 0.03, 0.035), "rough": 0.6, "metal": 0.3},
     # The sentry's eye: rust/game/src/sentry.rs raises its emission as it
     # acquires a target.
     "sentry_eye": {"color": (0.2, 0.02, 0.02), "rough": 0.2, "emission": (1.0, 0.12, 0.05), "energy": 0.4},
@@ -361,55 +290,6 @@ def sentry_eye(b: Model):
     b.smooth_hull([(math.cos(a) * 0.014, math.sin(a) * 0.014, 0.0) for a in (k * PI / 4 for k in range(8))]
                   + [(math.cos(a) * 0.009, math.sin(a) * 0.009, -0.006) for a in (k * PI / 4 for k in range(8))]
                   + [(0.0, 0.0, -0.008)], "sentry_eye", levels=1)
-
-
-@model
-def laser_gun(b: Model):
-    """The Prism Laser in the viewmodel's space: it aims down -z, the sight
-    dot at (0, 0, -0.2) on the line of sight, the emitter tip at z = -0.395."""
-    from slamcity_models import loft  # noqa: PLC0415
-
-    def section(z, w, h, yc):
-        # A rounded rectangle, eight points, for the subdivided cage.
-        hw, hh = w / 2, h / 2
-        return [(hw, yc + hh * 0.6, z), (hw * 0.6, yc + hh, z), (-hw * 0.6, yc + hh, z), (-hw, yc + hh * 0.6, z),
-                (-hw, yc - hh * 0.6, z), (-hw * 0.6, yc - hh, z), (hw * 0.6, yc - hh, z), (hw, yc - hh * 0.6, z)]
-
-    # The receiver: a smooth, slightly wedged body.
-    v, f = loft([section(0.1, 0.044, 0.06, -0.068), section(0.08, 0.052, 0.07, -0.065),
-                 section(-0.1, 0.052, 0.07, -0.065), section(-0.22, 0.046, 0.058, -0.064),
-                 section(-0.24, 0.036, 0.046, -0.063)])
-    b.smooth(v, f, "laser_shell", levels=2)
-    # The top fin carrying the sight, and the sight post with its dot.
-    b.hull([(x, y, z) for x in (-0.006, 0.006) for y, z in
-            ((-0.032, 0.03), (-0.012, 0.0), (-0.009, -0.19), (-0.032, -0.21))], "laser_trim")
-    b.box(-0.003, 0.003, -0.012, -0.004, -0.204, -0.196, "laser_trim")
-    b.smooth_hull([(math.cos(a) * 0.0028, math.sin(a) * 0.0028, -0.2) for a in (k * PI / 3 for k in range(6))]
-                  + [(0.0, 0.0, -0.2028), (0.0, 0.0, -0.1972)], "laser_core", levels=1)
-    # Glowing strips down both flanks, and dark vents behind them.
-    for side in (-1, 1):
-        b.box(side * 0.0255 - 0.002, side * 0.0255 + 0.002, -0.064, -0.052, -0.18, 0.04, "laser_glow")
-        for k in range(4):
-            z = 0.06 + k * 0.012
-            b.box(side * 0.026 - 0.002, side * 0.026 + 0.002, -0.08, -0.06, z - 0.003, z + 0.003, "laser_dark")
-    # The emitter: a tapered barrel, three glowing coils, and the hot tip.
-    barrel = [(math.cos(a) * r, -0.062 + math.sin(a) * r, z) for a in (k * PI / 6 for k in range(12))
-              for z, r in ((-0.23, 0.022), (-0.39, 0.016))]
-    b.hull(barrel, "laser_shell")
-    for z, r in ((-0.26, 0.025), (-0.31, 0.0213), (-0.36, 0.0175)):
-        b.tube([(math.cos(a) * r, -0.062 + math.sin(a) * r, z) for a in (k * 2 * PI / 20 for k in range(21))],
-               0.005 * r / 0.025, "laser_glow", sides=6, detail=False)
-    b.smooth_hull([(math.cos(a) * 0.013, -0.062 + math.sin(a) * 0.013, -0.395) for a in (k * PI / 3 for k in range(6))]
-                  + [(0.0, -0.062, -0.408), (0.0, -0.062, -0.385)], "laser_core", levels=2)
-    # The grip, raked back 15 degrees, the trigger and its guard, the foregrip.
-    rake = math.radians(15)
-    grip = [(x, y, z) for x in (-0.017, 0.017) for y in (-0.05, 0.05) for z in (-0.021, 0.021)]
-    grip = [(x, y * math.cos(rake) - z * math.sin(rake), y * math.sin(rake) + z * math.cos(rake)) for x, y, z in grip]
-    b.smooth_hull([(x, y - 0.13, z + 0.05) for x, y, z in grip], "laser_shell", levels=1)
-    b.box(-0.003, 0.003, -0.115, -0.098, -0.002, 0.008, "laser_trim", bevel=0.002)
-    b.tube([(0.0, -0.1, 0.03), (0.0, -0.125, 0.025), (0.0, -0.125, -0.02), (0.0, -0.1, -0.025)], 0.003,
-           "laser_shell", sides=5, detail=False)
-    b.box(-0.015, 0.015, -0.14, -0.09, -0.175, -0.125, "laser_trim", bevel=0.006)
 
 
 # --- Maps ----------------------------------------------------------------------------

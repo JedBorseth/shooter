@@ -1,6 +1,6 @@
 extends SceneTree
 ## Captures scorestreaks on screen: a server runs in this process on
-## Slamcity with bots, and we join it, earn every streak through the
+## Breakwater with bots, and we join it, earn every streak through the
 ## server's debug hooks, and capture the streak column with a held UAV, a
 ## UAV's sweep on the minimap, an enemy Counter-UAV's static, the Airstrike's
 ## target picker with its marks, a Care Package on its way down and
@@ -28,8 +28,8 @@ func _run() -> void:
 		return
 	DirAccess.make_dir_recursive_absolute(_out)
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS
@@ -39,7 +39,7 @@ func _run() -> void:
 	# The server's own copy of the map stays out of sight.
 	_server.visible = false
 	var net := root.get_node("Net")
-	net.join("127.0.0.1:%d" % _port, {"map": "slamcity", "name": "Local"})
+	net.join("127.0.0.1:%d" % _port, {"map": "breakwater", "name": "Local"})
 	var client: NetClient = null
 	for i in 1800:
 		client = net.client()

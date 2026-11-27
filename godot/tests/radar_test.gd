@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of the minimap's red dots (`shooter_sim::radar`): runs a
-## Team Deathmatch server in this process on Slamcity with four passive bots.
+## Team Deathmatch server in this process on Breakwater with four passive bots.
 ## A bot that fires shows on both enemies' radars and on no teammate's, the
 ## dot stays where the shot was fired, and it is gone a few seconds after
 ## the shooting stops, or at once when the shooter dies. A suppressed weapon
@@ -22,8 +22,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

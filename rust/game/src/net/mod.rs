@@ -9,7 +9,6 @@ mod client;
 pub(crate) mod killcam;
 mod match_log;
 mod match_share;
-mod props;
 mod query;
 mod remote;
 mod server;

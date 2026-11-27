@@ -3,7 +3,7 @@ extends SceneTree
 ## surfaces (see tools/lightmap_check.gd).
 ## tools/bake_lightmaps.sh runs it after every bake:
 ##   godot --headless --path godot --script res://tools/check_lightmap.gd -- \
-##     res://scenes/slamcity.tscn ...
+##     res://scenes/breakwater.tscn ...
 
 
 func _initialize() -> void:

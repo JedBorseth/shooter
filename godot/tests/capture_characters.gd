@@ -64,7 +64,7 @@ func _open(path: String) -> Node:
 		sentry.set("enabled", false)
 	root.add_child(scene)
 	current_scene = scene
-	# Slamcity reloads itself when the player falls out of the map.
+	# Keep the map's own script still while the scene is staged.
 	scene.set_physics_process(false)
 	var player := scene.get_node_or_null("Player") as FpsPlayer
 	if player != null:
@@ -153,13 +153,12 @@ func _lineups() -> void:
 	var scene := await _open("res://scenes/main.tscn")
 	await _lineup(scene, "sun", Vector3(0, 0, 18), Vector3(0, 0, -1), DISTANCES)
 	await _close(scene)
-	# Shade and indoors: Slamcity in the late afternoon.
-	scene = await _open("res://scenes/slamcity.tscn")
+	# Shade and indoors: Breakwater in the late morning.
+	scene = await _open("res://scenes/breakwater.tscn")
 	await _frames(10)
-	# The north street in the shade of the block, and the platform (the
-	# benchmark's covered viewpoint).
+	# The quay, and the control house's upper floor (a benchmark viewpoint).
 	await _lineup(scene, "shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0), DISTANCES)
-	await _lineup(scene, "indoor", Vector3(-5.6, 6.65, -10.5), Vector3(0, 0, 1), [2.0, 3.5])
+	await _lineup(scene, "indoor", Vector3(-27, 3.85, -6), Vector3(0, 0, -1), [2.0, 3.5])
 	await _close(scene)
 
 

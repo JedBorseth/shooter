@@ -12,7 +12,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of maps: testing, slamcity (default all).
+##   CAPTURE_ONLY    comma list of maps: testing, breakwater (default all).
 ##   WEAPON          weapon key to hold (default m4).
 
 const Benchmark := preload("res://tests/benchmark.gd")
@@ -33,17 +33,16 @@ const MAPS := {
 			["shade_into", Vector3(0, 0.1, 4), PI, -0.05],
 		],
 	],
-	"slamcity":
+	"breakwater":
 	[
-		"res://scenes/slamcity.tscn",
+		"res://scenes/breakwater.tscn",
 		[
-			["street", Vector3(-37, 0.05, 3), -PI / 2, -0.02],
-			["avenue", Vector3(-14, 0.05, 1), -PI / 2 + 0.2, 0.1],
-			["walkway", Vector3(-24, 3.85, -10), -PI / 2, -0.05],
+			["yard", Vector3(-37, 0.05, 3), -PI / 2, -0.02],
+			["road", Vector3(-16, 0.05, 2), -PI / 2 + 0.2, 0.05],
+			["deck", Vector3(-4.89, 3.65, 3.49), -0.95, -0.05],
 			["shade", Vector3(-30, 0.05, 1), -PI / 2, -0.05],
-			["pawn_shop", Vector3(0.0, 0.2, -29.3), -PI / 2, -0.05],
-			["record_store", Vector3(-16.3, 0.2, 5.0), PI, -0.05],
-			["diner", Vector3(-34.5, 0.05, 9.8), -PI / 2, -0.05],
+			["control_upper", Vector3(-27, 3.85, -6), PI, -0.05],
+			["control_ground", Vector3(-27, 0.2, -8), PI, -0.05],
 		],
 	],
 }

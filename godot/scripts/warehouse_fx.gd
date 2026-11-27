@@ -215,9 +215,9 @@ func _steam() -> GPUParticles3D:
 	return p
 
 
-## A column of lit smoke puffs (`shaders/smoke.gdshader`, as Slamcity's
-## plumes): `rise` m/s up, slowing as it climbs, puffs `size_min` growing to
-## `size_max` metres, `opacity` at their densest.
+## A column of lit smoke puffs (`shaders/smoke.gdshader`): `rise` m/s up,
+## slowing as it climbs, puffs `size_min` growing to `size_max` metres,
+## `opacity` at their densest.
 func _smoke_column(
 	amount: int,
 	lifetime: float,

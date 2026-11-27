@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of Scavenger's packs: runs a Team Deathmatch server in this
-## process on Slamcity with four passive bots. A killed player drops a pack;
+## process on Breakwater with four passive bots. A killed player drops a pack;
 ## a teammate of theirs with Scavenger walks over it and leaves it, an enemy
 ## without the perk does too, and an enemy with Scavenger takes it and gets
 ## a magazine and a grenade of each kind back.
@@ -19,8 +19,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

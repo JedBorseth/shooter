@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of Search and Destroy's objective bots: a dedicated server in
-## this process on Slamcity with eight bots at normal skill (4v4) plays rounds
+## this process on Breakwater with eight bots at normal skill (4v4) plays rounds
 ## to the match's end, and the bots must play the charge: the carrier takes it
 ## to a site and plants it in some round, and every plant is answered (the
 ## round then ends by a defuse, the charge going off, or the defenders being
@@ -25,8 +25,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.bots = BOTS

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless rocket launcher test on a Team Deathmatch server in this process
-## on Slamcity with two passive bots, one a side: the server flies a rocket
+## on Breakwater with two passive bots, one a side: the server flies a rocket
 ## the RL-4 fires, it goes off on the enemy it meets (players are not in the
 ## map's collision, so the server checks their bodies itself) and kills them
 ## through Flak Jacket as a direct hit, and the kill is the launcher's
@@ -22,8 +22,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS

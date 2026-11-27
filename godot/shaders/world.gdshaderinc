@@ -88,10 +88,10 @@ uniform float lit_rooms = 0.2;
 uniform float window_min_y = 2.0;
 #endif
 
-// Slamcity's shared materials (tools/build_slamcity_city.py): many looks share
-// one material and carry their tint in the vertex colour and their roughness
-// scale (halved) in its alpha; plain colours carry their roughness itself
-// (`vertex_roughness`).
+// The generated maps' shared materials (tools/build_slamcity_city.py): many
+// looks share one material and carry their tint in the vertex colour and
+// their roughness scale (halved) in its alpha; plain colours carry their
+// roughness itself (`vertex_roughness`).
 uniform bool use_vertex_color = false;
 uniform bool vertex_roughness = false;
 // Stripes across the texture's u axis (awnings), `stripe_width` metres wide.

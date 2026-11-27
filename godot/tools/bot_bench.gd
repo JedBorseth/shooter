@@ -11,7 +11,7 @@ extends SceneTree
 ##
 ## Run it at a fixed frame rate so it plays faster than real time:
 ##   godot --headless --fixed-fps 120 --path godot --script res://tools/bot_bench.gd -- \
-##     --modes tdm,dom,hardpoint,ctf,snd --maps slamcity,warehouse --skill normal \
+##     --modes tdm,dom,hardpoint,ctf,snd --maps breakwater,warehouse --skill normal \
 ##     --bots 12 --matches 2 --minutes 5 --out ../bench.json
 ## Each match runs to its end or for --minutes of play, whichever comes first.
 ## --seed changes the bots' random choices; each match adds its index to it.
@@ -19,14 +19,14 @@ extends SceneTree
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const MAPS := {
-	"slamcity": ["res://scenes/slamcity.tscn", "Slamcity"],
+	"breakwater": ["res://scenes/breakwater.tscn", "Breakwater"],
 	"warehouse": ["res://scenes/warehouse.tscn", "Warehouse"],
 	"arena": ["res://scenes/main.tscn", "Arena"],
 }
 
 var _options := {
 	"modes": "tdm,dom,hardpoint,ctf,snd",
-	"maps": "slamcity",
+	"maps": "breakwater",
 	"skill": "normal",
 	"bots": "12",
 	"matches": "1",

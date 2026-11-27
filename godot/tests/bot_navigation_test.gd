@@ -1,21 +1,22 @@
 extends SceneTree
-## Headless bot navigation test: bakes the bots' navigation mesh on Slamcity
-## the way the dedicated server does, and checks that rooms behind its
-## 1.4 m doorways join the rest of the mesh, on both halves of the mirrored
-## map. With 0.25 m voxels and a 0.4 m agent the bake shut one tenement's
+## Headless bot navigation test: bakes the bots' navigation mesh on Breakwater
+## the way the dedicated server does, and checks that rooms behind its narrow
+## doorways join the rest of the mesh, on both halves of the half-turn map.
+## With 0.25 m voxels and a 0.4 m agent the bake once shut one mirrored room's
 ## inner door and not its twin's, so bots that wandered into that room never
 ## found a way out, and one team lost every objective mode.
 ## godot --headless --path godot --script res://tests/bot_navigation_test.gd
 
 const SERVER_SCENE := "res://scenes/server.tscn"
-const SLAMCITY := "res://scenes/slamcity.tscn"
-## Points inside rooms that open only through 1.4 m doors, each with its
-## mirror twin ((x, z) -> (-x, -z)), and a point in the middle of the map.
+const BREAKWATER := "res://scenes/breakwater.tscn"
+## Points inside the control house's two ground-floor rooms, which open only
+## through 1.6 m doors, each with its twin ((x, z) -> (-x, -z)), and a point
+## in the middle of the map.
 const ROOMS := [
-	Vector3(-23.0, 0.2, -15.0),
-	Vector3(23.0, 0.2, 15.0),
-	Vector3(-25.0, 0.2, -18.0),
-	Vector3(25.0, 0.2, 18.0),
+	Vector3(-27.0, 0.2, -20.5),
+	Vector3(27.0, 0.2, 20.5),
+	Vector3(-27.0, 0.2, -8.0),
+	Vector3(27.0, 0.2, 8.0),
 ]
 const MIDDLE := Vector3(0.0, 0.3, 0.0)
 
@@ -29,7 +30,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
-	server.map_scene = load(SLAMCITY) as PackedScene
+	server.map_scene = load(BREAKWATER) as PackedScene
 	server.port = _port
 	server.query_port = -1
 	server.bots = 1

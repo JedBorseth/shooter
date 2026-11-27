@@ -345,9 +345,6 @@ pub struct FpsPlayer {
     /// Bullet tracer, spawned for every Nth round (`tracer_every` in the weapon file).
     #[export]
     tracer_scene: OnEditor<Gd<PackedScene>>,
-    /// Solid beam drawn on every shot of an energy weapon (`beam` in the weapon file).
-    #[export]
-    beam_scene: Option<Gd<PackedScene>>,
 
     #[init(node = "Camera")]
     camera: OnReady<Gd<Camera3D>>,
@@ -1322,7 +1319,7 @@ impl FpsPlayer {
     }
 
     /// Moves the player instantly and points them along `yaw`, keeping weapons,
-    /// health, and score (map secrets, tests). Offline only: online, the server
+    /// health, and score (tests). Offline only: online, the server
     /// owns the player's position.
     #[func]
     fn teleport(&mut self, position: Vector3, yaw: f32) {
@@ -1535,7 +1532,7 @@ impl FpsPlayer {
     /// flashes, and sounds.
     pub(crate) fn killcam_fired(&mut self, weapon: WeaponId) {
         let def = weapon.def();
-        let eject = def.cycle_time <= 0.0 && !def.beam && !def.rocket;
+        let eject = def.cycle_time <= 0.0 && !def.rocket;
         self.viewmodel
             .bind_mut()
             .on_fired(weapon, eject, def.magazine.max(1));
@@ -2186,7 +2183,7 @@ impl FpsPlayer {
                 let ads = self.state.combat.ads;
                 let rounds_left = self.state.combat.weapon().magazine;
                 let mut rig = self.viewmodel.bind_mut();
-                let eject = def.cycle_time <= 0.0 && !def.beam && !def.rocket;
+                let eject = def.cycle_time <= 0.0 && !def.rocket;
                 // The last rounds ring hollow in the gunshot itself (`hollow`).
                 let punch = rig.on_fired(weapon, eject, rounds_left);
                 drop(rig);
@@ -2676,11 +2673,7 @@ impl FpsPlayer {
         }
 
         let Some(end) = first_end else { return };
-        if def.beam {
-            if let Some(scene) = self.beam_scene.clone() {
-                self.spawn_streak(&scene, end);
-            }
-        } else if def.tracer_every > 0 && shot.is_multiple_of(u32::from(def.tracer_every)) {
+        if def.tracer_every > 0 && shot.is_multiple_of(u32::from(def.tracer_every)) {
             // From the effects pool; the scene is the fallback without one.
             let start = self.streak_start();
             match self
@@ -2696,7 +2689,7 @@ impl FpsPlayer {
         }
     }
 
-    /// Tracers and beams start near the muzzle: the viewmodel is drawn with its
+    /// Tracers start near the muzzle: the viewmodel is drawn with its
     /// own FOV, so this is a camera-relative approximation that reads right on
     /// screen.
     fn streak_start(&self) -> Vector3 {

@@ -98,12 +98,7 @@ pub fn by_id(id: &str) -> Option<&'static Challenge> {
 
 /// The plain weapons that have a camo ladder, in Create-a-Class order.
 pub fn ladder_weapons() -> Vec<WeaponId> {
-    let mut weapons: Vec<WeaponId> = WeaponId::all()
-        .filter(|w| {
-            let def = w.def();
-            def.plain() && def.class != WeaponClass::Special
-        })
-        .collect();
+    let mut weapons: Vec<WeaponId> = WeaponId::all().filter(|w| w.def().plain()).collect();
     weapons.sort_by_key(|w| (w.def().class.order(), w.def().unlock_level, w.0));
     weapons
 }
@@ -410,7 +405,6 @@ pub fn class_key(class: WeaponClass) -> &'static str {
         WeaponClass::Sniper => "sniper",
         WeaponClass::Pistol => "pistol",
         WeaponClass::Launcher => "launcher",
-        WeaponClass::Special => "special",
     }
 }
 

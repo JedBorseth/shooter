@@ -32,9 +32,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var material := load("res://materials/muzzle_flash.tres") as ShaderMaterial
-	_check(material.get_shader_parameter("use_flipbook") == true, "firearms draw the flash atlas")
 	var texture := material.get_shader_parameter("flipbook") as Texture2D
-	_check(texture != null and texture.resource_path == ATLAS, "from the rendered atlas")
+	_check(texture != null and texture.resource_path == ATLAS, "firearms draw the rendered atlas")
 	var image := (load(ATLAS) as Texture2D).get_image()
 	if image.is_compressed():
 		image.decompress()

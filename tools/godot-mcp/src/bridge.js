@@ -1,6 +1,6 @@
 import * as net from 'node:net';
 import * as crypto from 'node:crypto';
-// Opening a large map blocks the editor for well over 15 s (Slamcity takes
+// Opening a large map blocks the editor for well over 15 s (a big one takes
 // about 20), so requests wait up to 3 minutes; GODOT_MCP_TIMEOUT_MS overrides.
 const REQUEST_TIMEOUT_MS = Number(process.env.GODOT_MCP_TIMEOUT_MS || 180000);
 export class GodotBridge {

@@ -1579,47 +1579,6 @@ def shared_foley() -> dict[str, list[np.ndarray]]:
     return sounds
 
 
-def laser_foley() -> dict[str, list[np.ndarray]]:
-    """The prism laser's power cell: an electronic clunk and a whine."""
-
-    def sweep(r, seconds, f0, f1):
-        n = int(seconds * FOLEY_RATE)
-        t = np.linspace(0, 1, n)
-        f = f0 * (f1 / f0) ** t
-        x = np.sin(2 * np.pi * np.cumsum(f) / FOLEY_RATE) + 0.3 * np.sin(
-            2 * np.pi * np.cumsum(f * 2.01) / FOLEY_RATE
-        )
-        return x * np.sin(np.pi * t) ** 0.5
-
-    def make(kind, r):
-        if kind == "mag_out":
-            return mixed(
-                (tick(r, 4_000, 1_800, 0.02), 0, 0),
-                (sweep(r, 0.22, 1_800, 500), 0.02, -8),
-            )
-        if kind == "mag_in":
-            return mixed(
-                (sweep(r, 0.18, 500, 1_900), 0, -8),
-                (tick(r, 4_000, 2_400, 0.025), 0.17, 0),
-                (thump(r, 0.08, 160, 0.02), 0.17, -6),
-            )
-        if kind == "bolt_release":
-            return mixed(
-                (sweep(r, 0.5, 300, 2_600), 0, -6),
-                (tick(r, 3_000, 3_200, 0.02), 0.48, -4),
-            )
-        return tick(r, 4_000, 3_000, 0.008)
-
-    out = {}
-    for kind in ("mag_out", "mag_in", "bolt_release", "dry"):
-        out[kind] = []
-        for i in range(3):
-            r = np.random.default_rng(8_100 + i + 10 * len(kind))
-            x = make(kind, r)
-            out[kind].append(stereo(x / (np.abs(x).max() + 1e-9) * 0.6, r, 0.1))
-    return out
-
-
 def swoosh(rng: np.random.Generator, seconds: float) -> np.ndarray:
     """A blade cutting the air: noise through a resonant band that sweeps up
     as the swing speeds through its middle and falls away, with a thin
@@ -1707,7 +1666,6 @@ def build_shared_foley() -> None:
         print(f"{folder.relative_to(ROOT)}: {', '.join(sorted(sounds))}")
 
     put(FOLEY_DIR, shared_foley() | knife_foley())
-    put(WEAPONS / "laser" / "foley", laser_foley())
 
 
 def main() -> None:

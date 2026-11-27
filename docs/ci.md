@@ -9,7 +9,7 @@ fast when several runs share the free runners.
 
 | Job | Runs on | What it does |
 | --- | --- | --- |
-| Linux (lint, tests, library) | Ubuntu 24.04 | Builds the Linux game library and launcher (`.github/scripts/build-libs.sh`), and fails if either needs a glibc newer than 2.39. Then gdlint and gdformat; the Python tests in `tools/` (the Nuketown importer, textures, the crash inbox, the Slamcity and Breakwater layouts, the prop and decal catalogs, the server export filter, the Blender models); `cargo fmt`, clippy with `-D warnings`, and `cargo test` |
+| Linux (lint, tests, library) | Ubuntu 24.04 | Builds the Linux game library and launcher (`.github/scripts/build-libs.sh`), and fails if either needs a glibc newer than 2.39. Then gdlint and gdformat; the Python tests in `tools/` (textures, the crash inbox, the Breakwater layout, the prop and decal catalogs, the server export filter, the Blender models); `cargo fmt`, clippy with `-D warnings`, and `cargo test` |
 | Windows (tests, library), macOS (tests, library) | Windows, macOS | The game library and launcher for that platform (universal on macOS, both architectures in one `cargo` run), then `cargo test`, so the simulation behaves the same on every platform |
 | Godot tests (headless) | Ubuntu | Builds the extension, runs every `godot/tests/*_test.gd`, then the benchmark script without a GPU |
 | Export builds | Ubuntu | Linux, Windows, macOS, and dedicated server zips plus every platform's launcher and `latest.json`, uploaded as one artifact; builds the server Docker image and checks it starts healthy; from `main`, publishes the `nightly` release and the image ([server.md](server.md)) |

@@ -8,8 +8,6 @@ extends SceneTree
 
 const MAPS := {
 	"Testing Area": "res://scenes/main.tscn",
-	"Slamcity": "res://scenes/slamcity.tscn",
-	"Nuketown": "res://scenes/nuketown.tscn",
 	"Warehouse": "res://scenes/warehouse.tscn",
 	"Breakwater": "res://scenes/breakwater.tscn",
 }

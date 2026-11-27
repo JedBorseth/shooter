@@ -219,8 +219,8 @@ steps stand out. Dead Silence and Awareness scale level and range
 Each step plays the set for the surface under the feet (`surfaces.rs`):
 concrete, wood, metal, dirt, grass, gravel, tile, and carpet, glass borrowing
 tile. A collider's `surface` metadata says what it is; untagged geometry is
-judged from the hit triangle's material name, so imported maps such as Nuketown
-get grass, carpet, and tile without hand tagging. A sprinting soldier's kit
+judged from the hit triangle's material name (`gravel_0`, `planks_1`,
+`tread_plate_0`), so maps and props sound right without hand tagging. A sprinting soldier's kit
 rattles under every stride.
 
 ## Bullets
@@ -311,9 +311,7 @@ to 25 m away.
 | Map | Outdoor bed | Distant battle |
 | --- | --- | --- |
 | Testing Area | `day` | yes |
-| Slamcity | `city` | no |
 | Breakwater | `day` | no |
-| Nuketown | `day` | no |
 | Warehouse | per area (below) | no |
 
 `distant_battle` plays a fight far beyond the map on one voice, 250 to 400 m

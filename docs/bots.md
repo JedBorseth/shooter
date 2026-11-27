@@ -191,10 +191,10 @@ up), fine enough that a 1.4 m doorway stays open whatever the grid's
 alignment; agents are 1.8 m tall, climb 0.4 m, and walk slopes to 40°. The
 bake is limited to a box round every spawn, lane, and objective point, 40 m
 out sideways, 20 m below, and 40 m above (`bake_area`), so far-off scenery
-with collision (Nuketown's mountains) cannot make the grid too large to
+with collision (mountains round a map) cannot make the grid too large to
 bake.
 
-- **Lanes**: maps with a `BotLanes` node (Slamcity, Warehouse, Breakwater)
+- **Lanes**: maps with a `BotLanes` node (Breakwater, Warehouse)
   give lines of points from one side to the other. With no objective, a bot
   follows a lane three times in four, picking the one with the fewest
   teammates on it; otherwise it heads for an enemy spawn (45%) or anywhere
@@ -302,11 +302,11 @@ objective's numbers, and tactics.
 
 ```sh
 godot --headless --fixed-fps 120 --path godot --script res://tools/bot_bench.gd -- \
-  --modes tdm,dom,hardpoint,ctf,snd --maps slamcity,warehouse --skill normal \
+  --modes tdm,dom,hardpoint,ctf,snd --maps breakwater,warehouse --skill normal \
   --bots 12 --matches 2 --minutes 5 --out ../bench.json
 ```
 
-Maps: `slamcity`, `warehouse`, `arena`. Each match runs to its end or for
+Maps: `breakwater`, `warehouse`, `arena`. Each match runs to its end or for
 `--minutes` of play. `--seed` (default 1) changes the bots' random choices,
 and each match adds its index; use the same seed before and after a change
 to compare like for like.

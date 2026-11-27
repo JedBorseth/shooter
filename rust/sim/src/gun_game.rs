@@ -139,7 +139,6 @@ mod tests {
     fn the_ladder_names_real_weapons_and_ends_on_the_pistol() {
         for level in 0..LEVELS {
             let def = weapon(level).def();
-            assert!(!def.beam, "the laser stays secret");
             assert!(def.fitted.is_empty(), "{} is a base weapon", def.key);
         }
         assert_eq!(weapon(LEVELS - 1).def().slot, Slot::Secondary);

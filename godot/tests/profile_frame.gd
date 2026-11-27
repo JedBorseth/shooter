@@ -4,12 +4,12 @@ extends SceneTree
 ## (or swaps it for a cheaper setting) at a time and prints the difference.
 ## Use it to decide where a new effect's cost can be paid back.
 ## Needs a GPU and a display (or Xvfb). From the repo root:
-##   PROFILE_MAP=slamcity godot --path godot --resolution 1920x1080 \
+##   PROFILE_MAP=breakwater godot --path godot --resolution 1920x1080 \
 ##     --audio-driver Dummy --script res://tests/profile_frame.gd
 ##
 ## Environment:
-##   PROFILE_MAP     a map of tests/benchmark.gd (testing, slamcity, breakwater,
-##                   warehouse, ...; default slamcity).
+##   PROFILE_MAP     a map of tests/benchmark.gd (testing, breakwater,
+##                   warehouse, ...; default breakwater).
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
 ##   PROFILE_FRAMES  frames measured per round (default 90).
@@ -43,7 +43,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var map := _env_or("PROFILE_MAP", "slamcity")
+	var map := _env_or("PROFILE_MAP", "breakwater")
 	var preset := _env_or("PROFILE_PRESET", "medium")
 	var frames := OS.get_environment("PROFILE_FRAMES")
 	if frames.is_valid_int():

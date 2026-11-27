@@ -1,7 +1,7 @@
 extends SceneTree
 ## Captures the match HUD under the interface settings: the default palette
 ## and HUD, each colour-blind team palette, and the HUD at its smallest and
-## largest size and at half opacity. Domination on Slamcity with bots, so the
+## largest size and at half opacity. Domination on Breakwater with bots, so the
 ## minimap, score block, flags, and kill feed all show. Starts its own server
 ## process. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
@@ -38,7 +38,7 @@ func _run() -> void:
 			"--query-port",
 			"-1",
 			"--map",
-			"slamcity",
+			"breakwater",
 			"--mode",
 			"dom",
 			"--bots",
@@ -48,7 +48,7 @@ func _run() -> void:
 		]
 	)
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
-	net.join("127.0.0.1:%d" % PORT, {"map": "slamcity", "name": "Local server"})
+	net.join("127.0.0.1:%d" % PORT, {"map": "breakwater", "name": "Local server"})
 	var client: NetClient = null
 	for i in 1200:
 		client = net.client()

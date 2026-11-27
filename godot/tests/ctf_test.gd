@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless Capture the Flag test: runs a dedicated server in this process on
-## Slamcity in Capture the Flag mode.
+## Breakwater in Capture the Flag mode.
 ##
 ## First, with two scripted bots (one a team), it moves players by hand to
 ## check the rules on the real server: walking over the enemy's flag takes
@@ -15,8 +15,8 @@ extends SceneTree
 ## longer).
 ## godot --headless --path godot --script res://tests/ctf_test.gd
 
-const FLAG_0 := Vector3(-36.0, 0.05, 1.6)
-const FLAG_1 := Vector3(36.0, 0.05, -1.6)
+const FLAG_0 := Vector3(-35.5, 0.05, 1.6)
+const FLAG_1 := Vector3(35.5, 0.05, -1.6)
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -36,8 +36,8 @@ func _run() -> void:
 
 func _server(bots: int, skill: String) -> NetServer:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.mode = "ctf"

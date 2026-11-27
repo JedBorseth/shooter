@@ -108,14 +108,11 @@ each team's spawn and B in the middle:
 
 | Map | A (team 0's side) | B | C (team 1's side) |
 | --- | --- | --- | --- |
-| Slamcity | Slam Avenue between the west depot and the plaza, among the van, the crate, and the car | Junction Plaza round the kiosk (4.5 m circle) | A's twin on the east avenue |
-| Nuketown | The west house's side yard | The cul-de-sac road beside the bus | The east house's side yard, past the garage |
 | Warehouse | The north production aisle | The east edge of the Mid Stockpile | The dispatch aisle near the dock ramp |
 | Breakwater | The west main road, between the pickup and the analyser shelter | The crossing under the loading rack's deck (3 m circle) | A's twin on the east main road |
 
-Slamcity's are in `DOM_FLAGS` in `tools/slamcity_layout.py` (A and C are
-twins, checked by `test_slamcity_layout.py`). Nuketown's yards are not the
-same size, so its A to B is about 37 m and B to C about 47 m.
+Breakwater's are in `DOM_FLAGS` in `tools/breakwater_layout.py` (A and C are
+twins).
 
 Maps without flags get three between the teams' spawns
 (`domination::fallback_points`): on the line between them (A at 22%, B at

@@ -4,7 +4,7 @@ extends SceneTree
 ## kill feed, the scoreboard, and the results screen. Starts its own server
 ## process. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
-##     --script res://tests/capture_tdm.gd [-- --map slamcity --bots 5 --mode dom --shots 6]
+##     --script res://tests/capture_tdm.gd [-- --map breakwater --bots 5 --mode dom --shots 6]
 
 const PORT := 27997
 

@@ -1,7 +1,0 @@
-[gd_scene format=3]
-
-[ext_resource type="PackedScene" path="res://assets/models/laser_gun/laser_gun.gltf" id="1_gun"]
-
-[node name="LaserModel" type="Node3D"]
-
-[node name="Gun" parent="." instance=ExtResource("1_gun")]

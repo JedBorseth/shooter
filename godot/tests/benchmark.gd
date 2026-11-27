@@ -12,8 +12,7 @@ extends SceneTree
 ## Environment:
 ##   BENCH_OUT      JSON results file (optional; a table always prints).
 ##   BENCH_PRESETS  comma list of low, medium, high (default: all three).
-##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, breakwater,
-##                  warehouse (default: all).
+##   BENCH_MAPS     comma list of testing, breakwater, warehouse (default: all).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
 ##   BENCH_MOTION_BLUR  1 to measure with motion blur on (off by default).
@@ -35,19 +34,6 @@ const MAPS := {
 			[Vector3(0, 0.1, 4), PI, -0.05],
 			[Vector3(-6, 0.1, -4), PI / 2, -0.1],
 			[Vector3(8, 0.1, 10), -0.6, -0.05],
-		],
-	},
-	"slamcity":
-	{
-		"scene": "res://scenes/slamcity.tscn",
-		"views":
-		[
-			[Vector3(-37, 0.05, 3), -PI / 2, -0.02],
-			[Vector3(-14, 0.05, 1), -PI / 2 + 0.2, 0.1],
-			[Vector3(-5.6, 6.65, -10.5), PI, -0.02],
-			[Vector3(-24, 3.85, -10), -PI / 2, -0.05],
-			[Vector3(-39, 0.05, -29.5), -PI / 2, 0.0],
-			[Vector3(-31.5, 0.2, 9.5), -PI / 2 + 0.3, -0.04],
 		],
 	},
 	"breakwater":
@@ -74,18 +60,6 @@ const MAPS := {
 			[Vector3(22.5, 2.85, -9.2), PI - 0.35, -0.14],
 			[Vector3(12.6, 3.05, 15.2), -0.45, -0.14],
 			[Vector3(18.75, 0.05, 3.25), 0.65, 0.05],
-		],
-	},
-	# Close-ups of the expensive cases on Slamcity (smoke filling the screen,
-	# the lit interior of the derailed car), kept apart so the views above
-	# still compare with their baseline.
-	"slamcity_closeups":
-	{
-		"scene": "res://scenes/slamcity.tscn",
-		"views":
-		[
-			[Vector3(6.4, 0.05, -2.8), PI - 0.6, 0.25],
-			[Vector3(2.44, 0.3, -1.75), 2.19, 0.05],
 		],
 	},
 }

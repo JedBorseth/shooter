@@ -6,8 +6,6 @@ A multiplayer first-person shooter in the style of Call of Duty, built on Godot 
 
 The plan and the owner's decisions are in [docs/roadmap.md](docs/roadmap.md). Open tasks are in [TODO.md](TODO.md).
 
-![Slamcity: a street by the diner, the derailed El car under the station, a platform with a stalled train, an alley, the diner's booths, and a market street](docs/media/slamcity-junction.jpg)
-
 ![Breakwater from above, and at eye level: the control building, the truck loading rack, the tank farm, and the walkways](docs/media/breakwater.jpg)
 
 ![Reloads in first person on the Testing Area: CQ-10, BP-9, KR-12, SG-12, and RL-4](docs/media/new-gun-reloads.jpg)
@@ -43,7 +41,7 @@ The launcher updates itself as well (set `SHOOTER_LAUNCHER_NO_SELF_UPDATE` to st
 | `--dir PATH` | Keep builds in another folder (`SHOOTER_DIR`). |
 | `--manifest URL` | Follow builds published elsewhere: a URL or a path to a `latest.json` (`SHOOTER_MANIFEST`). |
 | `--crash-url URL` | Where crash logs go (`SHOOTER_CRASH_URL`); empty turns uploads off. |
-| `-- ARGS` | Pass the rest to the game: `shooter-launcher -- --connect 10.0.0.5 --map slamcity`. |
+| `-- ARGS` | Pass the rest to the game: `shooter-launcher -- --connect 10.0.0.5 --map breakwater`. |
 | `serve [--check-minutes N] -- ARGS` | Run a dedicated server (Linux x86_64) and keep it on the latest build: it downloads each new build while the old one runs and swaps when no human player is connected (every 5 minutes by default). |
 
 A server on a newer build turns older games away, and Join Server says so. Restart the launcher to update.
@@ -85,7 +83,7 @@ Cargo builds the extension for your Mac's architecture. The first build and impo
 | Recipe | What it does |
 | --- | --- |
 | `build`, `import`, `run`, `edit` | Build the Rust code, import assets, play, open the editor. |
-| `server ARGS` | Run a dedicated server: `just server --map slamcity --bots 5 --bot-skill normal`. |
+| `server ARGS` | Run a dedicated server: `just server --map breakwater --bots 5 --bot-skill normal`. |
 | `check-rust`, `check-gd` | Format, lint, and test the Rust code; format-check and lint the GDScript. |
 | `test [NAMES]`, `test-one NAME` | Run every headless Godot test the way CI does, or only the named ones. |
 | `ci` | `check-rust`, `check-gd`, `test`, and the frame-budget gate when there is an NVIDIA GPU. |
@@ -120,13 +118,11 @@ Any mode can run as a custom game, with Black Ops 2's game settings (limits, hea
 
 | Map | `--map` | What it is |
 | --- | --- | --- |
-| Slamcity | `slamcity` | City blocks at dusk round an elevated station, Slam Junction; each half is the other turned round and dressed differently. |
-| Nuketown | `nuketown` | Black Ops 2's Nuketown 2025, converted from the game's own map export ([docs/assets/nuketown.md](docs/assets/nuketown.md)). |
+| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. The default map. |
 | Warehouse | `warehouse` | A corrugated-box plant rebuilt from reference photos: an overgrown field on one side, a truck dock on the other. |
-| Breakwater | `breakwater` | A coastal fuel terminal on a mole between two harbour basins, with a truck loading rack in the middle. |
 | Testing Area | `arena` | The training range: weapon racks, target dummies, steel plates, and a sentry that shoots back. |
 
-Search and Destroy plays on Slamcity and Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
+Search and Destroy plays on Breakwater. Each map's layout, objectives, and build pipeline are in [docs/maps.md](docs/maps.md); how maps are designed is in [docs/map-design.md](docs/map-design.md).
 
 ### Classes, streaks, and progression
 
@@ -144,8 +140,8 @@ Join Server takes a dedicated server's address (HOST or HOST:PORT), asks the ser
 Multiplayer always runs on a dedicated server, even on one machine. Start one headless, then connect with the same map:
 
 ```sh
-godot --headless --path godot -- --server --map slamcity --mode tdm --bots 6 --bot-skill normal
-godot --path godot -- --connect 127.0.0.1 --map slamcity    # HOST or HOST:PORT
+godot --headless --path godot -- --server --map breakwater --mode tdm --bots 6 --bot-skill normal
+godot --path godot -- --connect 127.0.0.1 --map breakwater  # HOST or HOST:PORT
 ```
 
 The server listens on UDP 27015 (`--port N`) and answers queries on the next port, 27016 (`--query-port N`), which Join Server asks for the map and version before joining. Each player who joins takes a bot's place. `--name NAME` sets the name joining players see. To play over the internet, forward both ports to the server or share a VPN. A client can add `--lag MS --jitter MS --loss PERCENT` to simulate a link. Every server and client option, Join Server, and the launcher's `serve` are in [docs/multiplayer.md](docs/multiplayer.md).
@@ -216,7 +212,7 @@ One RON file per weapon in `godot/data/weapons/`; a debug build reloads a file w
 | BP-9 | Pistol | 3-round burst | 1150 | 30 | 35–22 | 13 | One burst kills to about 11 m. |
 | RL-4 | Launcher | Single | 60 | 1 | 200 blast | 19 | A rocket that goes off on what it meets; two spare. |
 
-`laser.ron` is the Nuketown easter egg, not a class weapon. Each class is held to a time-to-kill band by a test; the rules for recoil, spread, reloads, and equipment (frag, flashbang, smoke) are in [docs/weapons.md](docs/weapons.md).
+Each class is held to a time-to-kill band by a test; the rules for recoil, spread, reloads, and equipment (frag, flashbang, smoke) are in [docs/weapons.md](docs/weapons.md).
 
 Attachments (`rust/sim/src/weapon/def.rs`, `Attachment`), fitted in Create-a-Class. A weapon takes only those its file lists, and one optic at most:
 
@@ -292,7 +288,6 @@ Making the game:
 - [performance.md](docs/performance.md): the frame budget, the benchmark, and the baseline.
 - [map-design.md](docs/map-design.md): how maps are laid out, and what we took from Call of Duty's.
 - [maps.md](docs/maps.md): each map's layout and features.
-- [nuketown-lighting.md](docs/nuketown-lighting.md) and [assets/nuketown.md](docs/assets/nuketown.md): how Nuketown was exported, converted, and lit.
 - [editor-mcp.md](docs/editor-mcp.md): driving the Godot editor from a coding agent.
 - [ci.md](docs/ci.md): the CI workflow, its jobs, and how it stays fast.
 - [roadmap.md](docs/roadmap.md): the plan and the owner's decisions.

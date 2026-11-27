@@ -110,7 +110,7 @@ impl ShotRay {
 /// whiz). Pistols, the 9 mm SMGs, and buckshot do not.
 pub fn supersonic(weapon: WeaponId) -> bool {
     let def = weapon.def();
-    !(def.pellets > 1 || matches!(def.model_key(), "m1911" | "bp9" | "pdw9" | "cq10") || def.beam)
+    !(def.pellets > 1 || matches!(def.model_key(), "m1911" | "bp9" | "pdw9" | "cq10"))
 }
 
 /// How strongly a near miss at `distance` metres suppresses (0 to 1):

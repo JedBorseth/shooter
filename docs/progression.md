@@ -58,7 +58,7 @@ A challenge is a target on a stat (`rust/sim/src/challenge.rs`).
 
 ### Weapon challenges: the camo ladder
 
-Every weapon except the laser (the one special weapon) has 14 challenges, each earning one camo, in Black Ops 2's order for its class.
+Every weapon has 14 challenges, each earning one camo, in Black Ops 2's order for its class.
 
 | Class | Camos 1 to 9 | Camo 10 | Camos 11 and 12 | Camo 13 | Camo 14 |
 | --- | --- | --- | --- | --- | --- |

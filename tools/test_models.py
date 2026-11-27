@@ -28,8 +28,7 @@ HASH = GODOT / "assets/models/models.hash"
 PRIMITIVES = ("BoxMesh", "CylinderMesh", "SphereMesh", "CapsuleMesh", "PrismMesh", "TorusMesh", "CSGBox3D",
               "CSGCylinder3D", "CSGSphere3D")
 # Scenes and scripts that build things players look at.
-MODELLED = [*sorted((GODOT / "scenes/props").glob("*.tscn")), GODOT / "scenes/weapons/laser_model.tscn",
-            GODOT / "scripts/secret_laser.gd"]
+MODELLED = sorted((GODOT / "scenes/props").glob("*.tscn"))
 
 
 def sources_hash() -> str:

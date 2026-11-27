@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless Search and Destroy test: runs a dedicated server in this process
-## on Slamcity with six bots at normal skill, plays to two rounds with short
+## on Breakwater with six bots at normal skill, plays to two rounds with short
 ## rounds, and checks the round rules: the freeze holds everyone still, the
 ## dead stay dead for the rest of their round, every round ends and scores a
 ## point, the next round brings everyone back, and the teams swap sides at
@@ -30,8 +30,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	server.map_name = "Breakwater"
 	server.port = _port
 	server.query_port = -1
 	server.bots = BOTS

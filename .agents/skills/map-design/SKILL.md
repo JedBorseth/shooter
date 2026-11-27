@@ -1,15 +1,15 @@
 ---
 name: map-design
-description: Design or redesign a multiplayer map's layout (Slamcity, a new map, a layout review). Study real Call of Duty minimaps, block the plan out with tools/map_blockout, measure it, show it as a minimap beside the references, and get the user's approval before building it.
+description: Design or redesign a multiplayer map's layout (Breakwater, a new map, a layout review). Study real Call of Duty minimaps, block the plan out with tools/map_blockout, measure it, show it as a minimap beside the references, and get the user's approval before building it.
 ---
 
 # Map design
 
 Use this before building a new multiplayer map, rebuilding a map's layout, or
 judging whether a layout is good. The art can be polished later; a bad layout
-cannot. In November 2026 the user rejected Slamcity's long three-strip layout
-and a first redesign drawn the same way, then approved a plan built from real
-Call of Duty maps. Work the same way.
+cannot. In November 2026 the user rejected a long three-strip city layout
+(Slamcity, since cut) and a first redesign drawn the same way, then approved a
+plan built from real Call of Duty maps. Work the same way.
 
 ## 1. Study the references
 
@@ -28,9 +28,10 @@ first, and say what you take from each.
   the principles below in more detail, and past decisions.
 
 Ask the user which reference family the map should feel like (show the sheets),
-unless they already said. Their answer for Slamcity: CoD4 city blocks (Crash,
-Strike, District, Backlot) with BO2 compact loops (Raid, Standoff, Slums), and
-two sides that are different but balanced rather than mirrored.
+unless they already said. Their standing answer for city maps: CoD4 city
+blocks (Crash, Strike, District, Backlot) with BO2 compact loops (Raid,
+Standoff, Slums), and two sides that are different but balanced rather than
+mirrored.
 
 Take structure, never a whole map: no map's layout, name, landmarks, or look
 copied one to one, even renamed.
@@ -57,7 +58,7 @@ copied one to one, even renamed.
 
 Write the plan with `tools/map_blockout/carve.py` (start solid, carve streets,
 rooms, doors; place cover; every piece gets its twin). Copy
-`tools/map_blockout/slamcity_2026_11.py` as a starting point. Then:
+`tools/map_blockout/breakwater_2026_11.py` as a starting point. Then:
 
 ```sh
 uv run --with numpy --with matplotlib tools/map_blockout/blockout.py <plan.py>
@@ -90,7 +91,7 @@ the layout must be settled first. Keep the approved plan in
 
 ## 5. Build it
 
-Build the approved plan in the map's generator (Slamcity:
-`tools/slamcity_layout.py`), keep the plan's numbers, run the map's checks, and
+Build the approved plan in the map's generator (Breakwater:
+`tools/breakwater_layout.py`), keep the plan's numbers, run the map's checks, and
 then polish with the rating loop (a fresh subagent scores each aspect out of 10
 until the agreed target).

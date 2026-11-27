@@ -88,13 +88,11 @@ pub enum WeaponClass {
     Sniper,
     Pistol,
     Launcher,
-    /// Test and debug weapons (the laser): no band.
-    Special,
 }
 
 impl WeaponClass {
     /// Create-a-Class order, primaries then secondaries (Black Ops 2's).
-    pub const ALL: [WeaponClass; 9] = [
+    pub const ALL: [WeaponClass; 8] = [
         WeaponClass::AssaultRifle,
         WeaponClass::Smg,
         WeaponClass::Lmg,
@@ -103,7 +101,6 @@ impl WeaponClass {
         WeaponClass::Sniper,
         WeaponClass::Pistol,
         WeaponClass::Launcher,
-        WeaponClass::Special,
     ];
 
     /// The class's heading in menus.
@@ -117,7 +114,6 @@ impl WeaponClass {
             WeaponClass::Sniper => "Sniper Rifles",
             WeaponClass::Pistol => "Pistols",
             WeaponClass::Launcher => "Launchers",
-            WeaponClass::Special => "Special",
         }
     }
 
@@ -470,10 +466,6 @@ pub struct WeaponDef {
     /// Draw a tracer for every Nth round of the player's own fire. 0 = never.
     #[serde(default)]
     pub tracer_every: u8,
-    /// An energy weapon: every shot draws a solid beam to the hit point instead
-    /// of tracers, and no shell casings come out.
-    #[serde(default)]
-    pub beam: bool,
     /// A launcher: each shot fires a rocket (`equipment::Kind::Rocket`)
     /// that flies and goes off instead of a hitscan round; `damage` and
     /// `range` are unused.
@@ -912,8 +904,8 @@ macro_rules! builtin_files {
 /// The weapon files in `godot/data/weapons`, compiled in.
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
-        "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m40", "m4", "m870",
-        "pdw9", "rl4", "sg12"
+        "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "lsw6", "m1911", "m40", "m4", "m870", "pdw9",
+        "rl4", "sg12"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -963,8 +955,8 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m4", "m40",
-                "m870", "pdw9", "rl4", "sg12"
+                "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "lsw6", "m1911", "m4", "m40", "m870",
+                "pdw9", "rl4", "sg12"
             ]
         );
         let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
@@ -1118,21 +1110,9 @@ mod tests {
         assert_eq!(m4.pellets, 1);
         assert_eq!(m4.cycle_time, 0.0);
         assert!(m4.scope.is_none());
-        assert!(!m4.beam);
         let shotgun = WeaponId::expect("m870").def();
         assert_eq!(shotgun.pellets, 10);
         assert!(matches!(shotgun.reload, Reload::PerRound { .. }));
-    }
-
-    #[test]
-    fn laser_kills_in_one_hit_anywhere() {
-        let laser = WeaponId::expect("laser").def();
-        assert!(laser.beam);
-        assert_eq!(laser.fire_mode, FireMode::Auto);
-        assert!(laser.damage_at(0.0) >= 1000.0);
-        assert!(laser.damage_at(laser.range) >= 1000.0);
-        assert_eq!(laser.spread.hip, 0.0);
-        assert!(laser.recoil.pattern.iter().all(|kick| *kick == Vec2::ZERO));
     }
 
     #[test]

@@ -3,8 +3,8 @@ extends SceneTree
 ## the sun, surfaces at grazing angles, soldiers standing on the ground, a short
 ## run of consecutive frames while the camera turns slowly (for shimmer and
 ## ghosting), the screen feedback states (aiming, scoped, suppressed, hurt,
-## dead), and eye adaptation: frames after stepping from a bright street into
-## an alley, and the picture's brightness over time while firing (to show it
+## dead), and eye adaptation: frames after stepping from a bright road into
+## a building, and the picture's brightness over time while firing (to show it
 ## does not pump), written to `adaptation_*.csv`. Benchmark viewpoints are
 ## covered by `BENCH_CAPTURE` in benchmark.gd.
 ## Needs a GPU and a display (or Xvfb):
@@ -14,7 +14,7 @@ extends SceneTree
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of groups: testing, slamcity, motion,
+##   CAPTURE_ONLY    comma list of groups: testing, breakwater, motion,
 ##                   feedback, adaptation (default: all).
 
 const Benchmark := preload("res://tests/benchmark.gd")
@@ -63,29 +63,30 @@ func _run() -> void:
 		if _wants("adaptation"):
 			await _firing("adaptation_firing", Vector3(0, 0.1, 4), 0.0, 0.1)
 		_unload()
-	if _wants("slamcity"):
-		await _load("res://scenes/slamcity.tscn", Vector3(-30, 0.05, 1))
-		# The first of these spots with the low sun in clear view down a street.
+	if _wants("breakwater"):
+		await _load("res://scenes/breakwater.tscn", Vector3(-30, 0.05, 1))
+		# The first of these spots with the sun in clear view (benchmark views).
 		await _sun_view(
-			"slamcity_sun",
+			"breakwater_sun",
 			Vector3(-30, 0.05, 1),
 			[
 				Vector3(-37, 0.05, 3),
-				Vector3(-14, 0.05, 1),
-				Vector3(-39, 0.05, -29.5),
-				Vector3(-31.5, 0.2, 9.5),
-				Vector3(-5.6, 6.65, -10.5),
-				Vector3(-24, 3.85, -10),
+				Vector3(-16, 0.05, 2),
+				Vector3(-39, 0.05, -31),
+				Vector3(-36, 0.05, 22.5),
+				Vector3(-4.89, 3.65, 3.49),
+				Vector3(-27, 3.85, -6),
 			]
 		)
-		await _view("slamcity_grazing", Vector3(-40, 0.05, -28.0), -PI / 2 + 0.25, -0.1)
+		await _view("breakwater_grazing", Vector3(-40, 0.05, -28.0), -PI / 2 + 0.25, -0.1)
 		if _wants("motion"):
-			await _motion("slamcity_motion", Vector3(-30, 0.05, 1), -PI / 2 + 0.3, 0.0)
+			await _motion("breakwater_motion", Vector3(-30, 0.05, 1), -PI / 2 + 0.3, 0.0)
 		if _wants("adaptation"):
+			# From the main road up into the control house's upper floor.
 			await _adaptation(
-				"adaptation_alley",
-				[Vector3(-14, 0.05, 1), -PI / 2 + 0.2, 0.1],
-				[Vector3(-24, 3.85, -10), -PI / 2, -0.05]
+				"adaptation_indoors",
+				[Vector3(-16, 0.05, 2), -PI / 2 + 0.2, 0.05],
+				[Vector3(-27, 3.85, -6), PI, -0.05]
 			)
 		_unload()
 	_settings.reset_to_defaults()

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless test of Search and Destroy's charge: runs a dedicated server in
-## this process on Slamcity with four passive bots, and drives the charge
+## this process on Breakwater with four passive bots, and drives the charge
 ## through the test hooks (teleports and a held interact button):
 ##
 ## - round 1: an attacker carries the charge; killed, they drop it; a defender
@@ -26,8 +26,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_server = (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	_server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
-	_server.map_name = "Slamcity"
+	_server.map_scene = load("res://scenes/breakwater.tscn") as PackedScene
+	_server.map_name = "Breakwater"
 	_server.port = _port
 	_server.query_port = -1
 	_server.bots = BOTS
@@ -42,7 +42,7 @@ func _run() -> void:
 		_server.debug_bot_passive(200 + b, true)
 
 	var sites := _server.charge_site_floors()
-	_check(sites.size() == 2, "Slamcity has two charge sites, got %d" % sites.size())
+	_check(sites.size() == 2, "Breakwater has two charge sites, got %d" % sites.size())
 	if sites.size() < 2:
 		return _finish()
 

@@ -23,8 +23,8 @@ each query port stays free.
 From a source checkout, after `cargo build` in `rust/`:
 
 ```sh
-godot --headless --path godot -- --server --name "Friday 1v1" --map slamcity --bots 5 --bot-skill normal
-just server --map slamcity --bots 5 --bot-skill normal     # the same, building first
+godot --headless --path godot -- --server --name "Friday 1v1" --map breakwater --bots 5 --bot-skill normal
+just server --map breakwater --bots 5 --bot-skill normal     # the same, building first
 ```
 
 The dedicated server zip CI exports (`shooter-<build>-server-linux-x86_64.zip`,
@@ -48,7 +48,7 @@ Options go after `--`. A repeated option takes its last value.
 | `--port N` | 27015 | UDP game port |
 | `--query-port N` | game port + 1 | Port that answers queries; `-1` turns queries off |
 | `--name NAME` | "Shooter server" | The name joining games show (32 bytes at most) |
-| `--map MAP` | `arena` | `arena`, `nuketown`, `slamcity`, `warehouse`, or `breakwater` |
+| `--map MAP` | `breakwater` | `breakwater`, `warehouse`, or `arena` |
 | `--mode MODE` | `tdm` | See the table below; an unknown mode runs Team Deathmatch with a warning |
 | `--score-limit N` | the mode's | Points to win; 0 keeps the mode's own limit |
 | `--time-limit MINUTES` | 10 | Length of a match (0.1 at least) |
@@ -67,7 +67,7 @@ private local match uses it to pause its server with the pause menu.
 
 The modes, their `--mode` keys (`hardpoint` also takes `hp`), default limits,
 and rules are in [modes.md](modes.md). Search and Destroy needs a map with
-charge sites (`slamcity` or `breakwater`).
+charge sites (`breakwater`).
 
 Players warm up in a lobby until everyone has pressed Ready in the class
 menu (L), then a countdown starts the match; after the results, the next
@@ -103,20 +103,20 @@ menu returns there too.
 ### From the command line
 
 ```sh
-godot --path godot -- --connect 127.0.0.1 --map slamcity      # HOST or HOST:PORT
-shooter-launcher -- --connect 10.0.0.5 --map slamcity
+godot --path godot -- --connect 127.0.0.1 --map breakwater    # HOST or HOST:PORT
+shooter-launcher -- --connect 10.0.0.5 --map breakwater
 ```
 
 The client loads the map before it connects, and the server does not send
 it, so pass the server's `--map` (the map id or the name its query answers with);
-without it the client loads the Arena. `--spectate` joins as a spectator
+without it the client loads Breakwater. `--spectate` joins as a spectator
 ([custom-games.md](custom-games.md)).
 
 To feel the netcode at a realistic ping against a local server, add a
 simulated link to the client; each value applies in each direction:
 
 ```sh
-godot --path godot -- --connect 127.0.0.1 --map slamcity --lag 50 --jitter 10 --loss 2
+godot --path godot -- --connect 127.0.0.1 --map breakwater --lag 50 --jitter 10 --loss 2
 ```
 
 F3 shows the netcode overlay: ping, loss, pending inputs, prediction
@@ -175,7 +175,7 @@ output for crash reports ([crash-reports.md](crash-reports.md)).
 | `--dir PATH` | Keep builds somewhere else (`SHOOTER_DIR`) |
 | `--manifest URL` | Follow builds described somewhere else (`SHOOTER_MANIFEST`): a URL or a path to a `latest.json` |
 | `--crash-url URL` | Where crash reports go (`SHOOTER_CRASH_URL`); empty turns uploads off |
-| `-- ARGS` | Pass the rest to the game, such as `-- --connect 10.0.0.5 --map slamcity` |
+| `-- ARGS` | Pass the rest to the game, such as `-- --connect 10.0.0.5 --map breakwater` |
 
 ### A server that stays up to date
 
@@ -183,7 +183,7 @@ output for crash reports ([crash-reports.md](crash-reports.md)).
 latest nightly build and keeps it there:
 
 ```sh
-shooter-launcher serve -- --name "Friday 1v1" --map nuketown --bots 3
+shooter-launcher serve -- --name "Friday 1v1" --map breakwater --bots 3
 ```
 
 - Every 5 minutes (`--check-minutes N`) it checks for a new build and

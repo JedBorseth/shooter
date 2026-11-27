@@ -5,7 +5,7 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME]
-##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|breakwater]
+##            [--query-port N] [--map breakwater|warehouse|arena]
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
@@ -49,16 +49,12 @@ const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
 const MAP_SCENES := {
 	"arena": ARENA_SCENE,
-	"nuketown": "res://scenes/nuketown.tscn",
-	"slamcity": "res://scenes/slamcity.tscn",
 	"warehouse": "res://scenes/warehouse.tscn",
 	"breakwater": "res://scenes/breakwater.tscn",
 }
 ## The name queries answer with for each map; a joining game loads it.
 const MAP_NAMES := {
 	"arena": "Arena",
-	"nuketown": "Nuketown",
-	"slamcity": "Slamcity",
 	"warehouse": "Warehouse",
 	"breakwater": "Breakwater",
 }
@@ -88,7 +84,7 @@ const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
 const LOCAL_PORT := 27035
-const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
+const OFFLINE_ONLY_NODES := ["Targets", "Sentry"]
 
 ## Set by `leave`: the title screen opens the Join screen and shows
 ## `join_message` (why we left), then clears both.
@@ -138,17 +134,18 @@ func client() -> NetClient:
 	return _client if is_online() else null
 
 
-## Joins the server at `target` (HOST or HOST:PORT). Loads the arena first
-## unless it is already the current scene; pass `arena` if it is preloaded.
-## `options` may set `name` (shown while connecting) and the link simulation
-## (`lag`, `jitter`, `loss`).
+## Joins the server at `target` (HOST or HOST:PORT). Loads the map named by
+## `options.map` (Breakwater by default) first unless a map is already the
+## current scene; pass `arena` if it is preloaded. `options` may also set
+## `name` (shown while connecting) and the link simulation (`lag`, `jitter`,
+## `loss`).
 func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -> void:
-	print("net join: target=", target, " map=", options.get("map", "Arena"))
+	print("net join: target=", target, " map=", options.get("map", "Breakwater"))
 	var tree := get_tree()
 	var main := tree.current_scene
 	if main == null or main.get_node_or_null("Player") == null:
 		var scene := (
-			arena if arena != null else load(map_path(String(options.get("map", "Arena"))))
+			arena if arena != null else load(map_path(String(options.get("map", "Breakwater"))))
 			as PackedScene
 		)
 		if tree.change_scene_to_packed(scene) != OK:
@@ -171,7 +168,7 @@ func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
 	DirAccess.remove_absolute(_local_pause_file)
-	var map := String(options.get("map", "slamcity"))
+	var map := String(options.get("map", "breakwater"))
 	var port := LOCAL_PORT
 	var server_name := String(options.get("name", "Local match"))
 	var args := local_server_args(options, port, _local_pause_file)
@@ -188,7 +185,7 @@ func start_local_match(options: Dictionary) -> void:
 ## The command line for the server process `start_local_match` starts on
 ## `port` (`pause_file`: the server's pause flag).
 func local_server_args(options: Dictionary, port: int, pause_file: String) -> PackedStringArray:
-	var map := String(options.get("map", "slamcity"))
+	var map := String(options.get("map", "breakwater"))
 	var server_name := String(options.get("name", "Local match"))
 	var server_log := OS.get_user_data_dir().path_join("logs/local-server.log")
 	var args := PackedStringArray(["--headless", "--log-file", server_log])
@@ -295,7 +292,7 @@ static func map_path(map_name: String) -> String:
 
 func _start_server(options: Dictionary) -> void:
 	var tree := get_tree()
-	var selected_map := String(options.get("map", "arena"))
+	var selected_map := String(options.get("map", "breakwater"))
 	var scene_path := map_path(selected_map)
 	if scene_path.is_empty():
 		push_error("Unknown server map: %s" % selected_map)

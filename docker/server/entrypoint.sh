@@ -18,7 +18,7 @@ if [ "${1:-}" = "--health" ]; then
 fi
 
 set -- --port "$port" --query-port "$query_port" \
-	--map "${SHOOTER_MAP:-slamcity}" --mode "${SHOOTER_MODE:-tdm}" "$@"
+	--map "${SHOOTER_MAP:-breakwater}" --mode "${SHOOTER_MODE:-tdm}" "$@"
 
 [ -n "${SHOOTER_NAME:-}" ] && set -- --name "$SHOOTER_NAME" "$@"
 [ -n "${SHOOTER_BOTS:-}" ] && set -- --bots "$SHOOTER_BOTS" "$@"

@@ -7,7 +7,7 @@ extends Control
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
-## rounds to win, on Slamcity or Breakwater), or
+## rounds to win, on Breakwater), or
 ## Free Roam ("freeroam": a map to walk alone, no server, no bots).
 ## Bots fill the empty places in the other modes. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
@@ -24,20 +24,16 @@ const ChipRow := preload("res://scripts/ui/chip_row.gd")
 const CustomPresets := preload("res://scripts/custom_presets.gd")
 const CustomSettingsPage := preload("res://scripts/ui/custom_settings_page.gd")
 const MAPS := [
-	["Slamcity", "slamcity"],
-	["Nuketown", "nuketown"],
-	["Warehouse", "warehouse"],
 	["Breakwater", "breakwater"],
+	["Warehouse", "warehouse"],
 	["Testing Arena", "arena"],
 ]
 ## Search and Destroy needs a map with attacking and defending sides.
-const SND_MAPS := [["Slamcity", "slamcity"], ["Breakwater", "breakwater"]]
+const SND_MAPS := [["Breakwater", "breakwater"]]
 ## Free Roam walks a multiplayer map alone (the Testing Area has its own route).
 const FREE_ROAM_MAPS := [
-	["Slamcity", "slamcity"],
-	["Nuketown", "nuketown"],
-	["Warehouse", "warehouse"],
 	["Breakwater", "breakwater"],
+	["Warehouse", "warehouse"],
 ]
 const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
@@ -56,8 +52,6 @@ const FFA_SCORE_LIMITS := [10, 20, 30, 50]
 
 ## Pictures for the map header, by map id.
 const MAP_PICTURES := {
-	"slamcity": "res://assets/ui/maps/slamcity.jpg",
-	"nuketown": "res://assets/ui/maps/nuketown.jpg",
 	"warehouse": "res://assets/ui/maps/warehouse.jpg",
 	"breakwater": "res://assets/ui/maps/breakwater.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
