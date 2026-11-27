@@ -143,12 +143,12 @@ slot here, since there is no Fast Mag.
 
 Bots take a random perk of each tier every life.
 
-In the class menu, Perk 1, Perk 2, and Perk 3 are rows of chips with their
-icons (`godot/assets/ui/perks/`, white line icons drawn for this game). The
-row's note says what the chosen perks do; a chip's tooltip says what it would
-do. Picking another perk in a full slot swaps it in, as Black Ops 2's menu
-does. Taking an Extra Perk wildcard off keeps the tier's first perk. The
-class card lists each tier's perks with their icons.
+In the editor, Perk 1, Perk 2, and Perk 3 are columns of two slots with
+their icons (`godot/assets/ui/perks/`, white line icons drawn for this game);
+the second slot of a tier is locked until its Extra Perk wildcard is taken.
+Focusing a tier shows its perks as cards with what each does. Picking another
+perk in a full slot swaps it in, as Black Ops 2's menu does. Taking an Extra
+Perk wildcard off keeps the tier's first perk.
 
 ![The editor's perk tiers](media/perks-editor.jpg)
 
