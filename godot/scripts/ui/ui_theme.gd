@@ -41,7 +41,7 @@ const TEXT_VALUE := Color("8c8e94")
 ## Focus and the open tab. One orange for the whole UI.
 const ACCENT := Color("f85a08")
 const ACCENT_HOT := Color("ff6a1e")
-## Focus rules on rows, and your row on the scoreboard.
+## Focus rules on rows.
 const ACCENT_DIM := Color("e06028")
 ## Type on an orange plate.
 const ACCENT_INK := Color("fff6f0")
