@@ -60,6 +60,8 @@ func _run() -> void:
 	root.add_child(stage)
 	var camera := Camera3D.new()
 	camera.fov = 30.0
+	# Close-ups of a grenade come within a few centimetres.
+	camera.near = 0.005
 	stage.add_child(camera)
 	camera.make_current()
 	var weapons: Array = WEAPONS

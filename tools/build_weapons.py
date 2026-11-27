@@ -840,7 +840,7 @@ def face_parts(obj, spec: dict) -> list[str]:
 
 
 def material_kind(name: str) -> str:
-    if name in ("Optics", "Lens"):
+    if name in ("Optics", "Lens", "Scope"):
         return name
     if any(m in name for m in CARTRIDGE_MATERIALS):
         return "Cartridge"
@@ -1358,9 +1358,8 @@ def riflescope(spec: dict) -> bpy.types.Object:
     bpy.context.scene.collection.objects.link(obj)
     lens_obj = bpy.data.objects.new("ScopeLens", lens)
     bpy.context.scene.collection.objects.link(lens_obj)
-    optics = bpy.data.materials.get("Optics") or bpy.data.materials.new("Optics")
     glass = bpy.data.materials.get("Lens") or bpy.data.materials.new("Lens")
-    obj.data.materials.append(optics)
+    paint_scope(obj, ring_ys, rail)
     lens_obj.data.materials.append(glass)
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
@@ -1371,6 +1370,55 @@ def riflescope(spec: dict) -> bpy.types.Object:
         poly.use_smooth = True
     obj.data.set_sharp_from_angle(angle=np.radians(40.0))
     return obj
+
+
+SCOPE_TEXTURE_SIZE = 1024
+# The riflescope's finish: hard-anodised tube, turrets, and bells, a rubber
+# eye guard and power-ring grip, steel rings and bases, and its
+# magnification engraved on the left of the tube.
+SCOPE_FINISH = {
+    "unwrap": True,
+    "seam_fix": True,
+    "uv_margin": 6.0,
+    "wear_radius": 0.003,
+    "scratch_depth": 0.06,
+    "markings": [{"text": "3.5-10 X 40", "at": (0.098, 0.0), "side": "-x", "size": 0.0042}],
+    "font": REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf",
+}
+# Painted scope maps, waiting for `build` to save them beside the weapon's.
+SCOPE_MAPS: dict = {}
+
+
+def paint_scope(obj, ring_ys: list, rail: float):
+    """Paints the riflescope's own maps (weapon_finish), on a "Scope"
+    material: the weapon's "Weapon" material steps aside while it bakes,
+    since the finish bakes the material of that name."""
+    zone = obj.data.attributes.new(weapon_finish.ZONE_ATTRIBUTE, "INT", "FACE")
+    ids = {n: f["id"] for n, f in weapon_finish.FINISHES.items()}
+    values = []
+    for poly in obj.data.polygons:
+        c = poly.center
+        radius = np.hypot(c.x, c.z)
+        if c.y < -0.0035 or (0.0415 < c.y < 0.0615 and radius > 0.0199):
+            values.append(ids["rubber"])
+        elif any(abs(c.y - y) < 0.0085 and (radius > 0.0153 or c.z < -0.0153) for y in ring_ys):
+            values.append(ids["steel"])
+        else:
+            values.append(ids["aluminium"])
+    zone.data.foreach_set("value", values)
+    gun = bpy.data.materials.get("Weapon")
+    if gun is not None:
+        gun.name = "WeaponGun"
+    material = bpy.data.materials.new("Weapon")
+    obj.data.materials.clear()
+    obj.data.materials.append(material)
+    bpy.context.view_layer.update()
+    SCOPE_MAPS["maps"] = weapon_finish.paint({"Body": obj}, {"finish": SCOPE_FINISH}, Matrix.Identity(4),
+                                             SCOPE_TEXTURE_SIZE)
+    obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
+    material.name = "Scope"
+    if gun is not None:
+        gun.name = "Weapon"
 
 
 # Parts left out of `World`: the spare magazine stays hidden, and the rail
@@ -1710,7 +1758,7 @@ IMPORT_SUBRESOURCES = """_subresources={{
 "use_external/enabled": true,
 "use_external/path": "{shared}/optics.tres"
 }},
-"Weapon": {{
+{scope}"Weapon": {{
 "use_external/enabled": true,
 "use_external/path": "{material}"
 }}
@@ -1723,7 +1771,12 @@ def write_import(key: str, out: Path, folder: str):
     of the file on import."""
     path = out / f"{key}.glb.import"
     material = f"res://assets/weapons/{folder}/{key}.tres"
-    sub = IMPORT_SUBRESOURCES.format(shared=SHARED, material=material)
+    # A weapon with a riflescope maps its "Scope" to its own painted maps.
+    scope = ""
+    if (out / f"{key}_scope.tres").exists():
+        scope = (f'"Scope": {{\n"use_external/enabled": true,\n'
+                 f'"use_external/path": "res://assets/weapons/{folder}/{key}_scope.tres"\n}},\n')
+    sub = IMPORT_SUBRESOURCES.format(shared=SHARED, material=material, scope=scope)
     if path.exists():
         text = path.read_text()
         start = text.find("_subresources=")
@@ -1898,6 +1951,9 @@ def build_modelled(key: str):
     export(objects, out / f"{stem}.glb")
     save_maps(stem, out, *painted)
     write_material(stem, out, spec["dir"])
+    if "scope" in spec:
+        save_maps(f"{stem}_scope", out, *SCOPE_MAPS.pop("maps"))
+        write_material(f"{stem}_scope", out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
     (out / f"{stem}.json").write_text(
@@ -1997,6 +2053,9 @@ def build(key: str):
     else:
         build_textures(stem, spec, out, uv_mask(objects))
     write_material(stem, out, spec["dir"])
+    if "scope" in spec:
+        save_maps(f"{stem}_scope", out, *SCOPE_MAPS.pop("maps"))
+        write_material(f"{stem}_scope", out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
     (out / f"{stem}.json").write_text(

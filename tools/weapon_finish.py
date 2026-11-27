@@ -746,9 +746,9 @@ def _stencils(finish: dict, position: np.ndarray, covered: np.ndarray, zones: np
         dx, dy = position[..., 0] - cx, position[..., 1] - cy
         radius = np.hypot(dx, dy)
         turn = np.angle(np.exp(1j * (np.arctan2(dy, dx) - np.radians(mark["angle"]))))
-        # Distance round the surface; letters read left to right seen from
-        # outside, which runs against the angle.
-        arc = -turn * radius
+        # Distance round the surface; seen from outside, with +Z up, the
+        # angle grows to the right, so letters read along it.
+        arc = turn * radius
         height = position[..., 2] - mark["z"]
         reach = mark["size"] * (1.5 + 0.4 * max(len(line) for line in mark["text"].splitlines()))
         near = covered & allowed & (np.abs(arc) < reach) & (np.abs(height) < reach) & (radius > 0.002)
