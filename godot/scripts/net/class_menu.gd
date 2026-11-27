@@ -34,6 +34,9 @@ const PERK_ICON := "res://assets/ui/perks/%s.svg"
 const LOADOUT_ICON := "res://assets/ui/loadout/%s.svg"
 ## The hero silhouette, a little below white so the title stays brightest.
 const HERO_TINT := Color("c8ccd2")
+## In the detail beside the list: where the stat bars and the note start.
+const HERO_STATS_Y := 424.0
+const HERO_NOTE_Y := 574.0
 ## Seconds to dim or light a region as focus moves between grid and items.
 const DIM_SECONDS := 0.12
 ## How bright the side without focus stays.
@@ -264,13 +267,13 @@ func _build_list() -> void:
 	_hero = Control.new()
 	_hero.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hero.draw.connect(_draw_hero)
-	_place(_hero, Vector2(800, 136), Vector2(380, 560))
+	_place(_hero, Vector2(800, 136), Vector2(380, 600))
 	_edit_button = Button.new()
 	_edit_button.text = "EDIT CLASS"
 	_edit_button.theme_type_variation = &"FrontAction"
 	_edit_button.custom_minimum_size = Vector2(240, 44)
 	_edit_button.pressed.connect(func() -> void: _open_editor(_shown_id))
-	_place(_edit_button, Vector2(800, 652), Vector2(240, 44))
+	_place(_edit_button, Vector2(800, 136.0 + HERO_NOTE_Y - 22.0), Vector2(240, 44))
 
 	_pips = Control.new()
 	_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -504,8 +507,21 @@ func _draw_hero() -> void:
 		)
 	elif not _shown_id.begins_with("custom"):
 		note = "Default classes cannot be changed."
+	# The primary's stat bars, as the editor shows them.
+	var stats := WeaponStats.bars(key) if key != "" else []
+	y = HERO_STATS_Y
+	for stat: Array in stats:
+		Paint.text(
+			_hero, Paint.LABEL, String(stat[0]), Vector2(0, y + 11.0), 14, UiTheme.TEXT_DIM, 1.2
+		)
+		var bar := Rect2(110, y + 2.0, 220, 6.0)
+		_hero.draw_rect(bar, Color("3a3e44"))
+		_hero.draw_rect(
+			Rect2(bar.position, Vector2(bar.size.x * float(stat[1]), 6.0)), UiTheme.TEXT
+		)
+		y += 22.0
 	if note != "":
-		Paint.text(_hero, Paint.BODY, note, Vector2(0, y + 18.0), 16, UiTheme.TEXT_DIM)
+		Paint.text(_hero, Paint.BODY, note, Vector2(0, HERO_NOTE_Y), 16, UiTheme.TEXT_DIM)
 
 
 ## Pick 10's points, top right: ten pips (spent ones solid) and "N / 10",

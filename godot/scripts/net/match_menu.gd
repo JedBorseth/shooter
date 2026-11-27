@@ -82,8 +82,9 @@ func _ready() -> void:
 	ready_button.name = "Ready"
 	ready_button.text = "READY"
 	ready_button.theme_type_variation = &"FrontAction"
-	ready_button.position = Vector2(1276, 782)
-	ready_button.size = Vector2(260, 48)
+	# As wide as Switch Team above it, where Save Class sits in the editor.
+	ready_button.position = Vector2(1220, 788)
+	ready_button.size = Vector2(316, 46)
 	_stage.add_child(ready_button)
 	_build_footer()
 
