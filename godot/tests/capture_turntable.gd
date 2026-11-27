@@ -6,7 +6,8 @@ extends SceneTree
 ## it. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_turntable.gd
-## Optional: WEAPONS (for example `m4,ak47`).
+## Optional: WEAPONS (for example `m4,ak47`, or `knife,frag` for the
+## equipment).
 
 const WEAPONS := [
 	"m4",
@@ -24,6 +25,14 @@ const WEAPONS := [
 	"lsw6",
 	"br3",
 ]
+## The knife and the grenades, in the same studio (their own models, no
+## world twin).
+const EQUIPMENT := {
+	"knife": "res://assets/weapons/knife/knife.glb",
+	"frag": "res://assets/equipment/frag/frag.glb",
+	"flash": "res://assets/equipment/flash/flash.glb",
+	"smoke": "res://assets/equipment/smoke/smoke.glb",
+}
 ## (yaw, pitch) in degrees around the weapon, and a zoom (1 frames it whole).
 const ANGLES := [
 	["right", 90.0, 0.0, 1.0],
@@ -59,8 +68,11 @@ func _run() -> void:
 		weapons = Array(only.split(","))
 	if only.is_empty() or "casings" in only:
 		await _casings(stage, camera)
+	for key: String in EQUIPMENT:
+		if only.is_empty() or key in weapons:
+			await _equipment(stage, camera, key)
 	for key: String in weapons:
-		if key == "casings":
+		if key == "casings" or EQUIPMENT.has(key):
 			continue
 		var path := "res://scenes/weapons/%s_view.tscn" % key
 		if not ResourceLoader.exists(path):
@@ -99,6 +111,31 @@ func _run() -> void:
 			view.queue_free()
 			await process_frame
 	quit()
+
+
+## One piece of equipment from each angle, filling the frame, and its
+## wireframe.
+func _equipment(stage: Node3D, camera: Camera3D, key: String) -> void:
+	var model := (load(EQUIPMENT[key]) as PackedScene).instantiate() as Node3D
+	stage.add_child(model)
+	await process_frame
+	var bounds := _bounds(model)
+	var centre := bounds.get_center()
+	var radius := bounds.size.length() * 0.5
+	for angle: Array in ANGLES:
+		var yaw := deg_to_rad(angle[1] as float)
+		var pitch := deg_to_rad(angle[2] as float)
+		var dir := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+		var dist := radius / tan(deg_to_rad(camera.fov * 0.5)) * (angle[3] as float) * 0.75
+		camera.look_at_from_position(centre + dir * dist, centre)
+		var tag := "%s_%s" % [key, angle[0]]
+		root.get_viewport().debug_draw = Viewport.DEBUG_DRAW_DISABLED
+		await _shot(tag)
+		root.get_viewport().debug_draw = Viewport.DEBUG_DRAW_WIREFRAME
+		await _shot(tag + "_wire")
+		root.get_viewport().debug_draw = Viewport.DEBUG_DRAW_DISABLED
+	model.queue_free()
+	await process_frame
 
 
 ## Every fired case (assets/weapons/shared/casings.glb) side by side, in

@@ -213,8 +213,124 @@ FINISHES = {
         "bump": 0.00001,
         "tint": 0.01,
     },
+    # --- The knife (tools/build_knife.py) and the grenades
+    # (tools/build_grenade.py). ---
+    # A blackened blade: a baked epoxy coat over carbon steel, matte, that
+    # wears through to grey steel along the spine and the grind line.
+    "coating": {
+        "id": 12,
+        "color": (0.085, 0.085, 0.09),
+        "roughness": 0.6,
+        "metallic": 0.0,
+        "bare": ((0.44, 0.45, 0.46), 0.34, 1.0),
+        "wear": 0.9,
+        "grime": 0.4,
+        "bump": 0.00002,
+        "tint": 0.01,
+    },
+    # The sharpened edge: honed steel with the stone's fine lines along it.
+    "honed": {
+        "id": 13,
+        "color": (0.56, 0.57, 0.59),
+        "roughness": 0.3,
+        "metallic": 1.0,
+        "bare": ((0.6, 0.61, 0.63), 0.26, 1.0),
+        "wear": 0.0,
+        "grime": 0.2,
+        "bump": 0.00001,
+        "tint": 0.02,
+    },
+    # Stacked leather washers, lacquered: tan to brown from washer to
+    # washer, darkened by hand oil in the grooves and polished on the
+    # ridges.
+    "leather": {
+        "id": 14,
+        "color": (0.3, 0.195, 0.125),
+        "roughness": 0.56,
+        "metallic": 0.0,
+        "bare": ((0.44, 0.29, 0.18), 0.42, 0.0),
+        "wear": 0.6,
+        "grime": 1.2,
+        "bump": 0.00008,
+        "tint": 0.06,
+    },
+    # Olive drab enamel over a steel body (the frag, the spoons, the smoke
+    # can): flat, chipped to steel on edges and where it rolls on the ground.
+    "od_paint": {
+        "id": 15,
+        "color": (0.25, 0.28, 0.18),
+        "roughness": 0.62,
+        "metallic": 0.0,
+        "bare": ((0.4, 0.4, 0.39), 0.42, 1.0),
+        "wear": 0.75,
+        "grime": 0.7,
+        "bump": 0.00003,
+        "tint": 0.018,
+    },
+    # The yellow band a high-explosive filling is marked with.
+    "yellow_paint": {
+        "id": 16,
+        "color": (0.7, 0.56, 0.1),
+        "roughness": 0.6,
+        "metallic": 0.0,
+        "bare": ((0.4, 0.4, 0.39), 0.42, 1.0),
+        "wear": 0.6,
+        "grime": 0.5,
+        "bump": 0.00003,
+        "tint": 0.02,
+    },
+    # Pale paint: a flashbang's band, a smoke can's top.
+    "pale_paint": {
+        "id": 17,
+        "color": (0.72, 0.7, 0.62),
+        "roughness": 0.62,
+        "metallic": 0.0,
+        "bare": ((0.4, 0.4, 0.39), 0.42, 1.0),
+        "wear": 0.6,
+        "grime": 0.6,
+        "bump": 0.00003,
+        "tint": 0.02,
+    },
+    # A fuse body: zinc-plated steel gone dull grey-olive.
+    "zinc": {
+        "id": 18,
+        "color": (0.34, 0.34, 0.3),
+        "roughness": 0.52,
+        "metallic": 0.65,
+        "bare": ((0.52, 0.52, 0.5), 0.38, 1.0),
+        "wear": 0.5,
+        "grime": 1.0,
+        "bump": 0.00002,
+        "tint": 0.025,
+    },
+    # A pull ring and pin: bright spring steel.
+    "ring": {
+        "id": 19,
+        "color": (0.55, 0.55, 0.54),
+        "roughness": 0.36,
+        "metallic": 1.0,
+        "bare": ((0.6, 0.6, 0.59), 0.3, 1.0),
+        "wear": 0.0,
+        "grime": 0.4,
+        "bump": 0.00001,
+        "tint": 0.02,
+    },
+    # A flashbang's body: grey enamel over a steel tube.
+    "grey_paint": {
+        "id": 20,
+        "color": (0.33, 0.34, 0.31),
+        "roughness": 0.58,
+        "metallic": 0.0,
+        "bare": ((0.42, 0.42, 0.41), 0.4, 1.0),
+        "wear": 0.8,
+        "grime": 0.8,
+        "bump": 0.00003,
+        "tint": 0.016,
+    },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
+# Zone ids are baked as a fraction of this (so up to 31 zones).
+ZONE_SCALE = 32.0
 
 # Engraved into anodising, letters show the bare aluminium under it.
 MARKING_FINISH = ((0.42, 0.43, 0.44), 0.45, 0.8)
@@ -420,8 +536,9 @@ def _normal_material(n: Nodes, scratch_depth: float):
         term = n.math("MULTIPLY", n.math("MULTIPLY", texture, mask), finish["bump"] / 0.0001)
         height = term if height == 0.0 else n.math("ADD", height, term)
     # Scratches cut into every coated metal surface a little.
-    polymer = _zone_is(n, FINISHES["polymer"]["id"])
-    cut = n.math("MULTIPLY", n.math("MULTIPLY", _scratches(n), n.math("SUBTRACT", 1.0, polymer)), -scratch_depth)
+    # (Not into moulded polymer or leather.)
+    soft = n.math("ADD", _zone_is(n, FINISHES["polymer"]["id"]), _zone_is(n, FINISHES["leather"]["id"]))
+    cut = n.math("MULTIPLY", n.math("MULTIPLY", _scratches(n), n.math("SUBTRACT", 1.0, soft)), -scratch_depth)
     height = n.math("ADD", height, cut)
     bump = n.new("ShaderNodeBump", Height=height, Normal=bevel.outputs[0], Strength=1.0, Distance=0.0001)
     bsdf = n.new("ShaderNodeBsdfPrincipled", Normal=bump.outputs[0])
@@ -581,7 +698,74 @@ def _markings(objects: dict, finish: dict, view_matrix, position: np.ndarray, co
     return mask
 
 
-def unwrap(targets: list, size: int):
+def _stencils(finish: dict, position: np.ndarray, covered: np.ndarray, zones: np.ndarray):
+    """Painted text wrapped round a round body (a grenade's lot number and
+    name). Each stencil lies on the surface of a cylinder round a vertical
+    axis: `axis` (x, y) in metres, its middle `angle` degrees round from +X
+    (toward +Y), `z` the height of its middle, `size` its letters' height,
+    and `color` its sRGB paint, on texels of the zones in `zones` only.
+    Every texel is unrolled to (distance round the axis, height) and tested
+    against the letters laid flat, at four points inside the texel.
+    Returns RGBA (A: how much of the texel the paint covers)."""
+    marks = finish.get("stencils", [])
+    if not marks:
+        return None
+    font = bpy.data.fonts.load(str(finish["font"])) if "font" in finish else None
+    out = np.zeros(covered.shape + (4,), np.float32)
+    for mark in marks:
+        allowed = np.isin(zones, [FINISHES[z]["id"] for z in mark["zones"]])
+        cx, cy = mark.get("axis", (0.0, 0.0))
+        dx, dy = position[..., 0] - cx, position[..., 1] - cy
+        radius = np.hypot(dx, dy)
+        turn = np.angle(np.exp(1j * (np.arctan2(dy, dx) - np.radians(mark["angle"]))))
+        # Distance round the surface; letters read left to right seen from
+        # outside, which runs against the angle.
+        arc = -turn * radius
+        height = position[..., 2] - mark["z"]
+        reach = mark["size"] * (1.5 + 0.4 * max(len(line) for line in mark["text"].splitlines()))
+        near = covered & allowed & (np.abs(arc) < reach) & (np.abs(height) < reach) & (radius > 0.002)
+        curve = bpy.data.curves.new("Stencil", "FONT")
+        curve.body = mark["text"]
+        curve.size = mark["size"]
+        curve.align_x = "CENTER"
+        curve.align_y = "CENTER"
+        curve.space_line = mark.get("line", 1.25)
+        if font is not None:
+            curve.font = font
+        obj = bpy.data.objects.new("Stencil", curve)
+        bpy.context.scene.collection.objects.link(obj)
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        mesh = obj.evaluated_get(depsgraph).to_mesh()
+        letters = BVHTree.FromPolygons([v.co.copy() for v in mesh.vertices], [tuple(p.vertices) for p in mesh.polygons])
+        obj.evaluated_get(depsgraph).to_mesh_clear()
+        bpy.data.objects.remove(obj)
+        bpy.data.curves.remove(curve)
+        # Neighbouring texels' unrolled positions give each texel's extent.
+        flat = np.stack([arc, height], axis=2)
+        du = (np.roll(flat, -1, 1) - np.roll(flat, 1, 1)) * 0.5
+        dv = (np.roll(flat, -1, 0) - np.roll(flat, 1, 0)) * 0.5
+        du[np.linalg.norm(du, axis=2) > 0.002] = 0.0
+        dv[np.linalg.norm(dv, axis=2) > 0.002] = 0.0
+        ys, xs = np.nonzero(near)
+        color = np.asarray(mark["color"], np.float32)
+        hits = 0
+        for py, px in zip(ys, xs):
+            p, a, b = flat[py, px], du[py, px], dv[py, px]
+            inside = 0
+            for su, sv in ((-0.25, -0.25), (0.25, -0.25), (-0.25, 0.25), (0.25, 0.25)):
+                q = p + a * su + b * sv
+                if letters.ray_cast(Vector((q[0], q[1], 0.01)), Vector((0.0, 0.0, -1.0)), 0.02)[0] is not None:
+                    inside += 1
+            if inside:
+                k = inside / 4.0
+                out[py, px, :3] = color
+                out[py, px, 3] = max(out[py, px, 3], k)
+                hits += 1
+        log(f"  stencil {mark['text'].splitlines()[0]!r}: {hits} of {len(ys)} texels near it")
+    return out
+
+
+def unwrap(targets: list, size: int, margin: float = UV_MARGIN):
     """New UVs at an even texel density: the source's are sheared in places
     (the M4A1's magazine well squeezes text to stripes), and nothing of its
     own maps is kept. Angle-based islands, packed with rotation."""
@@ -598,7 +782,7 @@ def unwrap(targets: list, size: int):
                              correct_aspect=True, scale_to_bounds=False)
     bpy.ops.uv.select_all(action="SELECT")
     bpy.ops.uv.pack_islands(udim_source="CLOSEST_UDIM", rotate=True, rotate_method="ANY",
-                            margin_method="FRACTION", margin=UV_MARGIN / size, shape_method="CONCAVE")
+                            margin_method="FRACTION", margin=margin / size, shape_method="CONCAVE")
     bpy.ops.object.mode_set(mode="OBJECT")
     area = uv_area = 0.0
     for obj in targets:
@@ -628,6 +812,33 @@ def _grow_labels(labels: np.ndarray, steps: int) -> np.ndarray:
     return out
 
 
+def _refill_seams(edges: np.ndarray, covered: np.ndarray, steps: int = 2) -> np.ndarray:
+    """The bevel shader reads a texel on an island's border from a point
+    off its face, and finds an edge where a smooth surface is only cut by a
+    UV seam (bare-metal chips along every seam of a sphere). Drops the
+    edge mask on the outer `steps` texels of every island and grows the
+    interior's values back over them (and into the gaps)."""
+    inside = covered.copy()
+    for _ in range(steps):
+        shrunk = inside.copy()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            shrunk &= np.roll(np.roll(inside, dy, 0), dx, 1)
+        inside = shrunk
+    out = edges.copy()
+    filled = inside.copy()
+    for _ in range(steps + BAKE_MARGIN):
+        total = np.zeros_like(out)
+        count = np.zeros(filled.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = np.roll(np.roll(filled, dy, 0), dx, 1)
+            total += np.roll(np.roll(out, dy, 0), dx, 1) * n[..., None]
+            count += n
+        grow = ~filled & (count > 0)
+        out[grow] = total[grow] / count[grow][:, None]
+        filled |= grow
+    return out
+
+
 def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.ndarray]:
     """Bakes the masks the finish is composed from, from the placed parts'
     "Weapon" faces. Returns float arrays (rows from the bottom)."""
@@ -648,7 +859,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
         if obj.type == "MESH" and obj.data.materials and all(m == material for m in obj.data.materials)
     ]
     if finish.get("unwrap"):
-        unwrap(targets, size)
+        unwrap(targets, size, finish.get("uv_margin", UV_MARGIN))
     n = Nodes(material)
     _edge_material(n, finish.get("wear_radius", WEAR_RADIUS))
     edges = _bake(targets, material, _new_image("Edges", size), "EMIT", 1)
@@ -656,9 +867,12 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     # islands, and the blend of two zones' numbers is a third zone. Each
     # island's label is grown into the gap round it instead.
     n = Nodes(material)
-    _emit(n, (n.math("DIVIDE", _zone_value(n), 16.0), 0.0, 0.0))
+    _emit(n, (n.math("DIVIDE", _zone_value(n), ZONE_SCALE), 0.0, 0.0))
     labels = _bake(targets, material, _new_image("Zones", size), "EMIT", 1, margin=0)
-    zones = _grow_labels(np.rint(labels[..., 0] * 16.0).astype(np.int32), BAKE_MARGIN)
+    own = np.rint(labels[..., 0] * ZONE_SCALE).astype(np.int32)
+    zones = _grow_labels(own, BAKE_MARGIN)
+    if finish.get("seam_fix"):
+        edges = _refill_seams(edges, own > 0)
     n = Nodes(material)
     _noise_material(n)
     noise = _bake(targets, material, _new_image("Noise", size), "EMIT", 1)
@@ -669,14 +883,18 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     _normal_material(n, finish.get("scratch_depth", SCRATCH_DEPTH))
     normal = _bake(targets, material, _new_image("Normal", size, (0.5, 0.5, 1, 1)), "NORMAL", 16,
                    normal_space="TANGENT")
-    markings = None
-    if finish.get("markings"):
+    if finish.get("seam_fix"):
+        normal = _refill_seams(normal, own > 0)
+    markings = stencils = None
+    if finish.get("markings") or finish.get("stencils"):
         n = Nodes(material)
         _position_material(n)
         position = _bake(targets, material, _new_image("Position", size), "EMIT", 1)
         covered = position[..., 3] > 0.5
         covered &= position[..., :3].sum(axis=2) > 0.5
-        markings = _markings(objects, finish, view_matrix, position[..., :3] - 1.0, covered)
+        if finish.get("markings"):
+            markings = _markings(objects, finish, view_matrix, position[..., :3] - 1.0, covered)
+        stencils = _stencils(finish, position[..., :3] - 1.0, covered, zones)
     # Leave the material bare for the glTF export (its maps live in the .tres).
     material.node_tree.nodes.clear()
     material.use_nodes = False
@@ -693,6 +911,8 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
         "ao": ao[..., 0],
         "normal": normal[..., :3],
         "markings": markings,
+        "stencils": stencils,
+        "covered": (own > 0) if finish.get("seam_fix") else None,
     }
     # WEAPON_FINISH_DEBUG=<dir> keeps the baked masks, to tune `compose`
     # without baking again.
@@ -764,7 +984,7 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         wear[m] = _smoothstep(0.4, 0.8, edge[m] * (0.25 + 1.3 * blotch[m]) * f["wear"]) * exposed[m]
         # Fine scratches only burnish the coating: they show in reflections
         # (smoother, a touch lighter), not as bare metal.
-        if name not in ("polymer", "rubber"):
+        if name not in ("polymer", "rubber", "leather"):
             rough[m] -= 0.14 * scratch[m]
             color[m] += 0.025 * scratch[m][:, None]
         grime[m] = cavity[m] * f["grime"] * (0.55 + 0.6 * blotch[m])
@@ -791,6 +1011,14 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         color = color * (1.0 - k[..., None]) + np.asarray(mc, np.float32) * k[..., None]
         rough = rough * (1.0 - k) + mr * k
         metal = metal * (1.0 - k) + mm * k
+    if maps.get("stencils") is not None:
+        # Paint over the coat: it chips with the coat on worn edges and
+        # takes the crevices' grime, but flatter and a touch rougher.
+        st = maps["stencils"]
+        k = st[..., 3] * (1.0 - np.clip(wear * 1.5, 0.0, 1.0)) * (1.0 - 0.5 * g)
+        color = color * (1.0 - k[..., None]) + st[..., :3] * (0.92 + 0.16 * grain[..., None]) * k[..., None]
+        rough = rough * (1.0 - k) + 0.66 * k
+        metal = metal * (1.0 - k)
     unused = zone == 0
     color[unused] = 0.15
     rough[unused] = 0.6
@@ -800,7 +1028,12 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         m = zone == f["id"]
         if m.any():
             log(f"  {name}: {int(m.sum())} texels, worn {float(wear[m].mean()):.3f}, grime {float(g[m].mean()):.3f}")
-    return np.clip(color, 0.0, 1.0), np.clip(maps["normal"], 0.0, 1.0), orm
+    normal = maps["normal"]
+    if maps.get("covered") is not None:
+        # Each island's own finish grown out over the gaps round it, so a
+        # mipmap or a filtered seam never takes a neighbour's.
+        color, orm, normal = (_refill_seams(a, maps["covered"], 0) for a in (color, orm, normal))
+    return np.clip(color, 0.0, 1.0), np.clip(normal, 0.0, 1.0), orm
 
 
 def paint(objects: dict, spec: dict, view_matrix, size: int):
