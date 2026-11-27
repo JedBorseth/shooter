@@ -616,6 +616,91 @@ static func _pause_menu_types(theme: Theme) -> void:
 	theme.set_stylebox(&"panel", &"SettingRow", _row(14.0, 6.0))
 	_variation(theme, &"SettingRowFocused", &"PanelContainer")
 	theme.set_stylebox(&"panel", &"SettingRowFocused", _row_lit(14.0, 6.0))
+	_options_types(theme)
+
+
+## The Options screen (`option_row.gd` draws its rows): the tab strip, the
+## slim slider, section names and lock tags, the description pane, and the
+## footer's clickable prompts.
+static func _options_types(theme: Theme) -> void:
+	var tab_fill := Color("1b1e25")
+	_variation(theme, &"OptionTabs", &"TabBar")
+	theme.set_font(&"font", &"OptionTabs", tracked(LABEL, 2))
+	theme.set_font_size(&"font_size", &"OptionTabs", 20)
+	theme.set_stylebox(&"tab_unselected", &"OptionTabs", outlined(tab_fill, LINE, 1, 26.0, 8.0))
+	theme.set_stylebox(&"tab_hovered", &"OptionTabs", outlined(Color("2a2e37"), LINE, 1, 26.0, 8.0))
+	theme.set_stylebox(&"tab_selected", &"OptionTabs", lit(26.0, 8.0))
+	theme.set_stylebox(&"tab_focus", &"OptionTabs", _empty())
+	theme.set_color(&"font_unselected_color", &"OptionTabs", TEXT_DIM)
+	theme.set_color(&"font_hovered_color", &"OptionTabs", TEXT)
+	theme.set_color(&"font_selected_color", &"OptionTabs", ACCENT_INK)
+	theme.set_constant(&"h_separation", &"OptionTabs", 4)
+	theme.set_constant(&"tab_separation", &"OptionTabs", 4)
+	# The blank end tabs that hold the previous and next tab keys.
+	_variation(theme, &"OptionTabStub", &"Button")
+	var stub := outlined(tab_fill, LINE, 1, 10.0, 0.0)
+	_button_styles(
+		theme, &"OptionTabStub", stub, outlined(Color("2a2e37"), LINE, 1, 10.0, 0.0), stub
+	)
+	theme.set_stylebox(&"focus", &"OptionTabStub", _empty())
+
+	# A slider: a 2 px track, white up to the value, and a 5 x 14 white thumb.
+	_variation(theme, &"OptionSlider", &"HSlider")
+	var track := plate(Color(1, 1, 1, 0.26), 0.0, 1.0)
+	var fill := plate(TEXT, 0.0, 1.0)
+	theme.set_stylebox(&"slider", &"OptionSlider", track)
+	theme.set_stylebox(&"grabber_area", &"OptionSlider", fill)
+	theme.set_stylebox(&"grabber_area_highlight", &"OptionSlider", fill)
+	theme.set_icon(&"grabber", &"OptionSlider", _block(Vector2i(5, 14), TEXT))
+	theme.set_icon(&"grabber_highlight", &"OptionSlider", _block(Vector2i(5, 14), TEXT))
+	theme.set_icon(&"grabber_disabled", &"OptionSlider", _block(Vector2i(5, 14), TEXT_FAINT))
+	theme.set_icon(&"tick", &"OptionSlider", _block(Vector2i(1, 5), Color(1, 1, 1, 0.3)))
+
+	# Section names over a group of rows ("Controller"), and the grey tag
+	# beside one whose device is locked out of play.
+	_variation(theme, &"OptionHeading", &"Label")
+	theme.set_font(&"font", &"OptionHeading", font(LABEL_LIGHT))
+	theme.set_font_size(&"font_size", &"OptionHeading", 24)
+	_variation(theme, &"OptionLock", &"Label")
+	theme.set_font(&"font", &"OptionLock", tracked(LABEL, 2))
+	theme.set_font_size(&"font_size", &"OptionLock", 15)
+	theme.set_color(&"font_color", &"OptionLock", TEXT_DIM)
+	theme.set_stylebox(
+		&"normal", &"OptionLock", outlined(Color(0, 0, 0, 0.4), TEXT_FAINT, 1, 6.0, 0.0)
+	)
+	_variation(theme, &"OptionNote", &"Label")
+	theme.set_font(&"font", &"OptionNote", font(LABEL_LIGHT))
+	theme.set_font_size(&"font_size", &"OptionNote", 18)
+	theme.set_color(&"font_color", &"OptionNote", TEXT_DIM)
+
+	# The description pane: the setting's name on a light plate, then what
+	# it does.
+	_variation(theme, &"OptionInfoTitle", &"Label")
+	theme.set_font(&"font", &"OptionInfoTitle", font(LABEL))
+	theme.set_font_size(&"font_size", &"OptionInfoTitle", 30)
+	theme.set_color(&"font_color", &"OptionInfoTitle", LABEL_INK)
+	theme.set_stylebox(&"normal", &"OptionInfoTitle", label_plate(8.0, 0.0))
+	_variation(theme, &"OptionInfoText", &"Label")
+	theme.set_font(&"font", &"OptionInfoText", font(BODY))
+	theme.set_font_size(&"font_size", &"OptionInfoText", 19)
+	theme.set_color(&"font_color", &"OptionInfoText", Color(TEXT, 0.86))
+	theme.set_constant(&"line_spacing", &"OptionInfoText", 5)
+
+	# A footer prompt you can click: the words after a key cap.
+	_variation(theme, &"PromptButton", &"Button")
+	theme.set_font(&"font", &"PromptButton", font(LABEL_LIGHT))
+	theme.set_font_size(&"font_size", &"PromptButton", 18)
+	var quiet := plate(Color(0, 0, 0, 0), 4.0, 2.0)
+	_button_styles(theme, &"PromptButton", quiet, plate(PLATE_HOVER, 4.0, 2.0), quiet)
+	theme.set_stylebox(&"focus", &"PromptButton", _empty())
+	_button_colors(theme, &"PromptButton", Color(TEXT, 0.9), TEXT)
+
+	# The two choices in a confirm band: small plates; focus is solid orange.
+	_variation(theme, &"ConfirmButton", &"RouteButton")
+	theme.set_font_size(&"font_size", &"ConfirmButton", 21)
+	var choice := plate(Color("2a2e35"), 14.0, 4.0)
+	_button_styles(theme, &"ConfirmButton", choice, lit(14.0, 4.0), choice)
+	_lit_focus(theme, &"ConfirmButton", 14.0, 4.0)
 
 
 ## Names the front end uses: the title screen, match setup, and Join Server.

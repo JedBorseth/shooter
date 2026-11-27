@@ -3,128 +3,33 @@ extends CanvasLayer
 ## and freezes offline/local matches. Remote multiplayer keeps running.
 ## Settings apply live through the `Settings` autoload and save when the menu closes.
 ##
-## Full screen over a blur of the game: the pause page is a short list of
-## routes; the settings page has tabs, a list of setting rows, and a pane that
-## explains the focused or hovered setting.
+## Drawn as Black Ops 3's in-match menu and PC options are, in our own art
+## (docs/art-direction.md, "Menus and HUD"): the game blurred and dimmed
+## behind a `ScreenFrame` header and footer band. The pause page is a list of
+## caps items whose focus is a solid orange plate, beside a card for the
+## match. The options page has a strip of caps tabs (the open one orange,
+## with the previous and next tab keys on blank tabs at its ends), a 620 px
+## column of setting rows (`option_row.gd`), and a pane that names and
+## explains the focused setting. Footer prompts are key caps; Reset to
+## Default asks first in a confirm band (`confirm_band.gd`).
 
 signal closed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
-const UiTheme := preload("res://scripts/ui/ui_theme.gd")
-const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
+const OptionRow := preload("res://scripts/ui/option_row.gd")
+const OptionText := preload("res://scripts/ui/option_text.gd")
+const BindCells := preload("res://scripts/ui/bind_cells.gd")
+const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
 const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
 const UI_BUS := &"UI"
-## Width of the value beside each slider; fits "14 · VERY HIGH".
-const VALUE_WIDTH := 150
 const TAB_NAMES: Array[String] = ["Controls", "Keybinds", "Graphics", "Audio", "General"]
-## What each tab holds, shown before a setting is picked.
-const TAB_INTROS: Array[String] = [
-	(
-		"What you play with, and how it aims. The device you don't pick is locked out"
-		+ " of play. Pick a setting to see what it does."
-	),
-	"Choose a binding, then press a key or mouse button. A key used by another action swaps with it.",
-	"Display and quality. Every change applies right away.",
-	"Volume for each kind of sound, and how it is mixed.",
-	"Your name, and what the screen shows while you play.",
-]
-## What each setting does, for the pane beside the list.
-const DESCRIPTIONS := {
-	&"input_device":
-	(
-		"Play with keyboard and mouse or with a controller. The other one is locked out"
-		+ " while you play, so nothing switches by accident and aim assist stays with"
-		+ " controllers. Menus and pause work with both."
-	),
-	&"mouse_sensitivity": "How far the view turns for each movement of the mouse.",
-	&"ads_sensitivity":
-	"Turn speed while aiming down sights, as a share of your normal sensitivity.",
-	&"invert_mouse_y": "Moving the mouse forward looks down instead of up.",
-	&"stick_sensitivity_level": "How fast the right stick turns the view. Each step is 20% faster.",
-	&"stick_deadzone":
-	"How far the right stick must move before the view turns. Raise it if the view drifts.",
-	&"move_deadzone":
-	"How far the left stick must move before you walk. Raise it if you creep on your own.",
-	&"trigger_deadzone": "How far a trigger must be pulled to fire or aim. Lower is quicker.",
-	&"stick_response":
-	(
-		"How turn speed builds as you push the right stick. Standard is finer near the"
-		+ " centre, Linear turns in step with the stick, and Dynamic is an S-curve: fine"
-		+ " at first, quick through the middle."
-	),
-	&"invert_stick_y": "Pushing the right stick up looks down.",
-	&"stick_curve":
-	"How strongly the Standard curve holds back small movements. Higher is finer near the centre.",
-	&"aim_assist":
-	(
-		"With a controller, slows your aim over an enemy and follows them as you move."
-		+ " Mouse aiming never gets aim assist."
-	),
-	&"rumble": "Controller vibration for shots, hits, and explosions.",
-	&"button_prompts":
-	(
-		"Which controller's buttons prompts show. Auto matches the connected controller;"
-		+ " keyboard keys and mouse buttons always show as they are."
-	),
-	&"fov":
-	(
-		"How much of the world you see across the screen. Wider shows more at the edges"
-		+ " and makes targets smaller. Your weapon keeps its own field of view, so it never"
-		+ " stretches."
-	),
-	&"fullscreen": "Fill the screen instead of running in a window.",
-	&"vsync": "Match frames to the display to stop tearing. Adds a little input delay.",
-	&"max_fps": "Cap the frame rate to keep the machine cooler and quieter.",
-	&"graphics_quality":
-	(
-		"Shadows, lighting, and effects in one choice. Lower presets run faster on older"
-		+ " graphics cards."
-	),
-	&"render_scale":
-	"Draws the 3D world at a lower resolution and scales it up. The HUD stays sharp.",
-	&"motion_blur": "Blurs fast camera turns.",
-	&"lens_effects": "Darkens the corners of the picture and adds a little film grain.",
-	&"master_volume": "Every sound in the game.",
-	&"weapons_volume": "Gunfire, reloads, and weapon handling.",
-	&"effects_volume": "Impacts, explosions, and other effects.",
-	&"footsteps_volume": "Footsteps, yours and everyone else's.",
-	&"ambience_volume": "Wind, city noise, and other background sound.",
-	&"ui_volume": "Menu clicks and HUD sounds.",
-	&"audio_mix":
-	(
-		"Headphones keeps full stereo. Speakers narrows it. Competitive also evens out loud"
-		+ " and quiet sounds so footsteps carry. Night turns gunfire and explosions down"
-		+ " and evens everything out, for playing quietly."
-	),
-	&"subtitles": "Captions for calls and sound cues, such as the 30-second warning.",
-	&"player_name": "The name other players see in the kill feed and on the scoreboard.",
-	&"camera_motion": "Head bob and weapon sway while you move.",
-	&"show_fps": "Shows the frame rate in the corner of the screen.",
-	&"skip_killcams":
-	(
-		"Respawn without watching the replay of each death. The kill that ends a round or"
-		+ " the match still plays for everyone."
-	),
-	&"team_colours":
-	(
-		"Your side and the enemy's on the HUD, minimap, kill feed, and objectives. The"
-		+ " palettes for protanopia, deuteranopia, and tritanopia keep the two apart."
-	),
-	&"hud_scale": "Size of the HUD's corner pieces: health, ammo, score, minimap, and feeds.",
-	&"hud_opacity": "How solid the HUD is. The crosshair and hit markers stay as they are.",
-	&"minimap_rotates":
-	"The minimap turns as you do, so you always face up. Off keeps north at the top.",
-	&"bindings":
-	(
-		"Choose a binding, then press a key or mouse button. A key used by another action"
-		+ " swaps with it."
-	),
-}
+const RESET_QUESTION := "Reset every setting and key binding to its default?"
 
 ## The player that settings (look speed, input device, FOV) are pushed onto.
 ## Left empty, the map's own `Player` node beside the menu is used, so a map
@@ -135,13 +40,19 @@ const DESCRIPTIONS := {
 var _tabs: TabBar
 var _tab_sections: Array[VBoxContainer] = []
 var _bind_buttons: Dictionary[StringName, Button] = {}
+var _bind_rows: Dictionary[StringName, OptionRow] = {}
+var _pad_cells: Dictionary[StringName, TextureRect] = {}
 var _capturing: StringName
 var _capture_time := 0.0
 var _binding_hint: Label
 var _controller_status: Label
 var _input_option: OptionButton
+## The lock tags beside the Mouse and Controller section names: "LOCKED"
+## while the other device is the one in play.
 var _mouse_heading: Label
 var _controller_heading: Label
+var _mouse_rows: Array[OptionRow] = []
+var _controller_rows: Array[OptionRow] = []
 var _player_name: LineEdit
 ## Default value text, by setting key, for the pane beside the list.
 var _defaults: Dictionary[StringName, String] = {}
@@ -156,14 +67,17 @@ var _quality_option: OptionButton
 ## Option buttons for int settings picked from a list, by setting.
 var _choices: Dictionary[StringName, OptionButton] = {}
 var _scale_option: OptionButton
+## The rows a section is building into, while `_build_settings` runs.
+var _collect: Array[OptionRow] = []
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
 var _quiet := false
 var _owns_pause := false
 
 @onready var _root: Control = %Root
-@onready var _title: Label = %Title
-@onready var _eyebrow: Label = %Eyebrow
+@onready var _frame: ScreenFrame = %Frame
+@onready var _card: Control = %Card
+@onready var _confirm: Control = %Confirm
 @onready var _info_title: Label = %InfoTitle
 @onready var _info_text: Label = %InfoText
 @onready var _info_default: Label = %InfoDefault
@@ -173,6 +87,7 @@ var _owns_pause := false
 @onready var _scroll: ScrollContainer = %Scroll
 @onready var _hint: Label = %Hint
 @onready var _build: Label = %Build
+@onready var _back_button: Button = %BackButton
 @onready var _resume_button: Button = %ResumeButton
 @onready var _settings_button: Button = %SettingsButton
 
@@ -183,8 +98,12 @@ func _ready() -> void:
 	var footer_keys := FooterKeys.new()
 	footer_keys.name = "FooterKeys"
 	add_child(footer_keys)
-	footer_keys.bind($Root/Margin/Layout/Footer/SelectKey, &"ui_accept")
-	footer_keys.bind($Root/Margin/Layout/Footer/BackKey, &"ui_cancel")
+	footer_keys.bind($Root/Footer/SelectGroup/SelectKey, &"ui_accept")
+	footer_keys.bind($Root/Footer/BackKey, &"ui_cancel")
+	footer_keys.bind(%ResetKey, &"ui_menu_reset")
+	footer_keys.bind($Root/SettingsPage/TabRow/PrevTab/Cap/PrevKey, &"ui_tab_prev")
+	footer_keys.bind($Root/SettingsPage/TabRow/NextTab/Cap/NextKey, &"ui_tab_next")
+	footer_keys.bind($Root/Confirm/BackPrompt/ConfirmKey, &"ui_cancel")
 	_setup_sounds()
 
 	_resume_button.pressed.connect(close)
@@ -192,7 +111,27 @@ func _ready() -> void:
 	%LeaveButton.pressed.connect(_leave)
 	%QuitButton.pressed.connect(_quit)
 	%ResetButton.pressed.connect(Settings.reset_to_defaults)
-	%BackButton.pressed.connect(_back)
+	%ResetPrompt.pressed.connect(_ask_reset)
+	%PrevTab.pressed.connect(_step_tab.bind(-1))
+	%NextTab.pressed.connect(_step_tab.bind(1))
+	_back_button.pressed.connect(_back)
+	for entry: Array in [
+		[_resume_button, "Back to the match."],
+		[_settings_button, "Controls, key bindings, graphics, audio, and the HUD."],
+		[%LeaveButton, ""],
+		[%QuitButton, "Close the game."],
+	]:
+		(entry[0] as Button).focus_entered.connect(_note_route.bind(entry[0], entry[1]))
+		(entry[0] as Button).focus_exited.connect(func() -> void: %Pointer.hide())
+	%Pointer.draw.connect(
+		func() -> void:
+			HudShapes.pointer(%Pointer, Vector2(6, 6), 10.0, Vector2.RIGHT, UiTheme.ACCENT)
+	)
+	# Black Ops menus have one cursor: the mouse over an item focuses it.
+	for button: Button in [
+		_resume_button, _settings_button, %LeaveButton, %QuitButton, %NoButton, %ResetButton
+	]:
+		button.mouse_entered.connect(_hover_focus.bind(button))
 	Input.joy_connection_changed.connect(_controller_changed)
 	Settings.changed.connect(_on_settings_changed)
 
@@ -218,24 +157,27 @@ func _input(event: InputEvent) -> void:
 	_open_input(event, pause)
 
 
-## Keys while the menu is open: LB/RB switch tabs, Esc goes back or closes.
+## Keys while the menu is open: LB/RB switch tabs, Y or R asks to reset, Esc
+## goes back or closes.
 func _open_input(event: InputEvent, pause: bool) -> void:
+	var cancel := pause or event.is_action_pressed(&"ui_cancel")
+	if _confirm.visible:
+		if cancel:
+			get_viewport().set_input_as_handled()
+			_confirm.call(&"dismiss")
+		return
 	if _settings_page.visible and _tab_step(event) != 0:
 		get_viewport().set_input_as_handled()
-		_tabs.current_tab = wrapi(_tabs.current_tab + _tab_step(event), 0, _tabs.tab_count)
+		_step_tab(_tab_step(event))
 		return
-	if not (pause or event.is_action_pressed(&"ui_cancel")):
+	if _settings_page.visible and event.is_action_pressed(&"ui_menu_reset") and not _typing():
+		get_viewport().set_input_as_handled()
+		_ask_reset()
 		return
-	for option: OptionButton in (
-		[_input_option, _fps_option, _quality_option, _scale_option] + _choices.values()
-	):
-		if option.get_popup().visible:
-			return  # Let the dropdown close itself.
+	if not cancel or _list_open():
+		return  # A drop-down list closes itself.
 	get_viewport().set_input_as_handled()
-	if _settings_page.visible:
-		_back()
-	else:
-		close()
+	_back()
 
 
 ## -1 or 1 when `event` asks for the previous or next tab (LB/RB, Page Up/Down).
@@ -257,6 +199,26 @@ func _tab_step(event: InputEvent) -> int:
 	return 0
 
 
+func _step_tab(step: int) -> void:
+	_tabs.current_tab = wrapi(_tabs.current_tab + step, 0, _tabs.tab_count)
+
+
+## True while the player name field takes typing.
+func _typing() -> bool:
+	var owner := get_viewport().gui_get_focus_owner()
+	return owner is LineEdit and (owner as LineEdit).is_editing()
+
+
+## True while a drop-down's list is open.
+func _list_open() -> bool:
+	for option: OptionButton in (
+		[_input_option, _fps_option, _quality_option, _scale_option] + _choices.values()
+	):
+		if option.get_popup().visible:
+			return true
+	return false
+
+
 func _process(delta: float) -> void:
 	if not _capturing.is_empty():
 		_capture_time -= delta
@@ -276,7 +238,9 @@ func open() -> void:
 		return
 	_sync_controls()
 	_show_main()
-	%LeaveButton.text = "Leave server" if Net.is_online() else "Main menu"
+	%LeaveButton.text = (
+		"LEAVE SERVER" if _match_runs_on() else "LEAVE GAME" if Net.is_online() else "MAIN MENU"
+	)
 	_build.text = build_text()
 	_root.show()
 	_focus(_resume_button)
@@ -305,9 +269,11 @@ func build_text() -> String:
 	return text
 
 
+## Esc, B, or the Back prompt: out of the options to the pause list, or
+## from the pause list back to the game.
 func _back() -> void:
 	_cancel_capture()
-	if title_menu:
+	if title_menu or not _settings_page.visible:
 		close()
 	else:
 		_show_main()
@@ -317,6 +283,7 @@ func close() -> void:
 	if not is_open():
 		return
 	_cancel_capture()
+	_confirm.hide()
 	_save_player_name()
 	_release_pause()
 	get_viewport().gui_release_focus()
@@ -359,9 +326,10 @@ func _show_main() -> void:
 	var from_settings := _settings_page.visible
 	_settings_page.hide()
 	_main_page.show()
-	_eyebrow.text = ("ONLINE  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else "SHOOTER")
-	_title.text = "PAUSED"
-	_hint.text = "Resume"
+	_frame.title = "MENU" if _match_runs_on() else "PAUSED"
+	_frame.context = "ONLINE  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else ""
+	_show_footer()
+	_card.call(&"refresh")
 	Settings.flush()
 	if from_settings:
 		_focus(_settings_button)
@@ -370,16 +338,28 @@ func _show_main() -> void:
 func _show_settings() -> void:
 	_main_page.hide()
 	_settings_page.show()
-	_eyebrow.text = "SHOOTER" if title_menu else _pause_eyebrow()
-	_title.text = "SETTINGS"
-	_hint.text = "Back      Changes save automatically"
+	_frame.title = "OPTIONS"
+	_frame.context = "MAIN MENU" if title_menu else _pause_context()
+	_show_footer()
 	_scroll.scroll_vertical = 0
-	_describe(TAB_NAMES[_tabs.current_tab], TAB_INTROS[_tabs.current_tab], "")
+	_describe(TAB_NAMES[_tabs.current_tab], OptionText.TAB_INTROS[_tabs.current_tab], "")
 	_focus(_tabs)
 
 
-func _pause_eyebrow() -> String:
-	return "PAUSED  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else "PAUSED"
+## The footer's prompts for what is on screen: Select and Resume on the
+## pause list; Select, Back, and Reset to Default on the options; only
+## Cancel while a binding waits for a key.
+func _show_footer() -> void:
+	var options := _settings_page.visible
+	var waiting := not _capturing.is_empty()
+	%SelectGroup.visible = not waiting
+	%ResetGroup.visible = options and not waiting
+	_back_button.text = "Cancel" if waiting else "Back" if options else "Resume"
+	_hint.text = "Changes apply right away" if options and not waiting else ""
+
+
+func _pause_context() -> String:
+	return "MENU  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else "PAUSED"
 
 
 ## Online matches on someone else's server do not pause.
@@ -393,6 +373,38 @@ func _describe(title: String, text: String, default: String) -> void:
 	_info_text.text = text
 	_info_default.text = "DEFAULT  %s" % default.to_upper()
 	_info_default.visible = default != ""
+
+
+func _ask_reset() -> void:
+	if _settings_page.visible and not _confirm.visible:
+		_cancel_capture()
+		_confirm.call(&"ask", "Reset options", RESET_QUESTION)
+
+
+## The line under the pause list: what the focused item does.
+func _note_route(button: Button, note: String) -> void:
+	if button == %LeaveButton:
+		note = (
+			"Leave this server and go back to Join Server."
+			if _match_runs_on()
+			else (
+				"End the match and go back to the main menu."
+				if Net.is_online()
+				else "Leave the testing area for the main menu."
+			)
+		)
+	%RouteNote.text = note
+	# As on the title screen: the new plate flashes brighter for a moment, and
+	# a small orange pointer marks it.
+	button.self_modulate = Color(1.6, 1.6, 1.6)
+	create_tween().tween_property(button, ^"self_modulate", Color.WHITE, 0.1)
+	_place_pointer.call_deferred(button)
+
+
+func _place_pointer(button: Button) -> void:
+	if button.has_focus() and button.is_visible_in_tree():
+		%Pointer.position = Vector2(44.0, button.get_global_rect().get_center().y - 6.0)
+		%Pointer.show()
 
 
 ## Online: back to the Join screen. Offline: back to the title screen.
@@ -416,6 +428,17 @@ func _focus(control: Control) -> void:
 	_quiet = false
 
 
+## The mouse moved onto an item or row: it takes the focus, unless a binding
+## is waiting for a key, a list is open, or the name field is being typed in.
+func _hover_focus(control: Control) -> void:
+	if not is_open() or not _capturing.is_empty() or _typing() or _list_open():
+		return
+	if _confirm.visible and not _confirm.is_ancestor_of(control):
+		return
+	if control.is_visible_in_tree() and not control.has_focus():
+		_focus(control)
+
+
 # --- Settings page --------------------------------------------------------
 
 
@@ -425,15 +448,18 @@ func _build_settings() -> void:
 
 	_tabs = TabBar.new()
 	_tabs.name = "OptionsTabs"
+	_tabs.theme_type_variation = &"OptionTabs"
 	_tabs.focus_mode = Control.FOCUS_ALL
+	_tabs.clip_tabs = false
 	for title: String in TAB_NAMES:
-		_tabs.add_tab(title)
-	_settings_page.add_child(_tabs)
-	_settings_page.move_child(_tabs, 0)
+		_tabs.add_tab(title.to_upper())
+	%TabRow.add_child(_tabs)
+	%TabRow.move_child(_tabs, 1)
 	_tabs.tab_changed.connect(_select_tab)
 	var controls := _add_section("Controls")
-	_add_heading(controls, "Input")
+	_add_heading(controls, "Input", false)
 	_add_input_option(controls)
+	_collect.clear()
 	_mouse_heading = _add_heading(controls, "Mouse")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, decimal)
 	_add_slider(
@@ -441,14 +467,13 @@ func _build_settings() -> void:
 		&"ads_sensitivity",
 		"Aim sensitivity",
 		0.05,
-		func(v: float) -> String: return "%.2f×" % v
+		func(v: float) -> String: return "%.2f" % v
 	)
 	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
+	_mouse_rows.assign(_collect)
+	_collect.clear()
 	_controller_heading = _add_heading(controls, "Controller")
-	_controller_status = Label.new()
-	_controller_status.theme_type_variation = &"DimLabel"
-	_controller_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	controls.add_child(_controller_status)
+	_controller_status = _add_note(controls)
 	_show_controller_status()
 	_add_level_slider(controls, &"stick_sensitivity_level", "Look speed")
 	_add_choice(controls, &"stick_response", "Aim response curve", Settings.STICK_RESPONSES)
@@ -460,56 +485,57 @@ func _build_settings() -> void:
 	_add_toggle(controls, &"aim_assist", "Aim assist")
 	_add_toggle(controls, &"rumble", "Vibration")
 	_add_choice(controls, &"button_prompts", "Button prompts", Settings.BUTTON_PROMPTS)
+	_controller_rows.assign(_collect)
+	_collect.clear()
 
 	var keybinds := _add_section("Keybinds")
-	_binding_hint = Label.new()
+	_add_heading(keybinds, "Keybinds", false)
+	_binding_hint = _add_note(keybinds)
 	_binding_hint.text = "Choose a binding, then press a key or mouse button. Conflicts swap."
-	_binding_hint.theme_type_variation = &"DimLabel"
-	_binding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	keybinds.add_child(_binding_hint)
 	_build_bindings(keybinds)
 
 	var video := _add_section("Graphics")
-	_add_heading(video, "Display")
+	_add_heading(video, "Display", false)
 	_add_slider(
 		video, &"fov", "Field of view", 1.0, func(v: float) -> String: return "%d°" % roundi(v)
 	)
 	_add_toggle(video, &"fullscreen", "Fullscreen")
 	_add_toggle(video, &"vsync", "VSync")
 	_add_fps_option(video)
-	_add_heading(video, "Quality")
+	_add_heading(video, "Quality", false)
 	_add_graphics_options(video)
 
 	var audio := _add_section("Audio")
-	_add_heading(audio, "Volume")
+	_add_heading(audio, "Volume", false)
 	_add_slider(audio, &"master_volume", "Master", 0.01, percent)
 	_add_slider(audio, &"weapons_volume", "Weapons", 0.01, percent)
 	_add_slider(audio, &"effects_volume", "Effects", 0.01, percent)
 	_add_slider(audio, &"footsteps_volume", "Footsteps", 0.01, percent)
 	_add_slider(audio, &"ambience_volume", "Ambience", 0.01, percent)
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
-	_add_heading(audio, "Output")
+	_add_heading(audio, "Output", false)
 	_add_choice(audio, &"audio_mix", "Audio mix", Settings.AUDIO_MIXES)
 	_add_toggle(audio, &"subtitles", "Subtitles")
 
 	var general := _add_section("General")
-	_add_heading(general, "Profile")
+	_add_heading(general, "Profile", false)
 	_player_name = LineEdit.new()
 	_player_name.max_length = 16
-	_player_name.custom_minimum_size = Vector2(260, 34)
-	_player_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_player_name.text_submitted.connect(func(_text: String) -> void: _save_player_name())
 	_player_name.focus_exited.connect(_save_player_name)
-	_add_row(general, "Player name", _player_name, null, &"player_name")
-	_add_heading(general, "Interface")
+	_add_row(general, OptionRow.Kind.TEXT, "Player name", _player_name, null, null, &"player_name")
+	_add_heading(general, "Interface", false)
 	_add_toggle(general, &"camera_motion", "Camera motion")
 	_add_toggle(general, &"show_fps", "Show FPS counter")
 	_add_choice(general, &"team_colours", "Team colours", TeamColours.NAMES)
 	_add_slider(general, &"hud_scale", "HUD size", 0.05, percent)
 	_add_slider(general, &"hud_opacity", "HUD opacity", 0.05, percent)
-	_add_heading(general, "Multiplayer")
+	_add_heading(general, "Multiplayer", false)
 	_add_toggle(general, &"skip_killcams", "Skip killcams")
 	_add_toggle(general, &"minimap_rotates", "Rotate minimap")
+	_collect.clear()
+	for section: VBoxContainer in _tab_sections:
+		_chain_focus(section)
 	_record_defaults()
 	_select_tab(0)
 
@@ -532,23 +558,72 @@ func _scale_name(scale: float) -> String:
 	return "Native" if scale >= 0.999 else "%d%%" % roundi(scale * 100.0)
 
 
-func _add_heading(section: VBoxContainer, title: String) -> Label:
+## A group's name over its rows ("Controller"), with a gap above it unless
+## it opens the tab. Returns the grey tag beside the name, which says
+## "LOCKED" while that device is out of play.
+func _add_heading(section: VBoxContainer, title: String, lockable := true) -> Label:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override(&"separation", 12)
+	row.custom_minimum_size.y = 34 if section.get_child_count() == 0 else 64
 	var heading := Label.new()
-	heading.text = title.to_upper()
-	heading.theme_type_variation = &"SectionHeader"
-	heading.custom_minimum_size.y = 34
-	heading.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	section.add_child(heading)
-	return heading
+	heading.text = title
+	heading.theme_type_variation = &"OptionHeading"
+	heading.size_flags_vertical = Control.SIZE_SHRINK_END
+	row.add_child(heading)
+	var tag := Label.new()
+	tag.theme_type_variation = &"OptionLock"
+	tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tag.visible = false
+	if lockable:
+		var holder := VBoxContainer.new()
+		holder.size_flags_vertical = Control.SIZE_SHRINK_END
+		holder.custom_minimum_size.y = 24
+		holder.add_child(tag)
+		row.add_child(holder)
+	section.add_child(row)
+	return tag
+
+
+## A line of grey text under a heading.
+func _add_note(section: VBoxContainer) -> Label:
+	var note := Label.new()
+	note.theme_type_variation = &"OptionNote"
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(OptionRow.WIDTH, 28)
+	note.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	note.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	section.add_child(note)
+	return note
 
 
 func _add_section(title: String) -> VBoxContainer:
 	var section := VBoxContainer.new()
-	section.add_theme_constant_override(&"separation", 2)
+	section.add_theme_constant_override(&"separation", 5)
 	section.name = title
 	_sections.add_child(section)
 	_tab_sections.append(section)
 	return section
+
+
+## Up and down walk a tab's rows in order, as a list does, and up from the
+## first row returns to the tabs; left and right stay on the row (a slider
+## uses them, a name field moves its caret).
+func _chain_focus(section: VBoxContainer) -> void:
+	var controls: Array[Control] = []
+	for child: Node in section.get_children():
+		if child is OptionRow:
+			controls.append((child as OptionRow).control)
+	for i in controls.size():
+		var control := controls[i]
+		control.focus_neighbor_top = control.get_path_to(controls[i - 1] if i > 0 else _tabs)
+		control.focus_neighbor_bottom = (
+			control.get_path_to(controls[i + 1]) if i + 1 < controls.size() else ^"."
+		)
+		control.focus_previous = control.focus_neighbor_top
+		control.focus_next = control.focus_neighbor_bottom
+		if not (control is HSlider or control is LineEdit):
+			control.focus_neighbor_left = ^"."
+			control.focus_neighbor_right = ^"."
 
 
 func _select_tab(index: int) -> void:
@@ -556,7 +631,15 @@ func _select_tab(index: int) -> void:
 	for i in _tab_sections.size():
 		_tab_sections[i].visible = i == index
 	_scroll.scroll_vertical = 0
-	_describe(TAB_NAMES[index], TAB_INTROS[index], "")
+	_describe(TAB_NAMES[index], OptionText.TAB_INTROS[index], "")
+	for child: Node in _tab_sections[index].get_children():
+		if child is OptionRow:
+			_tabs.focus_neighbor_bottom = _tabs.get_path_to((child as OptionRow).control)
+			break
+	_tabs.focus_neighbor_top = ^"."
+	# A short fade as the new tab's rows come in.
+	_scroll.modulate.a = 0.0
+	create_tween().tween_property(_scroll, ^"modulate:a", 1.0, 0.12)
 
 
 func _save_player_name() -> void:
@@ -577,7 +660,7 @@ func _controller_changed(_device: int, connected: bool) -> void:
 	):
 		return
 	open()
-	_eyebrow.text = "CONTROLLER DISCONNECTED"
+	_frame.context = "CONTROLLER DISCONNECTED"
 
 
 func _show_controller_status() -> void:
@@ -595,71 +678,52 @@ func _show_controller_status() -> void:
 func _add_input_option(section: VBoxContainer) -> void:
 	_input_option = OptionButton.new()
 	_input_option.name = "InputDevice"
-	_input_option.custom_minimum_size = Vector2(220, 34)
-	_input_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in Settings.INPUT_DEVICES.size():
 		_input_option.add_item(Settings.INPUT_DEVICES[i], i)
 	_input_option.item_selected.connect(
 		func(index: int) -> void:
 			Settings.set_setting(&"input_device", _input_option.get_item_id(index))
 	)
-	_add_row(section, "Input device", _input_option, null, &"input_device")
+	_add_row(
+		section, OptionRow.Kind.CHOICE, "Input device", _input_option, null, null, &"input_device"
+	)
 
 
+## Keybinds: the action's name, its key in the middle column, and the
+## controller button (not rebindable here) on the right.
 func _build_bindings(section: VBoxContainer) -> void:
-	var heading := HBoxContainer.new()
-	heading.add_theme_constant_override(&"separation", 14)
-	heading.custom_minimum_size.y = 34
-	for column: Array in [["ACTION", 0], ["KEYBOARD / MOUSE", 170], ["CONTROLLER", 150]]:
-		var label := Label.new()
-		label.text = column[0]
-		label.theme_type_variation = &"SectionHeader"
-		label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-		label.size_flags_vertical = Control.SIZE_FILL
-		if column[1] == 0:
-			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		elif column[1] == 170:
-			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		else:
-			label.custom_minimum_size.x = column[1]
-		heading.add_child(label)
-	# Line the column names up with the row contents inside the row margins.
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override(&"margin_left", 16)
-	margin.add_theme_constant_override(&"margin_right", 16)
-	margin.add_child(heading)
-	section.add_child(margin)
+	section.add_child(BindCells.columns())
 	for action: StringName in Settings.REBINDABLE:
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(170, 34)
 		button.pressed.connect(_start_capture.bind(action))
 		_bind_buttons[action] = button
-		var gamepad := Label.new()
-		gamepad.custom_minimum_size.x = 150
-		gamepad.theme_type_variation = &"DimLabel"
-		gamepad.text = _gamepad_label(action)
-		_add_row(section, Settings.REBINDABLE[action], button, gamepad, &"bindings")
-
-
-func _gamepad_label(action: StringName) -> String:
-	for event: InputEvent in Settings.action_events(action):
-		if event is InputEventJoypadMotion:
-			match event.axis:
-				JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
-					return "Left stick"
-				JOY_AXIS_TRIGGER_LEFT:
-					return "LT"
-				JOY_AXIS_TRIGGER_RIGHT:
-					return "RT"
-	var label := Settings.key_label(action, true)
-	return "—" if label == "?" else Glyphs.plain(label)
+		_pad_cells[action] = BindCells.pad_cell()
+		_bind_rows[action] = _add_row(
+			section,
+			OptionRow.Kind.BIND,
+			Settings.REBINDABLE[action],
+			button,
+			null,
+			_pad_cells[action],
+			action
+		)
 
 
 func _start_capture(action: StringName) -> void:
 	_capturing = action
 	_capture_time = 10.0
 	_bind_buttons[action].text = "Press a key…"
+	_bind_rows[action].waiting = true
 	_binding_hint.text = "Press a key or mouse button. Esc / B cancels. Conflicts swap bindings."
+	_describe(
+		Settings.REBINDABLE[action],
+		(
+			"Press the key or mouse button for this action. Esc or B cancels; after ten seconds"
+			+ " the old binding stays."
+		),
+		""
+	)
+	_show_footer()
 
 
 func _cancel_capture(message := "") -> void:
@@ -667,7 +731,9 @@ func _cancel_capture(message := "") -> void:
 		return
 	var action := _capturing
 	_capturing = &""
+	_bind_rows[action].waiting = false
 	_sync_controls()
+	_show_footer()
 	_binding_hint.text = message if not message.is_empty() else "Binding cancelled."
 	_focus(_bind_buttons[action])
 
@@ -685,8 +751,10 @@ func _capture_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 	var action := _capturing
 	_capturing = &""
+	_bind_rows[action].waiting = false
 	Settings.rebind(action, event)
 	_sync_controls()
+	_show_footer()
 	_binding_hint.text = "Binding saved. Any conflicting key was swapped with the previous binding."
 	_focus(_bind_buttons[action])
 
@@ -702,17 +770,14 @@ func _add_slider(
 	if limits == Vector2.ZERO:
 		limits = Settings.RANGES[key]
 	var slider := HSlider.new()
+	slider.theme_type_variation = &"OptionSlider"
 	slider.min_value = limits.x
 	slider.max_value = limits.y
 	slider.step = step
-	slider.custom_minimum_size = Vector2(300, 28)
-	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	slider.value_changed.connect(func(v: float) -> void: Settings.set_setting(key, v))
 	var value := Label.new()
 	value.theme_type_variation = &"ValueLabel"
-	value.custom_minimum_size.x = VALUE_WIDTH
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_add_row(section, label, slider, value, key)
+	_add_row(section, OptionRow.Kind.SLIDER, label, slider, value, null, key)
 	_sliders[key] = slider
 	_value_labels[key] = value
 	_value_formats[key] = format
@@ -742,105 +807,91 @@ func sensitivity_text(level: float) -> String:
 
 func _add_toggle(section: VBoxContainer, key: StringName, label: String) -> void:
 	var toggle := CheckButton.new()
-	# As wide as a slider, so moving down a column of settings lands on it.
-	toggle.custom_minimum_size.x = 300
 	toggle.toggled.connect(func(on: bool) -> void: Settings.set_setting(key, on))
-	_add_row(section, label, toggle, null, key)
+	_add_row(section, OptionRow.Kind.TOGGLE, label, toggle, null, null, key)
 	_toggles[key] = toggle
 
 
 func _add_fps_option(section: VBoxContainer) -> void:
 	_fps_option = OptionButton.new()
-	_fps_option.custom_minimum_size = Vector2(220, 34)
-	_fps_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for fps: int in Settings.MAX_FPS_OPTIONS:
 		_fps_option.add_item("Unlimited" if fps == 0 else "%d FPS" % fps, fps)
 	_fps_option.item_selected.connect(
 		func(index: int) -> void: Settings.set_setting(&"max_fps", _fps_option.get_item_id(index))
 	)
-	_add_row(section, "Frame rate limit", _fps_option, null, &"max_fps")
+	_add_row(
+		section, OptionRow.Kind.CHOICE, "Frame rate limit", _fps_option, null, null, &"max_fps"
+	)
 
 
 ## A dropdown for an int setting whose values are indexes into `names`.
 func _add_choice(section: VBoxContainer, key: StringName, label: String, names: Array) -> void:
 	var option := OptionButton.new()
-	option.custom_minimum_size = Vector2(220, 34)
-	option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in names.size():
 		option.add_item(names[i], i)
 	option.item_selected.connect(
 		func(index: int) -> void: Settings.set_setting(key, option.get_item_id(index))
 	)
 	_choices[key] = option
-	_add_row(section, label, option, null, key)
+	_add_row(section, OptionRow.Kind.CHOICE, label, option, null, null, key)
 
 
 func _add_graphics_options(section: VBoxContainer) -> void:
 	_quality_option = OptionButton.new()
-	_quality_option.custom_minimum_size = Vector2(220, 34)
-	_quality_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in GraphicsQuality.NAMES.size():
 		_quality_option.add_item(GraphicsQuality.NAMES[i], i)
 	_quality_option.item_selected.connect(
 		func(index: int) -> void: Settings.set_graphics_preset(_quality_option.get_item_id(index))
 	)
-	_add_row(section, "Graphics preset", _quality_option, null, &"graphics_quality")
+	_add_row(
+		section,
+		OptionRow.Kind.CHOICE,
+		"Graphics preset",
+		_quality_option,
+		null,
+		null,
+		&"graphics_quality"
+	)
 
 	_scale_option = OptionButton.new()
-	_scale_option.custom_minimum_size = Vector2(220, 34)
-	_scale_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in GraphicsQuality.RENDER_SCALES.size():
 		_scale_option.add_item(_scale_name(GraphicsQuality.RENDER_SCALES[i]), i)
 	_scale_option.item_selected.connect(
 		func(index: int) -> void:
 			Settings.set_setting(&"render_scale", GraphicsQuality.RENDER_SCALES[index])
 	)
-	_add_row(section, "Render scale", _scale_option, null, &"render_scale")
+	_add_row(
+		section, OptionRow.Kind.CHOICE, "Render scale", _scale_option, null, null, &"render_scale"
+	)
 	_add_toggle(section, &"motion_blur", "Motion blur")
 	_add_toggle(section, &"lens_effects", "Lens effects")
 
 
-## Adds a labelled row around `control`. The row lights up while `control` has
-## focus, and focus or hover shows setting `key` in the pane beside the list.
+## Adds a row around `control` (see `option_row.gd`). Focus, or the mouse
+## over the row, lights it and shows setting `key` in the pane beside the list.
 func _add_row(
 	section: VBoxContainer,
+	kind: OptionRow.Kind,
 	label: String,
 	control: Control,
-	extra: Control = null,
+	value: Label = null,
+	side: Control = null,
 	key: StringName = &"",
-) -> void:
-	var panel := PanelContainer.new()
-	panel.theme_type_variation = &"SettingRow"
-	panel.custom_minimum_size.y = 46
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override(&"separation", 14)
-	var name_label := Label.new()
-	name_label.text = label
-	name_label.theme_type_variation = &"SettingName"
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(name_label)
-	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(control)
-	if extra != null:
-		row.add_child(extra)
-	panel.add_child(row)
-	section.add_child(panel)
-	control.focus_entered.connect(_highlight_row.bind(panel, name_label, true))
-	control.focus_exited.connect(_highlight_row.bind(panel, name_label, false))
-	var describe := func() -> void:
-		_describe(label, DESCRIPTIONS.get(key, ""), _defaults.get(key, ""))
-	control.focus_entered.connect(describe)
-	control.mouse_entered.connect(describe)
-	panel.mouse_entered.connect(describe)
-
-
-func _highlight_row(panel: PanelContainer, label: Label, on: bool) -> void:
-	panel.theme_type_variation = &"SettingRowFocused" if on else &"SettingRow"
-	if on:
-		label.add_theme_color_override(&"font_color", Color.WHITE)
-	else:
-		label.remove_theme_color_override(&"font_color")
+) -> OptionRow:
+	var row := OptionRow.new()
+	row.setup(kind, label, control, value, side)
+	section.add_child(row)
+	_collect.append(row)
+	control.focus_entered.connect(
+		func() -> void:
+			_describe(
+				label,
+				OptionText.DESCRIPTIONS.get(key, OptionText.BIND_DESCRIPTIONS.get(key, "")),
+				_defaults.get(key, "")
+			)
+	)
+	row.hovered.connect(_hover_focus.bind(control))
+	return row
 
 
 ## Shows the current Settings values without feeding changes back.
@@ -856,16 +907,30 @@ func _sync_controls() -> void:
 	for action: StringName in _bind_buttons:
 		var bound := Settings.binding(action)
 		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
+		BindCells.show_pad(_pad_cells[action], action)
 	_input_option.select(_input_option.get_item_index(Settings.input_device))
 	var controller := Settings.uses_controller()
-	_mouse_heading.text = "MOUSE" + ("  ·  LOCKED" if controller else "")
-	_controller_heading.text = "CONTROLLER" + ("" if controller else "  ·  LOCKED")
+	_show_lock(_mouse_heading, _mouse_rows, controller)
+	_show_lock(_controller_heading, _controller_rows, not controller)
 	_show_controller_status()
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
 	for key: StringName in _choices:
 		_choices[key].select(_choices[key].get_item_index(Settings.get(key)))
 	_scale_option.select(_closest_scale(Settings.render_scale))
+	for section: VBoxContainer in _tab_sections:
+		for row: Node in section.get_children():
+			if row is OptionRow:
+				(row as OptionRow).queue_redraw()
+
+
+## A device's section while the other device is in play: "LOCKED" beside its
+## name, and its rows' names grey. They stay adjustable.
+func _show_lock(tag: Label, rows: Array[OptionRow], locked: bool) -> void:
+	tag.text = "LOCKED" if locked else ""
+	tag.visible = locked
+	for row: OptionRow in rows:
+		row.muted = locked
 
 
 func _closest_scale(scale: float) -> int:

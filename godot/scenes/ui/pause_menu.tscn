@@ -1,10 +1,16 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/menu_blur.gdshader" id="2_blur"]
+[ext_resource type="Script" path="res://scripts/ui/screen_frame.gd" id="3_frame"]
+[ext_resource type="Script" path="res://scripts/ui/pause_card.gd" id="4_card"]
+[ext_resource type="Script" path="res://scripts/ui/confirm_band.gd" id="5_confirm"]
+[ext_resource type="Script" path="res://scripts/ui/option_scroll.gd" id="6_scroll"]
 
 [sub_resource type="ShaderMaterial" id="Blur"]
 shader = ExtResource("2_blur")
+shader_parameter/lod = 2.5
+shader_parameter/tint = Color(0.02, 0.027, 0.035, 0.72)
 
 [node name="PauseMenu" type="CanvasLayer"]
 process_mode = 3
@@ -30,194 +36,430 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Margin" type="MarginContainer" parent="Root"]
+[node name="Frame" type="Control" parent="Root"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 72
-theme_override_constants/margin_top = 40
-theme_override_constants/margin_right = 72
-theme_override_constants/margin_bottom = 32
+mouse_filter = 2
+script = ExtResource("3_frame")
+title = "PAUSED"
 
-[node name="Layout" type="VBoxContainer" parent="Root/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Eyebrow" type="Label" parent="Root/Margin/Layout"]
+[node name="MainPage" type="Control" parent="Root"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"MenuEyebrow"
-text = "SHOOTER"
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="Title" type="Label" parent="Root/Margin/Layout"]
+[node name="Card" type="Control" parent="Root/MainPage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"MenuTitle"
-text = "PAUSED"
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("4_card")
 
-[node name="TitleGap" type="Control" parent="Root/Margin/Layout"]
-custom_minimum_size = Vector2(0, 10)
-layout_mode = 2
-
-[node name="MainPage" type="VBoxContainer" parent="Root/Margin/Layout"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(440, 0)
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 3
-theme_override_constants/separation = 4
-
-[node name="ResumeButton" type="Button" parent="Root/Margin/Layout/MainPage"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
-layout_mode = 2
-theme_type_variation = &"RouteButton"
-text = "Resume"
-alignment = 0
-
-[node name="SettingsButton" type="Button" parent="Root/Margin/Layout/MainPage"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
-layout_mode = 2
-theme_type_variation = &"RouteButton"
-text = "Settings"
-alignment = 0
-
-[node name="LeaveButton" type="Button" parent="Root/Margin/Layout/MainPage"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
-layout_mode = 2
-theme_type_variation = &"RouteButton"
-text = "Main menu"
-alignment = 0
-
-[node name="QuitButton" type="Button" parent="Root/Margin/Layout/MainPage"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
-layout_mode = 2
-theme_type_variation = &"RouteButton"
-text = "Quit to desktop"
-alignment = 0
-
-[node name="SettingsPage" type="VBoxContainer" parent="Root/Margin/Layout"]
+[node name="Pointer" type="Control" parent="Root/MainPage"]
 unique_name_in_owner = true
 visible = false
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 14
+layout_mode = 0
+offset_right = 12.0
+offset_bottom = 12.0
+mouse_filter = 2
 
-[node name="Body" type="HBoxContainer" parent="Root/Margin/Layout/SettingsPage"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 36
-
-[node name="Scroll" type="ScrollContainer" parent="Root/Margin/Layout/SettingsPage/Body"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-follow_focus = true
-horizontal_scroll_mode = 0
-
-[node name="Gutter" type="MarginContainer" parent="Root/Margin/Layout/SettingsPage/Body/Scroll"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/margin_right = 16
-
-[node name="Sections" type="VBoxContainer" parent="Root/Margin/Layout/SettingsPage/Body/Scroll/Gutter"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
+[node name="Menu" type="VBoxContainer" parent="Root/MainPage"]
+layout_mode = 0
+offset_left = 64.0
+offset_top = 150.0
+offset_right = 424.0
+offset_bottom = 400.0
 theme_override_constants/separation = 4
 
-[node name="Info" type="PanelContainer" parent="Root/Margin/Layout/SettingsPage/Body"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(460, 0)
-layout_mode = 2
-size_flags_vertical = 0
-theme_type_variation = &"StrongPanel"
-
-[node name="InfoLayout" type="VBoxContainer" parent="Root/Margin/Layout/SettingsPage/Body/Info"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="InfoTitle" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"Heading"
-
-[node name="InfoText" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(412, 0)
-layout_mode = 2
-theme_type_variation = &"DimLabel"
-autowrap_mode = 3
-
-[node name="InfoDefault" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 0
-theme_type_variation = &"KeyCap"
-
-[node name="Actions" type="HBoxContainer" parent="Root/Margin/Layout/SettingsPage"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="ResetButton" type="Button" parent="Root/Margin/Layout/SettingsPage/Actions"]
+[node name="ResumeButton" type="Button" parent="Root/MainPage/Menu"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-theme_type_variation = &"SecondaryButton"
-text = "Reset to defaults"
+size_flags_horizontal = 0
+theme_type_variation = &"RouteButton"
+text = "RESUME"
+alignment = 0
 
-[node name="Spacer" type="Control" parent="Root/Margin/Layout/SettingsPage/Actions"]
+[node name="SettingsButton" type="Button" parent="Root/MainPage/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"RouteButton"
+text = "OPTIONS"
+alignment = 0
+
+[node name="LeaveButton" type="Button" parent="Root/MainPage/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"RouteButton"
+text = "MAIN MENU"
+alignment = 0
+
+[node name="QuitButton" type="Button" parent="Root/MainPage/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"RouteButton"
+text = "QUIT TO DESKTOP"
+alignment = 0
+
+[node name="RouteNote" type="Label" parent="Root/MainPage/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 52)
+layout_mode = 2
+theme_type_variation = &"OptionNote"
+vertical_alignment = 2
+autowrap_mode = 3
+
+[node name="SettingsPage" type="Control" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TabRow" type="HBoxContainer" parent="Root/SettingsPage"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 64.0
+offset_top = 113.0
+offset_right = 1200.0
+offset_bottom = 155.0
+theme_override_constants/separation = 4
+
+[node name="PrevTab" type="Button" parent="Root/SettingsPage/TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 42)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"OptionTabStub"
+
+[node name="Cap" type="HBoxContainer" parent="Root/SettingsPage/TabRow/PrevTab"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -26.0
+offset_top = -15.0
+offset_right = 26.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="PrevKey" type="Label" parent="Root/SettingsPage/TabRow/PrevTab/Cap"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+text = "PG UP"
+
+[node name="NextTab" type="Button" parent="Root/SettingsPage/TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 42)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"OptionTabStub"
+
+[node name="Cap" type="HBoxContainer" parent="Root/SettingsPage/TabRow/NextTab"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -26.0
+offset_top = -15.0
+offset_right = 26.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="NextKey" type="Label" parent="Root/SettingsPage/TabRow/NextTab/Cap"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+text = "PG DN"
+
+[node name="Scroll" type="ScrollContainer" parent="Root/SettingsPage"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 60.0
+offset_top = 172.0
+offset_right = 712.0
+offset_bottom = 838.0
+horizontal_scroll_mode = 0
+script = ExtResource("6_scroll")
+
+[node name="Gutter" type="MarginContainer" parent="Root/SettingsPage/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 8
+
+[node name="Sections" type="VBoxContainer" parent="Root/SettingsPage/Scroll/Gutter"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="Info" type="VBoxContainer" parent="Root/SettingsPage"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 772.0
+offset_top = 184.0
+offset_right = 1272.0
+offset_bottom = 600.0
+mouse_filter = 2
+theme_override_constants/separation = 14
+
+[node name="InfoTitle" type="Label" parent="Root/SettingsPage/Info"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"OptionInfoTitle"
+
+[node name="InfoText" type="Label" parent="Root/SettingsPage/Info"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"OptionInfoText"
+autowrap_mode = 3
+
+[node name="InfoDefault" type="Label" parent="Root/SettingsPage/Info"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"OptionLock"
+
+[node name="Footer" type="HBoxContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 36.0
+offset_top = -52.0
+offset_right = -40.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 6
+
+[node name="SelectGroup" type="HBoxContainer" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SelectKey" type="Label" parent="Root/Footer/SelectGroup"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
+text = "ENTER"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SelectHint" type="Label" parent="Root/Footer/SelectGroup"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"OptionNote"
+theme_override_colors/font_color = Color(0.956863, 0.964706, 0.972549, 0.9)
+text = "Select"
+
+[node name="SelectGap" type="Control" parent="Root/Footer/SelectGroup"]
+custom_minimum_size = Vector2(16, 0)
+layout_mode = 2
+
+[node name="BackKey" type="Label" parent="Root/Footer"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
+text = "ESC"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BackButton" type="Button" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PromptButton"
+text = "Resume"
+
+[node name="ResetGroup" type="HBoxContainer" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ResetGap" type="Control" parent="Root/Footer/ResetGroup"]
+custom_minimum_size = Vector2(16, 0)
+layout_mode = 2
+
+[node name="ResetKey" type="Label" parent="Root/Footer/ResetGroup"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+theme_override_font_sizes/font_size = 16
+text = "R"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ResetPrompt" type="Button" parent="Root/Footer/ResetGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PromptButton"
+text = "Reset to Default"
+
+[node name="FooterSpace" type="Control" parent="Root/Footer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="BackButton" type="Button" parent="Root/Margin/Layout/SettingsPage/Actions"]
+[node name="Hint" type="Label" parent="Root/Footer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 40)
 layout_mode = 2
-theme_type_variation = &"SecondaryButton"
-text = "Back"
+size_flags_vertical = 4
+theme_type_variation = &"FaintLabel"
+theme_override_font_sizes/font_size = 15
 
-[node name="Footer" type="HBoxContainer" parent="Root/Margin/Layout"]
+[node name="HintGap" type="Control" parent="Root/Footer"]
+custom_minimum_size = Vector2(24, 0)
 layout_mode = 2
+
+[node name="Build" type="Label" parent="Root/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"FaintLabel"
+theme_override_font_sizes/font_size = 15
+text = "BUILD"
+
+[node name="Confirm" type="Control" parent="Root" node_paths=PackedStringArray("no_button", "yes_button", "question_label", "heading_label")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5_confirm")
+no_button = NodePath("Choices/NoButton")
+yes_button = NodePath("Choices/ResetButton")
+question_label = NodePath("Question")
+heading_label = NodePath("Heading")
+
+[node name="Heading" type="Label" parent="Root/Confirm"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -100.0
+offset_top = 344.0
+offset_right = 100.0
+offset_bottom = 374.0
+grow_horizontal = 2
+theme_type_variation = &"LabelPlate"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Question" type="Label" parent="Root/Confirm"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 382.0
+offset_bottom = 418.0
+grow_horizontal = 2
+theme_type_variation = &"OptionHeading"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Choices" type="HBoxContainer" parent="Root/Confirm"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -134.0
+offset_top = 430.0
+offset_right = 134.0
+offset_bottom = 466.0
+grow_horizontal = 2
 theme_override_constants/separation = 8
 
-[node name="SelectKey" type="Label" parent="Root/Margin/Layout/Footer"]
+[node name="NoButton" type="Button" parent="Root/Confirm/Choices"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 36)
 layout_mode = 2
-theme_type_variation = &"KeyCap"
-text = "ENTER"
+theme_type_variation = &"ConfirmButton"
+text = "NO"
 
-[node name="SelectHint" type="Label" parent="Root/Margin/Layout/Footer"]
+[node name="ResetButton" type="Button" parent="Root/Confirm/Choices"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 36)
 layout_mode = 2
-theme_type_variation = &"DimLabel"
-text = "Select"
+theme_type_variation = &"ConfirmButton"
+text = "YES"
 
-[node name="HintGap" type="Control" parent="Root/Margin/Layout/Footer"]
-custom_minimum_size = Vector2(14, 0)
-layout_mode = 2
+[node name="BackPrompt" type="HBoxContainer" parent="Root/Confirm"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -60.0
+offset_top = 478.0
+offset_right = 60.0
+offset_bottom = 502.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+alignment = 1
 
-[node name="BackKey" type="Label" parent="Root/Margin/Layout/Footer"]
+[node name="ConfirmKey" type="Label" parent="Root/Confirm/BackPrompt"]
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
+size_flags_vertical = 4
 theme_type_variation = &"KeyCap"
 text = "ESC"
 
-[node name="Hint" type="Label" parent="Root/Margin/Layout/Footer"]
-unique_name_in_owner = true
+[node name="ConfirmHint" type="Label" parent="Root/Confirm/BackPrompt"]
 layout_mode = 2
-theme_type_variation = &"DimLabel"
-text = "Resume"
-
-[node name="FooterSpace" type="Control" parent="Root/Margin/Layout/Footer"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Build" type="Label" parent="Root/Margin/Layout/Footer"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FaintLabel"
-text = "BUILD"
+size_flags_vertical = 4
+theme_type_variation = &"OptionNote"
+text = "Back"

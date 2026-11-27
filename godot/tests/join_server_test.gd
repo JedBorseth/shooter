@@ -124,7 +124,7 @@ func _run() -> void:
 	var pause := current_scene.get_node("PauseMenu")
 	pause.open()
 	var leave := pause.get_node("%LeaveButton") as Button
-	_check(leave.text == "Leave server", "the pause menu offers Leave server")
+	_check(leave.text == "LEAVE SERVER", "the pause menu offers Leave server")
 	leave.pressed.emit()
 	for i in 120:
 		if current_scene != null and current_scene.scene_file_path.ends_with("title_screen.tscn"):
