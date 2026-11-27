@@ -14,8 +14,10 @@ godot/materials/breakwater/ or godot/materials/world/.
 
 Chunks split the map in a 3 x 2 grid (west, centre, east by north, south)
 plus `far` for everything outside the boundary; `_detail` chunks hold small
-things that cast no shadow and are hidden at a distance; every other chunk
-gets a `_shadow` twin that casts its shadows in one draw.
+things that cast no shadow and are hidden at a distance; `_stain` chunks hold
+the stains laid over the ground, in a multiply-blend material that darkens
+the lit ground under them (no light, shadow, or bake of their own); every other chunk gets a `_shadow` twin that casts its
+shadows in one draw.
 """
 
 from __future__ import annotations
@@ -52,6 +54,13 @@ def log(*args):
 
 
 def chunk_of(centre, part) -> str:
+    chunk = _chunk_of(centre, part)
+    if part.get("stain") and chunk != "far":
+        return chunk + "_stain"
+    return chunk
+
+
+def _chunk_of(centre, part) -> str:
     x, _, z = centre
     x0, x1, z0, z1 = L.BOUNDS
     if part.get("chunk"):
@@ -68,6 +77,11 @@ def chunk_of(centre, part) -> str:
 class Materials(B.Materials):
     def _material(self, name: str) -> str | None:
         spec = BM.LOOKS.get(name, {})
+        if spec.get("special") == "stain_mul":
+            return "\n".join([
+                '[gd_resource type="ShaderMaterial" format=3]', "",
+                '[ext_resource type="Shader" path="res://shaders/stain_mul.gdshader" id="1_shader"]', "",
+                "[resource]", "render_priority = 1", 'shader = ExtResource("1_shader")']) + "\n"
         if spec.get("special") == "sea_shore":
             return "\n".join([
                 '[gd_resource type="ShaderMaterial" format=3]', "",
@@ -103,7 +117,7 @@ def main():
     mats = Materials()
 
     see_through = {"glow", "sea"} | {k for k, v in BM.LOOKS.items()
-                                     if v.get("special") in ("glass", "chainlink", "leaves", "beacon", "sea", "sea_shore")}
+                                     if v.get("special") in ("glass", "chainlink", "leaves", "beacon", "sea", "sea_shore", "stain_mul")}
 
     def shade(default, mix):
         """Per-vertex colours for a `shaded` part: the look's tint (and its
@@ -126,7 +140,8 @@ def main():
             # Shadow proxies: the opaque pieces at least SHADOW_MIN across.
             # Pipes, rails, and fittings cast their shadows in the lightmap
             # only; drawing them into every cascade cost about 0.2 ms.
-            if chunk.endswith("_detail") or chunk == "far" or name in see_through or look in see_through:
+            if (chunk.endswith(("_detail", "_stain")) or chunk == "far" or name in see_through
+                    or look in see_through):
                 continue
             span = max(max(v[i] for v in verts) - min(v[i] for v in verts) for i in range(3))
             thin = min(max(v[i] for v in verts) - min(v[i] for v in verts) for i in range(3))
