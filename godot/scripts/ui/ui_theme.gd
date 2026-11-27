@@ -261,6 +261,7 @@ static func build() -> Theme:
 	_containers(theme)
 	_lists(theme)
 	_pause_menu_types(theme)
+	_front_end_types(theme)
 	return theme
 
 
@@ -615,6 +616,68 @@ static func _pause_menu_types(theme: Theme) -> void:
 	theme.set_stylebox(&"panel", &"SettingRow", _row(14.0, 6.0))
 	_variation(theme, &"SettingRowFocused", &"PanelContainer")
 	theme.set_stylebox(&"panel", &"SettingRowFocused", _row_lit(14.0, 6.0))
+
+
+## Names the front end uses: the title screen, match setup, and Join Server.
+static func _front_end_types(theme: Theme) -> void:
+	# An item in the title menu list, Black Ops 3's main menu: caps on a dark
+	# plate that hugs the text; focus lights it solid orange with a glow.
+	_variation(theme, &"FrontMenuItem", &"Button")
+	theme.set_font(&"font", &"FrontMenuItem", tracked(LABEL, 1))
+	theme.set_font_size(&"font_size", &"FrontMenuItem", 21)
+	var item := plate(Color(0, 0, 0, 0.58), 10.0, 2.0)
+	item.content_margin_right = 14.0
+	var item_lit := lit(10.0, 2.0)
+	item_lit.content_margin_right = 14.0
+	_button_styles(theme, &"FrontMenuItem", item, item_lit, item_lit)
+	theme.set_stylebox(&"focus", &"FrontMenuItem", item_lit)
+	_button_colors(theme, &"FrontMenuItem", TEXT, TEXT)
+	theme.set_color(&"font_focus_color", &"FrontMenuItem", ACCENT_INK)
+	theme.set_color(&"font_hover_color", &"FrontMenuItem", ACCENT_INK)
+	# The item whose page is open beside the list: a dark orange plate.
+	_variation(theme, &"FrontMenuItemCurrent", &"FrontMenuItem")
+	var current_plate := plate(ACCENT.darkened(0.5), 10.0, 2.0)
+	current_plate.content_margin_right = 14.0
+	current_plate.border_color = ACCENT
+	current_plate.border_width_left = 3
+	_button_styles(theme, &"FrontMenuItemCurrent", current_plate, item_lit, item_lit)
+	theme.set_stylebox(&"focus", &"FrontMenuItemCurrent", item_lit)
+	# The action that ends a page (START MATCH, DONE, CONNECT): squared caps on
+	# a bordered dark plate; focus lights it orange like a menu item.
+	_variation(theme, &"FrontAction", &"Button")
+	theme.set_font(&"font", &"FrontAction", tracked(LABEL, 2))
+	theme.set_font_size(&"font_size", &"FrontAction", 25)
+	var action := outlined(Color(0, 0, 0, 0.55), Color(TEXT, 0.5), 1, 22.0, 8.0)
+	var action_lit := lit(22.0, 8.0)
+	_button_styles(theme, &"FrontAction", action, action_lit, plate(ACCENT.darkened(0.15), 22, 8))
+	theme.set_stylebox(&"focus", &"FrontAction", action_lit)
+	_button_colors(theme, &"FrontAction", TEXT, ACCENT_INK)
+	theme.set_color(&"font_focus_color", &"FrontAction", ACCENT_INK)
+	theme.set_color(&"font_hover_color", &"FrontAction", ACCENT_INK)
+	# A footer prompt's word ("Select", "Back") beside its key cap.
+	_variation(theme, &"FooterHint", &"Label")
+	theme.set_font(&"font", &"FooterHint", font(BODY))
+	theme.set_font_size(&"font_size", &"FooterHint", 16)
+	theme.set_color(&"font_color", &"FooterHint", TEXT)
+	# The same word as a flat button, for the mouse ("Back").
+	_variation(theme, &"FooterPrompt", &"Button")
+	theme.set_font(&"font", &"FooterPrompt", font(BODY))
+	theme.set_font_size(&"font_size", &"FooterPrompt", 16)
+	for state: StringName in [&"normal", &"hover", &"pressed", &"hover_pressed", &"focus"]:
+		theme.set_stylebox(state, &"FooterPrompt", plate(Color.TRANSPARENT, 0.0, 0.0))
+	_button_colors(theme, &"FooterPrompt", TEXT, ACCENT_HOT)
+	theme.set_color(&"font_hover_color", &"FooterPrompt", ACCENT_HOT)
+	# The front end's page panel: translucent black with its corners cut at
+	# 45 degrees and a faint 1 px edge, like Black Ops 2's bracketed panels.
+	_variation(theme, &"FrontPanel", &"PanelContainer")
+	var panel := outlined(Color(0, 0, 0, 0.66), Color(TEXT, 0.24), 1, 24.0, 22.0)
+	panel.set_corner_radius_all(14)
+	panel.corner_detail = 1
+	theme.set_stylebox(&"panel", &"FrontPanel", panel)
+	# A server or list row: a bordered black row; focus adds the orange rules.
+	_variation(theme, &"ServerRow", &"Button")
+	theme.set_font(&"font", &"ServerRow", font(LABEL_LIGHT))
+	theme.set_font_size(&"font_size", &"ServerRow", 20)
 
 
 static func _variation(theme: Theme, name: StringName, base: StringName) -> void:

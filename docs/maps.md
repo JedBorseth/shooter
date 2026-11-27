@@ -8,10 +8,10 @@ objectives is under "Map markers" there.
 | Map | Scene | Server key | Modes in the menu | Built from |
 | --- | --- | --- | --- | --- |
 | Breakwater | `scenes/breakwater.tscn` | `breakwater` | TDM, FFA, Gun Game, CTF, Domination, Hardpoint, Search and Destroy, Free Roam | `tools/breakwater_layout.py` |
-| Testing Area | `scenes/main.tscn` | `arena` | Its own title-screen route; TDM, FFA, Gun Game, CTF, Domination, Hardpoint as "Testing Arena" | `map_testing_area` in `tools/gear_models.py` |
+| Testing Area | `scenes/main.tscn` | `arena` | Its own title-screen item, and the Map row of every match setup but Search and Destroy | `map_testing_area` in `tools/gear_models.py` |
 
 Breakwater is the one multiplayer map. The match setup's map row
-(`MAPS` in `godot/scripts/tdm_setup.gd`) offers it and the Testing Arena,
+(`MAPS` in `godot/scripts/tdm_setup.gd`) offers it and the Testing Area,
 Breakwater first; Search and Destroy, which needs marked sites, is played on
 Breakwater with no map row, and Free Roam loads Breakwater straight from the
 title screen. A dedicated server takes `--map breakwater|arena`

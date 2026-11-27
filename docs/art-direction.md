@@ -499,6 +499,19 @@ The menus and HUD follow Treyarch's Black Ops 2 and Black Ops 3 (the owner's pic
 
 The research notes, sampled colours, and private reference screenshots this follows are kept out of the repository; nothing in it is traced or copied from Call of Duty.
 
+### Front end
+
+The screens outside a match follow Black Ops 3's multiplayer menus, with Black Ops 2's custom game rules list for the match setup.
+
+| Screen | What it does like Black Ops 3 | Script |
+| --- | --- | --- |
+| Title | The frame's header ("MULTIPLAYER" under the game's name), a list of caps items on dark plates that hug their text (the focused one a solid orange plate with a glow and a small orange pointer beside it, with a brief flash as focus lands), gaps between groups instead of headings, a line under the list saying what the item does, a card in the lower left showing where the item leads (the map's picture with a cut corner, its kind in the header strip, the map on a light plate and the mode under it), your name in pale yellow with a blue hexagon level badge and XP bar top right, and key prompts in the footer band. The backdrop is a soft, warm still of Breakwater's loading rack, darkened from the left | `title_screen.gd`, `ui/map_card.gd`, `ui/player_card.gd` |
+| Match setup and Game Settings | Opening a mode pushes the screen: the header names the mode, the list dims but for the open item, and a panel with cut corners slides in from the right, the same size on every page. Rule rows are drawn as Black Ops 3's settings rows (a name box and a value box; the value between small arrows; focus grows orange rules along the row's top and bottom and turns the value orange; a yellow star in a column before the name marks a rule off its default, as Black Ops 2 marks one), then a Game Settings link row and START MATCH at the foot. On the right, the map's picture with its name on a light plate, and a description of the focused row (or of its value) under a light title plate with its default in yellow. Esc or B goes back | `tdm_setup.gd`, `ui/rule_row.gd`, `ui/custom_settings_page.gd` |
+| Join Server | The same panel: the address field and CONNECT, the status line (a plate with a red edge on an error, the theme's error colour), recent servers as rows, and a description on the right; Enter and Esc prompts in the footer band | `join_server.gd` |
+| Loading | While a match's map loads and until the server lets you in: the map's picture softened and darkened, the map name in small grey caps over the mode in big squared caps beside the mode's mark (a hexagon with a simple figure per mode), for team modes a band with each side's mark and name on a light plate either side of a hexagon "VS" chip with gapped leader lines off its ends, the mode's objective, your card (your name on a yellow strip), and a tip over a thin white loading bar in a black band at the foot, with the cancel prompt | `ui/loading_screen.gd`, `net/net_status.gd` |
+
+Deliberate differences: no character render behind the menu (we have no specialists), so the backdrop is the map; no party list, so the top right shows only you; the loading screen shows only your card, not every player's. Its bar and map name are white and grey rather than Black Ops 3's orange, since orange means focus. Left and right step a rule row's value and A steps it on, wrapping.
+
 ### HUD
 
 The HUD pieces draw themselves (`_draw`) with the helpers in `godot/scripts/ui/hud_paint.gd` and `hud_shapes.gd`, and the HUD size setting scales the corner clusters (`Settings.fit_hud`; see [settings.md](settings.md)).

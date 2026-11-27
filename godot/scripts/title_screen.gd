@@ -1,14 +1,24 @@
 extends Control
-## The title screen: a grouped list of routes on the left over a still of
-## a map. Local match modes open their setup as a card on the right; the
-## Join screen and Options take the whole screen. The Testing Area and Free
-## Roam (Breakwater, alone) load straight away.
+## The title screen, laid out as Black Ops 3's multiplayer menu: a header
+## with the game's name, a list of caps items on dark plates down the left
+## (the focused one a solid orange plate with a small pointer beside it), a
+## line under the list saying what the focused item does, a card in the
+## lower left showing where it leads, the player's name and level top right,
+## and a footer band of key prompts, all over a still of Breakwater darkened
+## from the left. Local match modes open their setup as a panel on the right;
+## the Join screen and Options take the whole screen. The Testing Area and
+## Free Roam (Breakwater, alone) load straight away, behind a loading screen.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
+const LoadingScreen := preload("res://scripts/ui/loading_screen.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
 const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const JOIN_PATH := "res://scenes/join_server.tscn"
+const BREAKWATER_PICTURE := "res://assets/ui/maps/breakwater.jpg"
+const ARENA_PICTURE := "res://assets/ui/maps/arena.jpg"
 ## The menu button for each local match mode.
 const SETUP_BUTTONS := {
 	"tdm": "TeamDeathmatch",
@@ -19,8 +29,8 @@ const SETUP_BUTTONS := {
 	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
 }
-## The short tag on the right of each route, and the line the status shows
-## while it has focus.
+## Each item's kind, shown in the map card's header strip, and the line the
+## status shows.
 const ROUTES := {
 	"TeamDeathmatch": ["TEAMS", "Two teams race to the kill limit."],
 	"GunGame": ["LADDER", "Up eight weapons, one kill at a time."],
@@ -35,17 +45,31 @@ const ROUTES := {
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
+## What the map card shows for each item: [picture, header, plate, line].
+const CARDS := {
+	"JoinServer": [BREAKWATER_PICTURE, "ONLINE", "Dedicated server", "Join by address"],
+	"TestingArea": [ARENA_PICTURE, "PRACTICE", "Testing Area", "Target practice"],
+	"FreeRoam": [BREAKWATER_PICTURE, "PRACTICE", "Breakwater", "Free roam"],
+}
+## Where the focus pointer sits, left of the list's plates.
+const POINTER_X := 50.0
+## How bright a newly focused item flashes, and for how long.
+const FLASH := Color(1.6, 1.6, 1.6)
+const FLASH_TIME := 0.1
 
 var _loading := false
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 var _tdm_setup: Node
+var _loading_screen: Control
 ## The menu button that opened the match setup, focused again when it closes.
 var _setup_button := "TeamDeathmatch"
+var _pointer: Control
 
 @onready var _menu: Control = $Margin/Layout/Menu
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
+@onready var _card: Control = $Margin/Layout/MapCard
 
 
 func _ready() -> void:
@@ -58,9 +82,19 @@ func _ready() -> void:
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
 	_menu.get_node("JoinServer").pressed.connect(_open_join)
+	_pointer = Control.new()
+	_pointer.name = "Pointer"
+	_pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pointer.size = Vector2(12, 12)
+	_pointer.draw.connect(
+		func() -> void:
+			HudShapes.pointer(_pointer, Vector2(6, 6), 10.0, Vector2.RIGHT, UiTheme.ACCENT)
+	)
+	_pointer.hide()
+	add_child(_pointer)
 	for button: Button in _buttons():
-		_add_route_tag(button)
-		button.focus_entered.connect(_describe.bind(button))
+		button.focus_entered.connect(_on_focus.bind(button))
+		button.focus_exited.connect(_on_blur.bind(button))
 		button.mouse_entered.connect(_describe.bind(button))
 	_menu.get_node("TeamDeathmatch").grab_focus()
 	$Margin/Layout/Footer/Build.text = "Build %s" % GameBuild.label()
@@ -68,7 +102,9 @@ func _ready() -> void:
 	footer_keys.name = "FooterKeys"
 	add_child(footer_keys)
 	footer_keys.bind($Margin/Layout/Footer/SelectKey, &"ui_accept")
-	footer_keys.bind($Margin/Layout/Footer/BackKey, &"ui_cancel")
+	footer_keys.bind($Margin/Layout/Footer/BackPrompt/BackKey, &"ui_cancel")
+	$Margin/Layout/Footer/BackPrompt/BackHint.pressed.connect(_close_tdm)
+	_show_setup_chrome(false)
 	# Back from a server (left, or the connection failed): straight to Join.
 	if Net.return_to_join:
 		var message := Net.join_message
@@ -85,26 +121,48 @@ func _buttons() -> Array[Button]:
 	return buttons
 
 
-func _add_route_tag(button: Button) -> void:
-	var tag_text: String = ROUTES.get(String(button.name), [""])[0]
-	if tag_text == "":
+func _on_focus(button: Button) -> void:
+	_describe(button)
+	# The focus swap is instant; the new plate flashes brighter for a moment.
+	button.self_modulate = FLASH
+	create_tween().tween_property(button, "self_modulate", Color.WHITE, FLASH_TIME)
+	_place_pointer.call_deferred(button)
+
+
+func _on_blur(_button: Button) -> void:
+	_pointer.hide()
+
+
+func _place_pointer(button: Button) -> void:
+	if not button.has_focus() or not button.is_visible_in_tree():
 		return
-	var tag := Label.new()
-	tag.name = "Tag"
-	tag.text = tag_text
-	tag.theme_type_variation = &"RouteTag"
-	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tag.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	tag.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	tag.offset_right = -56
-	button.add_child(tag)
+	var rect := button.get_global_rect()
+	_pointer.position = Vector2(POINTER_X - 6.0, rect.get_center().y - 6.0)
+	_pointer.show()
 
 
 ## Shows what the focused or hovered route does, unless something is loading.
 func _describe(button: Button) -> void:
 	if _loading:
 		return
-	_status.text = ROUTES.get(String(button.name), ["", ""])[1]
+	var key := String(button.name)
+	var route: Array = ROUTES.get(key, ["", ""])
+	_status.text = route[1]
+	if CARDS.has(key):
+		var card: Array = CARDS[key]
+		_card.call(&"show_card", card[0], "%s  ·  %s" % [card[1], route[0]], card[2], card[3])
+	elif SETUP_BUTTONS.values().has(key):
+		_card.call(
+			&"show_card", BREAKWATER_PICTURE, "VS BOTS  ·  %s" % route[0], "Breakwater", button.text
+		)
+
+
+## Hides the menu's own chrome while a full-screen page covers it.
+func _show_chrome(show: bool) -> void:
+	for node: CanvasItem in [$Frame, $PlayerCard, $Margin]:
+		node.visible = show
+	if not show:
+		_pointer.hide()
 
 
 func _open_options() -> void:
@@ -113,12 +171,12 @@ func _open_options() -> void:
 	_close_tdm(false)
 	var options := (load("res://scenes/ui/pause_menu.tscn") as PackedScene).instantiate()
 	options.title_menu = true
-	$Margin.hide()
+	_show_chrome(false)
 	add_child(options)
 	options.closed.connect(
 		func() -> void:
 			options.queue_free()
-			$Margin.show()
+			_show_chrome(true)
 			%Options.grab_focus()
 	)
 	options.open_options()
@@ -133,20 +191,20 @@ func _open_join(message := "") -> void:
 		return
 	_close_tdm(false)
 	var join := scene.instantiate()
-	$Margin.hide()
+	_show_chrome(false)
 	add_child(join)
 	if message != "":
 		join.show_error(message)
 	join.back_requested.connect(
 		func() -> void:
 			join.queue_free()
-			$Margin.show()
+			_show_chrome(true)
 			$Margin/Layout/Menu/JoinServer.grab_focus()
 	)
 
 
 ## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame",
-## "ffa", or "snd") as a card beside the menu, closing any card already open.
+## "ffa", or "snd") as a panel beside the menu, closing any panel already open.
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
@@ -159,29 +217,49 @@ func _open_setup(mode: String) -> void:
 	_setup_button = SETUP_BUTTONS[mode]
 	_set_current(_setup_button)
 	add_child(setup)
+	move_child(setup, _pointer.get_index())
+	_show_setup_chrome(true, (_menu.get_node(_setup_button) as Button).text)
 	setup.back_requested.connect(_close_tdm)
+	setup.page_changed.connect(func(page_title: String) -> void: $Frame.set("title", page_title))
 	setup.start_requested.connect(_start_tdm)
 
 
-## Closes the match setup card, if open, and focuses the route that opened it.
+## Closes the match setup panel, if open, and focuses the route that opened it.
 func _close_tdm(refocus := true) -> void:
 	if _tdm_setup == null:
 		return
 	_tdm_setup.queue_free()
-	# Free the name now, so a card opened this frame can take it.
+	# Free the name now, so a panel opened this frame can take it.
 	remove_child(_tdm_setup)
 	_tdm_setup = null
 	_set_current("")
+	_show_setup_chrome(false)
 	if refocus:
 		(_menu.get_node(_setup_button) as Button).grab_focus()
 
 
-## Marks route `button_name` as the open one (route green); "" clears it.
+## While a match setup is open, the header names its mode (a Black Ops 3
+## screen push), the list dims behind it but for the open item, the footer
+## offers Back, and the line and card under the list step aside (the panel
+## shows the map and describes the focused row).
+func _show_setup_chrome(open: bool, mode_name := "") -> void:
+	$Frame.set("title", mode_name if open else "Multiplayer")
+	$Frame.set("context", "Local match  ·  vs bots" if open else "Shooter")
+	_card.visible = not open
+	_status.visible = not open
+	for node: Node in _menu.get_children():
+		if node is Button:
+			var current := (node as Button).theme_type_variation == &"FrontMenuItemCurrent"
+			(node as Button).modulate.a = 0.45 if open and not current else 1.0
+	$Margin/Layout/Footer/BackPrompt.visible = open
+
+
+## Marks route `button_name` as the open one (a dark orange plate); "" clears it.
 func _set_current(button_name: String) -> void:
 	for mode: String in SETUP_BUTTONS:
 		var button := _menu.get_node(SETUP_BUTTONS[mode]) as Button
 		button.theme_type_variation = (
-			&"RouteButtonCurrent" if SETUP_BUTTONS[mode] == button_name else &"RouteButton"
+			&"FrontMenuItemCurrent" if SETUP_BUTTONS[mode] == button_name else &"FrontMenuItem"
 		)
 
 
@@ -190,10 +268,24 @@ func _start_tdm(options: Dictionary) -> void:
 	_loading = true
 	_set_buttons_disabled(true)
 	_status.text = "Starting a local server…"
-	# Let the status draw before the map loads.
+	_show_loading(String(options.get("mode", "tdm")), String(options.get("map", "breakwater")))
+	_loading_screen.set("status", "Starting a local server")
+	# Let the loading screen draw before the map loads.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Net.start_local_match(options)
+
+
+## Covers the menu with the loading screen for `mode` on `map`.
+func _show_loading(mode: String, map: String) -> void:
+	if _loading_screen != null:
+		return
+	_loading_screen = LoadingScreen.new()
+	_loading_screen.name = "LoadingScreen"
+	_loading_screen.set("map", map)
+	_loading_screen.set("mode", mode)
+	add_child(_loading_screen)
 
 
 ## Loads Breakwater to walk alone.
@@ -218,6 +310,10 @@ func _start_scene(path: String, destination: String) -> void:
 	if error != OK:
 		_loading_failed(error_string(error))
 		return
+	var arena := path == ARENA_PATH
+	_show_loading("practice" if arena else "free_roam", "arena" if arena else "breakwater")
+	_loading_screen.set("progress", 0.0)
+	_loading_screen.set("status", "Loading")
 	set_process(true)
 
 
@@ -233,6 +329,8 @@ func _process(_delta: float) -> void:
 		ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			if not progress.is_empty():
 				_status.text = "Loading %s… %d%%" % [_destination, int(progress[0] * 100.0)]
+				if _loading_screen != null:
+					_loading_screen.set("progress", float(progress[0]))
 		ResourceLoader.THREAD_LOAD_LOADED:
 			set_process(false)
 			var arena := ResourceLoader.load_threaded_get(_scene_path) as PackedScene
@@ -250,6 +348,9 @@ func _loading_failed(reason: String) -> void:
 	set_process(false)
 	_loading = false
 	_set_buttons_disabled(false)
+	if _loading_screen != null:
+		_loading_screen.queue_free()
+		_loading_screen = null
 	_status.text = "Unable to open %s. Please try again." % _destination
 	_testing.grab_focus()
 	push_error("%s: %s" % [_destination, reason])

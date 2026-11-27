@@ -166,7 +166,10 @@ func start_local_match(options: Dictionary) -> void:
 	if _local_server_pid <= 0:
 		push_error("Net.start_local_match: cannot start the server process")
 		return
-	join("127.0.0.1:%d" % port, {"map": map, "name": server_name})
+	join(
+		"127.0.0.1:%d" % port,
+		{"map": map, "name": server_name, "mode": String(options.get("mode", "tdm"))}
+	)
 
 
 ## The command line for the server process `start_local_match` starts on
@@ -363,6 +366,8 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	status.set("client", client)
 	status.set("player", player)
 	status.set("server_label", String(options.get("name", "%s:%d" % [client.address, client.port])))
+	status.set("mode", String(options.get("mode", "")))
+	status.set("map", String(options.get("map", "breakwater")).to_lower())
 	main.add_child(status)
 
 	var tdm_hud := CanvasLayer.new()

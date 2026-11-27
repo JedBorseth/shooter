@@ -71,17 +71,17 @@ func _run() -> void:
 	connect.pressed.emit()
 	_check(status.text.begins_with("Asking"), "it asks the server first: %s" % status.text)
 	for i in 400:
-		if connect.text == "Join anyway":
+		if connect.text == "JOIN ANYWAY":
 			break
 		await process_frame
-	_check(connect.text == "Join anyway", "a silent address offers Join anyway")
+	_check(connect.text == "JOIN ANYWAY", "a silent address offers Join anyway")
 	_check(status.text.begins_with("No answer from"), "the status explains: %s" % status.text)
 
 	# The server: its process takes a few seconds to start, so ask until it
 	# answers and the game joins.
 	address.text = "127.0.0.1:%d" % GAME_PORT
 	address.text_changed.emit(address.text)
-	_check(connect.text == "Connect", "a new address resets Join anyway")
+	_check(connect.text == "CONNECT", "a new address resets Join anyway")
 	var client: NetClient = null
 	var deadline := Time.get_ticks_msec() + 60000
 	while Time.get_ticks_msec() < deadline:

@@ -70,7 +70,7 @@ func _lost_focus() -> void:
 	await _press(JOY_BUTTON_DPAD_DOWN)
 	var near := _focused()
 	_check(
-		near == _route("CaptureTheFlag") or near == _route("SearchAndDestroy"),
+		near in [_route("CaptureTheFlag"), _route("Domination"), _route("SearchAndDestroy")],
 		"when that control is gone, the nearest one takes focus (got %s)" % _name(near)
 	)
 	_route("Hardpoint").show()
@@ -107,19 +107,18 @@ func _match_setup() -> void:
 	await _frames(1)
 	_check(_name(_focused()) == "Start", "the setup starts on START MATCH")
 	await _press(JOY_BUTTON_DPAD_UP)
-	_check(
-		_focused() is Button and _focused().get_parent().name == "CustomLine",
-		"up reaches the game settings line"
-	)
+	_check(_name(_focused()) == "GameSettings", "up reaches the game settings row")
 	await _press(JOY_BUTTON_DPAD_UP)
-	_check(
-		_focused() is Button and _focused().get_parent().name == "Minutes", "up reaches the rules"
-	)
-	var minutes := _focused().get_parent()
-	var chip := _focused().get_index()
+	_check(_name(_focused()) == "TimeLimit", "up reaches the rules")
+	var limit := _focused()
+	var before: int = limit.get("selected")
 	await _press(JOY_BUTTON_DPAD_RIGHT)
+	_check(limit.get("selected") == before + 1, "right steps the value on")
+	await _press(JOY_BUTTON_DPAD_LEFT)
+	_check(limit.get("selected") == before, "left steps it back")
 	await _press(JOY_BUTTON_A)
-	_check(minutes.get("selected") == chip + 1, "right and A choose another chip")
+	_check(limit.get("selected") == before + 1, "A steps it on too")
+	_check(_focused() == limit, "stepping keeps focus on the row")
 	await _press(JOY_BUTTON_B)
 	await _frames(1)
 	_check(_title.get_node_or_null("TdmSetup") == null, "B closes the setup")

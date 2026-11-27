@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/join_server.gd" id="1_join"]
+[ext_resource type="Script" path="res://scripts/ui/screen_frame.gd" id="2_frame"]
+[ext_resource type="Script" path="res://scripts/ui/player_card.gd" id="3_player"]
 
 [node name="JoinServer" type="Control"]
 layout_mode = 3
@@ -11,7 +13,8 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_join")
 
-[node name="Shade" type="ColorRect" parent="."]
+[node name="Frame" type="Control" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -19,7 +22,23 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.043, 0.051, 0.063, 0.88)
+script = ExtResource("2_frame")
+title = "Join Server"
+context = "Online"
+shade = 0.9
+
+[node name="PlayerCard" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -364.0
+offset_top = 34.0
+offset_right = -64.0
+offset_bottom = 98.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("3_player")
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -28,91 +47,162 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 theme_override_constants/margin_left = 64
-theme_override_constants/margin_top = 48
+theme_override_constants/margin_top = 140
 theme_override_constants/margin_right = 64
-theme_override_constants/margin_bottom = 40
+theme_override_constants/margin_bottom = 10
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 14
+mouse_filter = 2
+theme_override_constants/separation = 0
 
-[node name="Header" type="HBoxContainer" parent="Margin/Layout"]
+[node name="Panel" type="PanelContainer" parent="Margin/Layout"]
+custom_minimum_size = Vector2(936, 0)
 layout_mode = 2
-
-[node name="Titles" type="VBoxContainer" parent="Margin/Layout/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
-[node name="Eyebrow" type="Label" parent="Margin/Layout/Header/Titles"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"Eyebrow"
-text = "MULTIPLAYER"
-
-[node name="Title" type="Label" parent="Margin/Layout/Header/Titles"]
-layout_mode = 2
-theme_type_variation = &"DisplayTitle"
-text = "JOIN SERVER"
-
-[node name="Back" type="Button" parent="Margin/Layout/Header"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 52)
-layout_mode = 2
+size_flags_horizontal = 0
 size_flags_vertical = 0
-theme_override_font_sizes/font_size = 20
-text = "Back"
+theme_type_variation = &"FrontPanel"
 
-[node name="AddressHeading" type="Label" parent="Margin/Layout"]
+[node name="Body" type="HBoxContainer" parent="Margin/Layout/Panel"]
 layout_mode = 2
-theme_type_variation = &"Eyebrow"
+mouse_filter = 2
+theme_override_constants/separation = 22
+
+[node name="Main" type="VBoxContainer" parent="Margin/Layout/Panel/Body"]
+custom_minimum_size = Vector2(522, 0)
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="AddressHeading" type="Label" parent="Margin/Layout/Panel/Body/Main"]
+layout_mode = 2
+theme_type_variation = &"SectionHeader"
 text = "SERVER ADDRESS"
 
-[node name="Form" type="HBoxContainer" parent="Margin/Layout"]
+[node name="Form" type="HBoxContainer" parent="Margin/Layout/Panel/Body/Main"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Address" type="LineEdit" parent="Margin/Layout/Form"]
+[node name="Address" type="LineEdit" parent="Margin/Layout/Panel/Body/Main/Form"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(480, 52)
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
-placeholder_text = "IP or host[:port]"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 21
+placeholder_text = "Address, as host or host:port"
 
-[node name="Connect" type="Button" parent="Margin/Layout/Form"]
+[node name="Connect" type="Button" parent="Margin/Layout/Panel/Body/Main/Form"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(220, 52)
+custom_minimum_size = Vector2(170, 48)
 layout_mode = 2
-theme_type_variation = &"PrimaryButton"
-text = "Connect"
+theme_type_variation = &"FrontAction"
+text = "CONNECT"
 
-[node name="Status" type="Label" parent="Margin/Layout"]
+[node name="Status" type="Label" parent="Margin/Layout/Panel/Body/Main"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 26)
+custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
-theme_type_variation = &"DimLabel"
+theme_type_variation = &"HintLabel"
+vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="RecentHeading" type="Label" parent="Margin/Layout"]
+[node name="RecentGap" type="Control" parent="Margin/Layout/Panel/Body/Main"]
+custom_minimum_size = Vector2(0, 18)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="RecentHeading" type="Label" parent="Margin/Layout/Panel/Body/Main"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"Eyebrow"
-text = "RECENT"
+theme_type_variation = &"SectionHeader"
+text = "RECENT SERVERS"
 
-[node name="Recent" type="VBoxContainer" parent="Margin/Layout"]
+[node name="Recent" type="VBoxContainer" parent="Margin/Layout/Panel/Body/Main"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Spacer" type="Control" parent="Margin/Layout"]
+[node name="EndGap" type="Control" parent="Margin/Layout/Panel/Body/Main"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="About" type="VBoxContainer" parent="Margin/Layout/Panel/Body"]
+custom_minimum_size = Vector2(344, 0)
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="AboutGap" type="Control" parent="Margin/Layout/Panel/Body/About"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="AboutTitle" type="Label" parent="Margin/Layout/Panel/Body/About"]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"LabelPlate"
+text = "DEDICATED SERVERS"
+
+[node name="AboutText" type="Label" parent="Margin/Layout/Panel/Body/About"]
+layout_mode = 2
+theme_type_variation = &"HintLabel"
+text = "Type the address of a server running the game: its IP or host name, and its port if it is not 27015.
+
+The game asks the server first, so it loads the right map and turns away a server that is full or runs another version."
+autowrap_mode = 3
+
+[node name="FooterGap" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="Hint" type="Label" parent="Margin/Layout"]
+[node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ConnectKey" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+text = "ENTER"
+
+[node name="ConnectHint" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"FooterHint"
+text = "Connect"
+
+[node name="HintGap" type="Control" parent="Margin/Layout/Footer"]
+custom_minimum_size = Vector2(18, 0)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="BackKey" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"KeyCap"
+text = "ESC"
+
+[node name="Back" type="Button" parent="Margin/Layout/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FooterPrompt"
+text = "Back"
+
+[node name="FooterSpace" type="Control" parent="Margin/Layout/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="Build" type="Label" parent="Margin/Layout/Footer"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FaintLabel"
-theme_override_font_sizes/font_size = 15
-text = "ENTER  CONNECT      ESC  BACK"
+theme_override_font_sizes/font_size = 14
+text = "Development build"

@@ -23,7 +23,7 @@ Each setting follows a Black Ops 2 game type setting (the `getgametypesetting` k
 
 ## Setting them up
 
-The local match setup (the title screen's mode routes) shows the custom rules in one line above Start, with a **Game settings** button. It opens a page in the same card: a preset list, one chip row per rule, and a name to save the rules under as a preset (`godot/scripts/ui/custom_settings_page.gd`). The built-in presets are Standard, Hardcore, Pistols only, Snipers only, and No streaks; saved presets follow them, up to twelve, in `user://custom_games.cfg` with the rules used last (`godot/scripts/custom_presets.gd`). Turning Hardcore on sets health to 30% and friendly fire to On; either can be changed after. Free Roam has no custom rules.
+The local match setup (the title screen's mode items) has a **Game Settings** row above Start, showing the preset the rules match and a star when they are off the defaults. It opens a page in the same panel, laid out as Black Ops 2's custom game rules: a preset row, one row per rule with its value between arrows (left and right step it, a star marks a value off its default, and the panel beside it describes the focused rule and its default), and a name to save the rules under as a preset (`godot/scripts/ui/custom_settings_page.gd`, rows in `godot/scripts/ui/rule_row.gd`). The built-in presets are Standard, Hardcore, Pistols only, Snipers only, and No streaks; saved presets follow them, up to twelve, in `user://custom_games.cfg` with the rules used last (`godot/scripts/custom_presets.gd`). Turning Hardcore on sets health to 30% and friendly fire to On; either can be changed after. Free Roam has no custom rules.
 
 ![Game settings in the match setup, on the Hardcore preset](media/custom-game-settings.jpg)
 
