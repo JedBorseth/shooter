@@ -41,6 +41,7 @@ const BONUS_INK := Color("d8dce0")
 const GOLD := Color(1.0, 0.8, 0.3)
 
 ## Tier colours, from common to rare.
+const BRONZE := Color(0.86, 0.52, 0.28)
 const SILVER := Color(0.78, 0.84, 0.92)
 const AMBER := Color(1.0, 0.76, 0.25)
 const EMBER := Color(1.0, 0.42, 0.2)
@@ -245,9 +246,13 @@ func _draw_emblem(
 	)
 	var face := _scaled(outline, 0.84)
 	draw_polygon(face, _vertical_gradient(face, INK.lerp(tier, 0.28), INK.lerp(tier, 0.06), alpha))
-	var keyline := _scaled(outline, 0.75)
+	# A band of the tier's colour inside the rim, so the rarity reads.
+	var band := _scaled(outline, 0.8)
+	band.append(band[0])
+	draw_polyline(band, Color(tier, 0.9 * alpha), 3.0, true)
+	var keyline := _scaled(outline, 0.72)
 	keyline.append(keyline[0])
-	draw_polyline(keyline, Color(tier, 0.55 * alpha), 1.5, true)
+	draw_polyline(keyline, Color(tier, 0.4 * alpha), 1.0, true)
 
 	match family:
 		"multi":
@@ -462,13 +467,14 @@ func _multi_count(label: String) -> int:
 	return maxi(label.to_int(), 2)
 
 
-## The colour ladder: rarer feats climb from silver to amber, ember and violet.
+## The colour ladder: rarer feats climb from bronze and silver to amber,
+## ember and violet.
 func _tier_color(label: String) -> Color:
 	var colour := GOLD
 	match _family(label):
 		"multi":
 			var n := _multi_count(label)
-			colour = SILVER if n <= 2 else (AMBER if n == 3 else (EMBER if n == 4 else VIOLET))
+			colour = BRONZE if n <= 2 else (SILVER if n == 3 else (AMBER if n == 4 else VIOLET))
 		"streak":
 			var n := label.to_int()
 			colour = AMBER if n < 10 else (EMBER if n < 15 else VIOLET)

@@ -164,7 +164,7 @@ static func key_for(scene_path: String) -> String:
 func _draw() -> void:
 	draw_set_transform_matrix(_tilt())
 	# The plate behind the plan (the ground outside the map shows as this).
-	Shapes.smooth_rect(self, Rect2(Vector2.ZERO, WINDOW), Color(0.05, 0.07, 0.09, 0.62))
+	Shapes.smooth_rect(self, Rect2(Vector2.ZERO, WINDOW), Color(0.118, 0.137, 0.157, 0.82))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -331,8 +331,9 @@ func _inside(at: Vector2) -> bool:
 
 ## A point held inside the window's edge, for objectives out of view.
 func _held(at: Vector2) -> Vector2:
+	# A little more room at the foot, so a held hexagon clears the compass.
 	var margin := 16.0
-	return at.clamp(Vector2(margin, margin), WINDOW - Vector2(margin, margin))
+	return at.clamp(Vector2(margin, margin), WINDOW - Vector2(margin, margin + 5.0))
 
 
 ## Our arrow: a solid notched arrowhead with a dark rim.
@@ -373,7 +374,7 @@ func _diamond(at: Vector2, fade: float) -> void:
 	var rim := PackedVector2Array()
 	for p in points:
 		rim.append(at + (p - at) * 1.4)
-	_icons.draw_colored_polygon(rim, Color(0, 0, 0, 0.5 * fade))
+	_icons.draw_colored_polygon(rim, Color(0, 0, 0, 0.7 * fade))
 	_icons.draw_colored_polygon(points, Color(TeamColours.enemy, fade))
 
 
@@ -417,6 +418,15 @@ func _draw_objectives() -> void:
 		)
 	_spread(marks)
 	for mark: Array in marks:
+		var at: Vector2 = mark[0]
+		if at.distance_to(WINDOW / 2.0) < 12.0:
+			# Under our arrow: a hollow ring round it, so the arrow does not
+			# erase the letter (the row under the minimap names it).
+			var ring := Marks.hex_points(WINDOW / 2.0, 14.0)
+			ring.append(ring[0])
+			_icons.draw_polyline(ring, Color(0, 0, 0, 0.6), 4.0, true)
+			_icons.draw_polyline(ring, mark[2], 2.0, true)
+			continue
 		_hex(mark[0], mark[1], mark[2], mark[3])
 	if charge.get("has_position", false) and String(charge.status) != "carried":
 		var c: Vector3 = charge.position

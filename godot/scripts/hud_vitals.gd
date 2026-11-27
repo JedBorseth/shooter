@@ -41,8 +41,6 @@ func _process(delta: float) -> void:
 		_trail = move_toward(_trail, ratio, delta * 0.6)
 	_trail = maxf(_trail, ratio)
 	_pulse = fmod(_pulse + delta * 1.6, 1.0)
-	# Quiet at full health; fully up once hurt.
-	modulate.a = move_toward(modulate.a, 0.86 if ratio >= 1.0 else 1.0, delta * 3.0)
 	queue_redraw()
 
 

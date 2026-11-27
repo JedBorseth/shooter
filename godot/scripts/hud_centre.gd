@@ -62,6 +62,7 @@ func _draw() -> void:
 	var centre := size / 2.0
 	if not warning.is_empty():
 		# Blinks twice a second, as Call of Duty's ammo warnings do.
+		# The plate holds steady; only the words blink.
 		var blink := 1.0 if warning.get("steady", false) else 0.7 + 0.3 * cos(_time * TAU * 2.0)
 		# On a dark plate that hugs it, as the interact prompt sits, so it
 		# holds over bright ground.
@@ -69,7 +70,7 @@ func _draw() -> void:
 		var baseline := centre.y + 74.0
 		draw_rect(
 			Rect2(centre.x - width / 2.0 - 10.0, baseline - 26.0, width + 20.0, 34.0),
-			Color(0, 0, 0, 0.45)
+			Color(0, 0, 0, 0.55)
 		)
 		Paint.prompt(self, warning, centre.x, baseline, 18, blink, false)
 	if not prompt.is_empty():
@@ -116,7 +117,7 @@ static func prompt_width(row: Dictionary, text_size: int) -> float:
 			(
 				Paint.cap_width(piece, cap_h)
 				if part[0]
-				else Paint.text_width(Paint.LABEL, piece, text_size, 1.0)
+				else Paint.text_width(Paint.LABEL, piece, text_size, Paint._tracking(piece))
 			)
 		)
 	var total := 0.0
@@ -141,7 +142,7 @@ func _draw_killed() -> void:
 	if legend_alpha > 0.01 and not legend.is_empty():
 		bottom = minf(bottom, _legend_top - 20.0)
 	# The plate hugs the name.
-	var plate_w := maxf(name_w + 40.0, 120.0)
+	var plate_w := maxf(name_w + 44.0, 64.0)
 	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
 	Paint.text(
 		self,

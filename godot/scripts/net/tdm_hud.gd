@@ -151,6 +151,7 @@ func _process(delta: float) -> void:
 	else:
 		_update_team_bar(info)
 	_score.clock = _clock_text(phase, info.seconds_left)
+	_score.calm = false
 	if phase == "playing" and info.get("period", "") == "overtime":
 		# Hardpoint's overtime has no clock: it lasts while the team behind
 		# is on the hill.
@@ -162,7 +163,10 @@ func _process(delta: float) -> void:
 	if snd and phase == "playing":
 		# The round's clock, while it runs.
 		var round := client.round_info()
-		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
+		# The capsule stays up through the round's start and end, as Black Ops
+		# 3's timer does.
+		_score.clock = _clock_text(phase, round.seconds_left) if round.phase != "" else ""
+		_score.calm = round.phase != "live"
 		_score.mode = "ROUND %d" % round.number if round.number > 0 else _score.mode
 	_update_banner(phase, info)
 	_age_callout(delta)

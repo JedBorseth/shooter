@@ -38,12 +38,18 @@ const DEFAULT_CONTROLS := [
 	"toggle_controls:Hide controls",
 ]
 
+## Seconds the death card shows in a mode without respawns, before its
+## spectating takes over (`net/snd_hud.gd` waits 1.5 s).
+const SND_CARD_SECONDS := 1.45
+
 @export var player_path: NodePath
 ## Replaces the controls legend ("action:Label" pairs), for levels whose
 ## controls differ.
 @export var controls: PackedStringArray = []
 
 var _controls_left := CONTROLS_TIME
+## Seconds since we died (0 while alive).
+var _dead_time := 0.0
 var _controls_forced := false
 ## The longest respawn wait seen this death, to fill the respawn bar.
 var _respawn_total := 0.0
@@ -206,8 +212,10 @@ func _process(delta: float) -> void:
 	var prompt := _player.interact_prompt()
 	_centre.prompt = Paint.split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
 
-	# Without respawns (Search and Destroy) the mode shows its own death screen.
-	var dead := not alive and _player.auto_respawn
+	# Without respawns (Search and Destroy) the card shows until the mode's
+	# own spectating takes over.
+	_dead_time = 0.0 if alive else _dead_time + delta
+	var dead := not alive and (_player.auto_respawn or _dead_time < SND_CARD_SECONDS)
 	# The held scoreboard covers the middle: the death card waits under it.
 	_centre.dead = dead and not Input.is_action_pressed(&"scoreboard")
 	if dead:
@@ -220,7 +228,7 @@ func _process(delta: float) -> void:
 	# Hardcore has no HUD: no crosshair, health, or ammo (Black Ops 2's
 	# `hud_hardcore`). Hit markers, prompts, and the death card stay.
 	var hardcore := _hardcore()
-	_health.visible = (alive or not _player.auto_respawn) and not hardcore
+	_health.visible = alive and not hardcore
 	_weapon.visible = alive and not hardcore
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.
