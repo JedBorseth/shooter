@@ -1,7 +1,10 @@
 extends Control
-## Score feedback: "+N" points that stack under the crosshair while kills keep
-## coming, a line per award, medal emblems with a chime, and your score in
-## the top-left corner. Driven by FpsPlayer.scored; the rules live in Rust
+## Score feedback, as Black Ops 3 gives it: a "+N" just above the crosshair
+## that adds up points coming within a moment of each other and pops with each,
+## the bonus awards under it in small type, and medals along the top centre,
+## each our own emblem with its name under it, up to three side by side, the
+## newest arriving on the right with a chime. Outside a match, your own score
+## sits bottom left. Driven by FpsPlayer.scored; the rules live in Rust
 ## (rust/sim/src/score.rs).
 ##
 ## Medals are drawn here, not loaded as images: each family has its own emblem
@@ -11,22 +14,28 @@ extends Control
 ## colour climbs a tier ladder as the feat gets rarer.
 
 ## Seconds after the last award before the running "+N" total fades.
-const TOTAL_HOLD := 2.2
-## Seconds each award line stays up.
-const LINE_TIME := 2.0
-## Seconds each medal is shown; queued medals play back to back.
-const MEDAL_TIME := 1.9
-const MAX_LINES := 5
-## Medals waiting beyond this are dropped (oldest first), so they never lag.
-const MAX_PENDING_MEDALS := 2
+const TOTAL_HOLD := 1.5
+const TOTAL_FADE := 0.3
+## Seconds each bonus line stays up.
+const LINE_TIME := 1.8
+## Seconds each medal is shown: in, hold, out.
+const MEDAL_IN := 0.15
+const MEDAL_HOLD := 2.2
+const MEDAL_OUT := 0.25
+const MEDAL_TIME := MEDAL_IN + MEDAL_HOLD + MEDAL_OUT
+const MAX_LINES := 3
+## Medals on screen at once; a fourth pushes the oldest off.
+const MAX_MEDALS := 3
+## Pixels between medals in a row (base pixels).
+const MEDAL_PITCH := 118.0
 
 ## Layout is authored for a 900 px tall viewport and scaled from there.
 const BASE_HEIGHT := 900.0
 ## Emblem radius in base pixels.
 const EMBLEM_R := 50.0
 
-const GOLD := Color(1.0, 0.8, 0.3)
 const INK := Color(0.03, 0.035, 0.05)
+const GOLD := Color(1.0, 0.8, 0.3)
 
 ## Tier colours, from common to rare.
 const SILVER := Color(0.78, 0.84, 0.92)
@@ -38,22 +47,23 @@ const SKY := Color(0.45, 0.78, 1.0)
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
-const FONT_HEAVY := preload("res://assets/fonts/ChakraPetch-Bold.ttf")
-const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+## The theme's display face for numerals on the emblems.
+const FONT_HEAVY := Paint.DISPLAY
+const ScoreBlock := preload("res://scripts/net/score_block.gd")
 
 var player: FpsPlayer
-## Draw your score in the top left corner. Match HUDs turn it off.
+## Draw your own score in the bottom left corner. Match HUDs turn it off.
 var show_score := true
 
 var _total := 0
 var _total_left := 0.0
 var _total_pop := 0.0
-## Each line: {"text": String, "points": int, "age": float, "bonus": bool}.
+## Bonus lines under the total: {"text": String, "points": int, "age": float}.
 var _lines: Array[Dictionary] = []
-## Each medal: {"label": String, "points": int}.
+## Medals on screen, oldest first: {"label", "points", "age", "count", "x"}.
 var _medals: Array[Dictionary] = []
-var _medal_age := 0.0
-var _glow: Texture2D = _make_glow()
+## Your own score outside a match (`_update_own_score`).
+var _block: Control
 
 @onready var _chime: AudioStreamPlayer = $MedalSound
 
@@ -62,30 +72,35 @@ func add_award(points: int, label: String, medal: bool) -> void:
 	if _total_left <= 0.0:
 		_total = 0
 	_total += points
-	_total_left = TOTAL_HOLD
+	_total_left = TOTAL_HOLD + TOTAL_FADE
 	_total_pop = 1.0
-	var bonus := label != "Kill"
-	_lines.push_front({"text": label, "points": points, "age": 0.0, "bonus": bonus})
-	if _lines.size() > MAX_LINES:
-		_lines.resize(MAX_LINES)
+	if label != "Kill":
+		_lines.push_front({"text": label, "points": points, "age": 0.0})
+		if _lines.size() > MAX_LINES:
+			_lines.resize(MAX_LINES)
 	if medal:
-		var entry := {"label": label, "points": points}
-		# A bigger multi-kill replaces a smaller one that hasn't shown yet.
-		if (
-			_medals.size() > 1
-			and _family(label) == "multi"
-			and _family(_medals[-1].label) == "multi"
-		):
-			_medals[-1] = entry
-		else:
-			_medals.append(entry)
-		while _medals.size() > 1 + MAX_PENDING_MEDALS:
-			_medals.remove_at(1)
-		if _medals.size() == 1:
-			_start_medal()
+		_add_medal(label, points)
 
 
-## Medals waiting to be shown, including the one on screen (for tests).
+func _add_medal(label: String, points: int) -> void:
+	var entry := {"label": label, "points": points, "age": 0.0, "count": 1, "x": INF}
+	if not _medals.is_empty() and _medals[-1].label == label:
+		# The same medal again while it shows: count it up ("x2").
+		_medals[-1].count += 1
+		_medals[-1].age = 0.0
+	elif _medals.size() > 1 and _family(label) == "multi" and _family(_medals[-1].label) == "multi":
+		# A bigger multi-kill replaces a smaller one that has only just come.
+		entry.x = _medals[-1].x
+		_medals[-1] = entry
+	else:
+		_medals.append(entry)
+	while _medals.size() > MAX_MEDALS:
+		_medals.remove_at(0)
+	if _chime.stream != null:
+		_chime.play()
+
+
+## Medals on screen, including any just arrived (for tests).
 func pending_medals() -> int:
 	return _medals.size()
 
@@ -94,182 +109,103 @@ func running_total() -> int:
 	return _total if _total_left > 0.0 else 0
 
 
-func _start_medal() -> void:
-	_medal_age = 0.0
-	if _chime.stream != null:
-		_chime.play()
-
-
 func _process(delta: float) -> void:
+	_update_own_score()
 	_total_left = maxf(_total_left - delta, 0.0)
-	_total_pop = maxf(_total_pop - delta * 5.0, 0.0)
+	_total_pop = maxf(_total_pop - delta / 0.12, 0.0)
 	for line in _lines:
 		line.age += delta
 	_lines = _lines.filter(func(line: Dictionary) -> bool: return line.age < LINE_TIME)
-	if not _medals.is_empty():
-		_medal_age += delta
-		if _medal_age >= MEDAL_TIME:
-			_medals.pop_front()
-			if not _medals.is_empty():
-				_start_medal()
+	for medal in _medals:
+		medal.age += delta
+	_medals = _medals.filter(func(medal: Dictionary) -> bool: return medal.age < MEDAL_TIME)
 	queue_redraw()
 
 
 func _draw() -> void:
 	# The viewport, not this piece: the HUD size setting scales the piece.
 	var ui := get_viewport_rect().size.y / BASE_HEIGHT
-	_draw_scoreboard(ui)
 	_draw_points(ui)
-	if not _medals.is_empty():
-		var medal: Dictionary = _medals[0]
-		_draw_medal(medal.label, medal.points, _medal_age, Vector2(size.x / 2.0, size.y * 0.24), ui)
+	_draw_medals(ui)
 
 
-# --- Points under the crosshair -------------------------------------------
+# --- Points over the crosshair --------------------------------------------
 
 
 func _draw_points(ui: float) -> void:
-	var centre := size / 2.0
+	var at := Vector2(size.x / 2.0, size.y * 0.34)
 	if _total_left > 0.0:
-		var alpha := clampf(_total_left / 0.4, 0.0, 1.0)
-		var pop := _ease_out_back(1.0 - _total_pop)
-		var scale := ui * lerpf(1.35, 1.0, pop)
-		_with_transform(centre + Vector2(0, 78) * ui, scale)
-		_text_centered(FONT_HEAVY, "+%d" % _total, Vector2.ZERO, 34, Color(GOLD, alpha), alpha, 1.0)
+		var alpha := clampf(_total_left / TOTAL_FADE, 0.0, 1.0)
+		var pop := lerpf(1.0, 1.25, _ease_out_cubic(_total_pop))
+		_with_transform(at, ui * pop)
+		Paint.text_centred(
+			self, Paint.LABEL, "+%d" % _total, Vector2(0, 0), 25, Color(UiTheme.TEXT, alpha)
+		)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
-
-	# Two columns that meet at the centre line, so lines never jitter sideways.
-	var y := centre.y + 104.0 * ui
-	var gap := 7.0 * ui
+	# Bonus awards under it, newest on top, in small quiet type.
+	var y := at.y + 22.0 * ui
 	for line in _lines:
 		var fade_in := clampf(line.age / 0.12, 0.0, 1.0)
-		var fade_out := clampf((LINE_TIME - line.age) / 0.35, 0.0, 1.0)
+		var fade_out := clampf((LINE_TIME - line.age) / 0.3, 0.0, 1.0)
 		var alpha: float = fade_in * fade_out
-		var slide := (1.0 - _ease_out_cubic(fade_in)) * 14.0 * ui
-		var size_px := int(17.0 * ui)
-		var label := (line.text as String).to_upper()
-		var label_color := Color(GOLD, alpha) if line.bonus else Color(1, 1, 1, 0.92 * alpha)
-		var points_color := Color(1, 1, 1, 0.75 * alpha)
-		var label_w := _tracked_width(FONT_BOLD, label, size_px, 1.5 * ui)
-		var left := Vector2(centre.x - gap - label_w - slide, y)
-		_tracked(FONT_BOLD, label, left, size_px, 1.5 * ui, label_color, alpha)
-		_tracked(
-			FONT_BOLD,
-			"+%d" % line.points,
-			Vector2(centre.x + gap + slide, y),
-			size_px,
-			1.0 * ui,
-			points_color,
-			alpha
+		Paint.text_centred(
+			self,
+			Paint.LABEL_LIGHT,
+			"%s +%d" % [line.text, line.points],
+			Vector2(at.x, y),
+			int(16.0 * ui),
+			Color(UiTheme.TEXT, 0.8 * alpha)
 		)
-		y += 21.0 * ui
+		y += 19.0 * ui
 
 
 # --- Medals ----------------------------------------------------------------
 
 
-func _draw_medal(label: String, points: int, age: float, at: Vector2, ui: float) -> void:
+## The medals in a row along the top centre; each eases toward its place
+## as others come and go.
+func _draw_medals(ui: float) -> void:
+	var count := _medals.size()
+	for i in count:
+		var medal: Dictionary = _medals[i]
+		var target := size.x / 2.0 + (i - (count - 1) / 2.0) * MEDAL_PITCH * ui
+		if is_inf(float(medal.x)):
+			# A new medal comes in from the right of its place.
+			medal.x = target + MEDAL_PITCH * 0.5 * ui
+		medal.x = lerpf(medal.x, target, 0.25)
+		_draw_medal(medal, Vector2(medal.x, 96.0 * ui), ui)
+
+
+func _draw_medal(medal: Dictionary, at: Vector2, ui: float) -> void:
+	var label: String = medal.label
+	var age: float = medal.age
 	var family := _family(label)
 	var tier := _tier_color(label)
-	var intro := clampf(age / 0.32, 0.0, 1.0)
-	var outro := clampf((MEDAL_TIME - age) / 0.3, 0.0, 1.0)
-	var alpha := clampf(age / 0.06, 0.0, 1.0) * outro
-	# Slam in oversized with a little overshoot, then shrink and rise on exit.
-	var scale := lerpf(2.1, 1.0, _ease_out_back(intro)) * lerpf(0.88, 1.0, outro) * ui
-	var lift := (1.0 - outro) * -14.0 * ui
-	var centre := at + Vector2(0, lift)
-
-	# Soft glow and side rays behind everything.
-	var glow_r := EMBLEM_R * 3.4 * scale
-	draw_texture_rect(
-		_glow,
-		Rect2(centre - Vector2(glow_r, glow_r), Vector2(glow_r, glow_r) * 2.0),
-		false,
-		Color(tier, 0.32 * alpha)
-	)
-
-	_with_transform(centre, scale)
+	var intro := clampf(age / MEDAL_IN, 0.0, 1.0)
+	var alpha := clampf(age / 0.05, 0.0, 1.0) * clampf((MEDAL_TIME - age) / MEDAL_OUT, 0.0, 1.0)
+	# Lands from 1.6 times its size, with a white flash.
+	var scale := lerpf(1.6, 1.0, _ease_out_cubic(intro)) * ui
+	_with_transform(at, scale)
 	var outline := _emblem_shape(family, EMBLEM_R)
-
-	# Shockwave ring on impact.
-	var wave := clampf(age / 0.45, 0.0, 1.0)
-	if wave < 1.0:
-		var ring := _scaled(outline, 1.0 + 0.9 * _ease_out_cubic(wave))
-		ring.append(ring[0])
-		draw_polyline(
-			ring,
-			Color(tier.lightened(0.3), (1.0 - wave) * 0.8 * alpha),
-			3.0 * (1.0 - wave) + 0.5,
-			true
-		)
-
 	_draw_emblem(family, label, tier, outline, alpha)
-
-	# A light sweep across the face once it has landed.
-	var sweep := clampf((age - 0.3) / 0.45, 0.0, 1.0)
-	if sweep > 0.0 and sweep < 1.0:
-		var x := lerpf(-EMBLEM_R * 1.6, EMBLEM_R * 1.6, sweep)
-		var band := PackedVector2Array(
-			[
-				Vector2(x - 8, -EMBLEM_R * 1.4),
-				Vector2(x + 14, -EMBLEM_R * 1.4),
-				Vector2(x - 6, EMBLEM_R * 1.4),
-				Vector2(x - 28, EMBLEM_R * 1.4),
-			]
-		)
-		for piece in Geometry2D.intersect_polygons(band, outline):
-			draw_colored_polygon(piece, Color(1, 1, 1, 0.38 * alpha * sin(sweep * PI)))
-
-	# White flash as it lands.
 	var flash := 1.0 - clampf(age / 0.16, 0.0, 1.0)
 	if flash > 0.0:
 		draw_colored_polygon(outline, Color(1, 1, 1, 0.85 * flash * alpha))
-
-	# Title, letter-spaced wide and tightening as it lands.
-	var title := label.to_upper()
-	var tracking := lerpf(14.0, 2.5, _ease_out_cubic(intro))
-	var title_y := EMBLEM_R + 40.0
-	var title_w := _tracked_width(FONT_HEAVY, title, 32, tracking)
-	_tracked(
-		FONT_HEAVY,
-		title,
-		Vector2(-title_w / 2.0, title_y),
-		32,
-		tracking,
-		Color(1, 1, 1, alpha),
-		alpha
-	)
-
-	# Hairlines either side of the title, fading out to nothing.
-	var line_y := title_y - 11.0
-	var reach := 110.0 * _ease_out_cubic(clampf((age - 0.1) / 0.4, 0.0, 1.0))
-	for side: float in [-1.0, 1.0]:
-		var inner := side * (title_w / 2.0 + 14.0)
-		var outer := inner + side * reach
-		draw_polygon(
-			PackedVector2Array(
-				[
-					Vector2(inner, line_y - 1.0),
-					Vector2(outer, line_y - 1.0),
-					Vector2(outer, line_y + 1.0),
-					Vector2(inner, line_y + 1.0),
-				]
-			),
-			PackedColorArray(
-				[Color(tier, alpha), Color(tier, 0.0), Color(tier, 0.0), Color(tier, alpha)]
-			)
-		)
-
-	_text_centered(
-		FONT_BOLD,
-		"+%d" % points,
-		Vector2(0, title_y + 25.0),
-		21,
-		Color(tier.lightened(0.45), alpha),
-		alpha,
-		1.0
-	)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+	# Its name under it, and how many times over.
+	var name_y := at.y + (EMBLEM_R + 28.0) * ui
+	Paint.text_centred(
+		self, Paint.LABEL, label, Vector2(at.x, name_y), int(19.0 * ui), Color(UiTheme.TEXT, alpha)
+	)
+	if int(medal.count) > 1:
+		Paint.text_centred(
+			self,
+			Paint.LABEL,
+			"x%d" % int(medal.count),
+			Vector2(at.x, name_y + 20.0 * ui),
+			int(18.0 * ui),
+			Color(UiTheme.TEXT, alpha)
+		)
 
 
 func _draw_emblem(
@@ -290,22 +226,16 @@ func _draw_emblem(
 
 	match family:
 		"multi":
+			# A round for each kill, standing side by side (a numeral past four).
 			var count := _multi_count(label)
-			_text_centered(
-				FONT_HEAVY,
-				"×%d" % count,
-				Vector2(0, 15),
-				44,
-				Color(tier.lightened(0.35), alpha),
-				alpha,
-				0.0
-			)
-			# Pips under the number, one per kill (capped).
-			var pips := mini(count, 6)
-			var spacing := 7.0
-			for i in pips:
-				var x := (i - (pips - 1) / 2.0) * spacing
-				draw_circle(Vector2(x, 24.0), 2.0, Color(tier, alpha), true, -1.0, true)
+			var light := Color(tier.lightened(0.45), alpha)
+			if count > 4:
+				_text_centered(FONT_HEAVY, str(count), Vector2(0, 16), 44, light, alpha, 0.0)
+			else:
+				var pitch := 11.0
+				for i in count:
+					var x := (i - (count - 1) / 2.0) * pitch
+					_draw_round(Vector2(x, 4.0), light, Color(tier.darkened(0.3), alpha))
 		"streak":
 			var star := _star(5, EMBLEM_R * 0.5, EMBLEM_R * 0.21, Vector2(0, -6))
 			draw_polygon(
@@ -366,6 +296,19 @@ func _draw_emblem(
 		_:
 			var star := _star(5, EMBLEM_R * 0.45, EMBLEM_R * 0.19, Vector2.ZERO)
 			draw_colored_polygon(star, Color(tier, alpha))
+
+
+## A standing round: a case with a rim, and the bullet's ogive on top.
+func _draw_round(foot: Vector2, colour: Color, shade: Color) -> void:
+	var case := Rect2(foot + Vector2(-3.5, -6.0), Vector2(7.0, 20.0))
+	draw_rect(case, colour)
+	draw_rect(Rect2(case.position.x - 0.8, case.end.y - 3.0, 8.6, 3.0), colour)
+	draw_rect(Rect2(case.position.x, case.position.y, 7.0, 2.0), shade)
+	var tip := PackedVector2Array()
+	for k in 9:
+		var a := PI + PI * k / 8.0
+		tip.append(foot + Vector2(0, -6.0) + Vector2(cos(a) * 3.5, sin(a) * 9.0))
+	draw_colored_polygon(tip, colour)
 
 
 ## Search and Destroy: a charge case for a plant or defuse (a cut wire for
@@ -495,63 +438,42 @@ func _tier_color(label: String) -> Color:
 # --- Scoreboard ------------------------------------------------------------
 
 
-## Your score, top left, on a plate: the score with kills, deaths, and the
-## current streak beside it. Match HUDs hide it (`show_score`), since their
-## own score block takes the corner.
-func _draw_scoreboard(ui: float) -> void:
-	if player == null or not show_score:
+## Your score outside a match, in the match score block's form, bottom left
+## (`net/score_block.gd`): your score big beside a plain disk, your kills under
+## it, and deaths and the current streak beneath. Match HUDs hide it
+## (`show_score`), since their own score block takes the corner.
+func _update_own_score() -> void:
+	if _block == null:
+		_block = Control.new()
+		_block.set_script(ScoreBlock)
+		_block.name = "OwnScore"
+		_block.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_block)
+	_block.visible = player != null and show_score
+	if not _block.visible:
 		return
-	var at := Vector2(40.0, 24.0) * ui
-	var stats := [["K", player.kills()], ["D", player.deaths()]]
-	var streak := player.kill_streak()
-	if streak >= 2:
-		stats.append(["STREAK", streak])
-	var score_text := str(player.score())
-	var score_w := Paint.text_width(Paint.DISPLAY, score_text, int(30.0 * ui))
-	var label_w := Paint.text_width(Paint.LABEL, "SCORE", int(12.0 * ui), 2.0 * ui)
-	var width := maxf(score_w, label_w) + 22.0 * ui
-	for stat: Array in stats:
-		width += (
-			Paint.text_width(Paint.LABEL, stat[0], int(12.0 * ui), 1.5 * ui)
-			+ Paint.text_width(Paint.LABEL, str(stat[1]), int(18.0 * ui))
-			+ 26.0 * ui
+	(
+		_block
+		. set(
+			&"rows",
+			[
+				{
+					"value": str(player.score()),
+					"ours": true,
+					"self": true,
+					"label": "SCORE",
+					"bar": false
+				},
+				{"value": str(player.kills()), "label": "KILLS", "bar": false},
+			]
 		)
-	var plate := Rect2(at, Vector2(width + 16.0 * ui, 52.0 * ui))
-	Paint.plate(self, plate, Paint.PLATE, Color(1, 1, 1, 0.85))
-	var x := at.x + 14.0 * ui
-	Paint.text(
-		self,
-		Paint.LABEL,
-		"SCORE",
-		Vector2(x, at.y + 18.0 * ui),
-		int(12.0 * ui),
-		UiTheme.TEXT_DIM,
-		2.0 * ui
 	)
-	Paint.text(
-		self, Paint.DISPLAY, score_text, Vector2(x, at.y + 45.0 * ui), int(30.0 * ui), UiTheme.TEXT
-	)
-	x += maxf(score_w, label_w) + 22.0 * ui
-	for stat: Array in stats:
-		draw_rect(Rect2(x - 12.0 * ui, at.y + 12.0 * ui, 1.0, 28.0 * ui), Color(1, 1, 1, 0.16))
-		var w := Paint.text(
-			self,
-			Paint.LABEL,
-			stat[0],
-			Vector2(x, at.y + 18.0 * ui),
-			int(12.0 * ui),
-			UiTheme.TEXT_DIM,
-			1.5 * ui
-		)
-		var value_w := Paint.text(
-			self,
-			Paint.LABEL,
-			str(stat[1]),
-			Vector2(x, at.y + 43.0 * ui),
-			int(18.0 * ui),
-			UiTheme.TEXT
-		)
-		x += maxf(w, value_w) + 26.0 * ui
+	var footer := "DEATHS %d" % player.deaths()
+	if player.kill_streak() >= 2:
+		footer += "   STREAK %d" % player.kill_streak()
+	_block.set(&"footer", footer)
+	_block.set(&"mode", "Testing Area")
 
 
 # --- Drawing helpers -------------------------------------------------------
@@ -594,39 +516,6 @@ func _text_centered(
 		_outlined(font, text, pos, font_size, color, alpha * outline)
 	else:
 		draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
-
-
-func _tracked_width(font: Font, text: String, font_size: int, tracking: float) -> float:
-	return (
-		font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-		+ tracking * maxi(text.length() - 1, 0)
-	)
-
-
-## Draws text one glyph at a time with extra letter spacing.
-func _tracked(
-	font: Font,
-	text: String,
-	pos: Vector2,
-	font_size: int,
-	tracking: float,
-	color: Color,
-	alpha: float
-) -> void:
-	var x := pos.x
-	var outline := maxi(int(font_size * 0.22), 3)
-	var shadow := Color(0, 0, 0, 0.55 * alpha)
-	for i in text.length():
-		var ch := text[i]
-		draw_string_outline(
-			font, Vector2(x, pos.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, outline, shadow
-		)
-		x += font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + tracking
-	x = pos.x
-	for i in text.length():
-		var ch := text[i]
-		draw_string(font, Vector2(x, pos.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
-		x += font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + tracking
 
 
 func _regular(sides: int, r: float, rotation: float) -> PackedVector2Array:
@@ -678,23 +567,3 @@ func _vertical_gradient(
 
 func _ease_out_cubic(t: float) -> float:
 	return 1.0 - pow(1.0 - t, 3.0)
-
-
-func _ease_out_back(t: float) -> float:
-	var c := 1.9
-	return 1.0 + (c + 1.0) * pow(t - 1.0, 3.0) + c * pow(t - 1.0, 2.0)
-
-
-static func _make_glow() -> Texture2D:
-	var gradient := Gradient.new()
-	gradient.set_color(0, Color(1, 1, 1, 1))
-	gradient.set_color(1, Color(1, 1, 1, 0))
-	gradient.add_point(0.35, Color(1, 1, 1, 0.35))
-	var texture := GradientTexture2D.new()
-	texture.gradient = gradient
-	texture.fill = GradientTexture2D.FILL_RADIAL
-	texture.fill_from = Vector2(0.5, 0.5)
-	texture.fill_to = Vector2(1.0, 0.5)
-	texture.width = 128
-	texture.height = 128
-	return texture

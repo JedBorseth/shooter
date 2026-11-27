@@ -117,6 +117,12 @@ func set_killer(killer_name: String, colour: Color, weapon_key := "") -> void:
 	_centre.killer_weapon = weapon_key
 
 
+## Names the player we just killed on the "Killed" plate (match HUDs call
+## this when they see our kill).
+func show_victim(victim_name: String, colour: Color) -> void:
+	_centre.show_victim(victim_name, colour)
+
+
 func _on_respawned() -> void:
 	_controls_left = 0.0
 	set_killer("", TeamColours.enemy)
@@ -188,13 +194,13 @@ func _process(delta: float) -> void:
 	var warning := {}
 	if alive and not scoped:
 		if _player.is_reloading():
-			warning = {"text": "RELOADING", "colour": UiTheme.TEXT_DIM}
+			warning = {"text": "RELOADING", "colour": UiTheme.TEXT_DIM, "steady": true}
 		elif magazine == 0 and reserve == 0:
 			warning = {"text": "NO AMMO", "colour": UiTheme.HARM}
 		elif low and reserve > 0:
 			warning = Paint.split_key("[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.TEXT)
 		elif low:
-			warning = {"text": "LOW AMMO", "colour": TeamColours.enemy}
+			warning = {"text": "LOW AMMO", "colour": UiTheme.READY}
 	_centre.warning = warning
 
 	var prompt := _player.interact_prompt()

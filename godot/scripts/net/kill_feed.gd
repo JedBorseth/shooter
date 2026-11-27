@@ -1,30 +1,40 @@
 extends Control
-## The kill feed, bottom left above health: a line per kill on its own plate,
-## the killer's name, the weapon's silhouette (and a headshot mark), and the
-## victim's name, in team colours. The newest line sits at the bottom and
-## pushes the others up; lines fade after a few seconds. Lines that involve
-## us get a lighter plate and a white keyline. Other plays (flags, the final
-## weapon) are plain text lines.
+## The kill feed, bottom left above the score block, as Black Ops 3 runs its
+## own: a row per kill, the killer's name, the weapon's silhouette (and a
+## headshot mark), and the victim's name, on a dark plate that hugs the row.
+## Names are in their side's colour (enemies in a lighter salmon that reads
+## on any sky), and ours in yellow. The newest row sits at the bottom and the
+## others slide up to make room; each lives five seconds, then fades. Other
+## plays (flags, the final weapon) are plain text rows. The feed is turned a
+## little toward the screen's centre, with the score block under it.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
-const SECONDS := 6.0
+const SECONDS := 5.0
+const FADE := 0.4
+## Seconds the rows take to slide up for a new one.
+const SHIFT := 0.12
 const LINES := 5
-const LINE_H := 28.0
-const ICON_H := 17.0
-const TEXT_SIZE := 15
-const SMALL_SIZE := 13
+const LINE_H := 22.0
+const ICON_H := 15.0
+const TEXT_SIZE := 17
+const SMALL_SIZE := 14
 
 ## Each line: {"parts": Array, "mine": bool, "left": float, "age": float}.
 ## A part is [text, colour], [text, colour, true] for small print, or
 ## {"icon": weapon key} / {"headshot": true}.
 var _lines: Array[Dictionary] = []
+## How far the rows still sit below their places, sliding up.
+var _shift := 0.0
 
 
 ## Adds a line; see `_lines` for the parts.
 func add(parts: Array, mine := false) -> void:
 	_lines.append({"parts": parts, "mine": mine, "left": SECONDS, "age": 0.0})
+	_shift = LINE_H
 	while _lines.size() > LINES:
 		_lines.pop_front()
 
@@ -46,32 +56,37 @@ func _process(delta: float) -> void:
 		line.left -= delta
 		line.age += delta
 	_lines = _lines.filter(func(line: Dictionary) -> bool: return line.left > 0.0)
+	_shift = move_toward(_shift, 0.0, delta * LINE_H / SHIFT)
 	queue_redraw()
 
 
 func _draw() -> void:
-	var y := size.y
+	draw_set_transform_matrix(Shapes.tilt(0.0, Shapes.TILT))
+	var y := size.y + _shift
 	for i in range(_lines.size() - 1, -1, -1):
 		var line: Dictionary = _lines[i]
-		var alpha := clampf(line.left / 0.6, 0.0, 1.0) * clampf(line.age / 0.15, 0.0, 1.0)
-		var slide := (1.0 - clampf(line.age / 0.15, 0.0, 1.0)) * -16.0
+		var newest := i == _lines.size() - 1
+		var alpha := clampf(line.left / FADE, 0.0, 1.0)
+		if newest:
+			alpha *= clampf(line.age / SHIFT, 0.0, 1.0)
 		y -= LINE_H
-		_draw_line(line, Vector2(slide, y), alpha)
-		y -= 3.0
+		_draw_line(line, Vector2(0.0, y - (_shift if newest else 0.0)), alpha)
+		y -= 2.0
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
-	var gap := 9.0
+	var gap := 8.0
 	var width := 0.0
 	for part: Variant in line.parts:
 		width += _part_width(part) + gap
-	width += 24.0 - gap
-	var plate_colour := Paint.PLATE_LIGHT if line.mine else Paint.PLATE
-	var tab := Color(1, 1, 1, 0.9 * alpha) if line.mine else Color.TRANSPARENT
-	Paint.plate(
-		self, Rect2(at, Vector2(width, LINE_H)), Color(plate_colour, plate_colour.a * alpha), tab
+	width += 16.0 - gap
+	Shapes.smooth_rect(
+		self,
+		Rect2(at, Vector2(width, LINE_H)),
+		Color(0, 0, 0, (0.55 if line.mine else 0.45) * alpha)
 	)
-	var x := at.x + 12.0
+	var x := at.x + 8.0
 	var baseline := at.y + LINE_H / 2.0 + 5.5
 	for part: Variant in line.parts:
 		if part is Dictionary:
@@ -81,7 +96,7 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 					part.icon,
 					Vector2(x + _part_width(part), at.y + LINE_H / 2.0),
 					ICON_H,
-					Color(1, 1, 1, 0.92 * alpha)
+					Color(1, 1, 1, 0.95 * alpha)
 				)
 				if w == 0.0:
 					Paint.text(
@@ -93,10 +108,10 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 						Color(UiTheme.TEXT_DIM, alpha)
 					)
 			elif part.has("headshot"):
-				_draw_headshot(Vector2(x + 8.0, at.y + LINE_H / 2.0), alpha)
+				_draw_headshot(Vector2(x + 7.0, at.y + LINE_H / 2.0), alpha)
 		else:
 			var small: bool = part.size() > 2 and part[2]
-			var colour: Color = part[1]
+			var colour := _name_colour(part[1])
 			Paint.text(
 				self,
 				Paint.LABEL_LIGHT if small else Paint.LABEL,
@@ -108,6 +123,14 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 		x += _part_width(part) + gap
 
 
+## Enemy names in a lighter shade of the enemy's colour, which holds on a
+## bright sky where the full red goes dark (Black Ops 3's salmon).
+func _name_colour(colour: Color) -> Color:
+	if colour.is_equal_approx(TeamColours.enemy):
+		return TeamColours.enemy.lerp(Color.WHITE, 0.32)
+	return colour
+
+
 func _part_width(part: Variant) -> float:
 	if part is Dictionary:
 		if part.has("icon"):
@@ -115,7 +138,7 @@ func _part_width(part: Variant) -> float:
 			if icon == null:
 				return Paint.text_width(Paint.LABEL_LIGHT, part.get("name", ""), SMALL_SIZE)
 			return icon.get_width() * ICON_H / icon.get_height()
-		return 16.0
+		return 14.0
 	var small: bool = part.size() > 2 and part[2]
 	return Paint.text_width(
 		Paint.LABEL_LIGHT if small else Paint.LABEL,
@@ -124,8 +147,21 @@ func _part_width(part: Variant) -> float:
 	)
 
 
-## A headshot mark: a small ring with a dot, like a sight on a head.
+## A headshot mark: a head and shoulders with a small sight ring round the
+## head.
 func _draw_headshot(centre: Vector2, alpha: float) -> void:
-	var colour := Color(UiTheme.TEXT, 0.92 * alpha)
-	draw_arc(centre, 6.0, 0.0, TAU, 20, colour, 1.6, true)
-	draw_circle(centre, 2.0, colour)
+	var colour := Color(UiTheme.TEXT, 0.95 * alpha)
+	var head := centre + Vector2(0, -2.0)
+	draw_circle(head, 3.2, colour, true, -1.0, true)
+	draw_colored_polygon(
+		PackedVector2Array(
+			[
+				centre + Vector2(-6.0, 7.0),
+				centre + Vector2(-3.5, 2.5),
+				centre + Vector2(3.5, 2.5),
+				centre + Vector2(6.0, 7.0),
+			]
+		),
+		colour
+	)
+	draw_arc(head, 6.0, 0.0, TAU, 20, colour, 1.2, true)

@@ -64,9 +64,9 @@ func _check_plans() -> void:
 
 func _check_turning() -> void:
 	var minimap: Control = Minimap.new()
-	minimap.size = Vector2(Minimap.SIZE, Minimap.SIZE)
-	var centre := minimap.size / 2.0
-	var scale := Minimap.SIZE / Minimap.VIEW_METRES
+	minimap.size = Minimap.WINDOW
+	var centre := Minimap.WINDOW / 2.0
+	var scale := Minimap.PIXELS_PER_METRE
 	for yaw in [0.0, 0.7, -2.1, PI]:
 		minimap.set("_here", Vector2(5.0, -3.0))
 		minimap.set("_turn", yaw)

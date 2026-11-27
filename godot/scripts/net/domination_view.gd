@@ -5,14 +5,15 @@ extends Node3D
 ## - In the world: each flag's circle as a glowing ring on the ground (a
 ##   decal, so it follows ramps and steps) and a low wall of light around it
 ##   that fades upward, both in the owner's colour (white while neutral).
-## - On screen: a lettered marker over each flag in its owner's colour, with
-##   its distance and a thin bar for a capture under way, held at the
+## - On screen, as Black Ops 3 marks its flags: a lettered hexagon over each
+##   flag in its owner's colour (sand while neutral; flashing between the two
+##   sides while contested) with CAPTURE or DEFEND over it, its distance under
+##   it, and a ring filling round it with a capture under way, held at the
 ##   screen's edge when the flag is off screen (the flag we stand in has
-##   none); a row of the three letters under the score block's level, top
-##   centre, each filling in the colour of the team capturing it; and in a
-##   circle, a bar under the crosshair: CAPTURING, CONTESTED, LOSING (the
-##   enemy's capture of our flag, which we stop by standing on it), or
-##   SECURED.
+##   none); a row of the three letters under the minimap, each with the same
+##   ring; and in a circle, a bar under the crosshair: CAPTURING, CONTESTED,
+##   LOSING (the enemy's capture of our flag, which we stop by standing on
+##   it), or SECURED.
 ## - Calls in the middle of the screen with a short sting until there is an
 ##   announcer: "WE'VE TAKEN B", "WE'VE LOST B", and "ENEMY TOOK B". The
 ##   match HUD calls halftime, when the teams swap sides (the second half).
@@ -22,6 +23,7 @@ extends Node3D
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 const CONTESTED := UiTheme.ACCENT
@@ -363,8 +365,7 @@ func _draw_overlay() -> void:
 		_draw_capture_bar(flags[here], size, ui)
 
 
-## The flag's letter on a small square in its colour, with a capture bar
-## under it and its distance, held at the screen's edge when off screen.
+## The flag's hexagon marker, held at the screen's edge when off screen.
 func _draw_marker(camera: Camera3D, flag: Dictionary, size: Vector2, ui: float) -> void:
 	var center: Vector3 = flag.center
 	var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
@@ -385,101 +386,97 @@ func _draw_marker(camera: Camera3D, flag: Dictionary, size: Vector2, ui: float) 
 			half.x / maxf(absf(direction.x), 0.001), half.y / maxf(absf(direction.y), 0.001)
 		)
 		point = middle + direction * scale
-	var colour := flag_colour(flag)
-	if flag.contested:
-		colour.a = 0.65 + 0.35 * sin(_time * 7.0)
-	var s := 26.0 * ui
-	var rect := Rect2(point - Vector2(s, s) / 2.0, Vector2(s, s))
-	_draw_tile(rect, flag, colour, ui)
-	var distance := 0
+	var distance := -1
 	if player != null and is_instance_valid(player):
 		distance = int(round(player.global_position.distance_to(world)))
-	Paint.text_centred(
-		_overlay,
-		Paint.LABEL,
-		"%dm" % distance,
-		Vector2(point.x, rect.end.y + 15.0 * ui),
-		int(12 * ui),
-		Color(UiTheme.TEXT, 0.85 * colour.a)
-	)
+	var marker := _marker(flag)
+	marker.action = "DEFEND" if flag.owner == "ally" else "CAPTURE"
+	marker.distance = distance
+	Shapes.objective(_overlay, point, marker, ui)
 
 
-## A letter tile: a dark plate, the owner's colour on the edge and letter,
-## and the capture filling up from the bottom in the capturing team's colour.
-func _draw_tile(rect: Rect2, flag: Dictionary, colour: Color, ui: float) -> void:
-	_overlay.draw_rect(rect, Color(UiTheme.INK, 0.6 * colour.a))
-	var owned: bool = flag.owner != "neutral"
-	if owned:
-		_overlay.draw_rect(rect, Color(colour, 0.28 * colour.a))
+## A flag's hexagon: its letter, its owner's colour (sand while neutral,
+## flashing between the sides twice a second while contested), and a ring
+## for a capture under way in the capturing side's colour.
+func _marker(flag: Dictionary) -> Dictionary:
+	var fill := side_colour(flag.owner) if flag.owner != "neutral" else UiTheme.NEUTRAL
+	if flag.contested:
+		fill = TeamColours.ally if fmod(_time * 2.0, 1.0) < 0.5 else TeamColours.enemy
+	var marker := {"fill": fill, "letter": String(flag.name)}
 	var progress: float = flag.progress
 	if progress > 0.0 and flag.claim != "neutral":
-		var fill := rect.size.y * progress
-		_overlay.draw_rect(
-			Rect2(rect.position.x, rect.end.y - fill, rect.size.x, fill),
-			Color(side_colour(flag.claim), 0.55 * colour.a)
-		)
-	_overlay.draw_rect(rect, colour, false, maxf(1.5 * ui, 1.0))
-	var font_size := int(rect.size.y * 0.66)
-	var baseline := rect.position.y + rect.size.y / 2.0 + Paint.DISPLAY.get_ascent(font_size) * 0.36
-	Paint.text_centred(
-		_overlay,
-		Paint.DISPLAY,
-		String(flag.name),
-		Vector2(rect.get_center().x, baseline),
-		font_size,
-		Color(UiTheme.TEXT if owned else colour, colour.a)
-	)
+		marker.progress = progress
+		marker.progress_colour = side_colour(flag.claim)
+	return marker
 
 
-## The three letters side by side, top centre.
-func _draw_row(flags: Array, size: Vector2, ui: float) -> void:
-	var s := 30.0 * ui
-	var gap := 8.0 * ui
-	var width := flags.size() * s + (flags.size() - 1) * gap
-	var x := size.x / 2.0 - width / 2.0
-	var y := 22.0 * ui
+## The three letters side by side under the minimap.
+func _draw_row(flags: Array, _size: Vector2, ui: float) -> void:
+	var x := 44.0 * ui + 16.0 * ui
+	var y := 262.0 * ui
 	for flag: Dictionary in flags:
-		var colour := flag_colour(flag)
-		if flag.contested:
-			colour.a = 0.65 + 0.35 * sin(_time * 7.0)
-		_draw_tile(Rect2(x, y, s, s), flag, colour, ui)
-		x += s + gap
+		var marker := _marker(flag)
+		Shapes.hexagon(
+			_overlay, Vector2(x, y) + Vector2(0, 1.5) * ui, 15.0 * ui, Color(0, 0, 0, 0.45)
+		)
+		Shapes.hexagon(
+			_overlay,
+			Vector2(x, y),
+			13.0 * ui,
+			Color(Color(marker.fill).darkened(0.12), 0.92),
+			Color(1, 1, 1, 0.75),
+			2.0 * ui
+		)
+		Paint.text_centred(
+			_overlay,
+			Paint.DISPLAY,
+			marker.letter,
+			Vector2(x, y + 5.0 * ui),
+			int(15 * ui),
+			UiTheme.TEXT
+		)
+		if marker.has("progress"):
+			Shapes._hex_ring(
+				_overlay,
+				Vector2(x, y),
+				17.0 * ui,
+				marker.progress,
+				marker.progress_colour,
+				2.5 * ui
+			)
+		x += 38.0 * ui
 
 
 ## In a circle: what is happening to it, over a bar filling with the capture.
 func _draw_capture_bar(flag: Dictionary, size: Vector2, ui: float) -> void:
 	var letter := String(flag.name)
 	var text := ""
-	var colour := NEUTRAL
 	var progress: float = flag.progress
 	if flag.contested:
 		text = "CONTESTED"
-		colour = CONTESTED
 	elif flag.claim == "ally":
 		text = "CAPTURING %s" % letter
-		colour = TeamColours.ally
 	elif flag.claim == "enemy":
 		text = "LOSING %s" % letter
-		colour = TeamColours.enemy
 	elif flag.owner == "ally":
 		text = "%s SECURED" % letter
-		colour = TeamColours.ally
 		progress = 1.0
 	else:
 		return
-	var width := 220.0 * ui
-	var top := size.y * 0.62
-	var bar := Rect2(size.x / 2.0 - width / 2.0, top, width, 5.0 * ui)
+	var width := 260.0 * ui
+	var top := size.y * 0.667
+	var bar := Rect2(size.x / 2.0 - width / 2.0, top, width, 8.0 * ui)
 	Paint.text_centred(
 		_overlay,
 		Paint.LABEL,
 		text,
 		Vector2(size.x / 2.0, top - 9.0 * ui),
-		int(16 * ui),
-		colour,
+		int(17 * ui),
+		UiTheme.TEXT,
 		1.5 * ui
 	)
-	_overlay.draw_rect(bar, Paint.TRACK)
+	_overlay.draw_rect(bar.grow(1.0), Color(0, 0, 0, 0.5))
+	_overlay.draw_rect(bar, Color(1, 1, 1, 0.15))
 	if flag.claim != "neutral" or flag.owner == "ally":
 		var fill_colour := side_colour(flag.claim) if flag.claim != "neutral" else TeamColours.ally
 		_overlay.draw_rect(Rect2(bar.position, Vector2(width * progress, bar.size.y)), fill_colour)

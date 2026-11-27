@@ -1,18 +1,24 @@
 extends Control
-## Health, bottom left: a medical cross, the number, and a segmented bar. A
-## hit leaves a pale trail on the bar that drains after a moment, so you can
-## read how much that hit took. Hurt badly, the number and bar turn red and
-## pulse. At full health the cluster quiets down.
+## Health, bottom right, in the ring where Black Ops 3 shows its specialist
+## charge: a dark disk with a ring round it that drains as health falls, and
+## the number in the middle. Black Ops 3 has no health readout (only red
+## direction arcs and the vignette); this game keeps the number, because
+## health regenerates in steps worth reading (docs/art-direction.md). A hit
+## leaves a pale trail on the ring that drains after a moment, so you can read
+## how much that hit took. Hurt badly, the ring and number turn red and beat.
+## At full health the ring quiets down. Like the weapon cluster beside it, it
+## is turned a little toward the screen's centre.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 
-const SEGMENTS := 10
-const BAR_WIDTH := 236.0
-## Below this share of health the cluster turns red.
+## Below this share of health the ring turns red.
 const HURT := 0.35
 ## Seconds the trail of a hit holds before it drains.
 const TRAIL_HOLD := 0.45
+const RADIUS := 62.0
+const RING_W := 6.0
 
 var player: FpsPlayer
 
@@ -36,42 +42,41 @@ func _process(delta: float) -> void:
 	_trail = maxf(_trail, ratio)
 	_pulse = fmod(_pulse + delta * 1.6, 1.0)
 	# Quiet at full health; fully up once hurt.
-	modulate.a = move_toward(modulate.a, 0.6 if ratio >= 1.0 else 1.0, delta * 3.0)
+	modulate.a = move_toward(modulate.a, 0.7 if ratio >= 1.0 else 1.0, delta * 3.0)
 	queue_redraw()
 
 
 func _draw() -> void:
 	if player == null:
 		return
-	var bottom := size.y
-	Paint.corner_shade(self, Rect2(-40.0, bottom - 150.0, 460.0, 184.0), Vector2(0, 1), 0.55)
-
-	var health := player.health()
+	draw_set_transform_matrix(Shapes.tilt(size.x, -Shapes.TILT))
+	var centre := size - Vector2(RADIUS + 4.0, RADIUS + 4.0)
 	var ratio := _last
 	var hurt := ratio < HURT and player.is_alive()
 	var colour := UiTheme.HARM if hurt else UiTheme.TEXT
 	if hurt:
-		# A slow heartbeat on the number and bar.
+		# A slow heartbeat on the number and ring.
 		colour = colour.lerp(Color.WHITE, 0.35 * pow(sin(_pulse * PI), 4.0))
 
-	var bar := Rect2(0.0, bottom - 5.0, BAR_WIDTH, 4.0)
-	var ghost := Color(UiTheme.HARM, 0.55) if hurt else Color(1, 1, 1, 0.5)
-	Paint.segments(self, bar, SEGMENTS, ratio, colour, 3.0, _trail, ghost)
+	# The disk, a thin outer rim, and the ring: track, the trail of the last
+	# hit, and what is left, from the top clockwise.
+	draw_circle(centre, RADIUS + 2.0, Color(0, 0, 0, 0.3), true, -1.0, true)
+	draw_circle(centre, RADIUS - RING_W - 2.0, Color(0.03, 0.035, 0.045, 0.62), true, -1.0, true)
+	draw_arc(centre, RADIUS + 1.0, 0.0, TAU, 72, Color(1, 1, 1, 0.16), 1.0, true)
+	var ring_r := RADIUS - RING_W / 2.0
+	draw_arc(centre, ring_r, 0.0, TAU, 72, Color(1, 1, 1, 0.14), RING_W, true)
+	var top := -PI / 2.0
+	var ghost := Color(UiTheme.HARM, 0.6) if hurt else Color(1, 1, 1, 0.45)
+	if _trail > ratio:
+		draw_arc(centre, ring_r, top, top + TAU * _trail, 72, ghost, RING_W, true)
+	if ratio > 0.0:
+		draw_arc(centre, ring_r, top, top + TAU * ratio, 72, colour, RING_W, true)
 
-	# Medical cross, then the number.
-	var baseline := bottom - 16.0
-	var cross := Vector2(9.0, baseline - 14.0)
-	var arm := 7.0
-	var thick := 4.0
-	for rect: Rect2 in [
-		Rect2(cross - Vector2(arm, thick / 2.0), Vector2(arm * 2.0, thick)),
-		Rect2(cross - Vector2(thick / 2.0, arm), Vector2(thick, arm * 2.0)),
-	]:
-		draw_rect(Rect2(rect.position + Vector2(0, 1.5), rect.size), Color(Paint.SHADOW, 0.5))
-		draw_rect(rect, colour)
-	var number_w := Paint.text(
-		self, Paint.DISPLAY, str(ceili(health)), Vector2(28.0, baseline), 40, colour
+	# A small medical cross over the number.
+	var cross := centre + Vector2(0, -23.0)
+	draw_line(cross - Vector2(6, 0), cross + Vector2(6, 0), Color(colour, 0.8), 3.0, true)
+	draw_line(cross - Vector2(0, 6), cross + Vector2(0, 6), Color(colour, 0.8), 3.0, true)
+	Paint.text_centred(
+		self, Paint.DISPLAY, str(ceili(player.health())), centre + Vector2(0, 15.0), 34, colour
 	)
-	Paint.text(
-		self, Paint.LABEL, "HP", Vector2(28.0 + number_w + 6.0, baseline), 14, UiTheme.TEXT_DIM, 1.5
-	)
+	draw_set_transform_matrix(Transform2D.IDENTITY)

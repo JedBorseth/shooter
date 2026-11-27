@@ -83,21 +83,22 @@ between events (`NetClient::domination_info`).
 
 ## On screen
 
-`godot/scripts/net/domination_view.gd`, in the calm HUD style:
+`godot/scripts/net/domination_view.gd`, as Black Ops 3 marks its flags:
 
 | Piece | Where | What |
 | --- | --- | --- |
-| Flag row | Top centre | A, B, C as small letter tiles: the owner's colour on the edge and letter (white while neutral), the capturing team's colour filling up from the bottom, pulsing yellow while contested |
-| Markers | Over each flag | The same tile with the distance under it, held at the screen's edge when off screen; none for the flag you stand in |
-| Capture bar | Under the crosshair, in a circle | CAPTURING B, CONTESTED, LOSING B (the enemy's capture of your flag; standing on it alone stops it), or B SECURED, over a bar filling with the capture |
+| Flag row | Under the minimap | A, B, C as lettered hexagons in the owner's colour (sand while neutral, flashing between the two sides twice a second while contested), with a ring filling round each in the capturing side's colour |
+| Markers | Over each flag | The same hexagon with CAPTURE or DEFEND over it and the distance under it, held at the screen's edge when off screen; none for the flag you stand in |
+| Capture bar | Below the crosshair, in a circle | CAPTURING B, CONTESTED, LOSING B (the enemy's capture of your flag; standing on it alone stops it), or B SECURED, over a 260 px bar filling with the capture |
 | World | Each flag | A ring decal at the circle's edge and a low wall of light around it, in the owner's colour (a pulse when it changes) |
 | Calls | Upper third | WE'VE TAKEN B, WE'VE LOST B, and ENEMY TOOK B, each with a short chime (there is no announcer); the match HUD calls HALFTIME ("Switching sides") for the second half ([modes.md](modes.md)) |
 | Scoreboard | Tab | CAPS and DEF columns |
 
-Black Ops 2 shows the same pieces: flag icons along the top of the HUD in
-the owner's colour, a world icon over each flag, a capture bar in the
-middle while you capture, and the announcer's "we've taken / we've lost"
-lines. The letter tiles are ours, not Black Ops 2's icons.
+Black Ops 2 and 3 show the same pieces: the flags' state near the minimap,
+a world icon over each flag (Black Ops 3's are hexagons with the action word
+over them), a capture bar in the middle while you capture, and the
+announcer's "we've taken / we've lost" lines. The hexagons are drawn in
+code, not Black Ops 3's icons.
 
 ## Maps
 

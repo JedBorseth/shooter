@@ -172,6 +172,7 @@ func _process(delta: float) -> void:
 		# The round's clock, while it runs.
 		var round := client.round_info()
 		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
+		_score.mode = "ROUND %d" % round.number if round.number > 0 else _score.mode
 	_update_banner(phase, info)
 	_age_callout(delta)
 	_loadout_box.visible = not ladder
@@ -429,16 +430,18 @@ func feed_lines() -> PackedStringArray:
 func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var parts := []
 	if killer != victim and killer >= 0:
-		parts.append([client.name_of(killer), _team_colour(killer)])
+		parts.append([client.name_of(killer), _name_colour(killer)])
 	var key := _weapon_key(weapon)
 	parts.append({"icon": key, "name": weapon.to_upper()})
 	if headshot:
 		parts.append({"headshot": true})
-	parts.append([client.name_of(victim), _team_colour(victim)])
+	parts.append([client.name_of(victim), _name_colour(victim)])
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
 	if victim == me and killer != victim and killer >= 0:
 		_name_killer(client.name_of(killer), _team_colour(killer), key)
+	elif killer == me and victim != me:
+		_name_victim(client.name_of(victim), _team_colour(victim))
 
 
 ## Tells the shared HUD's death card who killed us.
@@ -448,6 +451,15 @@ func _name_killer(killer_name: String, colour: Color, weapon_key: String) -> voi
 	var hud := player.get_parent().get_node_or_null("HUD")
 	if hud != null and hud.has_method("set_killer"):
 		hud.set_killer(killer_name, colour, weapon_key)
+
+
+## Tells the shared HUD whom we just killed, for its "Killed" plate.
+func _name_victim(victim_name: String, colour: Color) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var hud := player.get_parent().get_node_or_null("HUD")
+	if hud != null and hud.has_method("show_victim"):
+		hud.show_victim(victim_name, colour)
 
 
 ## The HUD key for a weapon's display name ("AK-47 Ext. Mag" is `ak47`), or
@@ -460,6 +472,12 @@ func _weapon_key(weapon_name: String) -> String:
 		if String(weapon.name).get_slice(" ", 0) == base:
 			return String(weapon.key).get_slice("+", 0)
 	return ""
+
+
+## A name's colour in the kill feed: ours yellow, as Black Ops 3 marks you,
+## everyone else in their side's colour.
+func _name_colour(id: int) -> Color:
+	return MenuStyle.UiTheme.SELF if id == client.player_id() else _team_colour(id)
 
 
 func _team_colour(id: int) -> Color:
@@ -749,12 +767,12 @@ func _build_banners() -> void:
 
 
 func _build_feed() -> void:
-	# Bottom left, above the health cluster.
+	# Bottom left, above the score block.
 	_feed = Control.new()
 	_feed.set_script(KillFeed)
 	_feed.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	_feed.position = Vector2(40, -150 - 200)
-	_feed.size = Vector2(520, 200)
+	_feed.position = Vector2(40, -214 - 150)
+	_feed.size = Vector2(560, 150)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_feed)
 
@@ -765,8 +783,8 @@ func _build_feed() -> void:
 func _build_chat() -> void:
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	# Above the kill feed, which sits above the health cluster.
-	box.position = Vector2(40, -600)
+	# Above the kill feed, under the minimap and the mode's rows.
+	box.position = Vector2(40, -540)
 	box.custom_minimum_size = Vector2(520, 0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(box)

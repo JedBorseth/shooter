@@ -5,14 +5,19 @@ extends Node3D
 ## - In the world: the live zone's edge as a glowing outline on the ground (a
 ##   decal, so it follows ramps and steps) and a low wall of light that fades
 ##   upward, both in the holder's colour.
-## - On screen: a marker over the live zone with its distance and what to do
-##   (capture, defend, attack, contested), held at the screen's edge when the
-##   zone is off screen; a strip under the score bar with the zone's name, the
-##   time until it moves, and who has it; and calls in the middle of the
-##   screen when the zone comes online, changes hands, or is about to move.
-##   In the last seconds before a move, a dim marker shows where it goes next.
+## - On screen, as Black Ops 3 marks its Hardpoint: a hexagon over the live
+##   zone in the holder's colour (sand while unclaimed, flashing between the
+##   sides while contested) with what to do over it (CAPTURE, DEFEND, ATTACK,
+##   CONTESTED) and its distance under it, held at the screen's edge when the
+##   zone is off screen; a row under the minimap with the zone's hexagon, the
+##   time until it moves, and what is happening to it; and calls in the middle
+##   of the screen when the zone comes online, changes hands, or is about to
+##   move. In the last seconds before a move, a dim marker shows where it goes
+##   next.
 
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const CONTESTED := Color("ffd34d")
 const NEUTRAL := Color("e8eef2")
 ## Seconds before a move when the next zone is announced and marked.
@@ -22,7 +27,6 @@ const WALL_HEIGHT := 1.4
 ## Seconds each call stays up.
 const CALL_SECONDS := 2.6
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
-const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 
@@ -351,10 +355,24 @@ func _draw_markers() -> void:
 		_draw_marker(camera, zone, label, holder_colour(holder), 1.0)
 
 
-## A diamond over the zone with what to do and how far it is, clamped inside
+## The zone's hexagon fill on the HUD: the holder's colour, sand while
+## unclaimed, and flashing between the sides twice a second while contested.
+func _hud_colour(holder: String) -> Color:
+	match holder:
+		"ally":
+			return TeamColours.ally
+		"enemy":
+			return TeamColours.enemy
+		"contested":
+			var flash := fmod(Time.get_ticks_msec() / 500.0, 1.0) < 0.5
+			return TeamColours.ally if flash else TeamColours.enemy
+	return UiTheme.NEUTRAL
+
+
+## A hexagon over the zone with what to do and how far it is, clamped inside
 ## the screen's edges when the zone is off screen.
 func _draw_marker(
-	camera: Camera3D, zone: Dictionary, label: String, colour: Color, alpha: float
+	camera: Camera3D, zone: Dictionary, label: String, _colour: Color, alpha: float
 ) -> void:
 	var center: Vector3 = zone.center
 	var size: Vector3 = zone.size
@@ -370,48 +388,20 @@ func _draw_marker(
 	var clamped := at.clamp(margin, screen - margin)
 	if behind:
 		clamped.y = screen.y - margin.y
-	var off_screen := behind or clamped != at
-	var r := 15.0 * ui
-	var diamond := PackedVector2Array(
-		[
-			clamped + Vector2(0, -r),
-			clamped + Vector2(r, 0),
-			clamped + Vector2(0, r),
-			clamped + Vector2(-r, 0),
-		]
-	)
-	_marker.draw_colored_polygon(diamond, Color(0, 0, 0, 0.45 * alpha))
-	var inner := PackedVector2Array()
-	for p in diamond:
-		inner.append(clamped + (p - clamped) * 0.72)
-	_marker.draw_colored_polygon(inner, Color(colour, 0.95 * alpha))
-	var outline := diamond.duplicate()
-	outline.append(diamond[0])
-	_marker.draw_polyline(outline, Color(colour, alpha), 2.0 * ui, true)
-	var distance := int(round(camera.global_position.distance_to(center)))
-	var text := "%s  %dm" % [label, distance]
-	var font_size := int(16 * ui)
-	var width := FONT_BOLD.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	var text_at := clamped + Vector2(-width / 2.0, -r - 8.0 * ui)
-	if off_screen and clamped.y < screen.y / 2.0:
-		text_at.y = clamped.y + r + 20.0 * ui
-	_marker.draw_string_outline(
-		FONT_BOLD,
-		text_at,
-		text,
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		font_size,
-		int(6 * ui),
-		Color(0, 0, 0, 0.75 * alpha)
-	)
-	_marker.draw_string(
-		FONT_BOLD, text_at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(colour, alpha)
-	)
+	var holder := String(_info().get("holder", "neutral")) if label != "NEXT" else "neutral"
+	var marker := {
+		"fill": _hud_colour(holder),
+		"glyph": "zone",
+		"action": label,
+		"distance": int(round(camera.global_position.distance_to(center))),
+		"alpha": alpha,
+	}
+	Shapes.objective(_marker, clamped, marker, ui)
 
 
-## Under the score bar: the zone's name and clock on a bar in the holder's
-## colour, and what is happening to it.
+## Under the minimap: the zone's hexagon in the holder's colour, the time
+## until it moves (yellow in the last seconds), and what is happening to it,
+## on a dark plate that hugs them.
 func _draw_strip() -> void:
 	var info := _info()
 	if info.is_empty():
@@ -419,80 +409,68 @@ func _draw_strip() -> void:
 	var zones: Array = info.zones
 	var zone: Dictionary = zones[info.active]
 	var holder: String = info.holder
-	var colour := holder_colour(holder)
 	var screen := get_viewport().get_visible_rect().size
 	var ui := screen.y / 900.0
-	var width := 300.0 * ui
-	var top := 84.0 * ui
-	var rect := Rect2(screen.x / 2.0 - width / 2.0, top, width, 30.0 * ui)
-	_strip.draw_rect(rect, Color(0.02, 0.03, 0.04, 0.6))
-	_strip.draw_rect(Rect2(rect.position, Vector2(4.0 * ui, rect.size.y)), colour)
 	var left: float = info.seconds_to_move
 	var clock := ""
 	if left >= 0.0:
 		var seconds := int(ceil(left))
 		clock = "%d:%02d" % [seconds / 60, seconds % 60]
-	var font_size := int(18 * ui)
-	var name_text := "◆ %s" % String(zone.name).to_upper()
-	var baseline := rect.position.y + rect.size.y / 2.0 + font_size * 0.36
-	_strip.draw_string(
-		FONT_BOLD,
-		Vector2(rect.position.x + 14.0 * ui, baseline),
-		name_text,
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1,
-		font_size,
-		colour
-	)
-	var moving := left > 0.0 and left <= WARN_SECONDS
-	_strip.draw_string(
-		FONT_BOLD,
-		Vector2(rect.position.x, baseline),
-		clock,
-		HORIZONTAL_ALIGNMENT_RIGHT,
-		rect.size.x - 12.0 * ui,
-		font_size,
-		CONTESTED if moving else Color(1, 1, 1, 0.9)
-	)
 	var status := ""
 	if _in_zone(zone):
 		match holder:
 			"ally":
 				status = "HOLDING"
 			"contested":
-				status = "CONTESTED: CLEAR THE ZONE"
+				status = "CONTESTED"
 			_:
 				status = "CAPTURING"
 	else:
 		match holder:
 			"ally":
-				status = "YOUR TEAM HOLDS IT"
+				status = "SECURED"
 			"enemy":
 				status = "ENEMY HOLDS IT"
 			"contested":
 				status = "CONTESTED"
 			_:
 				status = "UNCLAIMED"
+	var moving := left > 0.0 and left <= WARN_SECONDS
 	if moving and zones.size() > 1:
 		var next: Dictionary = zones[info.next]
 		status = "MOVING TO %s" % String(next.name).to_upper()
-	var small := int(14 * ui)
-	_strip.draw_string_outline(
-		FONT_BOLD,
-		Vector2(rect.position.x, rect.end.y + 17.0 * ui),
-		status,
-		HORIZONTAL_ALIGNMENT_CENTER,
-		rect.size.x,
-		small,
-		int(5 * ui),
-		Color(0, 0, 0, 0.7)
+	var row_h := 26.0 * ui
+	var top := 246.0 * ui
+	var x := 44.0 * ui
+	var clock_w := Paint.text_width(Paint.DISPLAY, clock, int(18 * ui))
+	var status_w := Paint.text_width(Paint.LABEL, status, int(15 * ui), 1.0)
+	var width := 34.0 * ui + clock_w + 14.0 * ui + status_w + 14.0 * ui
+	Paint.fade(_strip, Rect2(x, top, width + 40.0 * ui, row_h), Color(0, 0, 0, 0.55))
+	var hex := Vector2(x + 15.0 * ui, top + row_h / 2.0)
+	Shapes.hexagon(
+		_strip,
+		hex,
+		10.5 * ui,
+		Color(_hud_colour(holder).darkened(0.12), 0.95),
+		Color(1, 1, 1, 0.75),
+		1.5 * ui
 	)
-	_strip.draw_string(
-		FONT_BOLD,
-		Vector2(rect.position.x, rect.end.y + 17.0 * ui),
+	Shapes._glyph(_strip, "zone", hex, 0.75 * ui, UiTheme.TEXT)
+	var baseline := top + row_h / 2.0 + 6.5 * ui
+	Paint.text(
+		_strip,
+		Paint.DISPLAY,
+		clock,
+		Vector2(x + 34.0 * ui, baseline),
+		int(18 * ui),
+		UiTheme.READY if moving else UiTheme.TEXT
+	)
+	Paint.text(
+		_strip,
+		Paint.LABEL,
 		status,
-		HORIZONTAL_ALIGNMENT_CENTER,
-		rect.size.x,
-		small,
-		Color(colour, 0.95)
+		Vector2(x + 48.0 * ui + clock_w, baseline - 1.0 * ui),
+		int(15 * ui),
+		Color(UiTheme.TEXT, 0.9),
+		1.0
 	)

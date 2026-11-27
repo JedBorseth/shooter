@@ -36,7 +36,7 @@ A UAV or Counter-UAV is an aircraft in the world, not only an effect. Each circl
 
 - **The models:** both are built in Blender (`tools/gear_models.py`). The UAV (`uav_drone`) is a long-winged surveillance drone with a sensor turret and a pusher propeller. The Counter-UAV (`counter_uav_drone`) is a darker swept flying-wing jammer with emitter pods. Both bank into the turn (`godot/scripts/net/sky_view.gd`).
 - **Shooting one down:** enemies can shoot down the other side's (anyone but the caller, without teams). Each has 700 health, Black Ops 2's `u2_maxhealth`. Bullets take off their damage at that range, and the server checks them against a 3.2 m sphere where the shooter saw the aircraft, rewound as players are. A rocket that passes within 6 m downs any of them at once, as in Black Ops 2, where a rocket's damage is the health plus one. Shooting one gives a hit marker.
-- **Downed:** the streak ends at once for its side, so a downed UAV stops sweeping and a downed Counter-UAV stops jamming. It blows up where it was hit and its wreck falls away. The shooter scores 100 and the "Destroyed UAV" (or "Destroyed Counter-UAV") medal. Everyone hears "ENEMY UAV DESTROYED" or "UAV SHOT DOWN" in the upper third. Black Ops 2 publishes no point value for this. Earlier games paid 100, and one Black Ops 2 source gives 75.
+- **Downed:** the streak ends at once for its side, so a downed UAV stops sweeping and a downed Counter-UAV stops jamming. It blows up where it was hit and its wreck falls away. The shooter scores 100 and the "Destroyed UAV" (or "Destroyed Counter-UAV") medal. Everyone sees "ENEMY UAV DESTROYED" or "UAV SHOT DOWN" under the minimap. Black Ops 2 publishes no point value for this. Earlier games paid 100, and one Black Ops 2 source gives 75.
 - **Bots:** one bot in four carries the RL-4 as its sidearm. Black Ops 2's bots pick their secondary at random from every one there is, and three of those are launchers (`_bot_loadout.gsc`). With no enemy player in sight, a bot with a launcher turns it on enemy aircraft it can see that are no more than 70° overhead (Black Ops 2's bots let higher ones go, `_bot_combat.gsc`). It switches to the launcher, aims ahead of the aircraft for the rocket's flight, fires when on target, and switches back when the sky is clear or an enemy shows. `air_streaks_test` plays all of this through on a server.
 
 ## Counter-UAV
@@ -69,10 +69,10 @@ A crate never holds another Care Package. Black Ops 2's booby-trapped and reroll
 
 ## On screen
 
-- **Streak column:** the three streaks, bottom right above the weapon cluster, the cheapest lowest, as Black Ops 2 stacks them. Each shows its cost and a thin bar filling with this life's score toward it. An earned streak is lit, with a count when more than one is held. The selected one carries the use key's cap (`godot/scripts/net/streaks_hud.gd`).
-- **"UAV READY"** (or the streak's name) shows in the upper third when one is earned, with the use key ("[4] CALL IN").
-- **Calls** when a UAV or Counter-UAV goes up: "UAV ONLINE", "ENEMY UAV OVERHEAD", "COUNTER-UAV ONLINE", "ENEMY COUNTER-UAV", each with a chime. Black Ops 2's announcer says these; there is no announcer here.
-- **Minimap tags:** small tags along the minimap's foot show every UAV and Counter-UAV up, ours blue and the enemy's red.
+- **Streak column:** as Black Ops 3 lays it out, a column of small slots bottom right above the health ring, the cheapest lowest, each with its icon (our own, drawn in code), dim until earned, and a slot on top for a streak from a Care Package (a cross when empty). A thin rail beside the column fills with this life's score toward the next streak, with that streak's cost in a tag at its top. An earned slot lights with a yellow border; a pointer beside it marks the one the use key calls in, and a count shows when more than one is held (`godot/scripts/net/streaks_hud.gd`).
+- **"UAV READY"** (or the streak's name) shows on a yellow plate at the bottom centre when one is earned, with "Press [4]" under it, for three seconds.
+- **Notices** under the minimap when a UAV or Counter-UAV goes up or is shot down: "UAV ONLINE", "ENEMY UAV OVERHEAD", "COUNTER-UAV ONLINE", "ENEMY COUNTER-UAV", each with a chime, in the side's colour. Black Ops 2's announcer says these; there is no announcer here.
+- **Minimap tags:** small tags along the minimap's foot show every UAV and Counter-UAV up, ours cyan and the enemy's red.
 
 ![The streak column with a held streak and the UAV's bar filling](media/scorestreaks-hud.jpg)
 

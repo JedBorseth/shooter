@@ -5,11 +5,13 @@ extends Node3D
 ## - In the world: each team's flag on a pole, rippling, at its base, where it
 ##   was dropped, or above its carrier's head (hidden while we carry it, so it
 ##   does not fill the screen), and a ring on the ground at each base.
-## - On screen: a marker over each flag that matters, with what to do there
-##   (TAKE, DEFEND, RETURN, KILL, ESCORT, CAPTURE) and how far it is, held at
-##   the screen's edge when it is off screen; both flags' status beside the
-##   score bar; and while we carry the enemy's flag, a reminder of where to
-##   take it.
+## - On screen, as Black Ops 3 marks its flags: a hexagon with a flag over
+##   each flag that matters, in its team's colour, with what to do there over
+##   it (TAKE, DEFEND, RETURN, KILL, ESCORT, CAPTURE) and how far it is under
+##   it, held at the screen's edge when it is off screen; a row per flag under
+##   the minimap (ours first) saying AT BASE, who carries it, or DROPPED with
+##   the time until it returns; and while we carry the enemy's flag, a
+##   reminder of where to take it.
 ## - Calls: a banner and a chime for every take, drop, return, and capture,
 ##   and a line in the kill feed (`TdmHud.add_feed_line`).
 ##
@@ -17,10 +19,11 @@ extends Node3D
 ## reacts to `NetClient.flag_played`.
 
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const Shapes := preload("res://scripts/ui/hud_shapes.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
-const LABEL_FONT := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 const POLE_HEIGHT := 2.7
 ## Models built in Blender (tools/gear_models.py), POLE_HEIGHT tall.
 const POLE_MODEL := preload("res://assets/models/flag_pole/flag_pole.gltf")
@@ -118,7 +121,7 @@ func _process(delta: float) -> void:
 				{
 					"ours": ours,
 					"colour": colour,
-					"text": _status_text(status, flag.return_seconds),
+					"text": _status_text(status, flag.return_seconds, carrier),
 					"alert": status != "home",
 				}
 			)
@@ -157,14 +160,14 @@ func _set_shown(shown: bool) -> void:
 	_layer.visible = shown
 
 
-func _status_text(status: String, return_seconds: float) -> String:
+func _status_text(status: String, return_seconds: float, carrier: int) -> String:
 	match status:
 		"carried":
-			return "TAKEN"
+			return client.name_of(carrier) if _client_ok() and carrier >= 0 else "TAKEN"
 		"dropped":
 			var seconds := int(ceil(return_seconds))
-			return "%d:%02d" % [seconds / 60, seconds % 60]
-	return "HOME"
+			return "DROPPED  %d:%02d" % [seconds / 60, seconds % 60]
+	return "AT BASE"
 
 
 ## The marker over a flag: what we should do about it. Empty for none.
@@ -411,18 +414,21 @@ func _build_overlay() -> void:
 
 func _draw_overlay() -> void:
 	var camera := get_viewport().get_camera_3d()
-	var font: Font = LABEL_FONT
 	var size := _overlay.size
 	if camera != null:
 		for marker: Dictionary in _markers:
-			_draw_marker(camera, font, size, marker)
-	# Flag status beside the score bar: ours on the left, theirs on the right.
-	for entry: Dictionary in _status:
-		var side := -1.0 if entry.ours else 1.0
-		_draw_status(font, Vector2(size.x / 2.0 + side * 215.0, 34.0), entry)
+			_draw_marker(camera, size, marker)
+	# A row per flag under the minimap, ours first.
+	var ui := size.y / 900.0
+	var row := 0
+	for ours: bool in [true, false]:
+		for entry: Dictionary in _status:
+			if entry.ours == ours:
+				_draw_status(Vector2(44.0, 246.0 + row * 30.0) * ui, entry, ui)
+				row += 1
 
 
-func _draw_marker(camera: Camera3D, font: Font, size: Vector2, marker: Dictionary) -> void:
+func _draw_marker(camera: Camera3D, size: Vector2, marker: Dictionary) -> void:
 	var distance := 0.0
 	if player != null and is_instance_valid(player):
 		distance = player.global_position.distance_to(marker.position)
@@ -447,38 +453,43 @@ func _draw_marker(camera: Camera3D, font: Font, size: Vector2, marker: Dictionar
 		)
 		point = centre + direction * scale
 	var colour: Color = marker.colour
+	var alpha := 1.0
 	if marker.get("pulse", false):
-		colour.a = 0.65 + 0.35 * sin(_time * 7.0)
-	# A diamond with a small flag inside.
-	var r := 13.0
-	var diamond := PackedVector2Array(
-		[
-			point + Vector2(0, -r),
-			point + Vector2(r, 0),
-			point + Vector2(0, r),
-			point + Vector2(-r, 0)
-		]
-	)
-	_overlay.draw_colored_polygon(diamond, Color(0, 0, 0, 0.55 * colour.a))
-	diamond.append(diamond[0])
-	_overlay.draw_polyline(diamond, colour, 2.0, true)
-	_draw_flag_glyph(point + Vector2(-2, 0), colour, 0.55)
-	var label: String = marker.label
-	_text(font, label, point + Vector2(0, -r - 8), 15, colour)
-	_text(
-		font, "%dm" % int(round(distance)), point + Vector2(0, r + 18), 13, Color(1, 1, 1, colour.a)
-	)
+		alpha = 0.7 + 0.3 * sin(_time * 7.0)
+	var ui := size.y / 900.0
+	var hex := {
+		"fill": colour,
+		"glyph": "flag",
+		"action": String(marker.label),
+		"distance": int(round(distance)),
+		"alpha": alpha,
+	}
+	Shapes.objective(_overlay, point, hex, ui)
 
 
-func _draw_status(font: Font, at: Vector2, entry: Dictionary) -> void:
+## A flag's row under the minimap: a square in its team's colour with a
+## flag, and where the flag is, on a dark plate that hugs them.
+func _draw_status(at: Vector2, entry: Dictionary, ui: float) -> void:
 	var colour: Color = entry.colour
+	var alpha := 1.0
 	if entry.alert:
-		colour.a = 0.6 + 0.4 * sin(_time * 6.0)
-	var plate := Rect2(at - Vector2(34, 22), Vector2(68, 44))
-	_overlay.draw_rect(plate, Color(0, 0, 0, 0.35))
-	_overlay.draw_rect(plate, Color(colour, 0.5 * colour.a), false, 1.5)
-	_draw_flag_glyph(at + Vector2(-1, -6), colour, 0.75)
-	_text(font, entry.text, at + Vector2(0, 17), 12, Color(1, 1, 1, colour.a))
+		alpha = 0.7 + 0.3 * sin(_time * 6.0)
+	var text: String = entry.text
+	var row_h := 26.0 * ui
+	var text_w := Paint.text_width(Paint.LABEL, text, int(16 * ui), 1.0)
+	Paint.fade(_overlay, Rect2(at, Vector2(text_w + 80.0 * ui, row_h)), Color(0, 0, 0, 0.55))
+	var square := Rect2(at + Vector2(2.0, 2.0) * ui, Vector2(22.0, 22.0) * ui)
+	_overlay.draw_rect(square, Color(colour, alpha))
+	_draw_flag_glyph(square.get_center() + Vector2(1.0, 0.0) * ui, Color(1, 1, 1, alpha), 0.62 * ui)
+	Paint.text(
+		_overlay,
+		Paint.LABEL,
+		text,
+		Vector2(square.end.x + 10.0 * ui, at.y + row_h / 2.0 + 6.0 * ui),
+		int(16 * ui),
+		Color(UiTheme.TEXT, alpha),
+		1.0
+	)
 
 
 func _draw_flag_glyph(at: Vector2, colour: Color, scale: float) -> void:
@@ -488,12 +499,3 @@ func _draw_flag_glyph(at: Vector2, colour: Color, scale: float) -> void:
 		PackedVector2Array([top, at + Vector2(10, -6) * scale, at + Vector2(-7, -1) * scale]),
 		colour
 	)
-
-
-func _text(font: Font, text: String, centre: Vector2, size: int, colour: Color) -> void:
-	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
-	var at := centre - Vector2(width / 2.0, 0)
-	_overlay.draw_string_outline(
-		font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 4, Color(0, 0, 0, 0.75 * colour.a)
-	)
-	_overlay.draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, colour)
