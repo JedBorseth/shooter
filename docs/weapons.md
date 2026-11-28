@@ -358,6 +358,8 @@ The RL-4 is Black Ops 2's RPG: a shoulder-fired tube in the sidearm slot
 `rocket: true` fires a rocket instead of a round; the rocket rides the
 grenades' machinery as `equipment::Kind::Rocket` (flight, snapshots, blast,
 and the drawn model).
+It launches with real RPG recordings and its rocket roars in flight
+([audio.md](audio.md#the-rl-4-toolsbuild_launcher_audiopy)).
 
 - The rocket leaves the tube 0.6 m ahead of the eye (at the eye if a wall is
   closer) along the view, at 65 m/s, sagging at 1.5 m/s² (under 2 m by

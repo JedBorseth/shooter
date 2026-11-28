@@ -1,9 +1,17 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/equipment/rocket.gd" id="1"]
 [ext_resource type="PackedScene" path="res://assets/weapons/rl4/rl4.glb" id="2_model"]
+[ext_resource type="AudioStream" path="res://assets/audio/equipment/rocket_flight.ogg" id="3_motor"]
 
 [node name="Rocket" type="Node3D"]
 script = ExtResource("1")
 
 [node name="Model" parent="." instance=ExtResource("2_model")]
+
+[node name="Motor" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("3_motor")
+unit_size = 6.0
+max_distance = 150.0
+autoplay = true
+bus = &"Effects"
