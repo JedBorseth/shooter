@@ -41,9 +41,17 @@ const DISTANCE_INK := Color("d8dce0")
 ## How much the minimap and the mode rows under it fall toward the screen's
 ## centre (`hud_shapes.gd` TILT).
 const ROW_TILT := 0.045
-## While dead: the death card and the prompt under it (1600 x 900 units,
-## centred on the screen).
-const DEATH_CARD := Rect2(-270, 96, 540, 274)
+## While dead: the death card from its KILLED BY tab down to the prompt under
+## it, with room for a marker's pointer (1600 x 900 units, centred on the
+## screen).
+const DEATH_CARD := Rect2(-280, 78, 560, 292)
+## The top centre kept clear while a banner, the killcam's title, or a medal
+## shows there: its half width (1600 x 900 units, about the screen's middle).
+const TOP_HALF_W := 290.0
+
+## How far down the top centre is taken this frame (screen pixels; 0 when
+## nothing shows there). Set by `draw_world` for the pushes it makes.
+static var _top_taken := 0.0
 
 
 ## Draws a mode's markers. Each entry holds "world" (Vector3, the point the
@@ -57,6 +65,7 @@ static func draw_world(
 	item: CanvasItem, camera: Camera3D, marks: Array, screen: Vector2, eye: Vector3, dead := false
 ) -> void:
 	var ui := screen.y / 900.0
+	_top_taken = _top_band(item, ui)
 	var placed: Array[Dictionary] = []
 	for mark: Dictionary in marks:
 		var at := place(camera, mark.world, screen, dead)
@@ -120,10 +129,14 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := fal
 	var behind := camera.is_position_behind(world)
 	var offset := point - centre
 	if behind:
-		# Mirror it, so the marker holds on the side the spot is on.
-		offset = -offset
+		# Behind us: hold on the lower half of the ellipse by the spot's
+		# bearing (straight behind is the bottom middle), never on the top,
+		# as Black Ops 3 holds a waypoint behind you at the screen's foot.
+		var local := camera.global_transform.affine_inverse() * world
+		var bearing := atan2(local.x, -local.z)
+		offset = Vector2(sin(bearing), maxf(-cos(bearing), 0.0)) * axes
 		if offset.length() < 1.0:
-			offset = Vector2.DOWN
+			offset = Vector2(0.0, axes.y)
 	var reach := (offset / axes).length()
 	if not behind and reach <= 1.0:
 		var pushed := _keep_clear(point, screen, dead)
@@ -387,6 +400,8 @@ static func _clear_rects(screen: Vector2, dead: bool) -> Array[Rect2]:
 	var boxes := KEEP_CLEAR.duplicate()
 	if dead:
 		boxes.append(Rect2(DEATH_CARD.position + Vector2(800, 450), DEATH_CARD.size))
+	if _top_taken > 0.0:
+		boxes.append(Rect2(800.0 - TOP_HALF_W, 0.0, TOP_HALF_W * 2.0, _top_taken / ui))
 	var rects: Array[Rect2] = []
 	for box: Rect2 in boxes:
 		var rect := Rect2(box.position * ui, box.size * ui)
@@ -397,6 +412,36 @@ static func _clear_rects(screen: Vector2, dead: bool) -> Array[Rect2]:
 			rect.position.x = screen.x / 2.0 + (box.position.x - 800.0) * ui
 		rects.append(rect.grow(RADIUS * ui + 4.0 * ui))
 	return rects
+
+
+## How far down the top centre is taken (screen pixels): the match banners'
+## plates, the killcam's title, and the medals.
+static func _top_band(item: CanvasItem, ui: float) -> float:
+	var tree := item.get_tree()
+	if tree == null:
+		return 0.0
+	var bottom := 0.0
+	for node in tree.get_nodes_in_group(&"top_centre"):
+		if node.has_method("top_taken") and (node as CanvasItem).is_visible_in_tree():
+			bottom = maxf(bottom, float(node.call("top_taken")))
+	var net := tree.root.get_node_or_null("Net")
+	if net != null and net.has_method("client"):
+		var client: Object = net.call("client")
+		if client != null and client.has_method("in_killcam") and bool(client.call("in_killcam")):
+			bottom = maxf(bottom, 130.0 * ui)
+	return bottom
+
+
+## A mode row's plate under the minimap: solid behind its words up to
+## `text_end` (plus a margin), then a short fade, so the words hold over a
+## bright wall.
+static func row_plate(item: CanvasItem, rect: Rect2, text_end: float, ui: float) -> void:
+	var colour := Color(0, 0, 0, 0.6)
+	var solid := maxf(text_end + 8.0 * ui - rect.position.x, 0.0)
+	item.draw_rect(Rect2(rect.position, Vector2(solid, rect.size.y)), colour)
+	HudPaint.fade(
+		item, Rect2(rect.position.x + solid, rect.position.y, 28.0 * ui, rect.size.y), colour
+	)
 
 
 ## A small solid triangle pointing `direction`, centred on `at`.

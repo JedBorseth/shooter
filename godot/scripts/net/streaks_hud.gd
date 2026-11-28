@@ -341,8 +341,11 @@ func _draw_notices() -> void:
 		var text: String = notice.text
 		var width := Paint.text_width(Paint.LABEL, text, 16, 1.2) + 22.0
 		var plate := Rect2(40.0, y - 18.0, width, 24.0)
+		# Solid behind the words, then a short fade, so the line's end holds
+		# over a bright wall too.
+		draw_rect(plate, Color(0, 0, 0, 0.62 * alpha))
 		Paint.fade(
-			self, Rect2(plate.position, plate.size + Vector2(30, 0)), Color(0, 0, 0, 0.62 * alpha)
+			self, Rect2(plate.end.x, plate.position.y, 28.0, 24.0), Color(0, 0, 0, 0.62 * alpha)
 		)
 		draw_rect(Rect2(plate.position, Vector2(3.0, plate.size.y)), Color(colour, alpha))
 		Paint.text(
