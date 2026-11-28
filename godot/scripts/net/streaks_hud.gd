@@ -179,7 +179,8 @@ func _draw() -> void:
 		return
 	draw_set_transform_matrix(Shapes.tilt(size.x - RIGHT, -Shapes.TILT))
 	_draw_column()
-	draw_set_transform_matrix(Shapes.tilt(40.0, Shapes.TILT))
+	# Dipping toward the right with the minimap and the mode rows above.
+	draw_set_transform_matrix(Shapes.tilt(44.0, -Shapes.TILT))
 	_draw_notices()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 	if _ready_age >= 0.0:
@@ -363,7 +364,7 @@ func _draw_notices() -> void:
 		var plate := Rect2(40.0, y - 18.0, width, 24.0)
 		# Solid behind the words, then a short fade, so the line's end holds
 		# over a bright wall too.
-		draw_rect(plate, Color(0, 0, 0, 0.8 * alpha))
+		Shapes.smooth_rect(self, plate, Color(0, 0, 0, 0.8 * alpha))
 		Paint.fade(
 			self, Rect2(plate.end.x, plate.position.y, 28.0, 24.0), Color(0, 0, 0, 0.8 * alpha)
 		)

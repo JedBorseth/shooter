@@ -83,11 +83,7 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 	for part: Variant in line.parts:
 		width += _part_width(part) + gap
 	width += 16.0 - gap
-	Shapes.smooth_rect(
-		self,
-		Rect2(at, Vector2(width, LINE_H)),
-		Color(0, 0, 0, (0.74 if line.mine else 0.68) * alpha)
-	)
+	Shapes.smooth_rect(self, Rect2(at, Vector2(width, LINE_H)), Color(0, 0, 0, 0.8 * alpha))
 	var x := at.x + 8.0
 	var baseline := at.y + LINE_H / 2.0 + 5.5
 	for part: Variant in line.parts:
