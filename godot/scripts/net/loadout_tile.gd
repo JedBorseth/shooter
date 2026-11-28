@@ -42,7 +42,7 @@ const GRENADE_ICONS := {
 ## How far a wildcard's parallelogram leans.
 const SLANT := 12.0
 ## How lit the slot being edited stays while focus is in the items.
-const EDITING_LIT := 0.7
+const EDITING_LIT := 0.45
 
 var kind := Kind.SLOT
 ## The name drawn on the face (the button's `text` may add a lock note).
@@ -248,7 +248,7 @@ func _draw_tile() -> void:
 	if _lit > 0.0:
 		Shapes.focus_rules(self, rect, Color(UiTheme.ACCENT, _lit), 3.0)
 	if editing and not has_focus():
-		draw_rect(Rect2(0, 0, 4, size.y), UiTheme.ACCENT)
+		draw_rect(Rect2(0, 0, 4, size.y), Color(UiTheme.ACCENT, 0.85))
 
 
 ## An empty slot's mark: a faint plus; on a picker card ("None"), a dash.
@@ -356,9 +356,9 @@ func _draw_wildcard() -> void:
 	if editing and not has_focus():
 		draw_colored_polygon(
 			PackedVector2Array(
-				[Vector2(SLANT, 0), Vector2(SLANT + 4, 0), Vector2(4, size.y), Vector2(0, size.y)]
+				[Vector2(SLANT, 0), Vector2(SLANT + 3, 0), Vector2(3, size.y), Vector2(0, size.y)]
 			),
-			UiTheme.ACCENT
+			Color(UiTheme.ACCENT, 0.85)
 		)
 
 

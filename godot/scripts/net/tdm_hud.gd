@@ -616,7 +616,8 @@ func _refresh_board() -> void:
 						"me": entry.me,
 						# In Search and Destroy the dead sit out the round.
 						"faint": snd and not entry.alive,
-						"tag": "BOT" if entry.bot else "",
+						# "Bot 3" needs no tag saying so, as in the lobby.
+						"tag": "BOT" if entry.bot and not entry.name.begins_with("Bot") else "",
 					}
 				)
 			)

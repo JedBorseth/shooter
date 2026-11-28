@@ -10,7 +10,8 @@ extends RefCounted
 ## name only. Killing yourself reads Yourself in your yellow on your side's
 ## colour, as the killcam's card shows you, with what did it; a fatal fall
 ## reads Fall damage with a falling mark, an unknown death Unknown with a
-## skull, both captioned World behind a neutral grey mark. The respawn bar
+## skull (No killer), both behind the world's grey mark (a fall is
+## captioned World). The respawn bar
 ## fills along the card's bottom edge, with RESPAWN IN under the card in
 ## whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
 ## name card.
@@ -33,6 +34,16 @@ const WORLD := -2
 const ICON_H := 26.0
 const ICON_MAX_W := 112.0
 const GLYPH_W := 72.0
+## Half the drawn width of each mark, to right-align it.
+const GLYPH_HALF := {
+	"knife": 36.0,
+	"frag": 20.0,
+	"flash": 18.0,
+	"smoke": 20.0,
+	"charge": 22.0,
+	"fall": 15.0,
+	"skull": 13.0
+}
 ## Equipment drawn as Create-a-Class draws it: the same line icons.
 const EQUIPMENT_ICONS := {
 	"frag": preload("res://assets/ui/loadout/frag.svg"),
@@ -138,9 +149,12 @@ static func _killer_card(
 	if team >= 0:
 		MatchPaint.team_mark(item, mark, 30.0, team, Color(colour, alpha))
 	elif team == WORLD:
-		# A neutral mark: a grey hexagon with a dark one inside, no side.
-		Shapes.hexagon(item, mark, 15.0, Color(colour, 0.85 * alpha), Color.TRANSPARENT, 0.0, false)
-		Shapes.hexagon(item, mark, 7.0, Color(CARD_FILL, alpha), Color.TRANSPARENT, 0.0, false)
+		# The world's mark: a solid grey hexagon with a dark globe in it.
+		Shapes.hexagon(item, mark, 15.0, Color(colour, 0.9 * alpha), Color.TRANSPARENT, 0.0, false)
+		var globe := Color(CARD_FILL, alpha)
+		item.draw_arc(mark, 7.5, 0.0, TAU, 24, globe, 1.6, true)
+		item.draw_line(mark + Vector2(-7.5, 0), mark + Vector2(7.5, 0), globe, 1.4, true)
+		item.draw_line(mark + Vector2(0, -7.5), mark + Vector2(0, 7.5), globe, 1.4, true)
 	Paint.text(
 		item,
 		Paint.LABEL,
@@ -157,7 +171,9 @@ static func _killer_card(
 	if icon != null:
 		Paint.weapon(item, String(how.key), Vector2(right, mark_y), icon_h, tint)
 	else:
-		cause_mark(item, String(how.glyph), Vector2(right - GLYPH_W / 2.0, mark_y), tint)
+		# Its right edge on the caption's, as a silhouette's is.
+		var half: float = GLYPH_HALF.get(String(how.glyph), GLYPH_W / 2.0)
+		cause_mark(item, String(how.glyph), Vector2(right - half, mark_y), tint)
 	Paint.text_right(
 		item,
 		Paint.LABEL_LIGHT,
@@ -180,10 +196,11 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 		weapon = "rl4"
 	var icon := Paint.weapon_icon(weapon) if weapon != "" else null
 	if icon != null:
-		var name := _weapon_name(weapon)
+		# The launcher is no loadout weapon, so it is named here.
+		var name := "RL-4" if weapon == "rl4" else _weapon_name(weapon)
 		return {"key": weapon, "icon": icon, "glyph": "", "name": name if name != "" else cause}
 	var how := {
-		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "World"
+		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "No killer"
 	}
 	if fell:
 		how.glyph = "fall"
