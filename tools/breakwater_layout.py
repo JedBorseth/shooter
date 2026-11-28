@@ -202,6 +202,14 @@ def shell(*args, **kw):
     return K.shell(*args, **kw)
 
 
+def lamp_light(x, y, z, energy, rng, m):
+    """A ceiling batten's baked light: most of it thrown down in a wide cone,
+    so the floor under it pools brighter and the walls fall off with height,
+    and a weak unshadowed fill that lights the ceiling round the fitting."""
+    light(x, y, z, energy * 0.75, LAMP, rng, m, kind="spot", angle=80.0, size=0.5)
+    light(x, y + 0.1, z, energy * 0.55, LAMP, rng * 0.75, m, shadow=False)
+
+
 def lamp(x, z, yaw, m, y=STREET):
     """A yard lamp (off in the day: no light)."""
     place("yard_lamp", x, y, z, yaw, m)
@@ -640,6 +648,16 @@ def quay(side: Side):
     place("light_mast", -33.0, STREET, -28.0, 0.0, m)
     clip(-33.4, -32.6, STREET, 14.0, -28.4, -27.6, "metal", m, sight=False)
     place("windsock", -7.0, 5.2, -36.4, 0.0, m)
+    # A fire hose reel by the loading-arm berth.
+    place("hose_reel", -31.0, STREET, -34.6, 0.0, m)
+    blocker(-31.2, -30.8, STREET, 1.5, -34.7, -34.2, m)
+    # Life-ring stations by the ladders, IBC totes by the containers.
+    for x in (-35.2, -17.2):
+        place("lifebuoy_post", x, STREET, -35.85, 0.0, m)
+        blocker(x - 0.4, x + 0.4, STREET, 1.9, -35.95, -35.7, m)
+    for z in (-29.4, -30.5):
+        place("ibc", -8.0, STREET, z, PI / 2, m)
+    blocker(-8.55, -7.45, STREET, 1.21, -31.1, -28.8, m)
     for x in (-38.5, -11.0):
         place("cone", x, STREET, -28.6, 0.0, m)
 
@@ -709,9 +727,11 @@ def control_house(side: Side):
     for x in (x0 + 0.3, x1 - 0.3):
         downpipe(x, z1, 0.0, top, m, ground="road")
     # Inside, downstairs: the switch room (north) and the mess (south).
-    for x, z, tint in ((-27.0, -20.0, LAMP), (-27.0, -8.0, LAMP)):
-        place("batten", x, ceil, z, 0.0, m)
-        light(x, ceil - 0.3, z, 3.6, tint, 10.0, m)
+    # Battens on a grid, four to a room, as an office or switch room has.
+    for x in (-30.0, -24.5):
+        for z in (-23.5, -17.0, -10.8, -5.2):
+            place("batten", x, ceil, z, 0.0, m)
+            lamp_light(x, ceil - 0.3, z, 2.3, 8.0, m)
     place("switch_panel", -27.0, WALK, -26.3, 0.0, m, length=4.0, look="steel_grey")
     blocker(-29.0, -25.0, WALK, 2.35, -26.65, -26.0, m)
     place("switch_panel", -32.3, WALK, -20.0, PI / 2, m, length=3.0, look="steel_grey")
@@ -724,9 +744,10 @@ def control_house(side: Side):
     place("notice_board", -21.4, WALK + 1.4, -11.0, -PI / 2, m)
     extinguisher(-21.6, -4.0, -PI / 2, m)
     # Upstairs: the control room (Blue) or the test lab (Red), and the office.
-    for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
-        place("batten", x, 7.4, z, 0.0, m)
-        light(x, 7.1, z, 3.2, LAMP, 10.0, m)
+    for x in (-30.0, -24.5):
+        for z in (-23.0, -15.8, -9.2, -4.8):
+            place("batten", x, 7.4, z, 0.0, m)
+            lamp_light(x, 7.1, z, 2.2, 8.0, m)
     if not m:
         place("console", -27.5, UPPER, -4.2, PI, m, length=6.0)
         place("console", -27.5, UPPER, -8.0, PI, m, length=4.0)
@@ -764,7 +785,7 @@ def meter_shed(side: Side):
     coping(x0, x1, z0, z1, 3.6, m, look="quay_edge")
     name_board(side.meter, x1 + 0.06, 3.0, -7.5, PI / 2, m, size=0.3)
     place("batten", -15.0, 3.2, -7.5, PI / 2, m)
-    light(-15.0, 2.9, -7.5, 2.8, LAMP, 8.0, m)
+    lamp_light(-15.0, 2.9, -7.5, 2.8, 8.0, m)
     if not m:
         place("meter_skid", -15.0, WALK, -11.0, PI / 2, m, length=2.4)
     else:
@@ -809,7 +830,7 @@ def pump_house(side: Side):
         coping(x0, x1, z0, z1, PUMP_TOP, m, look="quay_edge")
         for x in (x0 + 2.0, x1 - 2.0):
             place("batten", x, 4.8, (z0 + z1) / 2, PI / 2, m)
-            light(x, 4.5, (z0 + z1) / 2, 3.6, LAMP, 10.0, m)
+            lamp_light(x, 4.5, (z0 + z1) / 2, 3.6, 10.0, m)
     # Louvres high on the walls.
     for x in (-4.0, 0.0, 4.0, 7.0):
         zf = -27.0 if x < 1.5 else -22.0
@@ -911,11 +932,11 @@ def workshop(side: Side):
     else:
         place("foam_unit", -27.0, WALK, 16.25, 0.0, m)
     blocker(-28.5, -25.5, WALK, 2.5, 15.0, 17.5, m)
-    place("wall_shelf", -32.4, WALK, 14.0, PI / 2, m)
+    place("workshop_shelf", -32.4, WALK, 14.0, PI / 2, m)
     blocker(-32.65, -32.2, WALK, 2.2, 12.8, 15.2, m, "wood")
     for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
         place("batten", x, ROOF_DECK - 0.25, z, 0.0, m)
-        light(x, ROOF_DECK - 0.55, z, 3.6, LAMP, 10.0, m)
+        lamp_light(x, ROOF_DECK - 0.55, z, 3.6, 10.0, m)
     extinguisher(-21.6, 8.0, -PI / 2, m)
 
 
@@ -934,7 +955,7 @@ def drum_store(side: Side):
     drums(-14.6, 11.2, PI / 2, 3, m, WALK)
     blocker(-15.4, -13.8, WALK, 1.1, 10.1, 12.3, m)
     place("batten", -17.0, 3.4, 10.0, 0.0, m)
-    light(-17.0, 3.1, 10.0, 3.0, LAMP, 8.0, m)
+    lamp_light(-17.0, 3.1, 10.0, 3.0, 8.0, m)
 
 
 def pump_shed(side: Side):
@@ -955,7 +976,7 @@ def pump_shed(side: Side):
     place("switch_panel", -20.6, WALK, 19.0, PI / 2, m, length=2.0)
     blocker(-20.65, -20.0, WALK, 2.35, 18.0, 20.0, m)
     place("batten", -15.0, 3.8, 17.5, PI / 2, m)
-    light(-15.0, 3.5, 17.5, 3.0, LAMP, 8.0, m)
+    lamp_light(-15.0, 3.5, 17.5, 3.0, 8.0, m)
     # The plinth wall between the rack and the shed's corner.
     solid(-13.0, -9.0, STREET, 1.0, 13.0, 14.0, "quay_edge", "concrete", m=m, bevel=0.03)
 
@@ -1068,7 +1089,9 @@ def rack():
         # Hoses from the arms down to the tanker's hatches.
         # The meter booth beside the far bay.
         x, z = along(5.0, 6.6)
-        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET, 2.7, "clad_cream" if not m else "clad_blue", "metal", m)
+        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET + 0.15, 2.7, "clad_cream" if not m else "clad_blue", None, m)
+        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET, 2.7, None, "metal", m)
+        turned_box(x, z, 1.7, 1.3, RACK_YAW, STREET, STREET + 0.15, "quay_edge", None, m)
         turned_box(x, z, 1.75, 1.35, RACK_YAW, 2.7, 2.85, "roof_sheet", None, m)
         # Blue's stair onto the deck.
         rack_stair(m)
@@ -1079,6 +1102,13 @@ def rack():
                 clip(x - 0.25, x + 0.25, STREET, 8.0, z - 0.25, z + 0.25, "metal", m)
                 deco(x - 0.22, x + 0.22, STREET, 8.0, z - 0.22, z + 0.22, "steel_grey", m)
                 deco(x - 0.4, x + 0.4, STREET, 0.4, z - 0.4, z + 0.4, "quay_edge", m, bevel=0.03)
+    # Loading kit by each bay: a static earthing reel on the canopy column by
+    # the tanker's rear, a wheeled extinguisher by the front column.
+    for m in (False, True):
+        for u, v, model in ((-11.0, 5.45, "earthing_reel"), (-3.0, 5.4, "extinguisher_trolley")):
+            x, z = along(u, v)
+            place(model, x, STREET, z, -2.52, m)
+            clip(x - 0.25, x + 0.25, STREET, 1.4, z - 0.25, z + 0.25, "metal", m, sight=False)
     # The canopy: one roof over the whole rack, with its fascia and trusses.
     rack_box(-13.0, 13.0, -7.2, 7.2, 8.0, 8.3, "roof_sheet", "metal")
     SIGHT.pop()
@@ -1100,7 +1130,7 @@ def rack():
         for v in (-3.0, 3.0):
             x, z = along(u + (3.0 if v > 0 else 0.0), v)
             place("canopy_flood", x, 7.98, z, RACK_YAW, False)
-            light(x, 7.25, z, 2.2, (1.0, 0.96, 0.9), 12.0, kind="spot", angle=70.0, size=0.4)
+            light(x, 7.25, z, 5.5, (1.0, 0.96, 0.9), 14.0, kind="spot", angle=70.0, size=0.4)
 
 
 def rack_corners(side: Side):
@@ -1455,6 +1485,17 @@ def interiors(side: Side):
     deco(-31.95, -30.9, WALK, WALK + 0.012, -21.5, -18.5, "rubber", m, faces="top", detail=True)
     place("notice_board", -28.0, WALK + 1.5, -14.12, PI, m)
     wall_clock(-24.5, WALK + 2.6, -14.12, PI, m)
+    # UPS cabinets and the standby batteries in the corner, the fire alarm
+    # panel by the door.
+    place("ups_cabinet", -31.0, WALK, -26.25, 0.0, m)
+    blocker(-31.65, -30.35, WALK, WALK + 1.95, -26.65, -25.85, m)
+    place("battery_rack", -32.35, WALK, -24.55, PI / 2, m)
+    blocker(-32.65, -32.05, WALK, WALK + 1.1, -25.45, -23.65, m)
+    place("fire_panel", -26.3, WALK + 1.5, -14.12, PI, m)
+    # The mess: hi-vis on the hooks, a water cooler.
+    place("coat_hooks", -28.5, WALK + 1.7, -13.88, 0.0, m)
+    place("water_cooler", -22.0, WALK, -12.4, -PI / 2, m)
+    blocker(-22.2, -21.35, WALK, WALK + 1.45, -12.6, -12.2, m)
     # The mess: staff lockers, a microwave on the counter.
     place("locker_bank", -31.3, WALK, -13.63, 0.0, m, length=2.4, look="locker_grey" if not m else "locker_blue")
     blocker(-32.5, -30.1, WALK, WALK + 1.85, -13.88, -13.38, m)
@@ -1591,6 +1632,10 @@ def weathering(side: Side):
         x += rng.uniform(3.0, 11.0)
     for x in (-44.0, -24.0):
         streak(x, SEA + 7.2, -40.5, 0.0, 0.7, 4.2, "hull_black", m, w=0.65, seed=3)
+    # Scuffs on the hull where it rides against the quay's fenders.
+    for x in range(-40, -21, 5):
+        band((x - 0.2, -40.48), (x + 1.2, -40.48), 0.0, SEA + 0.1, SEA + 1.9, "hull_black", m,
+             color=(0.4, 0.38, 0.35), w=0.4, fade=0.5, seed=x, out=0.01, chunk="far")
     # Foam and churned water where the sea meets the quay, the hull, and the
     # rock revetment.
     shore((-42.0, -37.6), (-4.0, -37.6), (0.0, -1.0), 1.3, m)

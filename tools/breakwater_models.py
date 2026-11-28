@@ -126,6 +126,7 @@ LOOKS: dict[str, dict] = {
     "floor_epoxy_grey": _t("concrete_floor", 4.0, (0.58, 0.6, 0.61), rough=0.8, grime=0.0),
     "floor_epoxy_green": _t("concrete_floor", 4.0, (0.38, 0.5, 0.43), rough=0.8, grime=0.0),
     "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
+    "plastic_white": _p((0.88, 0.88, 0.84), 0.35),
     "rope_tan": _p((0.55, 0.45, 0.3), 0.9),
     "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
     "locker_blue": _t("painted_metal", 1.5, (0.26, 0.38, 0.55), metal=0.1, rough=0.7, grime=0.15),
@@ -607,12 +608,9 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
         t = stair_from + f * 2 * PI * turns
         y = 0.35 + f * (h - 0.35)
         c, s = math.cos(t), math.sin(t)
-        b.hull([(c * (r + 0.05) - s * 0.15, y, s * (r + 0.05) + c * 0.15),
-                (c * (r + 0.05) + s * 0.15, y, s * (r + 0.05) - c * 0.15),
-                (c * (rr + 0.3) - s * 0.15, y, s * (rr + 0.3) + c * 0.15),
-                (c * (rr + 0.3) + s * 0.15, y, s * (rr + 0.3) - c * 0.15),
-                (c * (r + 0.05) - s * 0.15, y + 0.04, s * (r + 0.05) + c * 0.15),
-                (c * (rr + 0.3) + s * 0.15, y + 0.04, s * (rr + 0.3) - c * 0.15)], "grate", detail=True)
+        b.hull([(c * rad - s * 0.15, yy, s * rad + c * 0.15) for rad in (r + 0.03, rr + 0.3) for yy in (y - 0.04, y)]
+               + [(c * rad + s * 0.15, yy, s * rad - c * 0.15) for rad in (r + 0.03, rr + 0.3) for yy in (y - 0.04, y)],
+               "grate", detail=True)
         p = (c * (rr + 0.35), y + 1.0, s * (rr + 0.35))
         if prev is not None and k % 3 == 0:
             b.tube([prev, p], 0.025, "pipe_silver", sides=5, detail=True)
@@ -632,7 +630,11 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
             b.tube([(math.cos(t) * (r + 0.02), y - 0.25, math.sin(t) * (r + 0.02)),
                     (math.cos(t) * (rr + 0.28), y - 0.02, math.sin(t) * (rr + 0.28))], 0.035, "steel_dark", sides=5,
                    detail=False)
+    t0 = stair_from
+    helix.insert(0, (math.cos(t0) * (rr + 0.3), 0.0, math.sin(t0) * (rr + 0.3)))
     b.tube(helix, 0.07, "steel_dark", sides=6, detail=False)
+    b.box(math.cos(t0) * (rr + 0.3) - 0.15, math.cos(t0) * (rr + 0.3) + 0.15, 0.0, 0.03,
+          math.sin(t0) * (rr + 0.3) - 0.15, math.sin(t0) * (rr + 0.3) + 0.15, "steel_dark")
     # Vertical welds between the plates, staggered course to course (plates
     # about 2.4 m by 7 m), and the bottom's anchor chairs round the foot.
     courses = [0.35 + k * 2.4 for k in range(int(h / 2.4) + 1)] + [h]
@@ -991,12 +993,225 @@ def canopy_flood(b: Model):
 
 
 @model
+def workshop_shelf(b: Model):
+    """A workshop wall (back at z = -0.25, 2.4 m along x): an open steel shelf
+    unit with bins, boxes, paint tins and spools, and a pegboard of hand
+    tools above a bench-height shelf."""
+    rng = random.Random(23)
+    for x in (-1.2, -0.05):
+        for z in (-0.22, 0.18):
+            b.box(x - 0.02, x + 0.02, 0.0, 2.0, z - 0.02, z + 0.02, "steel_grey")
+    b.box(1.15, 1.19, 0.0, 2.0, -0.24, 0.2, "steel_grey")
+    for y in (0.08, 0.6, 1.1, 1.6, 2.0):
+        b.box(-1.2, -0.05, y - 0.03, y, -0.22, 0.2, "steel_grey")
+        if y < 1.9:
+            x = -1.15
+            while x < -0.15:
+                w = rng.uniform(0.18, 0.32)
+                kind = rng.random()
+                h = rng.uniform(0.15, 0.32)
+                if kind < 0.4:
+                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.16, rng.choice(["pipe_blue", "barrier_orange",
+                                                                            "steel_grey"]), bevel=0.01, detail=True)
+                elif kind < 0.7:
+                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.12, "paper_brown", detail=True)
+                else:
+                    for k in range(int(w / 0.1)):
+                        b.cyl("y", y, y + 0.14, (x + 0.05 + k * 0.1, 0.0), 0.045,
+                              rng.choice(["hazard_red", "steel_galv", "sign_blue"]), sides=10, detail=True)
+                x += w
+    # The pegboard with tools, over a shelf at bench height.
+    b.box(0.0, 1.15, 0.8, 0.84, -0.22, 0.12, "booth_wood")
+    b.box(0.0, 1.15, 1.0, 2.0, -0.25, -0.23, "plywood")
+    for k in range(12):
+        x = 0.1 + (k % 6) * 0.18
+        y = 1.2 + (k // 6) * 0.42
+        look = rng.choice(["trim_black", "hazard_red", "steel_galv", "pipe_yellow"])
+        b.box(x - 0.015, x + 0.015, y - 0.15, y + 0.12, -0.23, -0.2, "steel_galv", detail=True)
+        b.box(x - 0.025, x + 0.025, y - 0.15, y - 0.05, -0.23, -0.19, look, detail=True)
+    for k in range(4):
+        b.cyl("y", 0.84, 0.95, (0.15 + k * 0.28, -0.05), 0.05, rng.choice(["hazard_red", "steel_galv"]), sides=10,
+              detail=True)
+
+
+@model
+def ups_cabinet(b: Model, count=2):
+    """UPS cabinets against a wall (their backs at z = -0.4, fronts at +z):
+    tall grey cases with vent grilles, a status screen, and a warning label."""
+    w = 0.6
+    for k in range(count):
+        x = (k - (count - 1) / 2) * (w + 0.02)
+        b.box(x - w / 2, x + w / 2, 0.0, 1.95, -0.4, 0.4, "locker_grey", bevel=0.01)
+        b.box(x - w / 2 + 0.03, x + w / 2 - 0.03, 0.05, 0.1, 0.4, 0.41, "steel_dark", detail=True)
+        for j in range(8):
+            y = 0.25 + j * 0.05
+            b.box(x - 0.22, x + 0.22, y, y + 0.02, 0.4, 0.412, "steel_dark", detail=True)
+        b.box(x - 0.1, x + 0.1, 1.45, 1.57, 0.4, 0.41, "screen_level", detail=True)
+        b.box(x - 0.08, x + 0.08, 1.25, 1.33, 0.4, 0.408, "adr_orange", detail=True)
+        b.cyl("z", 0.4, 0.42, (x + 0.2, 1.51), 0.015, "signal_walk", sides=6, detail=True)
+
+
+@model
+def battery_rack(b: Model, length=1.8):
+    """A two-tier rack of standby batteries (along x, back at z = -0.3): a
+    galvanised frame, black cells with red and black terminals, link bars."""
+    hl = length / 2
+    for x in (-hl, hl):
+        for z in (-0.28, 0.28):
+            b.box(x - 0.02, x + 0.02, 0.0, 1.1, z - 0.02, z + 0.02, "steel_galv")
+    for y in (0.1, 0.62):
+        b.box(-hl, hl, y - 0.03, y, -0.3, 0.3, "steel_galv")
+        n = int(length / 0.2)
+        for k in range(n):
+            x = -hl + 0.1 + k * (length - 0.2) / max(1, n - 1)
+            b.box(x - 0.085, x + 0.085, y, y + 0.32, -0.2, 0.2, "trim_black", bevel=0.01)
+            for dz, lk in ((-0.08, "hazard_red"), (0.08, "steel_dark")):
+                b.cyl("y", y + 0.32, y + 0.36, (x, dz), 0.018, lk, sides=6, detail=True)
+        b.box(-hl + 0.05, hl - 0.05, y + 0.36, y + 0.375, -0.1, -0.06, "brass", detail=True)
+
+
+@model
+def fire_panel(b: Model):
+    """A fire alarm panel on a wall (back at z = 0): a red case, a door with a
+    window, indicator LEDs, and a key switch."""
+    b.box(-0.25, 0.25, -0.22, 0.22, 0.0, 0.1, "hazard_red", bevel=0.01)
+    b.box(-0.18, 0.18, -0.02, 0.15, 0.1, 0.105, "glass_dark", detail=True)
+    for k in range(6):
+        b.cyl("z", 0.1, 0.11, (-0.15 + k * 0.06, -0.08), 0.008, ("signal_walk", "led_amber", "signal_red")[k % 3],
+              sides=6, detail=True)
+    b.cyl("z", 0.1, 0.12, (0.17, -0.16), 0.015, "steel_galv", sides=6, detail=True)
+
+
+@model
+def coat_hooks(b: Model):
+    """A row of hooks on a wall (back at z = 0) with hi-vis vests, a jacket,
+    and a hard hat on the shelf above."""
+    b.box(-0.7, 0.7, 0.0, 0.08, 0.0, 0.02, "booth_wood")
+    b.box(-0.75, 0.75, 0.25, 0.27, 0.0, 0.25, "booth_wood")
+    for k, (x, look) in enumerate(((-0.5, "barrier_yellow"), (-0.15, "barrier_orange"), (0.2, "fabric_blue"),
+                                   (0.5, "barrier_yellow"))):
+        b.cyl("z", 0.02, 0.08, (x, 0.04), 0.012, "steel_galv", sides=5, detail=True)
+        pts = [(x + dx, y, z) for dx, y, z in ((-0.12, 0.0, 0.04), (0.12, 0.0, 0.04), (-0.16, -0.6, 0.06),
+                                               (0.16, -0.6, 0.06), (-0.12, 0.0, 0.1), (0.12, 0.0, 0.1),
+                                               (-0.16, -0.62, 0.13), (0.16, -0.62, 0.13), (0.0, 0.05, 0.08))]
+        b.smooth_hull(pts, look, levels=1)
+        if look != "fabric_blue":
+            b.box(x - 0.15, x + 0.15, -0.35, -0.3, 0.125, 0.135, "sign_white", detail=True)
+    b.smooth_hull([(0.3 + math.cos(a) * 0.15, 0.27, 0.12 + math.sin(a) * 0.12) for a in
+                   [i * PI / 4 for i in range(8)]] + [(0.3, 0.42, 0.12)], "safety_yellow", levels=1)
+
+
+@model
+def water_cooler(b: Model):
+    """An office water cooler: a white cabinet, the blue bottle on top, two
+    taps and a drip tray."""
+    b.box(-0.17, 0.17, 0.0, 1.0, -0.17, 0.17, "appliance_white", bevel=0.02)
+    b.box(-0.1, 0.1, 0.7, 0.75, 0.17, 0.22, "steel_dark", detail=True)
+    for x, lk in ((-0.05, "hazard_red"), (0.05, "pipe_blue")):
+        b.box(x - 0.015, x + 0.015, 0.78, 0.84, 0.17, 0.21, lk, detail=True)
+    rings = [(math.cos(2 * PI * i / 14) * rr, y, math.sin(2 * PI * i / 14) * rr)
+             for y, rr in ((1.0, 0.07), (1.05, 0.14), (1.38, 0.14), (1.44, 0.06)) for i in range(14)]
+    b.hull(rings, "pipe_blue")
+
+
+@model
+def ibc(b: Model):
+    """A 1000-litre IBC tote (1.2 x 1.0 m): a translucent white bottle in a
+    galvanised tube cage on a pallet, its filler cap and the outlet valve."""
+    b.box(-0.6, 0.6, 0.0, 0.15, -0.5, 0.5, "steel_galv", bevel=0.01)
+    b.box(-0.56, 0.56, 0.15, 1.12, -0.46, 0.46, "plastic_white", bevel=0.06)
+    b.cyl("y", 1.12, 1.18, (0.0, 0.0), 0.08, "plastic_white", sides=10)
+    b.cyl("y", 1.18, 1.21, (0.0, 0.0), 0.11, "trim_black", sides=12, detail=True)
+    for x in (-0.6, -0.3, 0.0, 0.3, 0.6):
+        for z in (-0.5, 0.5):
+            b.tube([(x, 0.15, z), (x, 1.15, z)], 0.012, "steel_galv", sides=4, detail=False)
+    for z in (-0.5, -0.25, 0.0, 0.25, 0.5):
+        for x in (-0.6, 0.6):
+            b.tube([(x, 0.15, z), (x, 1.15, z)], 0.012, "steel_galv", sides=4, detail=False)
+    for y in (0.15, 0.48, 0.82, 1.15):
+        b.tube([(-0.6, y, -0.5), (0.6, y, -0.5), (0.6, y, 0.5), (-0.6, y, 0.5), (-0.6, y, -0.5)], 0.012,
+               "steel_galv", sides=4, detail=False)
+    b.box(-0.12, 0.12, 0.2, 0.34, 0.5, 0.58, "trim_black", bevel=0.01)
+    b.cyl("z", 0.58, 0.64, (0.0, 0.27), 0.05, "steel_galv", sides=8, detail=True)
+
+
+@model
+def earthing_reel(b: Model):
+    """A static earthing reel on a post (a loading rack's bonding clamp): a
+    yellow housing with the reel's cable, a green indicator, the clamp hung on
+    a hook."""
+    b.cyl("y", 0.0, 1.3, (0.0, 0.0), 0.04, "steel_galv", sides=8)
+    b.box(-0.14, 0.14, 0.0, 0.02, -0.14, 0.14, "steel_galv")
+    b.box(-0.18, 0.18, 1.0, 1.42, -0.05, 0.16, "safety_yellow", bevel=0.02)
+    b.cyl("z", 0.16, 0.2, (0.0, 1.21), 0.13, "safety_yellow", sides=14)
+    b.cyl("z", 0.2, 0.21, (0.0, 1.21), 0.04, "trim_black", sides=8, detail=True)
+    b.cyl("z", 0.16, 0.18, (0.1, 1.36), 0.018, "signal_walk", sides=6, detail=True)
+    b.tube([(0.0, 1.08, 0.18), (0.05, 0.75, 0.2), (0.12, 0.7, 0.22)], 0.008, "pipe_green", sides=4, detail=True)
+    b.box(0.08, 0.16, 0.6, 0.72, 0.19, 0.25, "hazard_red", bevel=0.01, detail=True)
+
+
+@model
+def extinguisher_trolley(b: Model):
+    """A 50 kg wheeled fire extinguisher: a red cylinder on a two-wheel
+    trolley with a handle, the hose and nozzle coiled on its hook."""
+    b.cyl("y", 0.2, 1.05, (0.0, 0.0), 0.15, "hazard_red", sides=14)
+    rings = [(math.cos(2 * PI * i / 14) * 0.15 * k, y, math.sin(2 * PI * i / 14) * 0.15 * k)
+             for y, k in ((1.05, 1.0), (1.12, 0.75)) for i in range(14)]
+    b.hull(rings, "hazard_red")
+    b.cyl("y", 1.12, 1.2, (0.0, 0.0), 0.035, "steel_galv", sides=8)
+    b.box(-0.03, 0.03, 1.2, 1.24, -0.08, 0.05, "trim_black", detail=True)
+    for s in (-1, 1):
+        b.tube([(s * 0.18, 0.18, -0.12), (s * 0.18, 1.2, -0.2)], 0.016, "steel_dark", sides=5, detail=False)
+        b.cyl("x", *sorted((s * 0.2, s * 0.26)), (0.18, -0.12), 0.18, "rubber", sides=14)
+    b.tube([(-0.18, 1.2, -0.2), (0.18, 1.2, -0.2)], 0.016, "steel_dark", sides=5, detail=False)
+    b.tube([(0.0, 1.1, 0.12), (0.12, 0.8, 0.18), (0.16, 0.5, 0.16), (0.12, 0.45, 0.13)], 0.018, "trim_black",
+           sides=5, detail=True)
+    b.box(-0.1, 0.1, 0.55, 0.85, 0.148, 0.152, "sign_white", detail=True)
+
+
+@model
+def lifebuoy_post(b: Model):
+    """A quay life-ring station: a post with a red housing holding an orange
+    lifebuoy and its line."""
+    b.box(-0.04, 0.04, 0.0, 1.7, -0.04, 0.04, "steel_galv")
+    b.box(-0.4, 0.4, 0.9, 1.75, -0.08, -0.04, "hazard_red", bevel=0.01)
+    ring = [(math.cos(2 * PI * i / 20) * 0.3, 1.32 + math.sin(2 * PI * i / 20) * 0.3, 0.02) for i in range(21)]
+    b.tube(ring, 0.06, "boat_orange", sides=8, detail=False)
+    for k in range(4):
+        a = PI / 4 + k * PI / 2
+        b.box(math.cos(a) * 0.3 - 0.03, math.cos(a) * 0.3 + 0.03, 1.32 + math.sin(a) * 0.3 - 0.065,
+              1.32 + math.sin(a) * 0.3 + 0.065, -0.05, 0.09, "sign_white", detail=True)
+    b.box(-0.3, 0.3, 1.78, 1.92, -0.07, -0.04, "sign_white", detail=True)
+
+
+@model
+def hose_reel(b: Model):
+    """A wall or post hose reel: a red drum with the yellow hose wound on it
+    and its nozzle hanging, on a bracket."""
+    b.box(-0.05, 0.05, 0.0, 1.5, -0.05, 0.05, "steel_galv")
+    b.box(-0.08, 0.08, 1.0, 1.4, -0.06, 0.12, "steel_galv", detail=True)
+    for x in (-0.12, 0.12):
+        b.cyl("x", *sorted((x, x + (0.02 if x > 0 else -0.02))), (1.2, 0.3), 0.3, "hazard_red", sides=16)
+    b.cyl("x", -0.12, 0.12, (1.2, 0.3), 0.24, "pipe_yellow", sides=16)
+    b.tube([(0.0, 0.96, 0.3), (0.05, 0.8, 0.42), (0.04, 0.6, 0.4)], 0.02, "pipe_yellow", sides=5, detail=True)
+    b.cyl("y", 0.48, 0.6, (0.04, 0.4), 0.03, "trim_black", sides=6, detail=True)
+
+
+@model
 def bollard(b: Model):
-    """A mooring bollard: a cast iron post with a flared head."""
-    b.cyl("y", 0.0, 0.1, (0.0, 0.0), 0.42, "steel_dark", sides=12)
-    b.cyl("y", 0.1, 0.62, (0.0, 0.0), 0.24, "steel_dark", sides=12)
-    b.cyl("y", 0.62, 0.75, (0.0, 0.0), 0.34, "steel_dark", sides=12)
-    b.cyl("y", 0.3, 0.42, (0.0, 0.0), 0.25, "safety_yellow", sides=12, detail=True)
+    """A cast mooring bollard: a bolted base plate, a waisted barrel, and a
+    flared head that keeps the lines on, lathed smooth."""
+    b.cyl("y", 0.0, 0.08, (0.0, 0.0), 0.44, "steel_dark", sides=28)
+    for k in range(6):
+        a = 2 * PI * (k + 0.5) / 6
+        b.cyl("y", 0.08, 0.12, (math.cos(a) * 0.36, math.sin(a) * 0.36), 0.035, "steel_dark", sides=6, detail=True)
+    prof = ((0.08, 0.3), (0.16, 0.27), (0.3, 0.245), (0.45, 0.24), (0.56, 0.255), (0.62, 0.3), (0.66, 0.35),
+            (0.72, 0.36), (0.76, 0.33))
+    for (y0, r0), (y1, r1) in zip(prof, prof[1:]):
+        ring = [(math.cos(2 * PI * i / 28) * r, y, math.sin(2 * PI * i / 28) * r) for y, r in ((y0, r0), (y1, r1))
+                for i in range(28)]
+        b.hull(ring, "steel_dark")
+    b.cyl("y", 0.3, 0.42, (0.0, 0.0), 0.252, "safety_yellow", sides=28, detail=True)
 
 
 @model
@@ -1058,14 +1273,46 @@ def workbench(b: Model, length=3.0):
 
 @model
 def lathe(b: Model, look="steel_green"):
-    """A centre lathe, 3 m along x, its front at +z."""
-    b.box(-1.5, 1.5, 0.0, 0.8, -0.4, 0.4, look, bevel=0.03)
-    b.box(-1.4, 1.2, 0.8, 1.0, -0.25, 0.25, "steel_grey")
-    b.box(-1.5, -0.8, 1.0, 1.5, -0.35, 0.35, look, bevel=0.03)
-    b.cyl("x", -0.8, -0.6, (1.25, 0.0), 0.2, "steel_grey", sides=12)
-    b.box(0.9, 1.4, 1.0, 1.35, -0.2, 0.2, look, bevel=0.02)
-    b.box(-0.3, 0.2, 1.0, 1.2, -0.3, 0.35, look, bevel=0.02)
-    b.box(-1.5, 1.5, 0.2, 0.25, 0.4, 0.55, "steel_dark", detail=True)
+    """A centre lathe, 3 m along x, its front at +z: a cabinet stand with a
+    chip tray, the bed and its ways, the headstock with its gearbox levers and
+    chuck, the carriage with its cross slide, tool post and handwheels, the
+    tailstock, the lead screw and feed rod, and a splash guard."""
+    for x0, x1 in ((-1.5, -0.7), (0.75, 1.5)):
+        b.box(x0, x1, 0.0, 0.78, -0.38, 0.38, look, bevel=0.025)
+        b.box(x0 + 0.06, x1 - 0.06, 0.12, 0.7, 0.38, 0.385, look, detail=True)
+        b.box((x0 + x1) / 2 - 0.08, (x0 + x1) / 2 + 0.08, 0.6, 0.63, 0.385, 0.41, "steel_galv", detail=True)
+    b.box(-0.7, 0.75, 0.05, 0.25, -0.34, 0.34, "steel_dark")
+    b.box(-1.55, 1.55, 0.78, 0.84, -0.45, 0.45, "steel_dark", bevel=0.01)
+    b.box(-1.5, 1.45, 0.84, 1.02, -0.24, 0.24, look, bevel=0.015)
+    for z in (-0.18, 0.12):
+        b.box(-1.5, 1.45, 1.02, 1.05, z - 0.04, z + 0.04, "steel_galv")
+    # The headstock: gearbox, levers, the spindle and its three-jaw chuck.
+    b.box(-1.5, -0.85, 1.02, 1.55, -0.3, 0.3, look, bevel=0.03)
+    for k, (x, y) in enumerate(((-1.35, 1.45), (-1.15, 1.45), (-0.95, 1.3), (-1.3, 1.2))):
+        b.tube([(x, y, 0.3), (x, y + 0.08, 0.42)], 0.012, "steel_galv", sides=4, detail=True)
+        b.cyl("z", 0.41, 0.45, (x, y + 0.085), 0.025, "trim_black", sides=8, detail=True)
+    b.cyl("x", -0.85, -0.78, (1.3, 0.0), 0.09, "steel_galv", sides=14)
+    b.cyl("x", -0.78, -0.66, (1.3, 0.0), 0.15, "steel_grey", sides=16)
+    for k in range(3):
+        a = 2 * PI * k / 3
+        b.box(-0.66, -0.6, 1.3 + math.sin(a) * 0.08 - 0.02, 1.3 + math.sin(a) * 0.08 + 0.02,
+              math.cos(a) * 0.08 - 0.02, math.cos(a) * 0.08 + 0.02, "steel_dark", detail=True)
+    b.cyl("x", -0.6, -0.2, (1.3, 0.0), 0.03, "steel_galv", sides=10)
+    # The carriage: apron with handwheels, cross slide, tool post.
+    b.box(-0.25, 0.2, 0.86, 1.1, 0.24, 0.36, look, bevel=0.015)
+    b.box(-0.3, 0.25, 1.05, 1.12, -0.25, 0.3, look, bevel=0.01)
+    b.box(-0.12, 0.08, 1.12, 1.2, -0.15, 0.2, "steel_grey", bevel=0.01)
+    b.box(-0.06, 0.04, 1.2, 1.32, -0.06, 0.04, "steel_dark", bevel=0.005)
+    handwheel(b, (-0.12, 0.98, 0.4), (0.0, 0.0, 1.0), 0.09, "steel_galv")
+    handwheel(b, (0.1, 1.16, 0.34), (0.0, 0.0, 1.0), 0.06, "steel_galv")
+    # The tailstock.
+    b.box(0.9, 1.3, 1.05, 1.4, -0.2, 0.2, look, bevel=0.025)
+    b.cyl("x", 0.7, 0.9, (1.3, 0.0), 0.05, "steel_galv", sides=10)
+    handwheel(b, (1.33, 1.3, 0.0), (1.0, 0.0, 0.0), 0.08, "steel_galv")
+    # Lead screw, feed rod, and the splash guard behind the bed.
+    for y in (0.92, 0.82):
+        b.cyl("x", -0.85, 1.45, (y, 0.29), 0.014, "steel_galv", sides=6, detail=True)
+    b.box(-0.85, 1.45, 1.02, 1.55, -0.45, -0.43, "steel_galv")
 
 
 @model
@@ -1241,7 +1488,8 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
         top = free + 0.8 + (hl - x) * 0.05
         # The deck edge is a pair of close points, so smoothing keeps it a
         # crisp knuckle instead of rounding the bow into a blob.
-        pts = [(-bot, keel, 0.0), (bot, keel, 0.0), (wl, 0.0, rake * 0.12), (mid, free * 0.55, rake * 0.55),
+        keel -= 2.5  # smoothing pulls the bottom up; keep it well under the water
+        pts = [(-bot, keel, 0.0), (bot, keel, 0.0), (wl, -0.6, rake * 0.1), (mid, free * 0.55, rake * 0.55),
                (deck * 0.995, top - 0.1, rake * 0.98), (deck, top, rake), (-deck, top, rake),
                (-deck * 0.995, top - 0.1, rake * 0.98), (-mid, free * 0.55, rake * 0.55), (-wl, 0.0, rake * 0.12)]
         rings.append([(x + dx, y, w * hb) for w, y, dx in pts])

@@ -48,11 +48,11 @@ void fragment() {
 	vec3 r = reflect(-view_w, n);
 	// Below the horizon: the ground, with a slightly soft line.
 	float ground = smoothstep(0.015, -0.05, r.y);
-	float rough = 0.07 + 0.035 * streak + 0.05 * smudge + 0.3 * film;
+	float rough = 0.13 + 0.06 * streak + 0.05 * smudge + 0.3 * film;
 	// Rougher metal blurs the line.
 	ground = mix(ground, smoothstep(0.2, -0.25, r.y), clamp(rough * 1.6 - 0.15, 0.0, 1.0));
 
-	vec3 metal = metal_color * (0.96 + 0.04 * streak);
+	vec3 metal = metal_color * (0.92 + 0.08 * streak);
 	metal = mix(metal, film_color, film * 0.6);
 	ALBEDO = mix(metal, metal * 0.28, ground);
 	METALLIC = 1.0;
