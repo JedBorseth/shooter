@@ -3,6 +3,7 @@ extends SceneTree
 ## sun, shade, and indoors; mid-animation poses (run, crouch, aim, reload) with
 ## close-ups of the joints; turntables and wireframes; and the first-person
 ## arms with several weapons at the hip and aimed.
+## Everything is staged on Breakwater, the only map.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
@@ -11,10 +12,15 @@ extends SceneTree
 ## weapons (comma list).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
+const MAP := "res://scenes/breakwater.tscn"
+## Where the close-up sets stand a soldier: Breakwater's north yard, in sun,
+## with open ground round it (the floor height is found by a ray).
+const STAGE := Vector3(3, 0, 16)
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
 const TEAMS := ["ally", "enemy"]
 
 var _out := OS.get_environment("CAPTURE_DIR")
+var _stage := STAGE
 var _sets := OS.get_environment("CAPTURE_SETS")
 
 
@@ -74,6 +80,7 @@ func _open(path: String) -> Node:
 	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
 		layer.visible = false
 	await _frames(30)
+	_stage.y = _floor(scene, STAGE)
 	return scene
 
 
@@ -128,6 +135,7 @@ func _pair(scene: Node, at: Vector3, dir: Vector3, distance: float, pose: Dictio
 
 
 func _lineup(scene: Node, label: String, at: Vector3, dir: Vector3, distances: Array) -> void:
+	# Zoomed crops from 25 m: what a player sees aimed in.
 	var camera := _camera(scene)
 	var eye := Vector3(at.x, _floor(scene, at) + 1.6, at.z)
 	for distance: float in distances:
@@ -137,7 +145,7 @@ func _lineup(scene: Node, label: String, at: Vector3, dir: Vector3, distances: A
 		)
 		camera.look_at_from_position(eye, target)
 		await _shot("%s_%02dm" % [label, int(distance)])
-		if distance >= 30.0:
+		if distance >= 25.0:
 			# What a player sees aimed in: a 4x crop at the same distance.
 			camera.fov = 70.0 / 4.0
 			await _shot("%s_%02dm_zoom" % [label, int(distance)])
@@ -149,14 +157,12 @@ func _lineup(scene: Node, label: String, at: Vector3, dir: Vector3, distances: A
 
 
 func _lineups() -> void:
-	# Sun: the testing range at midday.
-	var scene := await _open("res://scenes/main.tscn")
-	await _lineup(scene, "sun", Vector3(0, 0, 18), Vector3(0, 0, -1), DISTANCES)
-	await _close(scene)
-	# Shade and indoors: Breakwater in the late morning.
-	scene = await _open("res://scenes/breakwater.tscn")
+	var scene := await _open(MAP)
 	await _frames(10)
-	# The quay, and the control house's upper floor (a benchmark viewpoint).
+	# Sun: across the north yard, looking east.
+	await _lineup(scene, "sun", Vector3(-6.0, 0, 18.5), Vector3(1, 0, 0), [2.0, 6.0, 12.0])
+	# Shade: the north quay; indoors: the control house's upper floor (a
+	# benchmark viewpoint).
 	await _lineup(scene, "shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0), DISTANCES)
 	await _lineup(scene, "indoor", Vector3(-27, 3.85, -6), Vector3(0, 0, -1), [2.0, 3.5])
 	await _close(scene)
@@ -166,7 +172,7 @@ func _lineups() -> void:
 
 
 func _poses() -> void:
-	var scene := await _open("res://scenes/main.tscn")
+	var scene := await _open(MAP)
 	var camera := _camera(scene, 45.0)
 	var poses := {
 		"idle": {"weapon": "m4"},
@@ -183,27 +189,33 @@ func _poses() -> void:
 		var soldier := SOLDIER.instantiate() as SoldierRig
 		scene.add_child(soldier)
 		soldier.set_team_index(team)
-		soldier.global_position = Vector3(0, 0, 10)
+		soldier.global_position = _stage
 		for name: String in poses:
 			var pose: Dictionary = poses[name].duplicate()
 			pose["yaw"] = 0.0
 			for frame in 50:
 				soldier.drive(pose, 1.0 / 60.0)
-				soldier.global_position = Vector3(0, 0, 10)
+				soldier.global_position = _stage
 				await process_frame
 			# Three-quarter front and side.
-			camera.look_at_from_position(Vector3(-2.2, 1.3, 7.2), Vector3(0, 0.95, 10))
+			camera.look_at_from_position(
+				_stage + Vector3(-2.2, 1.3, -2.8), _stage + Vector3(0, 0.95, 0)
+			)
 			await _shot("pose_%s_%s_front" % [TEAMS[team], name])
-			camera.look_at_from_position(Vector3(3.6, 1.2, 10.3), Vector3(0, 0.95, 10))
+			camera.look_at_from_position(
+				_stage + Vector3(3.6, 1.2, 0.3), _stage + Vector3(0, 0.95, 0)
+			)
 			await _shot("pose_%s_%s_side" % [TEAMS[team], name])
 			if team == 0 and name in ["aim", "crouch", "sprint", "reload"]:
 				# The joints up close: shoulders and elbows, then hips and knees.
 				var shoulders := 0.95 if name == "crouch" else 1.3
 				camera.look_at_from_position(
-					Vector3(-0.9, shoulders + 0.3, 8.9), Vector3(0, shoulders, 10)
+					_stage + Vector3(-0.9, shoulders + 0.3, -1.1), _stage + Vector3(0, shoulders, 0)
 				)
 				await _shot("joint_%s_upper" % name)
-				camera.look_at_from_position(Vector3(-1.1, 0.8, 8.8), Vector3(0, 0.5, 10))
+				camera.look_at_from_position(
+					_stage + Vector3(-1.1, 0.8, -1.2), _stage + Vector3(0, 0.5, 0)
+				)
 				await _shot("joint_%s_lower" % name)
 		# A strip of a running cycle, every 4 frames.
 		for i in 8:
@@ -211,9 +223,11 @@ func _poses() -> void:
 				soldier.drive(
 					{"weapon": "m4", "yaw": 0.0, "velocity": Vector3(0, 0, -4.2)}, 1.0 / 60.0
 				)
-				soldier.global_position = Vector3(0, 0, 10)
+				soldier.global_position = _stage
 				await process_frame
-			camera.look_at_from_position(Vector3(3.6, 1.2, 10.3), Vector3(0, 0.95, 10))
+			camera.look_at_from_position(
+				_stage + Vector3(3.6, 1.2, 0.3), _stage + Vector3(0, 0.95, 0)
+			)
 			await _shot("strip_%s_run_%d" % [TEAMS[team], i])
 		soldier.queue_free()
 		await _frames(2)
@@ -225,20 +239,20 @@ func _poses() -> void:
 
 
 func _turntable() -> void:
-	var scene := await _open("res://scenes/main.tscn")
+	var scene := await _open(MAP)
 	var camera := _camera(scene, 30.0)
 	for team in 2:
 		var soldier := SOLDIER.instantiate() as SoldierRig
 		scene.add_child(soldier)
 		soldier.set_team_index(team)
-		soldier.global_position = Vector3(0, 0, 10)
+		soldier.global_position = _stage
 		for frame in 40:
 			soldier.drive({"weapon": "m4", "yaw": 0.0}, 1.0 / 60.0)
 			await process_frame
 		for k in 8:
 			var a := k * TAU / 8.0
-			var eye := Vector3(0, 1.1, 10) + Vector3(sin(a), 0, -cos(a)) * 4.6
-			camera.look_at_from_position(eye, Vector3(0, 0.95, 10))
+			var eye := _stage + Vector3(0, 1.1, 0) + Vector3(sin(a), 0, -cos(a)) * 4.6
+			camera.look_at_from_position(eye, _stage + Vector3(0, 0.95, 0))
 			await _shot("turn_%s_%d" % [TEAMS[team], k])
 		# Head and shoulders, in each face covering (part groups from
 		# palette.rs: bare face, neck gaiter, balaclava).
@@ -250,7 +264,8 @@ func _turntable() -> void:
 			for k in 2:
 				var a := (k - 0.5) * 1.1
 				camera.look_at_from_position(
-					Vector3(0, 1.66, 10) + Vector3(sin(a), 0, -cos(a)) * 0.95, Vector3(0, 1.6, 10)
+					_stage + Vector3(0, 1.66, 0) + Vector3(sin(a), 0, -cos(a)) * 0.95,
+					_stage + Vector3(0, 1.6, 0)
 				)
 				await _shot("head_%s_%s_%d" % [TEAMS[team], kit, k])
 		if team == 0:
@@ -258,7 +273,8 @@ func _turntable() -> void:
 			for k in [0, 3]:
 				var a: float = k * TAU / 8.0
 				camera.look_at_from_position(
-					Vector3(0, 1.1, 10) + Vector3(sin(a), 0, -cos(a)) * 4.6, Vector3(0, 0.95, 10)
+					_stage + Vector3(0, 1.1, 0) + Vector3(sin(a), 0, -cos(a)) * 4.6,
+					_stage + Vector3(0, 0.95, 0)
 				)
 				await _shot("wire_%d" % k)
 			root.get_viewport().debug_draw = Viewport.DEBUG_DRAW_DISABLED
@@ -273,7 +289,7 @@ func _turntable() -> void:
 
 func _hands() -> void:
 	# Both hands on each kind of hold, close up from outside, above, and below.
-	var scene := await _open("res://scenes/main.tscn")
+	var scene := await _open(MAP)
 	var camera := _camera(scene, 30.0)
 	var soldier := SOLDIER.instantiate() as SoldierRig
 	scene.add_child(soldier)
@@ -290,7 +306,7 @@ func _hands() -> void:
 	for weapon: String in weapons:
 		for frame in 50:
 			soldier.drive({"weapon": weapon, "yaw": 0.0, "ads": 1.0}, 1.0 / 60.0)
-			soldier.global_position = Vector3(0, 0, 10)
+			soldier.global_position = _stage
 			await process_frame
 		for right in [false, true]:
 			var at := soldier.wrist_position(right) + Vector3(0, 0, -0.05)
@@ -311,13 +327,16 @@ func _hands() -> void:
 
 
 func _first_person() -> void:
-	var scene: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	var scene: Node = (load(MAP) as PackedScene).instantiate()
 	root.add_child(scene)
 	current_scene = scene
-	scene.get_node("Sentry").set("enabled", false)
+	var sentry := scene.get_node_or_null("Sentry")
+	if sentry != null:
+		sentry.set("enabled", false)
 	var player := scene.get_node("Player") as FpsPlayer
-	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
-		layer.visible = false
+	# The north yard, in sun, looking north under the terminal canopy.
+	await _sixtieths(2)
+	player.global_position = Vector3(3, _floor(scene, Vector3(3, 0, 18.5)) + 0.05, 18.5)
 	player.set_look(0.0, -0.05)
 	await _sixtieths(60)
 	var weapons := ["m4", "ak47", "m1911", "m870", "m40", "pdw9"]
@@ -380,7 +399,7 @@ func _faces() -> void:
 		Vector3(0.98, 0.94, 0.9),
 		Vector3(0.68, 0.56, 0.46),
 	]
-	var scene := await _open("res://scenes/main.tscn")
+	var scene := await _open(MAP)
 	var camera := _camera(scene, 30.0)
 	for team in 2:
 		var row: Array[SoldierRig] = []
@@ -388,7 +407,7 @@ func _faces() -> void:
 			var soldier := SOLDIER.instantiate() as SoldierRig
 			scene.add_child(soldier)
 			soldier.set_team_index(team)
-			soldier.global_position = Vector3(-2.4 + i * 1.2, 0, 10)
+			soldier.global_position = _stage + Vector3(-2.4 + i * 1.2, 0, 0)
 			row.append(soldier)
 		for frame in 30:
 			for soldier in row:
@@ -401,7 +420,7 @@ func _faces() -> void:
 			for k in body.get_blend_shape_count():
 				body.set_blend_shape_value(k, 1.0 if k + 1 == i else 0.0)
 		await _frames(2)
-		camera.look_at_from_position(Vector3(0, 1.6, 15.5), Vector3(0, 1.45, 10))
+		camera.look_at_from_position(_stage + Vector3(0, 1.6, 5.5), _stage + Vector3(0, 1.45, 0))
 		await _shot("faces_%s_row" % TEAMS[team])
 		for i in row.size():
 			var at := row[i].global_position
@@ -417,14 +436,14 @@ func _faces() -> void:
 func _wounds() -> void:
 	# Wound marks (wounds.rs): each team hit in the chest, the shoulder, and
 	# the thigh, a second after the hits.
-	var scene := await _open("res://scenes/main.tscn")
+	var scene := await _open(MAP)
 	var camera := _camera(scene, 35.0)
 	var hits := [Vector3(0.05, 1.3, -0.13), Vector3(-0.2, 1.42, -0.04), Vector3(0.1, 0.75, -0.09)]
 	for i in 2:
 		var rig := SOLDIER.instantiate() as SoldierRig
 		scene.add_child(rig)
 		rig.set_team_index(i)
-		rig.global_position = Vector3(-1.2 + i * 1.2, 0, 10)
+		rig.global_position = _stage + Vector3(-1.2 + i * 1.2, 0, 0)
 		for frame in 20:
 			rig.drive({"weapon": "m4", "yaw": PI}, 1.0 / 60.0)
 			await process_frame
@@ -448,6 +467,11 @@ func _wounds() -> void:
 
 
 func _shot(name: String) -> void:
+	# The HUD and the controls card come and go with the game's state.
+	# They show themselves again each frame, so they stop processing too.
+	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
+		layer.process_mode = Node.PROCESS_MODE_DISABLED
+		layer.visible = false
 	await process_frame
 	await RenderingServer.frame_post_draw
 	var path := _out.path_join(name + ".png")

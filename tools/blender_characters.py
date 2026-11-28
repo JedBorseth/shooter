@@ -1094,7 +1094,7 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
     want = set(spec)
     out = []
     if "helmet" in want:
-        out += gear.helmet(top, centre, size)
+        out += gear.helmet(top, centre, size, body)
     if "glasses" in want:
         out += gear.glasses(centre, eye_z, face_front, size)
     if "balaclava" in want or "gaiter" in want:
@@ -1108,8 +1108,10 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.plate_carrier(body, tuple(spec["plate_carrier"]))
     if "belt" in want:
         out += gear.belt(body, spec["belt"])
+    if "drop_holster" in want:
+        out += gear.drop_holster(body, frames["DEF-thigh.R"][0], frames["DEF-shin.R"][0])
     if "knee_pads" in want:
-        out += gear.knee_pads(body, {s: frames[f"DEF-shin.{s}"][0] for s in "LR"})
+        out += gear.knee_pads(body, {s: (frames[f"DEF-shin.{s}"][0], frames[f"DEF-foot.{s}"][0]) for s in "LR"})
     if "arm_bands" in want:
         out += gear.arm_bands(body, {s: (frames[f"DEF-upper_arm.{s}"][0], frames[f"DEF-forearm.{s}"][0]) for s in "LR"})
     if "boot_shafts" in want:
@@ -1122,8 +1124,6 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.cuffs(body, {s: (frames[f"DEF-forearm.{s}"][0], frames[f"DEF-hand.{s}"][0]) for s in "LR"})
     if "watch" in want:
         out += gear.watch(body, frames["DEF-forearm.L"][0], frames["DEF-hand.L"][0])
-    if "knuckles" in want:
-        out += gear.knuckles(body, {s: (frames[f"DEF-hand.{s}"][0], frames[f"DEF-f_middle.01.{s}"][0]) for s in "LR"})
     # Skin and coverings under the helmet are never seen.
     shell = [o for o in out if o.name == "helmet_shell"]
     if shell:
@@ -1135,7 +1135,7 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
     shirt = next((o for o in clothes if o["role"] == "uniform"), None)
     if shirt is not None:
         plates = [o for o in out if o.name.startswith(("plate_", "cummerbund", "back_panel"))]
-        gear.remove_hidden(shirt, plates, 0.02)
+        gear.remove_hidden(shirt, plates, 0.02, margin=2)
         if shirt.get("decimate"):
             # The modelled shirt spends its triangles on what still shows.
             decimate(shirt, shirt["decimate"])

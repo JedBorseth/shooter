@@ -416,8 +416,11 @@ def glove_shape(hand: Hand, p: np.ndarray, n: np.ndarray, detail: bool):
     return disp, rows, guard
 
 
-def glove(human, frames: dict, side: str):
-    """The game glove and its high-detail source for one hand."""
+def glove(human, frames: dict, side: str, tuck: float = 0.0):
+    """The game glove and its high-detail source for one hand. `tuck` (m)
+    pulls the gauntlet that far inside the skin where a shirt's sleeve
+    covers it (the third-person soldier, whose cuff ends just past the
+    wrist), so it never shows through the sleeve."""
     hand = Hand(frames, side)
     co = coords(human)
     along = (co - hand.wrist) @ hand.arm
@@ -432,6 +435,9 @@ def glove(human, frames: dict, side: str):
     subdivide(low, 1)
     p, n = coords(low), vertex_normals(low)
     disp, _, guard = glove_shape(hand, p, n, detail=False)
+    if tuck:
+        along = (p - hand.wrist) @ hand.arm
+        disp -= smoothstep(0.004, -0.004, along) * tuck
     set_coords(low, p + n * disp[:, None])
     rigid_guard(low, hand, guard)
     tuck_boundary(low, 0.003)
@@ -983,7 +989,7 @@ def build(spec: dict, human, frames: dict, clothes: list = ()):
         template["drop"] = True
     for side in "LR":
         if spec.get("gloves"):
-            lo, hi = glove(human, frames, side)
+            lo, hi = glove(human, frames, side, spec.get("glove_tuck", 0.0))
             lows.append(lo)
             pairs.append((lo, hi))
         if spec.get("sleeves"):
