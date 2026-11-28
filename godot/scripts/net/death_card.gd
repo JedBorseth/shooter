@@ -9,8 +9,8 @@ extends RefCounted
 ## icons, the charge), all in one fixed box so the card's width follows the
 ## name only. Killing yourself reads Yourself in your yellow on your side's
 ## colour, as the killcam's card shows you, with what did it; a fatal fall
-## reads Fall damage with a falling mark, an unknown death Unknown cause
-## with a skull, both behind the world's grey mark (a fall is captioned
+## reads Fall damage with a falling mark, an unknown death Unknown with
+## a skull (Cause unknown), both behind a grey mark of no side (a fall is captioned
 ## World). The respawn bar fills along the card's bottom edge, with RESPAWN
 ## IN under the card in whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
 ## name card.
@@ -24,7 +24,7 @@ const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
 const CARD_FILL := Color(0.055, 0.071, 0.086, 0.88)
 const CARD_H := 80.0
-const MIN_W := 320.0
+const MIN_W := 400.0
 ## The team passed for a death with no killer: an empty grey mark.
 const WORLD := -2
 ## The box a weapon's silhouette fits in on the card (a long launcher
@@ -79,7 +79,7 @@ static func draw(item: CanvasItem, size: Vector2, at: Vector2, state: Dictionary
 	if killer == "":
 		# No one to name: a fall, or a death we were not told about. A grey
 		# side and an empty mark keep the card's shape.
-		killer = "Fall damage" if how.glyph == "fall" else "Unknown cause"
+		killer = "Fall damage" if how.glyph == "fall" else "Unknown"
 		colour = UiTheme.TEXT_DIM
 		team = WORLD
 	elif bool(state.get("self", false)):
@@ -152,21 +152,15 @@ static func _killer_card(
 	if team >= 0:
 		MatchPaint.team_mark(item, mark, 30.0, team, Color(colour, alpha))
 	elif team == WORLD:
-		# The world's mark, drawn as the team marks are (a hexagon in two
-		# lines) in grey, round a neutral figure: a peak on a horizon.
+		# No side's mark: a hexagon in two lines, as the team marks are, in
+		# grey with a plain bar across it.
 		var grey := Color(colour, 0.9 * alpha)
 		for ring_r: float in [15.0, 12.6]:
 			var ring := Shapes.hexagon_points(mark, ring_r, false)
 			ring.append(ring[0])
 			var line := Color(grey, grey.a * (1.0 if ring_r > 13.0 else 0.5))
 			item.draw_polyline(ring, line, 1.4, true)
-		item.draw_colored_polygon(
-			PackedVector2Array(
-				[mark + Vector2(-6, 4), mark + Vector2(-1, -5), mark + Vector2(4, 4)]
-			),
-			grey
-		)
-		item.draw_rect(Rect2(mark + Vector2(-8, 4), Vector2(16, 2)), grey)
+		item.draw_rect(Rect2(mark + Vector2(-7, -1.5), Vector2(14, 3)), grey)
 	Paint.text(
 		item,
 		Paint.LABEL,
@@ -211,7 +205,9 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 		# The launcher is no loadout weapon, so it is named here.
 		var name := "RL-4" if weapon == "rl4" else _weapon_name(weapon)
 		return {"key": weapon, "icon": icon, "glyph": "", "name": name if name != "" else cause}
-	var how := {"key": "", "icon": null, "glyph": "skull", "name": cause}
+	var how := {
+		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "Cause unknown"
+	}
 	if fell:
 		how.glyph = "fall"
 		how.name = "World"

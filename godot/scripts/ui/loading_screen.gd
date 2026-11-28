@@ -233,16 +233,24 @@ func _draw_mode_mark(at: Vector2) -> void:
 			draw_rect(Rect2(at - Vector2(9, 9), Vector2(18, 18)), ink, false, 3.0)
 			draw_rect(Rect2(at - Vector2(3, 3), Vector2(6, 6)), ink)
 		"snd":
-			draw_colored_polygon(
+			# The charge, as the death card draws it: a strapped block with
+			# its detonator and wire.
+			draw_rect(Rect2(at + Vector2(-13, -3), Vector2(24, 11)), ink)
+			for x: float in [-8.0, 5.0]:
+				draw_rect(Rect2(at + Vector2(x, -3), Vector2(2, 11)), Color(UiTheme.INK, 0.6))
+			draw_rect(Rect2(at + Vector2(-4, -8), Vector2(5, 5)), ink)
+			draw_polyline(
 				PackedVector2Array(
 					[
-						at + Vector2(0, -13),
-						at + Vector2(10, 0),
-						at + Vector2(0, 13),
-						at + Vector2(-10, 0)
+						at + Vector2(1, -6),
+						at + Vector2(6, -9),
+						at + Vector2(11, -8),
+						at + Vector2(13, -4)
 					]
 				),
-				ink
+				ink,
+				1.5,
+				true
 			)
 		"gungame":
 			for dy: float in [-6.0, 4.0]:
@@ -278,12 +286,13 @@ func _draw_versus(view: Rect2) -> void:
 	for side: int in [-1, 1]:
 		var ours := side < 0
 		var colour := TeamColours.of(ours)
-		var mark := Vector2(centre.x + side * 132.0, centre.y)
+		# Large and tight to VS, standing past the band's edges.
+		var mark := Vector2(centre.x + side * 102.0, centre.y)
 		# The team's own mark on a dark hexagon, as the lobby and the
 		# scoreboard draw it.
-		HudShapes.hexagon(self, mark, 31.0, Color(UiTheme.INK, 0.85), Color.TRANSPARENT, 0.0, false)
+		HudShapes.hexagon(self, mark, 39.0, Color(UiTheme.INK, 0.85), Color.TRANSPARENT, 0.0, false)
 		var mark_team := team if ours else 1 - team
-		MatchPaint.team_mark(self, mark, 56.0, mark_team, colour)
+		MatchPaint.team_mark(self, mark, 70.0, mark_team, colour)
 		var label := "YOUR TEAM" if ours else "ENEMY"
 		# Both plates as wide as the wider name, the name centred.
 		var width := (
@@ -294,7 +303,7 @@ func _draw_versus(view: Rect2) -> void:
 			+ 24.0
 		)
 		# Each plate a fixed gap outside its mark, whatever its width.
-		var inner := mark.x + side * 58.0
+		var inner := mark.x + side * 62.0
 		var plate := Rect2(inner if side > 0 else inner - width, centre.y - 14, width, 28)
 		draw_rect(plate, UiTheme.LABEL_BOX)
 		var text_w := HudPaint.text_width(LABEL_FONT, label, 19, 3.0)

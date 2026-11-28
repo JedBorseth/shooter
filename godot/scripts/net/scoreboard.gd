@@ -50,6 +50,10 @@ const PODIUM := [Color("e8c840"), Color("c0c6cc"), Color("c08850")]
 ## Where the panel's top sits when held open, and under the result banner.
 const TOP := 206.0
 
+## The number columns' face: the row font with tabular figures, so digits
+## and grouping commas line up from row to row.
+static var _figures_font: FontVariation
+
 var title := ""
 var clock := ""
 ## The panel's top at the design size (lower under the result banner).
@@ -73,6 +77,15 @@ var _ffa := false
 var _goal_below := ""
 ## Your row's rect this frame, for its rules drawn over every row.
 var _me_rect := Rect2()
+
+
+static func _figures() -> Font:
+	if _figures_font == null:
+		_figures_font = FontVariation.new()
+		_figures_font.base_font = Paint.LABEL_LIGHT
+		var tnum := TextServerManager.get_primary_interface().name_to_tag("tnum")
+		_figures_font.opentype_features = {tnum: 1}
+	return _figures_font
 
 
 ## "11 / 12 ready": how many of `roster` are ready for the match. Bots are
@@ -371,6 +384,4 @@ func _draw_row(
 			)
 			continue
 		var centre := float(column[0]) - float(column[1]) / 2.0
-		Paint.text_centred(
-			self, Paint.LABEL_LIGHT, cell, Vector2(centre, baseline), 20, _a(text_colour)
-		)
+		Paint.text_centred(self, _figures(), cell, Vector2(centre, baseline), 20, _a(text_colour))

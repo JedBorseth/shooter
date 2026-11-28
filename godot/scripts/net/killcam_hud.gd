@@ -369,9 +369,10 @@ func _name_card(
 	var baseline := rect.get_center().y + 11.0
 	if right_side:
 		var edge := rect.end.x - 66.0
-		Paint.text_right(_canvas, Paint.LABEL, label, Vector2(edge, top), 15, dim, 2.5)
+		# The label on the card's outer edge, over its team bar.
+		Paint.text_right(_canvas, Paint.LABEL, label, Vector2(rect.end.x, top), 15, dim, 2.5)
 		Paint.text_right(_canvas, Paint.LABEL, shown, Vector2(edge, baseline), 30, ink, 0.5)
 	else:
 		var text_x := rect.position.x + 66.0
-		Paint.text(_canvas, Paint.LABEL, label, Vector2(text_x, top), 15, dim, 2.5)
+		Paint.text(_canvas, Paint.LABEL, label, Vector2(rect.position.x, top), 15, dim, 2.5)
 		Paint.text(_canvas, Paint.LABEL, shown, Vector2(text_x, baseline), 30, ink, 0.5)
