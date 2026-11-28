@@ -34,15 +34,15 @@ const INTO_SUN := 0.4
 const SUN_BEHIND := 0.06
 ## The sky's fill in shade, as a multiple of the map's sky light (ambient
 ## energy), under open sky and under a roof.
-const SKY_FILL := 2.6
+const SKY_FILL := 2.35
 const ROOF_FILL := 0.45
 ## Where the sky's fill comes from: mostly overhead, tipped ahead of the
 ## player, so the top of the weapon catches it toward the eye.
 const SKY_AHEAD := 0.6
 ## The sky's colour for maps lit by their sky, blended toward the sun's so a
 ## dusk sky stays warm. Maps lit by a flat ambient colour use that colour.
-const SKY_TINT := Color(0.58, 0.7, 1.0)
-const SKY_SUN_SHARE := 0.3
+const SKY_TINT := Color(0.72, 0.8, 1.0)
+const SKY_SUN_SHARE := 0.4
 ## The lowest the key comes from, as the sine of its height above the horizon:
 ## a sun on the horizon still lights the weapon from a little above.
 const MIN_HEIGHT := 0.35

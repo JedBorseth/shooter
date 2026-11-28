@@ -42,6 +42,7 @@ from mathutils import Matrix, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import weapon_equipment  # noqa: E402
+from weapon_shapes import canonical  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "godot" / "assets" / "equipment"
@@ -327,10 +328,13 @@ def can(name, radius, length, zones, band_at, vents):
     top = FUSE_BASE
     bottom = top - length
     c = 0.0025
+    # Rings at the band's edges, so the band has faces of its own.
+    band = sorted({top - length * f for f in band_at if top - length * f < top - c - 1e-4}, reverse=False)
     profile = [
         (0.0, bottom),
         (radius - c, bottom),
         (radius, bottom + c),
+        *[(radius, z) for z in band],
         (radius, top - c),
         (radius - c, top),
         (FUSE_RADIUS * 1.05, top),
@@ -345,28 +349,72 @@ def can(name, radius, length, zones, band_at, vents):
         if face.normal.z > 0.9:
             face.material_index = 2
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    finish(name, bm, zones, convex=True)
+    body = finish(name, bm, zones, convex=True)
     if vents:
-        # Ports: dark discs set into the wall.
+        # Ports: round holes through the tube, cut as 1.2 mm pockets with
+        # painted walls and a dark floor (the charge inside).
         holes = bmesh.new()
         for row in range(vents):
             z = top - length * (0.3 + 0.45 * row / max(vents - 1, 1))
             for k in range(8):
                 a = math.tau * (k + 0.5 * row) / 8
                 port = bmesh.ops.create_cone(
-                    holes, cap_ends=True, segments=24, radius1=0.0033, radius2=0.0033, depth=0.002
+                    holes, cap_ends=True, segments=24, radius1=0.0033, radius2=0.0033, depth=0.0024
                 )["verts"]
-                # Mostly sunk into the wall, standing 0.15 mm proud: a dark
-                # disc flush with the tube reads as the port's hole.
-                sunk = radius - 0.00085
                 m = (
-                    Matrix.Translation((sunk * math.cos(a), sunk * math.sin(a), z))
+                    Matrix.Translation((radius * math.cos(a), radius * math.sin(a), z))
                     @ Matrix.Rotation(a, 4, "Z")
                     @ Matrix.Rotation(math.pi / 2, 4, "Y")
                 )
                 bmesh.ops.transform(holes, matrix=m, verts=port)
         bmesh.ops.recalc_face_normals(holes, faces=holes.faces)
-        finish(name + "Ports", holes, ["rubber"])
+        holes.normal_update()
+        for face in holes.faces:
+            # The cutter's caps become the pockets' floors.
+            centre = face.calc_center_median()
+            radial = Vector((centre.x, centre.y, 0.0)).normalized()
+            face.material_index = 1 if abs(face.normal.dot(radial)) > 0.9 else 0
+        cutter = finish(name + "Cut", holes, ["grey_paint", "rubber"])
+        OBJECTS.pop(name + "Cut")
+        mod = body.modifiers.new("Ports", "BOOLEAN")
+        mod.operation = "DIFFERENCE"
+        mod.solver = "EXACT"
+        mod.object = cutter
+        bpy.context.view_layer.objects.active = body
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        bpy.data.objects.remove(cutter)
+        tri = bmesh.new()
+        tri.from_mesh(body.data)
+        bmesh.ops.triangulate(tri, faces=[f for f in tri.faces if len(f.verts) > 4])
+        tri.to_mesh(body.data)
+        tri.free()
+        # Booleans return faces in memory order: sort them, so a rebuild
+        # writes the same bytes. Sorting rebuilds the mesh without its zone
+        # layer, so the faces are zoned again from where they sit.
+        canonical(body)
+        ids = weapon_equipment.FINISH_IDS
+        mesh = body.data
+        layer = mesh.attributes.get(weapon_equipment.weapon_finish.ZONE_ATTRIBUTE) or mesh.attributes.new(
+            weapon_equipment.weapon_finish.ZONE_ATTRIBUTE, "INT", "FACE")
+        values = []
+        for poly in mesh.polygons:
+            ctr, nrm = poly.center, poly.normal
+            r = math.hypot(ctr.x, ctr.y)
+            radial = Vector((ctr.x, ctr.y, 0.0)).normalized() if r > 1e-6 else Vector((0.0, 0.0, 1.0))
+            from_top = (top - ctr.z) / length
+            if r < radius - 0.0006 and abs(nrm.dot(radial)) > 0.9 and abs(nrm.z) < 0.5:
+                values.append(ids["rubber"])
+            elif r < radius - 0.0001 and abs(nrm.dot(radial)) < 0.6 and abs(nrm.z) < 0.9 and \
+                    bottom + c < ctr.z < top - c:
+                values.append(ids[zones[0]])
+            elif nrm.z > 0.9:
+                values.append(ids[zones[2]])
+            elif band_at[0] < from_top < band_at[1] and abs(nrm.z) < 0.5:
+                values.append(ids[zones[1]])
+            else:
+                values.append(ids[zones[0]])
+        layer.data.foreach_set("value", values)
+        mesh.set_sharp_from_angle(angle=math.radians(40.0))
 
 
 LOT_YELLOW = (0.72, 0.6, 0.16)

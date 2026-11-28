@@ -73,10 +73,14 @@ def acog() -> dict[str, bpy.types.Object]:
     # the front at the angle the eye sees it from (45 mm of relief), so its
     # wall never crosses the picture.
     flare = ACOG_BORE * (0.045 + 0.003) / 0.045
+    # Its face toward the eye is moulded, not flat: both lips rounded over,
+    # so aimed the ring shades from its inner edge to its outer one instead
+    # of reading as a flat black donut.
     guard = lathe("Guard", [
-        (eye, ACOG_BORE), (eye, 0.0149), (eye + 0.0005, 0.0156), (rim - 0.0004, 0.0158),
-        (rim, 0.0153), (rim, flare),
-    ], 48)
+        (eye + 0.0014, ACOG_BORE), (eye + 0.0005, ACOG_BORE + 0.0004), (eye + 0.0001, ACOG_BORE + 0.0011),
+        (eye, ACOG_BORE + 0.0019), (eye, 0.0139), (eye + 0.0002, 0.0147), (eye + 0.0007, 0.0154),
+        (eye + 0.0014, 0.0158), (rim - 0.0004, 0.0158), (rim, 0.0153), (rim, flare),
+    ], 64)
     group(guard, "rubber")
 
     # Eyepiece housing: a tube from the guard to the prism, bored out.

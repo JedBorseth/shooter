@@ -1331,15 +1331,38 @@ def riflescope(spec: dict) -> bpy.types.Object:
                 (0.0405, 0.0168), (0.047, 0.0168), (0.048, 0.0150), (0.049, 0.0140)]
         rings = revolve(bm, prof, 32, uv, cap_end=True)
         verts = [v for ring in rings for v in ring]
-        # Built along +Y about the origin; stand it up on the saddle.
-        rot = Matrix.Rotation(-np.pi / 2, 4, "X") if axis == "z" else Matrix.Rotation(-np.pi / 2, 4, "Z")
+        # Built along +Y about the origin; stand it up on the saddle (+Y
+        # turns to +Z for elevation, on top, and to +X for windage).
+        rot = Matrix.Rotation(np.pi / 2, 4, "X") if axis == "z" else Matrix.Rotation(-np.pi / 2, 4, "Z")
         bmesh.ops.transform(bm, matrix=Matrix.Translation((0, turret_y, 0)) @ rot, verts=verts)
-    # Rings and their bases.
+    # Rings and their bases: each ring split at its middle, its cap held by
+    # two screws a side; a base as wide as the ring standing on a clamp
+    # block on the rail, with a jaw on the left and a cross bolt through it.
+    def block(lo, hi):
+        verts = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+        bmesh.ops.scale(bm, vec=[h - l for l, h in zip(lo, hi)], verts=verts)
+        bmesh.ops.translate(bm, vec=[(l + h) / 2 for l, h in zip(lo, hi)], verts=verts)
+
+    def bolt(at, axis, radius, length, sides=12):
+        verts = bmesh.ops.create_cone(bm, cap_ends=True, segments=sides, radius1=radius, radius2=radius,
+                                      depth=length)["verts"]
+        rot = Matrix.Rotation(np.pi / 2, 4, "Y") if axis == "x" else Matrix.Identity(4)
+        bmesh.ops.transform(bm, matrix=Matrix.Translation(at) @ rot, verts=verts)
+
     for y in ring_ys:
-        rings = revolve(bm, [(y - 0.008, 0.0152), (y - 0.008, 0.0188), (y + 0.008, 0.0188), (y + 0.008, 0.0152)], seg, uv)
-        base = bmesh.ops.create_cube(bm, size=1.0)["verts"]
-        bmesh.ops.scale(bm, vec=(0.022, 0.014, abs(rail) - 0.012), verts=base)
-        bmesh.ops.translate(bm, vec=(0.0, y, rail + (abs(rail) - 0.012) / 2), verts=base)
+        revolve(bm, [(y - 0.008, 0.0152), (y - 0.008, 0.0188), (y + 0.008, 0.0188), (y + 0.008, 0.0152)], seg, uv)
+        # The cap's split lugs and screws, either side.
+        for side in (-1.0, 1.0):
+            block((side * 0.0186 - 0.0022, y - 0.006, -0.0022), (side * 0.0186 + 0.0022, y + 0.006, 0.0022))
+            for dy in (-0.0032, 0.0032):
+                bolt((side * 0.0186, y + dy, 0.0031), "z", 0.0011, 0.0018)
+        # The base: from under the ring down to the rail.
+        top = -0.0175
+        foot = min(rail + 0.004, top - 0.002)
+        block((-0.011, y - 0.0075, foot), (0.011, y + 0.0075, top))
+        block((-0.0135, y - 0.009, rail), (0.0135, y + 0.009, foot + 0.001))
+        block((-0.0165, y - 0.0085, rail - 0.002), (-0.0128, y + 0.0085, foot))
+        bolt((0.0, y, rail + 0.0025), "x", 0.0018, 0.036)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
@@ -1404,7 +1427,7 @@ def paint_scope(obj, ring_ys: list, rail: float):
         radius = np.hypot(c.x, c.z)
         if c.y < -0.0035 or (0.0415 < c.y < 0.0615 and radius > 0.0199):
             values.append(ids["rubber"])
-        elif any(abs(c.y - y) < 0.0085 and (radius > 0.0153 or c.z < -0.0153) for y in ring_ys):
+        elif any(abs(c.y - y) < 0.0095 and (radius > 0.0153 or c.z < -0.0153) for y in ring_ys):
             values.append(ids["steel"])
         else:
             values.append(ids["aluminium"])
