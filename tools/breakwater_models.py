@@ -57,8 +57,6 @@ LOOKS: dict[str, dict] = {
     "clad_red": _t("corrugated", 2.4, (0.62, 0.22, 0.16), metal=0.5, grime=0.25),
     "roof_sheet": _t("corrugated", 2.0, (0.66, 0.67, 0.68), metal=0.6, grime=0.0),
     "plaster_white": _t("plaster", 3.0, (0.9, 0.9, 0.88), grime=0.1),
-    "floor_epoxy_grey": _t("concrete_smooth", 3.0, (0.55, 0.58, 0.6), rough=0.5, grime=0.0),
-    "floor_epoxy_green": _t("concrete_smooth", 3.0, (0.36, 0.5, 0.42), rough=0.5, grime=0.0),
     # Plant: tanks, pipes, steel.
     # Storage tanks: the painted_metal scan at a large scale with its relief
     # turned down, so it reads as painted plate, not concrete grain.
@@ -122,6 +120,10 @@ LOOKS: dict[str, dict] = {
     # Light fittings: powder-coated housings and opal diffusers, lit (their
     # light is baked: layout `light`).
     "fitting_white": _p((0.84, 0.85, 0.84), 0.45),
+    # Epoxy floors: a satin coat over the slab, so the slab's relief only just
+    # shows through (full relief at low roughness read as crumpled foil).
+    "floor_epoxy_grey": _t("concrete_smooth", 3.0, (0.6, 0.62, 0.62), rough=0.75, grime=0.0, normal=0.25),
+    "floor_epoxy_green": _t("concrete_smooth", 3.0, (0.38, 0.5, 0.43), rough=0.75, grime=0.0, normal=0.25),
     "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
     "rope_tan": _p((0.55, 0.45, 0.3), 0.9),
     "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
@@ -709,13 +711,13 @@ def additive_skid(b: Model, look="tank_white"):
         handwheel(b, (x, 0.75, 1.0), (0.0, 0.0, 1.0), 0.12)
     # The dosing pump and its motor, the control box.
     b.box(0.85, 1.4, 0.27, 0.62, 0.1, 0.8, "steel_blue", bevel=0.02)
-    b.cyl("z", 0.8, 1.15, (0.45, 1.12), 0.15, "steel_blue", sides=12)
+    b.cyl("z", 0.8, 1.15, (1.12, 0.45), 0.15, "steel_blue", sides=12)
     for k in range(6):
-        b.cyl("z", 0.84 + k * 0.05, 0.86 + k * 0.05, (0.45, 1.12), 0.165, "steel_blue", sides=12, detail=True)
+        b.cyl("z", 0.84 + k * 0.05, 0.86 + k * 0.05, (1.12, 0.45), 0.165, "steel_blue", sides=12, detail=True)
     b.box(-1.45, -1.05, 0.27, 1.7, 0.75, 1.2, "steel_grey", bevel=0.015)
     b.box(-1.4, -1.1, 0.4, 1.6, 1.2, 1.215, "steel_grey", detail=True)
     for k, lk in enumerate(("signal_walk", "led_amber", "signal_red")):
-        b.cyl("z", 1.215, 1.24, (1.4 - k * 0.12, -1.25), 0.025, lk, sides=6, detail=True)
+        b.cyl("z", 1.215, 1.24, (-1.25, 1.4 - k * 0.12), 0.025, lk, sides=6, detail=True)
 
 
 @model
@@ -729,10 +731,10 @@ def manifold(b: Model):
         flanged(b, (x, 0.0, -0.1), (x, 1.6, -0.1), 0.17, "pipe_grey", flanges=(0.3, 0.5, 0.92))
         disc(b, (x, 0.95, -0.1), (0.0, 1.0, 0.0), 0.26, 0.28, "valve_red", sides=12)
         b.box(x - 0.09, x + 0.09, 1.05, 1.25, -0.19, -0.01, "valve_red", bevel=0.02)
-        b.cyl("z", -0.1, 0.55, (1.15, x), 0.04, "steel_dark", sides=6, detail=True)
+        b.cyl("z", -0.1, 0.55, (x, 1.15), 0.04, "steel_dark", sides=6, detail=True)
         handwheel(b, (x, 1.15, 0.6), (0.0, 0.0, 1.0), 0.24)
         gauge(b, (x + 0.25, 1.4, 0.0), (0.0, 0.0, 1.0))
-        b.cyl("z", -0.1, 0.0, (1.4, x + 0.25), 0.015, "steel_dark", sides=4, detail=True)
+        b.cyl("z", -0.1, 0.0, (x + 0.25, 1.4), 0.015, "steel_dark", sides=4, detail=True)
     b.cyl("x", -1.6, 1.6, (1.75, -0.1), 0.2, "pipe_grey", sides=12)
     for x in (-1.6, 1.6):
         disc(b, (x, 1.75, -0.1), (1.0, 0.0, 0.0), 0.32, 0.06, "pipe_grey", sides=14)
@@ -1304,10 +1306,10 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
     # Mooring winches aft and on the forecastle; the windlass and foremast.
     for x, z in ((-hl + 22.0, -5.5), (-hl + 22.0, 5.5), (hl - 15.0, -4.5), (hl - 15.0, 4.5)):
         b.box(x - 0.9, x + 0.9, free, free + 0.5, z - 1.0, z + 1.0, "deck_green", bevel=0.04)
-        b.cyl("z", z - 0.8, z + 0.8, (free + 1.0, x), 0.55, "steel_grey", sides=12)
-        b.cyl("z", z - 0.3, z + 0.3, (free + 1.0, x), 0.6, "rope_tan", sides=12, detail=True)
+        b.cyl("z", z - 0.8, z + 0.8, (x, free + 1.0), 0.55, "steel_grey", sides=12)
+        b.cyl("z", z - 0.3, z + 0.3, (x, free + 1.0), 0.6, "rope_tan", sides=12, detail=True)
     for s in (-1, 1):
-        b.cyl("z", *sorted((s * 1.4, s * 2.8)), (free + 1.9, hl - 8.0), 0.5, "deck_green", sides=12)
+        b.cyl("z", *sorted((s * 1.4, s * 2.8)), (hl - 8.0, free + 1.9), 0.5, "deck_green", sides=12)
         b.box(hl - 9.0, hl - 7.0, free + 0.9, free + 1.5, *sorted((s * 1.2, s * 3.0)), "deck_green", bevel=0.04)
         b.tube([(hl - 7.6, free + 1.4, s * 2.1), (hl - 5.0, free + 0.9, s * 2.4), (hl - 6.0, free - 1.0, s * 6.8)],
                0.06, "steel_dark", sides=5, detail=True)

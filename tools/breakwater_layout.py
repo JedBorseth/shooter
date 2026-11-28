@@ -51,6 +51,8 @@ from slamcity_layout import (  # noqa: F401 (re-exported for the builders and ch
 
 PI = math.pi
 NAME = "breakwater"
+# Interior lamps: neutral-white fluorescent (about 4000 K).
+LAMP = (1.0, 0.95, 0.87)
 
 # --- Levels --------------------------------------------------------------------
 STREET = K.STREET  # yards, roads, the quay, the rack
@@ -671,9 +673,9 @@ def control_house(side: Side):
     for x in (x0 + 0.3, x1 - 0.3):
         downpipe(x, z1, 0.0, top, m, ground="road")
     # Inside, downstairs: the switch room (north) and the mess (south).
-    for x, z, tint in ((-27.0, -20.0, TUBE), (-27.0, -8.0, TUBE)):
+    for x, z, tint in ((-27.0, -20.0, LAMP), (-27.0, -8.0, LAMP)):
         place("batten", x, ceil, z, 0.0, m)
-        light(x, ceil - 0.3, z, 1.4, tint, 8.0, m)
+        light(x, ceil - 0.3, z, 3.6, tint, 10.0, m)
     place("switch_panel", -27.0, WALK, -26.3, 0.0, m, length=4.0, look="steel_grey")
     blocker(-29.0, -25.0, WALK, 2.35, -26.65, -26.0, m)
     place("switch_panel", -32.3, WALK, -20.0, PI / 2, m, length=3.0, look="steel_grey")
@@ -688,7 +690,7 @@ def control_house(side: Side):
     # Upstairs: the control room (Blue) or the test lab (Red), and the office.
     for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
         place("batten", x, 7.4, z, 0.0, m)
-        light(x, 7.1, z, 1.2, TUBE, 8.0, m)
+        light(x, 7.1, z, 3.2, LAMP, 10.0, m)
     if not m:
         place("console", -27.5, UPPER, -4.2, PI, m, length=6.0)
         place("console", -27.5, UPPER, -8.0, PI, m, length=4.0)
@@ -726,7 +728,7 @@ def meter_shed(side: Side):
     coping(x0, x1, z0, z1, 3.6, m, look="quay_edge")
     name_board(side.meter, x1 + 0.06, 3.0, -7.5, PI / 2, m, size=0.3)
     place("batten", -15.0, 3.2, -7.5, PI / 2, m)
-    light(-15.0, 2.9, -7.5, 1.2, TUBE, 6.0, m)
+    light(-15.0, 2.9, -7.5, 2.8, LAMP, 8.0, m)
     if not m:
         place("meter_skid", -15.0, WALK, -11.0, PI / 2, m, length=2.4)
     else:
@@ -765,13 +767,13 @@ def pump_house(side: Side):
     look = side.block
     for (x0, x1, z0, z1), doors in ((PUMP_W, {"W": [(-33.0, -31.0)], "S": [(-4.0, -2.0)]}),
                                     (PUMP_E, {"W": [(-31.0, -29.0)], "S": [(4.0, 6.0)], "E": [(-33.0, -31.0)]})):
-        shell(x0, x1, z0, z1, PUMP_TOP, look, m, doors=doors, door_h=2.8, inner="block_grey", inner_top=4.8)
+        shell(x0, x1, z0, z1, PUMP_TOP, look, m, doors=doors, door_h=2.8, inner="block_white", inner_top=4.8)
         floor(x0 + T, x1 - T, z0 + T, z1 - T, "slab_old", "concrete", m)
         roof(x0 + T, x1 - T, z0 + T, z1 - T, 4.8, m, look="soffit", top="roof_sheet")
         coping(x0, x1, z0, z1, PUMP_TOP, m, look="quay_edge")
         for x in (x0 + 2.0, x1 - 2.0):
             place("batten", x, 4.8, (z0 + z1) / 2, PI / 2, m)
-            light(x, 4.5, (z0 + z1) / 2, 1.4, TUBE, 8.0, m)
+            light(x, 4.5, (z0 + z1) / 2, 3.6, LAMP, 10.0, m)
     # Louvres high on the walls.
     for x in (-4.0, 0.0, 4.0, 7.0):
         zf = -27.0 if x < 1.5 else -22.0
@@ -838,7 +840,7 @@ def workshop(side: Side):
     shell(x0, x1, z0, z1, top, side.clad, m,
           doors={"N": [(-27.0, -25.4)], "W": [(9.0, 10.6)], "S": [(-24.0, -22.4)], "E": [(11.0, 12.6)]},
           windows={"N": [(-30.5, -28.0, 0.9, 2.4)], "W": [(16.0, 19.0, 1.2, 2.4)]},
-          inner="block_grey", inner_top=4.0, door_h=2.8)
+          inner="block_white", inner_top=4.0, door_h=2.8)
     floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
     roof(x0 + T, x1 - T, z0 + T, z1 - T, ROOF_DECK - 0.25, m, look="soffit", holes=(hatch,), top="roof_pavers")
     coping(x0, x1, z0, z1, top, m, look="quay_edge")
@@ -877,7 +879,7 @@ def workshop(side: Side):
     blocker(-32.65, -32.2, WALK, 2.2, 12.8, 15.2, m, "wood")
     for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
         place("batten", x, ROOF_DECK - 0.25, z, 0.0, m)
-        light(x, ROOF_DECK - 0.55, z, 1.4, TUBE, 8.0, m)
+        light(x, ROOF_DECK - 0.55, z, 3.6, LAMP, 10.0, m)
     extinguisher(-21.6, 8.0, -PI / 2, m)
 
 
@@ -886,7 +888,7 @@ def drum_store(side: Side):
     m = side.m
     x0, x1, z0, z1 = DRUMS
     shell(x0, x1, z0, z1, 3.8, "block_grey", m, doors={"N": [(-17.0, -15.4)], "S": [(-18.0, -16.4)]},
-          inner="block_grey", inner_top=3.4)
+          inner="block_white", inner_top=3.4)
     floor(x0 + T, x1 - T, z0 + T, z1 - T, "slab_old", "concrete", m)
     roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.4, m, look="soffit", top="roof_sheet")
     coping(x0, x1, z0, z1, 3.8, m, look="quay_edge")
@@ -896,14 +898,14 @@ def drum_store(side: Side):
     drums(-14.6, 11.2, PI / 2, 3, m, WALK)
     blocker(-15.4, -13.8, WALK, 1.1, 10.1, 12.3, m)
     place("batten", -17.0, 3.4, 10.0, 0.0, m)
-    light(-17.0, 3.1, 10.0, 1.2, TUBE, 6.0, m)
+    light(-17.0, 3.1, 10.0, 3.0, LAMP, 8.0, m)
 
 
 def pump_shed(side: Side):
     m = side.m
     x0, x1, z0, z1 = PUMP_SHED
     shell(x0, x1, z0, z1, 4.2, side.clad, m, doors={"E": [(16.0, 17.6)], "S": [(-12.0, -10.4)]},
-          inner="block_grey", inner_top=3.8, door_h=2.6)
+          inner="block_white", inner_top=3.8, door_h=2.6)
     floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
     roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.8, m, look="soffit", top="roof_sheet")
     coping(x0, x1, z0, z1, 4.2, m, look="quay_edge")
@@ -917,7 +919,7 @@ def pump_shed(side: Side):
     place("switch_panel", -20.6, WALK, 19.0, PI / 2, m, length=2.0)
     blocker(-20.65, -20.0, WALK, 2.35, 18.0, 20.0, m)
     place("batten", -15.0, 3.8, 17.5, PI / 2, m)
-    light(-15.0, 3.5, 17.5, 1.2, TUBE, 6.0, m)
+    light(-15.0, 3.5, 17.5, 3.0, LAMP, 8.0, m)
     # The plinth wall between the rack and the shed's corner.
     solid(-13.0, -9.0, STREET, 1.0, 13.0, 14.0, "quay_edge", "concrete", m=m, bevel=0.03)
 
