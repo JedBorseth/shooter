@@ -27,6 +27,8 @@ var _flash := 0.0
 ## Where in its beat the heart is, in beats.
 var _beat := 0.0
 var _alive := true
+## How far the dead vignette has cleared for watching a teammate (0 to 1).
+var _watch := 0.0
 ## Each entry: {"from": Vector3, "left": float}.
 var _indicators: Array[Dictionary] = []
 
@@ -49,8 +51,12 @@ func _process(delta: float) -> void:
 	if player != null:
 		health_ratio = player.health() / player.max_health()
 	var alive: bool = player == null or player.is_alive()
-	# Dead: the edges hold at their deepest, with no heartbeat.
-	var intensity := vignette_at(health_ratio, _beat if alive else 0.5)
+	# Dead: the edges hold at their deepest, with no heartbeat; watching a
+	# teammate after (Search and Destroy), they clear over 0.3 s, so their
+	# fight shows clean, as Black Ops 3's spectating does.
+	var watching := not alive and _watching()
+	_watch = move_toward(_watch, 1.0 if watching else 0.0, delta / 0.3)
+	var intensity := vignette_at(health_ratio, _beat if alive else 0.5) * (1.0 - _watch)
 	var hit := _flash * _flash
 	var material := _vignette.material as ShaderMaterial
 	material.set_shader_parameter("intensity", intensity)
@@ -65,6 +71,12 @@ func _process(delta: float) -> void:
 	# A full-screen blend costs about 0.13 ms even when it changes nothing.
 	_vignette.visible = intensity > 0.002 or hit > 0.002
 	queue_redraw()
+
+
+## Whether the dead player watches through a camera other than their own.
+func _watching() -> bool:
+	var camera := get_viewport().get_camera_3d()
+	return camera != null and player != null and camera != player.get_node_or_null(^"Camera")
 
 
 ## The vignette's strength at a health fraction, `beat` (0 to 1) into a
