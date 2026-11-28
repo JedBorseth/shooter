@@ -10,6 +10,9 @@ extends EditorScenePostImport
 ## big for lightmap texels: they take the probes' light and cast no shadow.
 
 const DETAIL_RANGE := 45.0
+## Beyond the boundary, `far_*_detail` (rails, marks, small fittings on the
+## ship and the far plant) draws this far.
+const FAR_DETAIL_RANGE := 90.0
 
 
 func _post_import(scene: Node) -> Object:
@@ -30,6 +33,9 @@ func _post_import(scene: Node) -> Object:
 		if chunk.begins_with("far"):
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
+			if chunk.ends_with("_detail"):
+				instance.visibility_range_end = FAR_DETAIL_RANGE
+				instance.visibility_range_end_margin = 10.0
 		elif chunk.ends_with("_shadow"):
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DISABLED

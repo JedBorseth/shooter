@@ -60,7 +60,10 @@ def chunk_of(centre, part) -> str:
         # behind and beside the camera: one far mesh was drawn whole (400k
         # triangles) whenever any of it was in view.
         x, _, z = centre
-        return "far_" + ("n" if z < 0.0 else "s") + ("w" if x < 0.0 else "e")
+        far = "far_" + ("n" if z < 0.0 else "s") + ("w" if x < 0.0 else "e")
+        # Fine detail out there (rails, stanchions, marks, fittings) stops
+        # drawing at a distance (godot/tools/breakwater_import.gd).
+        return far + "_detail" if part.get("detail") else far
     if part.get("stain"):
         return chunk + "_stain"
     return chunk
