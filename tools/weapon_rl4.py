@@ -8,10 +8,10 @@ family, of its own design:
 
 - a 40 mm steel tube, 1.05 m long, flaring at the back into a venturi that
   stands out behind the shoulder;
-- two olive glass-fibre heat guards round the middle, where the hands and
-  the cheek go;
-- a pistol grip with its trigger and guard under the rear guard; the
-  support hand holds the front guard from below;
+- two lacquered walnut heat guards round the middle, where the hands and
+  the cheek go, each held by bolts through its bands;
+- a rounded pistol grip with finger swells, its trigger and guard under
+  the rear guard; the support hand holds the front guard from below;
 - a flip-up aperture rear sight and a post front sight on the tube's top,
   their line 70 mm over the bore (clear of the heat guard under the eye);
 - the rocket (`Magazine`): an 85 mm warhead with a nose probe ahead of the
@@ -67,20 +67,31 @@ def tube() -> list:
         (MUZZLE_Y - 0.01, TUBE_R + 0.003), (MUZZLE_Y, TUBE_R + 0.003), (MUZZLE_Y, TUBE_INNER),
         (REAR_Y + 0.01, TUBE_INNER), (REAR_Y - 0.05, 0.029), (REAR_Y - 0.13, 0.044),
     ]
-    body = lathe("Tube", outline, 48, "Y")
+    body = lathe("Tube", outline, 72, "Y")
     group(body, "steel")
     parts = [body]
     # Bands at either end of each guard.
     for y0, y1 in GUARDS:
         for y in (y0 - 0.006, y1):
             band = lathe(f"Band{y}", [(y, 0.0), (y, GUARD_R + 0.002), (y + 0.006, GUARD_R + 0.002),
-                                      (y + 0.006, 0.0)], 40, "Y")
+                                      (y + 0.006, 0.0)], 64, "Y")
+            bevel(band, 0.0006, 1)
             group(band, "steel")
             parts.append(band)
+            # Two bolt heads through each band, either side.
+            for side in (-1.0, 1.0):
+                bolt = lathe(f"Bolt{y}{side}", [(0.0, 0.0), (0.0, 0.0032), (0.0016, 0.0032), (0.0024, 0.0024),
+                                                (0.0024, 0.0)], 12, "X", (side * (GUARD_R + 0.0015), y + 0.003, 0.0))
+                if side < 0:
+                    bolt.data.transform(Matrix.Translation((side * (GUARD_R + 0.0015), y + 0.003, 0.0))
+                                        @ Matrix.Rotation(np.pi, 4, "Z")
+                                        @ Matrix.Translation((-side * (GUARD_R + 0.0015), -(y + 0.003), 0.0)))
+                group(bolt, "bolt")
+                parts.append(bolt)
         guard = lathe(f"Guard{y0}", [(y0, TUBE_R), (y0, GUARD_R - 0.003), (y0 + 0.01, GUARD_R),
-                                     (y1 - 0.01, GUARD_R), (y1, GUARD_R - 0.003), (y1, TUBE_R)], 40, "Y")
+                                     (y1 - 0.01, GUARD_R), (y1, GUARD_R - 0.003), (y1, TUBE_R)], 64, "Y")
         bevel(guard, 0.0015, 2)
-        group(guard, "fibreglass")
+        group(guard, "walnut")
         parts.append(guard)
     return parts
 
@@ -111,11 +122,19 @@ def sights() -> list:
 
 def grips() -> tuple[list, object]:
     """The pistol grip with its guard and trigger."""
-    grip = side_profile("Grip", [
-        (GRIP_Y + 0.012, -TUBE_R + 0.002), (GRIP_Y - 0.018, -TUBE_R + 0.002), (GRIP_Y - 0.038, -0.125),
-        (GRIP_Y - 0.030, -0.135), (GRIP_Y + 0.002, -0.133), (GRIP_Y + 0.008, -0.122),
-    ], -0.0145, 0.0145)
-    bevel(grip, 0.004, 3)
+    # The grip's outline with rounded corners and three finger swells down
+    # its front.
+    from weapon_m870 import rounded
+    front = [(GRIP_Y + 0.008 - 0.004 * k, -0.06 - 0.02 * k, 0.008) for k in range(4)]
+    swells = []
+    for (y0, z0, r0), (y1, z1, r1) in zip(front, front[1:]):
+        swells += [(y0, z0, r0), ((y0 + y1) / 2 + 0.003, (z0 + z1) / 2, 0.006)]
+    grip = side_profile("Grip", rounded([
+        (GRIP_Y + 0.012, -TUBE_R + 0.002, 0.0), (GRIP_Y - 0.018, -TUBE_R + 0.002, 0.004),
+        (GRIP_Y - 0.038, -0.125, 0.008), (GRIP_Y - 0.030, -0.135, 0.008), (GRIP_Y + 0.002, -0.133, 0.008),
+        (GRIP_Y + 0.008, -0.122, 0.006), *reversed(swells),
+    ], 0.0, steps=6), -0.0145, 0.0145)
+    bevel(grip, 0.005, 4)
     group(grip, "polymer")
     guard = side_profile("TriggerGuard", [
         (GRIP_Y + 0.010, -0.040), (GRIP_Y + 0.080, -0.040), (GRIP_Y + 0.080, -0.048),
@@ -149,7 +168,7 @@ def rocket(name: str) -> object:
         (w0 - 0.04, 0.0), (w0 - 0.04, TUBE_INNER - 0.001), (w0, TUBE_INNER - 0.001),
         (w0 + 0.005, 0.03), (w0 + 0.03, WARHEAD_R), (w0 + 0.12, WARHEAD_R),
         (w0 + 0.20, 0.030), (w0 + 0.25, 0.0125), (w0 + 0.255, 0.0),
-    ], 40, "Y")
+    ], 64, "Y")
     bevel(head, 0.001, 1)
     group(head, "warhead")
     probe = lathe(f"{name}Probe", [
@@ -218,9 +237,19 @@ FINISH = {
     "scratch_depth": 0.15,
     "zones": [
         {"zone": z, "parts": [z]}
-        for z in ("steel", "polymer", "fibreglass", "sight", "warhead")
+        for z in ("steel", "polymer", "fibreglass", "sight", "warhead", "walnut", "bolt")
     ],
     "markings": [
         {"text": "RL-4  40 MM", "at": (0.43, 0.0), "size": 0.0062},
+    ],
+    # The guards' grain runs straight along the tube (no stock to follow).
+    "wood_stock_y": -10.0,
+    # The warhead's stencil, yellow on olive, on its top and left (view
+    # space: the bore is 70 mm under the eye, the warhead's middle 0.7 m
+    # ahead of it).
+    "stencils": [
+        {"text": "HE  85 MM\nLOT 11-27", "around": "y", "axis": (0.0, -SIGHT_Z), "angle": a,
+         "z": WARHEAD_BACK + 0.075 - EYE[0], "size": 0.0085, "color": (0.72, 0.6, 0.16), "zones": ["warhead"]}
+        for a in (100.0, 190.0)
     ],
 }

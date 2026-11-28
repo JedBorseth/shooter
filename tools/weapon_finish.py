@@ -581,7 +581,7 @@ def _emit(n: Nodes, rgb):
     n.link(emission.outputs[0], n.out.inputs["Surface"])
 
 
-def _normal_material(n: Nodes, scratch_depth: float):
+def _normal_material(n: Nodes, scratch_depth: float, stock_y: float = -0.07):
     """Rounded edges plus each zone's surface texture as bumps."""
     bevel = n.new("ShaderNodeBevel", Radius=BEVEL_RADIUS)
     bevel.samples = 16
@@ -597,7 +597,7 @@ def _normal_material(n: Nodes, scratch_depth: float):
     # Scratches cut into every coated metal surface a little.
     # Walnut: its pores open along the grain's dark lines.
     walnut = _zone_is(n, FINISHES["walnut"]["id"])
-    pores = n.math("MULTIPLY", _wood_bands(n), n.math("MULTIPLY", walnut, -FINISHES["walnut"]["bump"] / 0.0001))
+    pores = n.math("MULTIPLY", _wood_bands(n, stock_y), n.math("MULTIPLY", walnut, -FINISHES["walnut"]["bump"] / 0.0001))
     height = n.math("ADD", height, pores)
     # (Not into moulded polymer or leather.)
     soft = n.math("ADD", _zone_is(n, FINISHES["polymer"]["id"]), _zone_is(n, FINISHES["leather"]["id"]))
@@ -633,7 +633,8 @@ def _noise_material(n: Nodes):
 
 
 # Walnut grain runs along the blank. The forend lies along the gun (+Y); a
-# stock, behind `WOOD_STOCK_Y` in view space, slopes down to its butt, so
+# stock, behind `WOOD_STOCK_Y` in view space (a finish's `wood_stock_y`;
+# far behind the gun for one with no stock), slopes down to its butt, so
 # its grain is turned by `WOOD_STOCK_PITCH` (radians about X) to follow it;
 # grain crossing a face at a steep angle read as tiger stripes.
 WOOD_STOCK_Y = -0.07
@@ -652,22 +653,22 @@ def _wood_wave(n: Nodes, pitch: float):
     return wave.outputs["Fac"]
 
 
-def _wood_bands(n: Nodes):
+def _wood_bands(n: Nodes, stock_y: float = -0.07):
     """Walnut's grain: bands a few millimetres apart along the blank,
     gently warped."""
     geo = n.new("ShaderNodeNewGeometry")
     y = n.new("ShaderNodeSeparateXYZ", Vector=geo.outputs["Position"]).outputs["Y"]
-    stock = n.math("LESS_THAN", y, WOOD_STOCK_Y)
+    stock = n.math("LESS_THAN", y, stock_y)
     forend = _wood_wave(n, 0.0)
     butt = _wood_wave(n, WOOD_STOCK_PITCH)
     return n.math("ADD", n.math("MULTIPLY", forend, n.math("SUBTRACT", 1.0, stock)), n.math("MULTIPLY", butt, stock))
 
 
-def _wood_material(n: Nodes):
+def _wood_material(n: Nodes, stock_y: float = -0.07):
     """R: the grain (`_wood_bands`), G: the figure, slow light and dark
     across the blank."""
     figure = _noise(n, (35.0, 9.0, 35.0), detail=3.0, roughness=0.55, w=9.1)
-    _emit(n, (_wood_bands(n), figure, 0.0))
+    _emit(n, (_wood_bands(n, stock_y), figure, 0.0))
 
 
 def _new_image(name: str, size: int, fill=(0.0, 0.0, 0.0, 1.0)):
@@ -816,13 +817,23 @@ def _stencils(finish: dict, position: np.ndarray, covered: np.ndarray, zones: np
     for mark in marks:
         allowed = np.isin(zones, [FINISHES[z]["id"] for z in mark["zones"]])
         cx, cy = mark.get("axis", (0.0, 0.0))
-        dx, dy = position[..., 0] - cx, position[..., 1] - cy
-        radius = np.hypot(dx, dy)
-        turn = np.angle(np.exp(1j * (np.arctan2(dy, dx) - np.radians(mark["angle"]))))
-        # Distance round the surface; seen from outside, with +Z up, the
-        # angle grows to the right, so letters read along it.
-        arc = turn * radius
-        height = position[..., 2] - mark["z"]
+        if mark.get("around", "z") == "y":
+            # Round a body lying along +Y (a rocket): `axis` is its (x, z),
+            # the angle runs from +X toward +Z, `z` is where along Y the
+            # text's middle sits, and the text runs along the body.
+            dx, dy = position[..., 0] - cx, position[..., 2] - cy
+            radius = np.hypot(dx, dy)
+            turn = np.angle(np.exp(1j * (np.arctan2(dy, dx) - np.radians(mark["angle"]))))
+            arc = position[..., 1] - mark["z"]
+            height = turn * radius
+        else:
+            dx, dy = position[..., 0] - cx, position[..., 1] - cy
+            radius = np.hypot(dx, dy)
+            turn = np.angle(np.exp(1j * (np.arctan2(dy, dx) - np.radians(mark["angle"]))))
+            # Distance round the surface; seen from outside, with +Z up,
+            # the angle grows to the right, so letters read along it.
+            arc = turn * radius
+            height = position[..., 2] - mark["z"]
         reach = mark["size"] * (1.5 + 0.4 * max(len(line) for line in mark["text"].splitlines()))
         near = covered & allowed & (np.abs(arc) < reach) & (np.abs(height) < reach) & (radius > 0.002)
         curve = bpy.data.curves.new("Stencil", "FONT")
@@ -982,13 +993,13 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     wood = None
     if any(f.get("wood") and (zones == f["id"]).any() for f in FINISHES.values()):
         n = Nodes(material)
-        _wood_material(n)
+        _wood_material(n, finish.get("wood_stock_y", WOOD_STOCK_Y))
         wood = _bake(targets, material, _new_image("Wood", size), "EMIT", 1)[..., :2]
     n = Nodes(material)
     n.link(n.new("ShaderNodeBsdfPrincipled").outputs[0], n.out.inputs["Surface"])
     ao = _bake(targets, material, _new_image("AO", size, (1, 1, 1, 1)), "AO", 64)
     n = Nodes(material)
-    _normal_material(n, finish.get("scratch_depth", SCRATCH_DEPTH))
+    _normal_material(n, finish.get("scratch_depth", SCRATCH_DEPTH), finish.get("wood_stock_y", WOOD_STOCK_Y))
     normal = _bake(targets, material, _new_image("Normal", size, (0.5, 0.5, 1, 1)), "NORMAL", 16,
                    normal_space="TANGENT")
     # `seam_fix: "edges"` (hard-edged guns, whose seams are mostly real
