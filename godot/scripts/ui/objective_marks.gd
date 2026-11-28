@@ -54,6 +54,9 @@ const TOP_HALF_W := 290.0
 ## How far down the top centre is taken this frame (screen pixels; 0 when
 ## nothing shows there). Set by `draw_world` for the pushes it makes.
 static var _top_taken := 0.0
+## Boxes of the centre pieces up this frame that markers keep off too: the
+## points popup and the READY plate (screen pixels).
+static var _boxes: Array[Rect2] = []
 
 
 ## Draws a mode's markers. Each entry holds "world" (Vector3, the point the
@@ -91,13 +94,18 @@ static func draw_world(
 		var fade := lerpf(0.35, 1.0, near)
 		if popup.has_point(point):
 			fade = minf(fade, 0.5)
+		# Under a centre piece that is up (the points, the READY plate), an
+		# on-screen marker stays where its spot is but steps right back.
+		for box in _boxes:
+			if box.grow(RADIUS * ui).has_point(point):
+				fade = minf(fade, 0.25)
 		entry.alpha = float(entry.get("alpha", 1.0)) * fade
 		entry.quiet = fade < 0.9
 	_spread(placed, PITCH * ui)
 	for entry: Dictionary in placed:
 		if entry.edge:
 			# Spreading can slide a held marker back onto a cluster.
-			entry.point = _keep_clear(entry.point, screen, dead)
+			entry.point = _keep_clear(entry.point, screen, dead, true)
 	# Words: none on held markers; a farther marker drops its words when they
 	# would cross a nearer marker or its words.
 	var taken: Array[Rect2] = []
@@ -146,7 +154,9 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := fal
 			return {"point": point, "edge": false, "out": Vector2.ZERO}
 		return {"point": pushed, "edge": true, "out": (point - pushed).normalized()}
 	var held := centre + offset / maxf(reach, 0.001)
-	return {"point": _keep_clear(held, screen, dead), "edge": true, "out": offset.normalized()}
+	return {
+		"point": _keep_clear(held, screen, dead, true), "edge": true, "out": offset.normalized()
+	}
 
 
 ## How far out `offset` is on the hold path (1 on it): a squared-off ellipse
@@ -372,8 +382,8 @@ static func _slide(a: Vector2, b: Vector2, away: Vector2, pitch: float) -> Vecto
 
 ## Moves a point off the HUD's corner clusters, to the nearest edge of the
 ## cluster it sits on that faces the screen's middle.
-static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vector2:
-	var rects := _clear_rects(screen, dead)
+static func _keep_clear(point: Vector2, screen: Vector2, dead := false, held := false) -> Vector2:
+	var rects := _clear_rects(screen, dead, held)
 	var inside := rects.filter(func(r: Rect2) -> bool: return r.has_point(point))
 	if inside.is_empty():
 		return point
@@ -406,7 +416,7 @@ static func _keep_clear(point: Vector2, screen: Vector2, dead := false) -> Vecto
 
 
 ## The HUD's clusters on this screen, grown by a marker's half size.
-static func _clear_rects(screen: Vector2, dead: bool) -> Array[Rect2]:
+static func _clear_rects(screen: Vector2, dead: bool, held: bool) -> Array[Rect2]:
 	var ui := screen.y / 900.0
 	var boxes := KEEP_CLEAR.duplicate()
 	if dead:
@@ -422,17 +432,28 @@ static func _clear_rects(screen: Vector2, dead: bool) -> Array[Rect2]:
 		elif box.get_center().x > 700.0:
 			rect.position.x = screen.x / 2.0 + (box.position.x - 800.0) * ui
 		rects.append(rect.grow(RADIUS * ui + 4.0 * ui))
+	# Held markers keep off the centre pieces up too; on-screen ones fade
+	# under them instead (`draw_world`).
+	if held:
+		for box in _boxes:
+			rects.append(box.grow(RADIUS * ui + 4.0 * ui))
 	return rects
 
 
 ## How far down the top centre is taken (screen pixels): the match banners'
-## plates, the killcam's title, and the medals.
+## plates, the killcam's title, and the medals. Also gathers the centre
+## pieces' boxes (`popup_box`).
 static func _top_band(item: CanvasItem, ui: float) -> float:
 	var tree := item.get_tree()
 	if tree == null:
 		return 0.0
 	var bottom := 0.0
+	_boxes.clear()
 	for node in tree.get_nodes_in_group(&"top_centre"):
+		if node.has_method("popup_box") and (node as CanvasItem).is_visible_in_tree():
+			var box: Rect2 = node.call("popup_box")
+			if box.has_area():
+				_boxes.append(box)
 		if node.has_method("top_taken") and (node as CanvasItem).is_visible_in_tree():
 			bottom = maxf(bottom, float(node.call("top_taken")))
 	var net := tree.root.get_node_or_null("Net")
