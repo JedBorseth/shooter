@@ -26,19 +26,36 @@ func _run() -> void:
 		"the title screen shows the build, got %s" % build_label
 	)
 	var menu := title.get_node("Margin/Layout/Menu")
-	var routes := menu.get_children().filter(func(node: Node) -> bool: return node is Button)
+	var shown := func() -> Array:
+		return menu.get_children().filter(
+			func(node: Node) -> bool: return node is Button and node.visible
+		)
+	_check(
+		(
+			(shown.call() as Array).map(func(b: Button) -> String: return b.name)
+			== ["LocalMatch", "JoinServer", "TestingArea", "FreeRoam", "Options", "Quit"]
+		),
+		"the Multiplayer page lists Local Match, Join Server, practice, Options, and Quit"
+	)
+	_check(
+		(title.get_node("%Quit") as Control).get_global_rect().end.y <= 900.0,
+		"every menu button fits on a 900 px screen"
+	)
 	var testing := menu.get_node("TestingArea") as Button
 	_check(not testing.disabled, "Testing Area is enabled")
 	_check(
-		(menu.get_node("TeamDeathmatch") as Button).has_focus(),
-		"Team Deathmatch has keyboard focus at launch"
+		(menu.get_node("LocalMatch") as Button).has_focus(),
+		"Local Match has keyboard focus at launch"
 	)
 	_check(
 		String(title.get_node("Margin/Layout/MapCard").get("_header")).ends_with("TEAMS"),
-		"the map card names the focused route's kind"
+		"the map card names the lobby mode's kind"
 	)
 	_check(
-		title.get_node("Margin/Layout/Status").text == "Two teams race to the kill limit.",
+		(
+			title.get_node("Margin/Layout/Status").text
+			== "Play any mode against bots on this machine."
+		),
 		"the status describes the focused route"
 	)
 	var free_roam := menu.get_node("FreeRoam") as Button
@@ -67,14 +84,58 @@ func _run() -> void:
 		await process_frame
 		_check(options_button.has_focus(), "Back returns focus to Options")
 		_check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "Back keeps the menu cursor free")
+	# Local Match opens the lobby: Start Game, Game Mode, Setup Game.
+	(menu.get_node("LocalMatch") as Button).pressed.emit()
+	await process_frame
+	_check(
+		(
+			(shown.call() as Array).map(func(b: Button) -> String: return b.name)
+			== ["StartGame", "GameMode", "SetupGame"]
+		),
+		"Local Match opens the lobby"
+	)
+	_check((menu.get_node("StartGame") as Button).has_focus(), "the lobby focuses Start Game")
+	_check(title.get_node("Frame").get("title") == "Local Match", "the header names the lobby")
+	_check(
+		title.get_node("Margin/Layout/Footer/BackPrompt").visible, "the lobby's footer offers Back"
+	)
+	_check(
+		title.get_node("Margin/Layout/Status").text == "6v6  ·  75 Kills  ·  10 Minutes",
+		"Start Game describes the lobby's match"
+	)
+	(menu.get_node("GameMode") as Button).pressed.emit()
+	await process_frame
+	var routes: Array = shown.call()
+	_check(routes.size() == 7, "Game Mode lists the seven modes")
 	var tdm := menu.get_node("TeamDeathmatch") as Button
 	_check(routes[0] == tdm and not tdm.disabled, "Team Deathmatch is the first route")
-	tdm.pressed.emit()
+	_check(tdm.has_focus(), "the mode list focuses the lobby's mode")
+	_check(tdm.theme_type_variation == &"FrontMenuItemCurrent", "the lobby's mode wears the plate")
+	_cancel()
 	await process_frame
-	var setup := title.get_node_or_null("TdmSetup")
+	_check(
+		(menu.get_node("GameMode") as Button).has_focus(),
+		"Back leaves the mode list for the lobby, on Game Mode"
+	)
+	_cancel()
+	await process_frame
+	_check(
+		(menu.get_node("LocalMatch") as Button).has_focus(),
+		"Back leaves the lobby for the Multiplayer page, on Local Match"
+	)
+	_cancel()
+	await process_frame
+	_check(
+		(menu.get_node("LocalMatch") as Button).has_focus(), "Back on the Multiplayer page stays"
+	)
+	var setup_game := menu.get_node("SetupGame") as Button
+	var setup := await _setup_for(menu, tdm)
 	_check(setup != null, "Team Deathmatch opens its setup")
 	_check(title.get_node("Margin").visible, "the setup is a card beside the menu")
-	_check(tdm.theme_type_variation == &"FrontMenuItemCurrent", "the open mode's route turns green")
+	_check(
+		setup_game.theme_type_variation == &"FrontMenuItemCurrent",
+		"Setup Game wears the plate while its panel is open"
+	)
 	if setup != null:
 		var options: Dictionary = setup.options()
 		_check(
@@ -111,29 +172,60 @@ func _run() -> void:
 		)
 		maps.call("select", 1)
 		_check(setup.options()["map"] == "arena", "select() chooses a map like an OptionButton")
+		(setup.find_child("KillLimit", true, false) as Control).call("choose", 3)
 		setup.back_requested.emit()
 		await process_frame
 		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")
-		_check(tdm.theme_type_variation == &"FrontMenuItem", "closing the setup clears the route")
-	tdm.pressed.emit()
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
+		_check(
+			setup_game.theme_type_variation == &"FrontMenuItem",
+			"closing the setup clears the plate"
+		)
+		var start := menu.get_node("StartGame") as Button
+		start.grab_focus()
+		await process_frame
+		_check(
+			title.get_node("Margin/Layout/Status").text == "6v6  ·  100 Kills  ·  10 Minutes",
+			"the lobby keeps the rules chosen in its setup"
+		)
+		_check(
+			(
+				String(title.get_node("Margin/Layout/MapCard").get("_title")) == "Testing Area"
+				and (
+					String(title.get_node("Margin/Layout/MapCard").get("_subtitle"))
+					== "Team Deathmatch"
+				)
+			),
+			"the lobby's card shows the chosen map and mode"
+		)
+		setup_game.pressed.emit()
+		await process_frame
+		setup = title.get_node_or_null("TdmSetup")
+		var limit := setup.find_child("KillLimit", true, false)
+		_check(
+			limit.get("selected") == 3 and limit.get("default_index") == 2,
+			"reopened, the setup keeps the choice and its starred default"
+		)
+		limit.call("choose", 2)
+		(setup.get("_map") as Control).call("choose", 0)
+		setup.back_requested.emit()
+		await process_frame
+	setup_game.pressed.emit()
 	await process_frame
-	(menu.get_node("CaptureTheFlag") as Button).pressed.emit()
+	title.call("_open_setup", "ctf")
 	await process_frame
 	var cards := title.get_children().filter(
 		func(node: Node) -> bool: return node.name == "TdmSetup"
 	)
 	_check(
 		cards.size() == 1 and cards[0].get("mode") == "ctf",
-		"choosing another mode replaces the open card"
+		"opening another mode's setup replaces the open card"
 	)
-	_check(tdm.theme_type_variation == &"FrontMenuItem", "only the open mode's route is green")
 	cards[0].back_requested.emit()
 	await process_frame
 	var gun_game := menu.get_node("GunGame") as Button
 	_check(routes[1] == gun_game and not gun_game.disabled, "Gun Game is the second route")
-	gun_game.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, gun_game)
 	_check(setup != null, "Gun Game opens its setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -153,12 +245,10 @@ func _run() -> void:
 		)
 		setup.back_requested.emit()
 		await process_frame
-		_check(gun_game.has_focus(), "Back returns focus to Gun Game")
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
 	var ffa := menu.get_node("FreeForAll") as Button
 	_check(routes[2] == ffa and not ffa.disabled, "Free-for-all is the third route")
-	ffa.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, ffa)
 	_check(setup != null, "Free-for-all opens its setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -180,9 +270,7 @@ func _run() -> void:
 		await process_frame
 	var ctf := menu.get_node("CaptureTheFlag") as Button
 	_check(routes[3] == ctf and not ctf.disabled, "Capture the Flag is the fourth route")
-	ctf.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, ctf)
 	_check(setup != null, "Capture the Flag opens its setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -204,12 +292,10 @@ func _run() -> void:
 		)
 		setup.back_requested.emit()
 		await process_frame
-		_check(ctf.has_focus(), "Back returns focus to Capture the Flag")
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
 	var hardpoint := menu.get_node("Hardpoint") as Button
 	_check(routes[4] == hardpoint, "Hardpoint is the fifth route")
-	hardpoint.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, hardpoint)
 	_check(setup != null, "Hardpoint opens the setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -219,12 +305,10 @@ func _run() -> void:
 		)
 		setup.back_requested.emit()
 		await process_frame
-		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
 	var dom := menu.get_node("Domination") as Button
 	_check(routes[5] == dom and not dom.disabled, "Domination is the sixth route")
-	dom.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, dom)
 	_check(setup != null, "Domination opens the setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -246,12 +330,10 @@ func _run() -> void:
 		)
 		setup.back_requested.emit()
 		await process_frame
-		_check(dom.has_focus(), "closing the setup focuses Domination again")
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
 	var snd := menu.get_node("SearchAndDestroy") as Button
 	_check(routes[6] == snd and not snd.disabled, "Search and Destroy is the seventh route")
-	snd.pressed.emit()
-	await process_frame
-	setup = title.get_node_or_null("TdmSetup")
+	setup = await _setup_for(menu, snd)
 	_check(setup != null, "Search and Destroy opens its setup")
 	if setup != null:
 		var options: Dictionary = setup.options()
@@ -277,12 +359,7 @@ func _run() -> void:
 		)
 		setup.back_requested.emit()
 		await process_frame
-		_check(snd.has_focus(), "Back returns focus to Search and Destroy")
-	var last := menu.get_child(menu.get_child_count() - 1) as Control
-	_check(
-		last.get_global_rect().end.y <= title.get_viewport_rect().size.y,
-		"every menu button fits on a 900 px screen"
-	)
+		_check(setup_game.has_focus(), "Back returns focus to Setup Game")
 	for i in 5:
 		await process_frame
 	for path: String in [
@@ -321,7 +398,55 @@ func _run() -> void:
 	_check(entered_arena, "Testing Area transitions into the existing arena")
 	if entered_arena:
 		_check(current_scene.get_node_or_null("Player") != null, "arena contains the player")
+	# Leaving a local match returns to the lobby, with its mode and rules.
+	var net := root.get_node("Net")
+	net.set("lobby", {"mode": "dom", "picks": {"dom": {"score": 0}}})
+	net.set("return_to_lobby", true)
+	change_scene_to_file("res://scenes/title_screen.tscn")
+	await process_frame
+	await process_frame
+	var back := current_scene
+	_check(
+		(back.get_node("Margin/Layout/Menu/StartGame") as Button).has_focus(),
+		"a local match's end returns to the lobby on Start Game"
+	)
+	_check(not net.get("return_to_lobby"), "the title screen clears the return flag")
+	_check(
+		(
+			(back.get_node("Margin/Layout/Status") as Label).text
+			== "6v6  ·  100 Points  ·  10 Minutes"
+		),
+		"the lobby keeps its mode and rules through a match"
+	)
 	_finish()
+
+
+## Opens `mode_button`'s setup the way a player does: Local Match if on the
+## Multiplayer page, Game Mode, the mode (back to the lobby), Setup Game.
+func _setup_for(menu: Node, mode_button: Button) -> Node:
+	if not (menu.get_node("GameMode") as Button).visible:
+		(menu.get_node("LocalMatch") as Button).pressed.emit()
+		await process_frame
+	(menu.get_node("GameMode") as Button).pressed.emit()
+	await process_frame
+	mode_button.pressed.emit()
+	await process_frame
+	_check(
+		(menu.get_node("StartGame") as Button).has_focus(),
+		"choosing %s returns to the lobby on Start Game" % mode_button.text
+	)
+	(menu.get_node("SetupGame") as Button).pressed.emit()
+	await process_frame
+	return current_scene.get_node_or_null("TdmSetup")
+
+
+## Presses and releases Back (Escape, or B on a pad).
+func _cancel() -> void:
+	for pressed in [true, false]:
+		var event := InputEventAction.new()
+		event.action = &"ui_cancel"
+		event.pressed = pressed
+		root.push_input(event)
 
 
 func _check(condition: bool, label: String) -> void:

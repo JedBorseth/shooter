@@ -82,6 +82,12 @@ const OFFLINE_ONLY_NODES := ["Targets", "Sentry"]
 ## `join_message` (why we left), then clears both.
 var return_to_join := false
 var join_message := ""
+## Set by `leave` after a local match: the title screen opens on its Local
+## Match lobby, as Black Ops returns to its lobby, then clears it.
+var return_to_lobby := false
+## The title screen's lobby: its "mode" and each mode's rule choices
+## ("picks"), kept here so they outlive the title scene while a match runs.
+var lobby := {}
 
 var _client: NetClient
 ## Process id of the server `start_local_match` started, or -1.
@@ -265,6 +271,7 @@ func leave(message := "") -> void:
 	var local := _local_server_pid > 0
 	stop_local_server()
 	return_to_join = not local
+	return_to_lobby = local
 	join_message = message
 	Settings.flush()
 	get_tree().change_scene_to_file(TITLE_SCENE)
