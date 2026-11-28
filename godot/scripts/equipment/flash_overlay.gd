@@ -24,13 +24,16 @@ const PEAK := 2.0
 const GHOST := 1.0
 const GHOST_OUTLASTS := 1.35
 const GHOST_COVER := 0.72
-const GHOST_SHRINK := 4
+const GHOST_SHRINK := 8
 ## Below this amount there is no afterimage, only the white.
 const GHOST_MIN := 0.2
 
 const GHOST_SHADER := """
 shader_type canvas_item;
 uniform float strength = 0.0;
+// 0 as the white starts to clear, 1 at the end: the imprint's darks go first
+// and its lights linger, as an afterimage's do.
+uniform float gone = 0.0;
 void fragment() {
 	vec3 still = texture(TEXTURE, UV).rgb;
 	// Burned in: the still's lights glare and bleed, its darks lift toward
@@ -41,7 +44,8 @@ void fragment() {
 	burned += smoothstep(0.55, 0.95, light) * 0.35;
 	// The imprint is held hardest where the eye was looking: the middle.
 	float centre = 1.0 - 0.35 * smoothstep(0.25, 0.75, length(UV - 0.5));
-	COLOR = vec4(burned, strength * centre);
+	float lingers = mix(1.0, 0.25 + 1.1 * smoothstep(0.35, 0.9, light), gone);
+	COLOR = vec4(burned, clamp(strength * centre * lingers, 0.0, 1.0));
 }
 """
 
@@ -142,6 +146,9 @@ func _take_still() -> bool:
 func _apply() -> void:
 	_white.color.a = _level()
 	_ghost_material.set_shader_parameter(&"strength", _ghost_level())
+	var hold := _seconds * HOLD
+	var span := maxf(_seconds * GHOST_OUTLASTS - hold, 0.001)
+	_ghost_material.set_shader_parameter(&"gone", clampf((_time - hold) / span, 0.0, 1.0))
 
 
 func _process(delta: float) -> void:

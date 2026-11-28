@@ -128,7 +128,7 @@ pub const BUDGETS: [Budget; 3] = [
         fires: 4,
         smokes: 3,
         cases: 24,
-        tracer_heads: false,
+        tracer_heads: true,
     },
     Budget {
         impacts: 32,
