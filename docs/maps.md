@@ -95,7 +95,7 @@ battens (`batten`) and the rack's canopy eight LED floodlights
 read as lit spaces in daylight, as a working terminal's do. Painted steel is
 paint, not bare metal: the Breakwater looks keep paint dielectric (metallic
 paint lost its diffuse light in baked shade with no reflection probes), and
-roof undersides use the off-white `soffit` deck.
+roof undersides are off-white liner panels (`soffit`).
 
 **Beyond the boundary** (`backdrops()`, the `far` chunk) the land is laid in
 parts that never overlap, each with Red's twin: the landside west of the gate
@@ -106,7 +106,10 @@ face along the basin) and the main tank farm south of the map (bunded
 compounds with gravel floors, big tanks, roads, and pipe tracks on sleepers),
 whose twin runs on east of Blue's basin. The far chunk casts no shadows, so
 far tanks, sheds and bund walls get a fake sun shadow: a multiply stain swept
-north by the sun (`far_shadow_box`, `far_shadow_round`).
+north by the sun (`far_shadow_box`, `far_shadow_round`). The far geometry is
+split into one mesh per quadrant (`far_nw` ... `far_se`) so each culls on its
+own, and its fine detail (`far_*_detail`: rails, marks, fittings) stops
+drawing beyond 90 m; one far mesh drawn whole cost about 0.4 ms on Medium.
 
 **Built with:** the shared generator kit first written for Slamcity, a cut
 map: the primitives in `tools/slamcity_layout.py`, the models in
