@@ -73,9 +73,10 @@ func _ready() -> void:
 	_status_label = Label.new()
 	_status_label.add_theme_font_override("font", UiTheme.font(UiTheme.LABEL_LIGHT))
 	_status_label.add_theme_font_size_override("font_size", 18)
-	_status_label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+	_status_label.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.85))
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_label.position = Vector2(1036, 748)
+	# Sat on the Ready button it counts toward.
+	_status_label.position = Vector2(1036, 756)
 	_status_label.size = Vector2(500, 28)
 	_stage.add_child(_status_label)
 	ready_button = Button.new()

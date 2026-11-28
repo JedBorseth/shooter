@@ -203,16 +203,17 @@ func _draw_mode_mark(at: Vector2) -> void:
 	var ink := UiTheme.TEXT
 	match mode:
 		"tdm":
-			# Two solid arrowheads pointing at each other with a gap between:
-			# two sides meeting (an X here would read as a close button).
+			# Two solid arrowheads pointing at each other with a bar between:
+			# two sides clashing (an X here would read as a close button).
+			draw_rect(Rect2(at + Vector2(-1.5, -9), Vector2(3, 18)), ink)
 			for side: float in [-1.0, 1.0]:
 				draw_colored_polygon(
 					PackedVector2Array(
 						[
-							at + Vector2(side * 17.0, -14),
-							at + Vector2(side * 3.0, 0),
-							at + Vector2(side * 17.0, 14),
-							at + Vector2(side * 11.0, 0),
+							at + Vector2(side * 19.0, -14),
+							at + Vector2(side * 5.0, 0),
+							at + Vector2(side * 19.0, 14),
+							at + Vector2(side * 13.0, 0),
 						]
 					),
 					ink
@@ -284,16 +285,24 @@ func _draw_versus(view: Rect2) -> void:
 		var mark_team := team if ours else 1 - team
 		MatchPaint.team_mark(self, mark, 56.0, mark_team, colour)
 		var label := "YOUR TEAM" if ours else "ENEMY"
-		var width := HudPaint.text_width(LABEL_FONT, label, 19, 3.0) + 21.0
+		# Both plates as wide as the wider name, the name centred.
+		var width := (
+			maxf(
+				HudPaint.text_width(LABEL_FONT, "YOUR TEAM", 19, 3.0),
+				HudPaint.text_width(LABEL_FONT, "ENEMY", 19, 3.0)
+			)
+			+ 24.0
+		)
 		# Each plate a fixed gap outside its mark, whatever its width.
 		var inner := mark.x + side * 58.0
 		var plate := Rect2(inner if side > 0 else inner - width, centre.y - 14, width, 28)
 		draw_rect(plate, UiTheme.LABEL_BOX)
+		var text_w := HudPaint.text_width(LABEL_FONT, label, 19, 3.0)
 		HudPaint.text(
 			self,
 			LABEL_FONT,
 			label,
-			Vector2(plate.position.x + 12, centre.y + 7),
+			Vector2(plate.get_center().x - text_w / 2.0 + 1.5, centre.y + 7),
 			19,
 			UiTheme.LABEL_INK,
 			3.0,
@@ -317,7 +326,7 @@ func _draw_you(view: Rect2) -> void:
 		)
 	var card := Rect2(centre_x - 120, top + 30, 240, 58)
 	draw_rect(card, Color(0, 0, 0, 0.62))
-	draw_rect(card.grow(-0.5), Color(1, 1, 1, 0.18), false, 1.0)
+	draw_rect(card.grow(-0.5), Color(1, 1, 1, 0.26), false, 1.0)
 	var rank := Progression.rank(ProgressStore.xp())
 	HudPaint.text(
 		self,

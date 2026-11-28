@@ -137,9 +137,9 @@ func _draw_overlay() -> void:
 	if bool(_info.get("skippable", false)):
 		var key := Settings.prompt_key(&"interact")
 		var row := Paint.split_key("[%s] Skip" % key, UiTheme.TEXT)
-		var width := Paint.cap_width(String(row.key), 23.0) + 9.0
-		width += Paint.text_width(Paint.LABEL, "Skip", 16)
-		Paint.prompt(_canvas, row, 1544.0 - width / 2.0, 816.0, 16, alpha)
+		var width := Paint.cap_width(String(row.key), 25.0) + 9.0
+		width += Paint.text_width(Paint.LABEL, "Skip", 18)
+		Paint.prompt(_canvas, row, 1544.0 - width / 2.0, 817.0, 18, alpha)
 	_canvas.draw_set_transform(Vector2.ZERO)
 	# The cut into the replay: a white flash for its first frames.
 	var flash := 1.0 - clampf((_frames - 1) / 3.0, 0.0, 1.0)
@@ -356,7 +356,7 @@ func _name_card(
 	_canvas.draw_rect(rect, Color(0.06, 0.07, 0.08, 0.88 * alpha))
 	# A hairline round the plate, as on the loading screen's and the death
 	# screen's cards.
-	_canvas.draw_rect(rect.grow(-0.5), Color(1, 1, 1, 0.18 * alpha), false, 1.0)
+	_canvas.draw_rect(rect.grow(-0.5), Color(1, 1, 1, 0.26 * alpha), false, 1.0)
 	var edge_x := rect.end.x - 4.0 if right_side else rect.position.x
 	_canvas.draw_rect(Rect2(edge_x, rect.position.y, 4, rect.size.y), Color(colour, alpha))
 	var mark_x := rect.end.x - 34.0 if right_side else rect.position.x + 34.0
