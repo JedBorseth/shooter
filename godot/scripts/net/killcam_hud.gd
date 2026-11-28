@@ -285,7 +285,7 @@ func _draw_weapon(alpha: float) -> void:
 	elif glyph != "":
 		right -= 14.0 + DeathCard.GLYPH_W
 		var mark := Vector2(right + DeathCard.GLYPH_W / 2.0, baseline - 7.0)
-		DeathCard.cause_mark(_canvas, glyph, mark, tint)
+		DeathCard.cause_mark(_canvas, glyph, mark, Color(DeathCard.MARK_TINT, tint.a))
 	var dim := Color(UiTheme.TEXT, 0.82 * alpha)
 	Paint.text_right(
 		_canvas, Paint.LABEL, label, Vector2(right - 14.0, baseline - 1.0), 15, dim, 2.0

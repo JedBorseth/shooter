@@ -248,7 +248,7 @@ func _draw_tile() -> void:
 	if _lit > 0.0:
 		Shapes.focus_rules(self, rect, Color(UiTheme.ACCENT, _lit), 3.0)
 	if editing and not has_focus():
-		draw_rect(Rect2(0, 0, 4, size.y), Color(UiTheme.ACCENT, 0.85))
+		draw_rect(Rect2(0, 0, 3, size.y), Color(UiTheme.ACCENT, EDITING_LIT))
 
 
 ## An empty slot's mark: a faint plus; on a picker card ("None"), a dash.
@@ -354,11 +354,12 @@ func _draw_wildcard() -> void:
 			lit
 		)
 	if editing and not has_focus():
-		draw_colored_polygon(
-			PackedVector2Array(
-				[Vector2(SLANT, 0), Vector2(SLANT + 3, 0), Vector2(3, size.y), Vector2(0, size.y)]
-			),
-			Color(UiTheme.ACCENT, 0.85)
+		draw_line(
+			Vector2(SLANT + 1.5, 0),
+			Vector2(1.5, size.y),
+			Color(UiTheme.ACCENT, EDITING_LIT),
+			3.0,
+			true
 		)
 
 

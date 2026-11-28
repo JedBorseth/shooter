@@ -226,7 +226,7 @@ func _board() -> void:
 							"—" if bot else str([24, 61, 33, 18][i]),
 						],
 						"me": side == 0 and i == 2,
-						"tag": "BOT" if bot else "",
+						"tag": "",
 					}
 				)
 			)

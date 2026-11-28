@@ -196,6 +196,10 @@ func _draw_header(view: Rect2) -> void:
 ## The mode's mark: a hexagon outline with a simple figure for the mode.
 func _draw_mode_mark(at: Vector2) -> void:
 	HudShapes.hexagon(self, at, 30.0, Color(1, 1, 1, 0.06), Color(UiTheme.TEXT, 0.85), 2.0, false)
+	# A thin inner line, as the team marks have.
+	var inner := HudShapes.hexagon_points(at, 25.5, false)
+	inner.append(inner[0])
+	draw_polyline(inner, Color(UiTheme.TEXT, 0.4), 1.0, true)
 	var ink := UiTheme.TEXT
 	match mode:
 		"tdm":
@@ -280,7 +284,7 @@ func _draw_versus(view: Rect2) -> void:
 		var mark_team := team if ours else 1 - team
 		MatchPaint.team_mark(self, mark, 56.0, mark_team, colour)
 		var label := "YOUR TEAM" if ours else "ENEMY"
-		var width := HudPaint.text_width(LABEL_FONT, label, 19, 3.0) + 16.0
+		var width := HudPaint.text_width(LABEL_FONT, label, 19, 3.0) + 21.0
 		# Each plate a fixed gap outside its mark, whatever its width.
 		var inner := mark.x + side * 58.0
 		var plate := Rect2(inner if side > 0 else inner - width, centre.y - 14, width, 28)
@@ -289,7 +293,7 @@ func _draw_versus(view: Rect2) -> void:
 			self,
 			LABEL_FONT,
 			label,
-			Vector2(plate.position.x + 8, centre.y + 7),
+			Vector2(plate.position.x + 12, centre.y + 7),
 			19,
 			UiTheme.LABEL_INK,
 			3.0,

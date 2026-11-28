@@ -34,12 +34,16 @@ const WORLD := -2
 const ICON_H := 26.0
 const ICON_MAX_W := 112.0
 const GLYPH_W := 72.0
-## Half the drawn width of each mark, to right-align it.
+## The light grey every mark and silhouette is drawn in (the silhouettes'
+## own grey), so drawn marks match the guns beside them.
+const MARK_TINT := Color(0.8, 0.8, 0.82)
+## How far each mark reaches right of its centre, to right-align it (the
+## grenade line icons are padded inside their boxes).
 const GLYPH_HALF := {
 	"knife": 36.0,
-	"frag": 20.0,
-	"flash": 18.0,
-	"smoke": 20.0,
+	"frag": 8.5,
+	"flash": 13.5,
+	"smoke": 15.0,
 	"charge": 22.0,
 	"fall": 15.0,
 	"skull": 13.0
@@ -149,12 +153,17 @@ static func _killer_card(
 	if team >= 0:
 		MatchPaint.team_mark(item, mark, 30.0, team, Color(colour, alpha))
 	elif team == WORLD:
-		# The world's mark: a solid grey hexagon with a dark globe in it.
-		Shapes.hexagon(item, mark, 15.0, Color(colour, 0.9 * alpha), Color.TRANSPARENT, 0.0, false)
-		var globe := Color(CARD_FILL, alpha)
-		item.draw_arc(mark, 7.5, 0.0, TAU, 24, globe, 1.6, true)
-		item.draw_line(mark + Vector2(-7.5, 0), mark + Vector2(7.5, 0), globe, 1.4, true)
-		item.draw_line(mark + Vector2(0, -7.5), mark + Vector2(0, 7.5), globe, 1.4, true)
+		# The world's mark, drawn as the team marks are (a hexagon in two
+		# lines) in grey, round a neutral figure: three bars of ground.
+		var grey := Color(colour, 0.9 * alpha)
+		for ring_r: float in [15.0, 12.6]:
+			var ring := Shapes.hexagon_points(mark, ring_r, false)
+			ring.append(ring[0])
+			var line := Color(grey, grey.a * (1.0 if ring_r > 13.0 else 0.5))
+			item.draw_polyline(ring, line, 1.4, true)
+		for i in 3:
+			var half_w := 7.0 - i * 2.0
+			item.draw_rect(Rect2(mark.x - half_w, mark.y - 4.0 + i * 3.5, half_w * 2.0, 2.0), grey)
 	Paint.text(
 		item,
 		Paint.LABEL,
@@ -165,7 +174,7 @@ static func _killer_card(
 		0.5
 	)
 	var right := card.end.x - 18.0
-	var tint := Color(1, 1, 1, 0.9 * alpha)
+	var tint := Color(MARK_TINT, 0.9 * alpha)
 	# With no name under it, the mark sits in the card's middle.
 	var mark_y := at.y - 9.0 if String(how.name) != "" else at.y
 	if icon != null:
@@ -255,7 +264,7 @@ static func cause_mark(item: CanvasItem, kind: String, at: Vector2, colour: Colo
 			var case := Rect2(at + Vector2(-22, -10), Vector2(44, 24))
 			item.draw_rect(case, colour)
 			item.draw_rect(Rect2(at + Vector2(-16, -5), Vector2(22, 12)), Color(0, 0, 0, 0.7))
-			item.draw_circle(at + Vector2(13, 1), 3.5, Color(UiTheme.HARM, colour.a))
+			item.draw_circle(at + Vector2(13, 1), 3.5, Color(0, 0, 0, 0.7 * colour.a))
 			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(24, 3)), colour)
 			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(3, 5)), colour)
 			item.draw_rect(Rect2(at + Vector2(9, -15), Vector2(3, 5)), colour)

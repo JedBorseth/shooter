@@ -237,7 +237,8 @@ func _process(delta: float) -> void:
 					Scoreboard.ready_count(client.roster())
 				]
 			)
-		_menu.status = Scoreboard.ready_count(client.roster())
+		# In caps beside the caps READY tags.
+		_menu.status = Scoreboard.ready_count(client.roster()).to_upper()
 	else:
 		if show_hint:
 			_overlay.hint = "[%s] Pick a class for your next spawn" % key
