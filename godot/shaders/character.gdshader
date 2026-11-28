@@ -48,6 +48,8 @@ uniform float skin_variation = 0.18;
 // A faint rim in the team colour so silhouettes hold in the dark.
 uniform vec3 rim_colour : source_color = vec3(0.0);
 uniform float rim_energy = 0.0;
+// How much grazing-light sheen tinted cloth and gear get (Godot's RIM).
+uniform float cloth_sheen = 0.0;
 
 // Per character, so a crowd does not look cloned.
 instance uniform float variant = 0.0;
@@ -136,6 +138,13 @@ void fragment() {
 	ROUGHNESS = rough;
 	METALLIC = metal;
 	SPECULAR = role == EYES || role == VISOR ? 0.6 : 0.4;
+	if (((tinted_roles >> role) & 1) != 0) {
+		// Cloth sheen: woven fibres scatter light at grazing angles, so cloth
+		// lit from the side or behind keeps a soft edge instead of going flat
+		// (strongest on the dark team, whose form otherwise crushes).
+		RIM = cloth_sheen;
+		RIM_TINT = 0.6;
+	}
 	NORMAL_MAP = texture(normal_texture, UV).rgb;
 	NORMAL_MAP_DEPTH = normal_strength;
 	vec3 glow = vec3(0.0);

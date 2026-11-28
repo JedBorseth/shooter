@@ -461,6 +461,12 @@ def split_legs(obj, below: float):
                 low = [i for i in np.nonzero(mine & ((left + right) > 0.6))[0].tolist()]
                 if low:
                     g.remove(low)
+    # The cut follows the cloth's triangles: smooth it and turn it in, so
+    # the inner thighs show a hem, not a sawtooth notch.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import blender_gear
+
+    blender_gear.smooth_boundary(obj, 10, keep=lambda co: 0.3 < co.z < below + 0.02 and abs(co.x) < 0.12, tuck=0.004)
     log(f"{obj.name}: split the legs, {len(gone)} bridging faces removed")
 
 

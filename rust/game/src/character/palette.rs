@@ -289,6 +289,12 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
         m.set_shader_parameter("rim_colour", &rim.to_variant());
         m.set_shader_parameter("rim_energy", &energy.to_variant());
     }
+    // Cloth sheen: the dark team needs more to keep its form.
+    let sheen = match team {
+        Team::Allies => 0.15,
+        Team::Enemies => 0.35,
+    };
+    m.set_shader_parameter("cloth_sheen", &sheen.to_variant());
     let dir = kit.dir();
     for (param, map) in [
         ("albedo_texture", "albedo"),
