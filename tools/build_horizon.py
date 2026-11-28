@@ -1,14 +1,15 @@
 """Render the country beyond a map's walls into a horizon strip.
 
-    blender -b --factory-startup --python tools/build_horizon.py [-- --preview]
+    blender -b --factory-startup --python tools/build_horizon.py [-- --preview] [--map breakwater]
 
-It renders the Testing Area's country by day.
+By default it renders the Testing Area's country by day; `--map breakwater`
+renders Breakwater's harbour instead (tools/horizon_harbour.py).
 
 Writes two images that shaders/day_sky.gdshader lays round the horizon:
 
-- godot/assets/skies/testing_horizon.png: the land, premultiplied by its
+- godot/assets/skies/<map>_horizon.png: the land, premultiplied by its
   coverage (RGB, sRGB), and the coverage itself (A). Clear where the sky shows.
-- godot/assets/skies/testing_horizon_depth.png: how far away each pixel's land
+- godot/assets/skies/<map>_horizon_depth.png: how far away each pixel's land
   is (0 to `MIST_DEPTH` metres, linear, grey), so the shader can fade it into
   the map's own haze at the right strength.
 
@@ -47,6 +48,8 @@ import numpy as np
 from mathutils import Matrix, Vector, noise
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+MAP = sys.argv[sys.argv.index("--map") + 1] if "--map" in sys.argv else "testing"
 OUT = ROOT / "godot" / "assets" / "skies"
 SCRATCH = Path.home() / ".cache" / "shooter-fidelity" / "horizon"
 
@@ -60,9 +63,10 @@ LAT_MAX = LAT_MIN + HEIGHT * 360.0 / WIDTH
 EYE = 1.7
 # The Testing Area's sun elevation (scenes/main.tscn, the Sun's basis).
 SUN_ELEVATION = 47.9
-# Depth range stored in the depth image, in metres.
-MIST_DEPTH = 3000.0
-SAMPLES = 96
+# Depth range stored in the depth image, in metres. Keep it in step with the
+# sky shader's `depth_range` for the map.
+MIST_DEPTH = 8000.0 if MAP == "breakwater" else 3000.0
+SAMPLES = 128 if MAP == "breakwater" else 96
 
 PREVIEW = "--preview" in sys.argv
 # A full-resolution preview of the 60 degrees toward the sun and away.
@@ -70,7 +74,7 @@ SECTOR = "--sector" in sys.argv
 
 # The range's walls stand 32.5 m out; nothing here is nearer than this.
 CLEAR = 110.0
-FAR = 3200.0
+FAR = 7000.0 if MAP == "breakwater" else 3200.0
 
 
 def reset() -> None:
@@ -709,7 +713,26 @@ def pack(name: str) -> None:
     print(f"horizon: wrote {target}")
 
 
+def main_breakwater() -> None:
+    import horizon_harbour
+
+    reset()
+    scene = bpy.context.scene
+    scene.cycles.max_bounces = 3
+    horizon_harbour.lighting(str(OUT / "breakwater_day.hdr"))
+    scene.world.mist_settings.start = 0.0
+    scene.world.mist_settings.depth = MIST_DEPTH
+    scene.world.mist_settings.falloff = "LINEAR"
+    camera()
+    bpy.context.scene.camera.location = (0.0, 0.0, horizon_harbour.EYE)
+    horizon_harbour.build(FAR, PREVIEW)
+    pack("breakwater")
+
+
 def main() -> None:
+    if MAP == "breakwater":
+        main_breakwater()
+        return
     reset()
     lighting()
     camera()

@@ -31,6 +31,12 @@ const LUT_SIZE := 32
 ##          hidden (scripts/lens.gd); 0 or missing for none. The cover test
 ##          casts rays against the world's collision, so set it only on maps
 ##          whose scenery around the sun collides.
+##   sky    Draws a rendered horizon round the map in its sky
+##          (shaders/day_sky.gdshader, strips from tools/build_horizon.py): the
+##          map's sky image stays, and the shader's parameters come from here
+##          (`horizon`, `horizon_depth` and its `depth_range` in metres,
+##          `land_light`, and `haze_density`, the haze the land fades into).
+##          The sky's reflections and the lightmap still see the plain sky.
 ##   wetness  How wet the map's surfaces are, 0 dry to 1 soaked; from 0.5 up,
 ##            puddles collect on the ground (shaders/world.gdshader).
 ##   sun    DirectionalLight3D properties to set on the map's sun (its strength
@@ -106,7 +112,7 @@ const MAPS := {
 			# The filmic curve the Testing Area uses: a real shoulder on
 			# sunlit concrete and white tanks, a toe that keeps shade dark.
 			"tonemap_white": 8.0,
-			"tonemap_exposure": 0.56,
+			"tonemap_exposure": 0.5,
 			# Sky light for what the lightmap does not light (soldiers, the
 			# first-person weapon, small props), so they keep fill in shade.
 			"ambient_light_energy": 1.5,
@@ -118,16 +124,16 @@ const MAPS := {
 			"ssao_light_affect": 0.12,
 			# Sea haze: blue-grey, a little thicker than inland, glowing
 			# toward the sun, so the far tanks and the far shore step back.
-			"fog_light_color": Color(0.7, 0.79, 0.88),
+			"fog_light_color": Color(0.62, 0.73, 0.88),
 			"fog_light_energy": 1.0,
-			"fog_sun_scatter": 0.18,
+			"fog_sun_scatter": 0.07,
 			"fog_density": 0.0026,
 			"fog_aerial_perspective": 0.8,
 			"fog_sky_affect": 0.25,
 			# Only the sun, lamps, and glints bloom: sunlit white tanks and
 			# concrete sit just under the threshold.
-			"glow_hdr_threshold": 1.35,
-			"glow_intensity": 0.35,
+			"glow_hdr_threshold": 1.5,
+			"glow_intensity": 0.3,
 			# The grade below replaces these.
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
@@ -138,16 +144,28 @@ const MAPS := {
 		"exposure": {"reference": 1.0, "darker": 0.5, "brighter": 1.0},
 		"grade":
 		{
-			"contrast": 1.22,
+			"contrast": 1.28,
 			"pivot": 0.42,
-			"saturation": 1.1,
-			"shadows": Color(0.93, 0.98, 1.07),
-			"highlights": Color(1.04, 1.0, 0.95),
-			"balance": 0.45,
+			"saturation": 1.14,
+			"shadows": Color(0.9, 0.97, 1.1),
+			"highlights": Color(1.03, 1.0, 0.96),
+			"balance": 0.5,
 			"toe": 0.04,
 			"lift": 0.25,
 		},
 		"flare": 1.0,
+		# The harbour beyond the walls: the mole's tank farms, container
+		# cranes and refinery, ships at anchor, a breakwater and lighthouse,
+		# and the far shores' towns and hills 2.5 to 4 km off. Clearer air
+		# than the map's own haze, which is tuned for its short sightlines.
+		"sky":
+		{
+			"horizon": "res://assets/skies/breakwater_horizon.png",
+			"horizon_depth": "res://assets/skies/breakwater_horizon_depth.png",
+			"depth_range": 8000.0,
+			"land_light": 1.0,
+			"haze_density": 0.00022,
+		},
 	},
 }
 
@@ -174,6 +192,7 @@ const BLOOM := {
 }
 
 const LensDirt := preload("res://scripts/lens_dirt.gd")
+const DAY_SKY := preload("res://shaders/day_sky.gdshader")
 
 ## Built look-up tables, by scene path.
 static var _luts: Dictionary = {}
@@ -194,7 +213,34 @@ static func apply(env: Environment, scene_path: String) -> bool:
 	if look.has("grade"):
 		env.adjustment_enabled = true
 		env.adjustment_color_correction = lut_for(scene_path)
+	if look.has("sky") and env.sky != null:
+		_apply_sky(env, look["sky"])
 	return true
+
+
+## Swaps the map's panorama sky for the horizon sky shader, keeping its image,
+## or retunes a horizon sky the scene already draws.
+static func _apply_sky(env: Environment, sky: Dictionary) -> void:
+	var material := env.sky.sky_material as ShaderMaterial
+	var panorama := env.sky.sky_material as PanoramaSkyMaterial
+	if panorama != null:
+		material = ShaderMaterial.new()
+		material.shader = DAY_SKY
+		material.set_shader_parameter(&"panorama", panorama.panorama)
+		material.set_shader_parameter(&"energy", panorama.energy_multiplier)
+		material.set_shader_parameter(&"sky_turn", env.sky_rotation.y)
+	if material == null or material.shader != DAY_SKY:
+		return
+	var image: Variant = material.get_shader_parameter(&"panorama")
+	material.set_shader_parameter(&"haze_sky", image)
+	material.set_shader_parameter(&"blur_haze", true)
+	for key: String in ["horizon", "horizon_depth"]:
+		if sky.has(key):
+			material.set_shader_parameter(key, load(sky[key]))
+	for key: String in ["depth_range", "land_light", "haze_density"]:
+		if sky.has(key):
+			material.set_shader_parameter(key, float(sky[key]))
+	env.sky.sky_material = material
 
 
 ## Sets the look's sun properties on the map's sun. Returns true if it has any.
