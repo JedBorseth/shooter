@@ -85,15 +85,42 @@ blocker, so collision stays twinned. In the game, props shorter than 1.3 m
 cast no sun shadow (theirs is in the lightmap) and hide beyond 45 m
 (`scripts/breakwater.gd`), like the map mesh's detail.
 
+**Interiors and shade.** Every room carries its services (`interiors()`):
+galvanised cable trays with drops to the switchgear, distribution boards,
+staff lockers and a microwave in the mess, filing cabinets upstairs, a green
+pipe header high through both pump rooms to a valve, racks, totes and a
+caged work lamp in the workshop and stores. Ceilings carry twin-tube
+battens (`batten`) and the rack's canopy eight LED floodlights
+(`canopy_flood`), all lit and baked (`light()`), so the canopy and interiors
+read as lit spaces in daylight, as a working terminal's do. Painted steel is
+paint, not bare metal: the Breakwater looks keep paint dielectric (metallic
+paint lost its diffuse light in baked shade with no reflection probes), and
+roof undersides use the off-white `soffit` deck.
+
+**Beyond the boundary** (`backdrops()`, the `far` chunk) the land is laid in
+parts that never overlap, each with Red's twin: the landside west of the gate
+(the access road with its markings and footway, a lorry park with waiting
+tankers, a car park, the terminal office, a canteen, a weighbridge hut, the
+depot workshop and fire station, light masts, dry-grass verges, and the quay
+face along the basin) and the main tank farm south of the map (bunded
+compounds with gravel floors, big tanks, roads, and pipe tracks on sleepers),
+whose twin runs on east of Blue's basin. The far chunk casts no shadows, so
+far tanks, sheds and bund walls get a fake sun shadow: a multiply stain swept
+north by the sun (`far_shadow_box`, `far_shadow_round`).
+
 **Built with:** the shared generator kit first written for Slamcity, a cut
 map: the primitives in `tools/slamcity_layout.py`, the models in
 `tools/slamcity_models.py`, the mesh builder in `tools/build_slamcity_city.py`,
 the looks in `tools/world_looks.py`, and the chain-link pattern from
 `tools/build_slamcity_signs.py`. They keep their names because Breakwater's
 mesh hash covers their bytes. `tools/breakwater_layout.py` describes the map;
-`tools/breakwater_models.py` models the terminal (tankers, storage tanks with
-spiral stairs, pipe racks, loading arms, the moored tanker, the far tank
-farm); `tools/build_breakwater_city.py` builds
+`tools/breakwater_models.py` models the terminal (road tankers with polished
+aluminium barrels drawn by `shaders/polished_alu.gdshader`, storage tanks
+with staggered plate welds, anchor chairs, flanged nozzles, gate valves,
+foam chambers and spiral stairs, pipe racks, loading arms, the additive skid
+and manifold, the moored product tanker with its catwalk, manifold and hose
+crane, stepped accommodation, bridge wings, funnel, freefall lifeboat and
+accommodation ladder, and the far tank farm); `tools/build_breakwater_city.py` builds
 `godot/assets/maps/breakwater/city.gltf` in Blender;
 `tools/build_breakwater.py` writes the scene and refuses a layout that fails
 `tools/breakwater_checks.py` (also run in CI by
