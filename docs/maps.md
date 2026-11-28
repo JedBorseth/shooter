@@ -110,6 +110,11 @@ north by the sun (`far_shadow_box`, `far_shadow_round`). The far geometry is
 split into one mesh per quadrant (`far_nw` ... `far_se`) so each culls on its
 own, and its fine detail (`far_*_detail`: rails, marks, fittings) stops
 drawing beyond 90 m; one far mesh drawn whole cost about 0.4 ms on Medium.
+Models placed out there (the lorry park's tankers, the cars, the light masts,
+the quays' bollards) are built coarser (`FarModel` in
+`tools/build_breakwater_city.py`): half the sides on round parts, one
+subdivision level, and none of the fittings too small to see past 40 m. The
+moored ship keeps its full detail.
 
 **Built with:** the shared generator kit first written for Slamcity, a cut
 map: the primitives in `tools/slamcity_layout.py`, the models in
