@@ -238,7 +238,7 @@ impl Grips {
             hold: self.hold,
             section: None,
         }
-        .hand_bases();
+        .hand_bases_holding(self.foregrip);
         (to_godot_basis(right), to_godot_basis(left))
     }
 
@@ -418,7 +418,7 @@ const HANDGUARD: HandShape = HandShape {
         [10.0, 20.0, 15.0],
     ],
     spread: [-6.0, -1.0, 4.0, 9.0],
-    oppose: 38.0,
+    oppose: 60.0,
 };
 /// The support hand round a shotgun's pump: the fingers closed up together
 /// and hooked round its far side (bent little at the knuckles, hard at the

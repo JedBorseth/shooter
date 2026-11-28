@@ -251,16 +251,32 @@ impl Grips {
     }
 
     /// The hand bones' bases in weapon space: right, then left. Measured from
-    /// the animation library's two-handed pistol pose, then raked for rifle grips.
+    /// the animation library's two-handed pistol pose, then raked for rifle
+    /// grips. A handguard weapon with no section to rest on is held by a
+    /// vertical foregrip ([`Grips::held`]).
     pub fn hand_bases(&self) -> (Mat3, Mat3) {
+        self.hand_bases_holding(self.hold == Hold::Handguard && self.section.is_none())
+    }
+
+    /// [`Grips::hand_bases`], saying whether the support hand holds a
+    /// vertical foregrip.
+    pub fn hand_bases_holding(&self, foregrip: bool) -> (Mat3, Mat3) {
         let rake = Mat3::from_axis_angle(Vec3::X, -self.rake.to_radians());
         let right =
             rake * basis_from_y_z(Vec3::new(-0.02, 0.19, -0.98), Vec3::new(-1.0, 0.04, 0.03));
-        let left = if self.hold == Hold::Pistol {
-            basis_from_y_z(Vec3::new(0.31, 0.11, -0.95), Vec3::new(0.65, 0.7, 0.29))
-        } else {
-            // Under the handguard: palm up and in, knuckles forward and to the right.
-            basis_from_y_z(Vec3::new(0.25, 0.05, -0.97), Vec3::new(0.35, 0.94, 0.0))
+        let left = match self.hold {
+            Hold::Pistol => {
+                basis_from_y_z(Vec3::new(0.31, 0.11, -0.95), Vec3::new(0.65, 0.7, 0.29))
+            }
+            // A fist round a vertical grip: knuckles forward, palm up and in.
+            _ if foregrip => {
+                basis_from_y_z(Vec3::new(0.25, 0.05, -0.97), Vec3::new(0.35, 0.94, 0.0))
+            }
+            // Under the handguard from its lower left, as a rifleman's
+            // support hand holds it: palm up and in toward the handguard,
+            // knuckles turned well across it, so the fingers reach under and
+            // wrap up its far side while the thumb lies along the near side.
+            _ => basis_from_y_z(Vec3::new(0.75, 0.05, -0.66), Vec3::new(0.15, 0.99, 0.0)),
         };
         (right, left)
     }
