@@ -148,7 +148,8 @@ out from 140 to 220 m, and the `far` one in from 100 to 170 m, each falling 6 dB
 per doubling past its own reference (40 and 120 m), on WeaponsDistant
 (`gunfire::layer_weights`).
 
-The sentry fires with `weapons/ak47_fire.ogg`.
+The Testing Area's training sentry fires a light machine gun's rounds
+(`streaks/sentry_fire_N.ogg`; see [Scorestreaks](#scorestreaks)).
 
 ### The RL-4 (`tools/build_launcher_audio.py`)
 
@@ -372,10 +373,37 @@ heartbeat, breathing, death, jump, and mantle.
 
 ## Equipment and streaks
 
-Frags and downed UAVs play the distant
-explosion takes up close on Effects; a flashbang plays one of them as its
+Frags play the distant explosion takes up close on Effects; a flashbang plays
+one of them as its
 bang, and a smoke grenade hisses with a wind gust. None of them has a recording of its own. Scavenger pickups
 play the pouch sound.
+
+## Scorestreaks
+
+Each scorestreak has its own sounds, cut from real CC0 recordings and
+processed in code by `tools/build_streak_audio.py` (sources, cut times, and
+levels in its `SOURCES` and `SOUNDS`; the shared cutting, filtering,
+compression, limiting, and loudness code is `tools/recorded_audio.py`).
+Nothing is synthesized. Most of the military recordings are US Government
+footage released as public domain on Freesound by qubodup. The files are in
+`assets/audio/streaks/`; `godot/scripts/net/streak_audio.gd` loads them (a
+loop is `<name>.ogg`, takes are `<name>_N.ogg`) and places them.
+
+Black Ops 2 is the reference: each streak is heard where it is, from the
+moment it shows up until it leaves or is shot down.
+
+| Streak | What plays | Where |
+| --- | --- | --- |
+| UAV | A prop plane's drone (loop) | On each drone, 30 m unit size |
+| Counter-UAV | Fighter jets' distant roar (loop), harsher than the UAV | On each drone |
+| Shot down (UAV, Counter-UAV) | A real blast recorded at a distance, debris raining down; the wreck falls silent | At the blast |
+| Care Package | A twin turboprop's pass, started so it is loudest over the spot; the crate slams down (a steel door's slam over a heavy bag hitting dirt) | On the aircraft; at the crate |
+
+The Testing Area's training sentry (`scenes/props/sentry.tscn`) fires a light
+machine gun's rounds from the same tool (`sentry_fire`), on Weapons. Each take
+is one round cut out of a real burst, with the burst's own ring-out laid under
+it, so a stream of them keeps every round distinct rather than smearing into a
+wall.
 
 ## The world and the match
 

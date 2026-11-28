@@ -1,13 +1,12 @@
 """Shared pieces for building game sounds from real recordings.
 
-The area tools (``build_streak_audio.py``, ``build_launcher_audio.py``,
-``build_zombies_machine_audio.py``, ``build_ui_audio.py``) describe each sound
-as takes cut from CC0 recordings; this module fetches those recordings
-(checked against pinned SHA-256 hashes), processes them in code (band limits,
-shelves, varispeed, compression, look-ahead limiting, loudness), and writes
-the files and the listening clips. Nothing is synthesized: every sample comes
-from a real recording. It follows ``tools/build_gunshots.py`` and the movement
-sounds' builder.
+The area tools (``build_streak_audio.py``, ``build_launcher_audio.py``)
+describe each sound as takes cut from CC0 recordings; this module fetches
+those recordings (checked against pinned SHA-256 hashes), processes them in
+code (band limits, shelves, varispeed, compression, look-ahead limiting,
+loudness), and writes the files and the listening clips. Nothing is
+synthesized: every sample comes from a real recording. It follows
+``tools/build_gunshots.py`` and the movement sounds' builder.
 
 Freesound sources use the sound's high-quality preview (lossy Ogg, no account
 needed). If the original has been downloaded from Freesound (named

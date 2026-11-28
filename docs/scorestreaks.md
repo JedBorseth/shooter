@@ -102,7 +102,9 @@ Four perks act on scorestreaks ([create-a-class.md](create-a-class.md)); the gam
 | Hard Wired | Jam Proof | an enemy Counter-UAV does not jam the minimap |
 | Engineer | Field Tech | landed Care Packages not ours show through walls (`godot/scripts/net/engineer_view.gd`) |
 
-Not built yet: UAV assist points, an announcer, and the aircraft's own sounds; see [TODO.md](../TODO.md).
+**Sounds:** the UAV and Counter-UAV drone overhead on their own loops and blow up with falling debris when shot down; the Care Package's aircraft passes loudest over the spot and the crate slams down when it lands. All are cut from real recordings ([audio.md](audio.md#scorestreaks)).
+
+Not built yet: UAV assist points and an announcer; see [TODO.md](../TODO.md).
 
 ## Call of Duty reference
 

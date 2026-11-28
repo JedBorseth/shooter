@@ -39,16 +39,6 @@ The open work on this Call-of-Duty-style multiplayer FPS. The goal, the decision
 - [ ] Confirm a custom-game choice: hardcore hides the score block.
 - [ ] Pistol attachments: the BP-9's file lists Red Dot, Suppressor, and Ext. Mag, but the class rules give a sidearm none (`rust/sim/src/class.rs`), so the editor greys them out. Allow them (Black Ops 2 lets pistols take attachments) or drop them from the file.
 
-## Held for listening
-
-These pull requests are open, waiting for the owner to listen. Until they land, the game plays the stand-ins named in each.
-
-- #344 to #348: the CQ-10, BP-9, KR-12, DM-7, and SG-12's own shots (they borrow the PDW-9's, M1911's, AK-47's, BR-3's, and M870's).
-- #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
-- #403 (a sting for a challenge completed mid-match): close; challenges were cut.
-
-#417 (a command-line `--connect` without `--map` loads the server's map) is also open.
-
 ## Weapons and equipment
 
 - [ ] Frag grenade sounds: pin, spoon, and bounces, and a close explosion (the blast plays the distant `explosion_far` takes today).

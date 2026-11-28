@@ -8,15 +8,13 @@ extends Node3D
 ##
 ## Both drones are built in Blender (tools/gear_models.py `uav_drone`,
 ## `counter_uav_drone`). The server decides every hit; this draws
-## `NetClient.sky_aircraft()`.
+## `NetClient.sky_aircraft()`. Each drones overhead on its own loop (a prop
+## drone for the UAV, a higher jet roar for the Counter-UAV), and a downed
+## one blows up and rains debris (`streak_audio.gd`).
 
 const UAV_MODEL := preload("res://assets/models/uav_drone/uav_drone.gltf")
 const COUNTER_UAV_MODEL := preload("res://assets/models/counter_uav_drone/counter_uav_drone.gltf")
-const BANGS := [
-	preload("res://assets/audio/ambience/explosion_far_1.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_2.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_3.ogg"),
-]
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
 ## Banked into the turn, as a drone circling a point flies.
 const BANK := deg_to_rad(18.0)
 ## A wreck's fall: seconds before it is gone, and gravity.
@@ -65,6 +63,7 @@ func _spawn(streak: String) -> Node3D:
 	var node := scene.instantiate() as Node3D
 	node.name = "CounterUav" if streak == "counter_uav" else "Uav"
 	add_child(node)
+	StreakAudio.attach_loop(node, "%s_loop" % streak, 30.0, -2.0, 500.0)
 	return node
 
 
@@ -88,6 +87,9 @@ func _on_downed(streak: String, _ours: bool, _by_me: bool, at: Vector3) -> void:
 	if node == null:
 		node = _spawn(streak)
 		node.position = at
+	# The wreck falls silent: its engine died with it.
+	for sound in node.find_children("*", "AudioStreamPlayer3D", false, false):
+		sound.queue_free()
 	var forward := -node.global_transform.basis.z
 	(
 		_wrecks
@@ -103,16 +105,7 @@ func _on_downed(streak: String, _ours: bool, _by_me: bool, at: Vector3) -> void:
 	var effects := get_tree().get_first_node_in_group(&"combat_effects")
 	if effects != null:
 		effects.explosion(at, Vector3.UP, BLAST_SIZE)
-	var bang := AudioStreamPlayer3D.new()
-	bang.bus = &"Effects"
-	bang.stream = BANGS[randi() % BANGS.size()]
-	bang.unit_size = 40.0
-	bang.volume_db = 4.0
-	bang.max_distance = 400.0
-	add_child(bang)
-	bang.global_position = at
-	bang.play()
-	bang.finished.connect(bang.queue_free)
+	StreakAudio.play_at(self, at, "shootdown", 40.0, 2.0, 500.0)
 
 
 func _fall(delta: float) -> void:
