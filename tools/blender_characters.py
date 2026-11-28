@@ -736,6 +736,10 @@ def bake_material(obj, role: str, role_index: int, settings: dict) -> bpy.types.
     rough = None
     if detail:
         normal, base, rough = add_detail(nt, detail, normal, base, settings.get("roughness", 0.8))
+    if settings.get("folds"):
+        normal = add_folds(nt, settings["folds"], normal)
+    if settings.get("grime"):
+        base, rough = add_grime(nt, settings["grime"], base, rough, settings.get("roughness", 0.8))
     links.new(base, bsdf.inputs["Base Color"])
     links.new(base, bsdf.inputs["Emission Color"])
     bsdf.inputs["Emission Strength"].default_value = 1.0
@@ -808,7 +812,7 @@ def add_detail(nt, detail: dict, normal, base, roughness: float):
     n = Nodes(nt)
     kind = detail["kind"]
     x, y, z = n.axis(0), n.axis(1), n.axis(2)
-    fine = n.noise(detail.get("noise_scale", 900.0), 2.0)
+    fine = n.math("MULTIPLY", n.noise(detail.get("noise_scale", 900.0), 2.0), detail.get("fine", 1.0))
     if kind == "ripstop":
         grid = n.math("MAXIMUM", n.bands(n.math("ADD", x, y), 0.006, 0.12), n.bands(z, 0.006, 0.12))
         height = n.math("ADD", grid, n.math("MULTIPLY", fine, 0.6))
@@ -857,6 +861,59 @@ def add_detail(nt, detail: dict, normal, base, roughness: float):
     nt.links.new(val.outputs[0], mix.inputs[7])
     rough = n.math("ADD", roughness, n.math("MULTIPLY", n.math("SUBTRACT", fine, 0.5), 0.12), clamp=True)
     return bump.outputs[0], mix.outputs[2], rough
+
+
+def add_folds(nt, folds: dict, normal):
+    """Soft creases in object space (metres): ridges that run round a limb
+    (stretched along Z), as cloth bunches across the joints, rather than a
+    speckle of fibres that the atlas's texels only alias."""
+    n = Nodes(nt)
+    stretch = n.new("ShaderNodeVectorMath")
+    stretch.operation = "MULTIPLY"
+    nt.links.new(n.coord, stretch.inputs[0])
+    stretch.inputs[1].default_value = (1.0, 1.0, folds.get("stretch", 4.0))
+    wave = n.new("ShaderNodeTexNoise", Scale=folds.get("scale", 22.0), Detail=2.0, Roughness=0.45)
+    nt.links.new(stretch.outputs[0], wave.inputs["Vector"])
+    ridge = n.math("ABSOLUTE", n.math("SUBTRACT", wave.outputs["Fac"], 0.5))
+    height = n.math("SUBTRACT", 0.5, ridge)
+    bump = n.new("ShaderNodeBump", Strength=folds.get("strength", 0.5), Distance=folds.get("distance", 0.003), Height=height)
+    if normal is not None:
+        nt.links.new(normal, bump.inputs["Normal"])
+    return bump.outputs[0]
+
+
+def add_grime(nt, grime: dict, base, rough, roughness: float):
+    """Dirt worked into cloth and boots: darkest at the ground and fading
+    up the leg (`up_to` metres, rest-pose height), patchy, with dust pale at
+    the very bottom, and a little rougher where it lies. Tinted roles keep
+    only value, so this darkens and lightens; it does not tint."""
+    n = Nodes(nt)
+    z = n.axis(2)
+    t = n.math("DIVIDE", n.math("SUBTRACT", grime.get("up_to", 0.6), z), grime.get("up_to", 0.6), clamp=True)
+    patch = n.noise(grime.get("scale", 9.0), 3.0)
+    dirt = n.math("MULTIPLY", n.math("POWER", t, 1.6), n.math("ADD", 0.45, n.math("MULTIPLY", patch, 0.9)), clamp=True)
+    dark = n.math("SUBTRACT", 1.0, n.math("MULTIPLY", dirt, grime.get("strength", 0.3)))
+    mix = n.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.blend_type = "MULTIPLY"
+    mix.inputs["Factor"].default_value = 1.0
+    nt.links.new(base, mix.inputs[6])
+    val = n.new("ShaderNodeCombineXYZ", X=dark, Y=dark, Z=dark)
+    nt.links.new(val.outputs[0], mix.inputs[7])
+    out = mix.outputs[2]
+    if grime.get("dust"):
+        # Pale dust where the boots meet the ground.
+        d = n.math("MULTIPLY", n.math("DIVIDE", n.math("SUBTRACT", grime.get("dust_to", 0.08), z), grime.get("dust_to", 0.08), clamp=True),
+                   n.math("ADD", 0.5, n.math("MULTIPLY", n.noise(40.0, 2.0), 0.8)), clamp=True)
+        dust = n.new("ShaderNodeMix")
+        dust.data_type = "RGBA"
+        nt.links.new(n.math("MULTIPLY", d, grime["dust"]), dust.inputs["Factor"])
+        nt.links.new(out, dust.inputs[6])
+        dust.inputs[7].default_value = (0.62, 0.58, 0.52, 1.0)
+        out = dust.outputs[2]
+    r0 = rough if rough is not None else roughness
+    r = n.math("ADD", r0, n.math("MULTIPLY", dirt, grime.get("rough", 0.06)), clamp=True)
+    return out, r
 
 
 # --- Atlas and bakes --------------------------------------------------------------
@@ -1214,8 +1271,8 @@ def main():
         bpy.data.objects.remove(o)
     kit = build_kit(gear_spec, human, clothes, ual, head_pieces) if gear_spec else []
     for o in kit:
-        if o["role"] == "skin":
-            continue  # head pieces keep the head's weights
+        if o["role"] == "skin" or o.get("prebound"):
+            continue  # head pieces keep the head's weights; some gear binds itself
         if o.get("rigid"):
             transfer_weights(o, mannequin, rigid=o["rigid"])
         else:

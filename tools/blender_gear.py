@@ -790,7 +790,7 @@ def drop_holster(body: Body, hip: Vector, knee: Vector) -> list[bpy.types.Object
 
 def shell_on_limb(body: Body, name: str, centre: Vector, axis: Vector, front: Vector, half_arc: float, below: float, above: float,
                   standoff: float, dome: float, thickness: float, role: str, material: str, cols: int = 14, rows: int = 12,
-                  reach: float = 0.14, **props) -> bpy.types.Object:
+                  reach: float = 0.14, top_bone: str | None = None, top_share: float = 0.45, **props) -> bpy.types.Object:
     """A moulded shell over the front of a limb: a grid cast onto the limb
     round `axis` (half_arc radians either side of `front`, from `below` to
     `above` metres along the axis), standing `standoff` off it and domed by
@@ -826,6 +826,20 @@ def shell_on_limb(body: Body, name: str, centre: Vector, axis: Vector, front: Ve
     bm.free()
     thicken(obj, thickness, bevel=min(0.004, thickness * 0.4), segments=1, offset=-1.0)
     smooth(obj, 50)
+    if top_bone:
+        # Follows `rigid` below the joint; its top edge leans toward the bone
+        # above (`top_bone`, up to `top_share` at the edge), so it closes
+        # over the joint as it bends instead of standing off it.
+        rigid = props["rigid"]
+        lower = obj.vertex_groups.new(name=rigid)
+        upper = obj.vertex_groups.new(name=top_bone)
+        for v in obj.data.vertices:
+            h = (v.co - centre).dot(a)
+            share = top_share * smoothstep(0.0, above, h)
+            lower.add([v.index], 1.0 - share, "REPLACE")
+            if share > 1e-4:
+                upper.add([v.index], share, "REPLACE")
+        obj["prebound"] = True
     return obj
 
 
@@ -839,7 +853,7 @@ def knee_pads(body: Body, knees: dict[str, tuple[Vector, Vector]]) -> list[bpy.t
         rigid = f"DEF-shin.{side}"
         # The kneecap sits a little below the joint's centre.
         out.append(shell_on_limb(body, f"knee_pad_{side}", knee + down * 0.03, -down, Vector((0, -1, 0)), 1.05, 0.075, 0.045,
-                                 0.008, 0.012, 0.012, "webbing", "plastic", rigid=rigid))
+                                 0.008, 0.012, 0.012, "webbing", "plastic", rigid=rigid, top_bone=f"DEF-thigh.{side}"))
         out.append(band(body, f"knee_strap_{side}", knee + down * 0.085, down, Vector((0, -1, 0)), 0.024, 0.004, 0.003,
                         "webbing", "strap", segments=20, reach=0.12, outward=True, rigid=rigid))
     return out
