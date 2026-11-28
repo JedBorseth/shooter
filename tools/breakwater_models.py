@@ -114,16 +114,17 @@ LOOKS: dict[str, dict] = {
     "steel_grey": _t("painted_metal", 2.0, (0.56, 0.58, 0.58), metal=0.12, rough=0.85, grime=0.2),
     "steel_dark": _t("painted_metal", 2.0, (0.25, 0.26, 0.27), metal=0.15, rough=0.85, grime=0.1),
     "door_steel": _t("painted_metal", 1.5, (0.5, 0.54, 0.56), metal=0.2, rough=0.8, grime=0.25),
-    # The underside of a roof deck: galvanised profiled steel, painted off-white
-    # inside buildings and under the rack's canopy.
-    "soffit": _t("corrugated", 1.6, (0.86, 0.87, 0.86), metal=0.0, rough=1.1, grime=0.0, normal=0.6),
+    # The underside of a roof: flat liner panels painted off-white, under the
+    # rack's canopy and inside the sheds (plain paint, smudged by the shared
+    # wear map: one draw with the other plain paints).
+    "soffit": _p((0.84, 0.85, 0.84), 0.65),
     # Light fittings: powder-coated housings and opal diffusers, lit (their
     # light is baked: layout `light`).
     "fitting_white": _p((0.84, 0.85, 0.84), 0.45),
-    # Epoxy floors: a satin coat over the slab, so the slab's relief only just
-    # shows through (full relief at low roughness read as crumpled foil).
-    "floor_epoxy_grey": _t("concrete_smooth", 3.0, (0.6, 0.62, 0.62), rough=0.75, grime=0.0, normal=0.25),
-    "floor_epoxy_green": _t("concrete_smooth", 3.0, (0.38, 0.5, 0.43), rough=0.75, grime=0.0, normal=0.25),
+    # Epoxy floors: a satin coat on the slab's concrete (the smooth set at low
+    # roughness read as crumpled foil).
+    "floor_epoxy_grey": _t("concrete_floor", 4.0, (0.58, 0.6, 0.61), rough=0.8, grime=0.0),
+    "floor_epoxy_green": _t("concrete_floor", 4.0, (0.38, 0.5, 0.43), rough=0.8, grime=0.0),
     "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
     "rope_tan": _p((0.55, 0.45, 0.3), 0.9),
     "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
