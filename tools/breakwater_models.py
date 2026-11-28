@@ -1625,6 +1625,19 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
         for j in range(n):
             zc = -half + 0.5 + (j + 0.5) * (half * 2 - 1.0) / n
             b.box(front, front + 0.02, y0 + 1.0, y0 + 2.0, zc - 0.45, zc + 0.45, "window_dark", detail=False)
+            # Rust weeping from the window's lower corners down the white
+            # front.
+            for dz in (-0.42, 0.42):
+                if (j + k + (dz > 0)) % 3:
+                    continue
+                ln = 0.5 + ((j * 7 + k * 3) % 5) * 0.15
+                xf = front + 0.004
+                zs = zc + dz
+                verts = [(xf, y0 + 1.0, zs + 0.06), (xf, y0 + 1.0, zs - 0.06), (xf, y0 + 1.0 - ln, zs - 0.09),
+                         (xf, y0 + 1.0 - ln, zs + 0.09)]
+                mix = [(0.45, 0.24, 0.12, 0.6, 1.1)] * 2 + [(0.45, 0.24, 0.12, 0.0, 1.0)] * 2
+                b._add({"kind": "shaded", "look": "ship_white", "verts": verts, "faces": [(0, 1, 2, 3)],
+                        "mix": mix}, True)
         n = int((front - xa - 1.0) / 1.8)
         for j in range(n):
             xc = xa + 0.5 + (j + 0.5) * (front - xa - 1.0) / n
