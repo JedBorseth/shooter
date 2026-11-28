@@ -10,7 +10,10 @@ extends Control
 ## rounds to win, on Breakwater, with no map row).
 ## Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
-## gameplay. Set `mode` before adding it to the tree.
+## gameplay. Set `mode`, and `picks` to restore earlier choices, before
+## adding it to the tree; `chosen_picks` reads them back. The title screen's
+## lobby keeps them, as Black Ops keeps a custom game's setup, and starts a
+## match from them with `options_for` without opening the panel.
 ##
 ## It is a panel on the right of the title screen, laid out as Black Ops 2's
 ## custom game rules with Black Ops 3's rows: a list of rule rows on the left
@@ -49,6 +52,23 @@ const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
 const KILLS_PER_WEAPON := [1, 2, 3]
 ## Free-for-all kill limits, per player.
 const FFA_SCORE_LIMITS := [10, 20, 30, 50]
+## The index each row starts on: Breakwater, 6v6 (or 8 players), normal
+## bots, ten minutes, two kills a weapon, six rounds, and the score limit
+## (`default_picks` takes the capture limit's from `CAPTURE_DEFAULT`).
+const DEFAULT_PICKS := {
+	"map": 0,
+	"allies": 5,
+	"enemies": 5,
+	"ally_skill": 1,
+	"enemy_skill": 1,
+	"players": 3,
+	"bot_skill": 1,
+	"kills_per_weapon": 1,
+	"score": 2,
+	"time": 1,
+	"rounds": 1,
+}
+const CAPTURE_DEFAULT := 1
 
 ## Pictures for the map, by map id.
 const MAP_PICTURES := {
@@ -98,6 +118,9 @@ const PUSH_SLIDE := 24.0
 
 ## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", or "snd".
 var mode := "tdm"
+## Each row's starting index by key (`DEFAULT_PICKS`); missing keys start
+## on their default.
+var picks := {}
 
 var _name: LineEdit
 ## The map row (every mode but Search and Destroy).
@@ -167,62 +190,132 @@ func options() -> Dictionary:
 
 
 func _base_options() -> Dictionary:
-	if _gun_game():
-		return {
-			"mode": "gungame",
-			"map": MAPS[_map.selected][1],
-			"bots": PLAYER_COUNTS[_players.selected] - 1,
-			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
-			"kills_per_weapon": KILLS_PER_WEAPON[_kills_per_weapon.selected],
-			"time_limit": TIME_LIMITS[_time_limit.selected],
-		}
-	if _ffa():
-		return {
-			"mode": "ffa",
-			"map": MAPS[_map.selected][1],
-			"bots": PLAYER_COUNTS[_players.selected] - 1,
-			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
-			"score_limit": FFA_SCORE_LIMITS[_score_limit.selected],
-			"time_limit": TIME_LIMITS[_time_limit.selected],
-		}
-	if _snd():
-		return _with_teams(
-			{
-				"mode": "snd",
-				"map": SND_MAP[1],
-				"rounds_to_win": ROUNDS_TO_WIN[_rounds.selected],
-			}
-		)
-	var limits := SCORE_LIMITS
-	if _ctf():
-		limits = CAPTURE_LIMITS
-	elif _hardpoint():
-		limits = POINT_LIMITS
-	elif _dom():
-		limits = DOM_POINT_LIMITS
-	return _with_teams(
-		{
-			"mode": mode if _ctf() or _hardpoint() or _dom() else "tdm",
-			"map": MAPS[_map.selected][1],
-			"score_limit": limits[_score_limit.selected],
-			"time_limit": TIME_LIMITS[_time_limit.selected],
-		}
-	)
+	return options_for(mode, chosen_picks())
 
 
-## A team mode's options with each team's bots: our team's size counts us,
-## and each team's bots play at their own difficulty.
-func _with_teams(chosen: Dictionary) -> Dictionary:
-	var allies: int = TEAM_SIZES[_allies.selected]
-	var enemies: int = TEAM_SIZES[_enemies.selected]
-	var ally_bots := allies - 1
-	chosen["bots"] = ally_bots + enemies
-	chosen["bot_skill"] = BOT_SKILLS[_enemy_skill.selected][1]
-	chosen["team_bots"] = "%d,%d" % [ally_bots, enemies]
-	chosen["team_bot_skill"] = (
-		"%s,%s" % [BOT_SKILLS[_ally_skill.selected][1], BOT_SKILLS[_enemy_skill.selected][1]]
-	)
+## Each row's chosen index, by its `DEFAULT_PICKS` key.
+func chosen_picks() -> Dictionary:
+	var chosen := default_picks(mode)
+	var rows := {
+		"map": _map,
+		"allies": _allies,
+		"enemies": _enemies,
+		"ally_skill": _ally_skill,
+		"enemy_skill": _enemy_skill,
+		"players": _players,
+		"bot_skill": _bot_skill,
+		"kills_per_weapon": _kills_per_weapon,
+		"score": _score_limit,
+		"time": _time_limit,
+		"rounds": _rounds,
+	}
+	for key: String in rows:
+		if rows[key] != null:
+			chosen[key] = (rows[key] as RuleRow).selected
 	return chosen
+
+
+## The rows' starting indices for `for_mode`.
+static func default_picks(for_mode: String) -> Dictionary:
+	var chosen := DEFAULT_PICKS.duplicate()
+	if for_mode == "ctf":
+		chosen["score"] = CAPTURE_DEFAULT
+	return chosen
+
+
+## The match `Net.start_local_match` takes for `for_mode` with the rows on
+## `chosen` (`DEFAULT_PICKS` keys), without the custom game settings.
+static func options_for(for_mode: String, chosen: Dictionary) -> Dictionary:
+	var p := default_picks(for_mode)
+	p.merge(chosen, true)
+	var map_id: String = MAPS[p.map][1]
+	if for_mode == "gungame" or for_mode == "ffa":
+		var free := {
+			"mode": for_mode,
+			"map": map_id,
+			"bots": PLAYER_COUNTS[p.players] - 1,
+			"bot_skill": BOT_SKILLS[p.bot_skill][1],
+			"time_limit": TIME_LIMITS[p.time],
+		}
+		if for_mode == "gungame":
+			free["kills_per_weapon"] = KILLS_PER_WEAPON[p.kills_per_weapon]
+		else:
+			free["score_limit"] = FFA_SCORE_LIMITS[p.score]
+		return free
+	var match_options := {}
+	if for_mode == "snd":
+		match_options = {"mode": "snd", "map": SND_MAP[1], "rounds_to_win": ROUNDS_TO_WIN[p.rounds]}
+	else:
+		match_options = {
+			"mode": for_mode if for_mode in ["ctf", "hardpoint", "dom"] else "tdm",
+			"map": map_id,
+			"score_limit": _score_limits(for_mode)[p.score],
+			"time_limit": TIME_LIMITS[p.time],
+		}
+	# Our team's size counts us; each team's bots play at their own skill.
+	var ally_bots: int = TEAM_SIZES[p.allies] - 1
+	var enemies: int = TEAM_SIZES[p.enemies]
+	match_options["bots"] = ally_bots + enemies
+	match_options["bot_skill"] = BOT_SKILLS[p.enemy_skill][1]
+	match_options["team_bots"] = "%d,%d" % [ally_bots, enemies]
+	match_options["team_bot_skill"] = (
+		"%s,%s" % [BOT_SKILLS[p.ally_skill][1], BOT_SKILLS[p.enemy_skill][1]]
+	)
+	return match_options
+
+
+## `options_for` with the custom game settings last chosen, as Start sends it.
+static func start_options(for_mode: String, chosen: Dictionary) -> Dictionary:
+	var match_options := options_for(for_mode, chosen)
+	var custom := CustomPresets.to_text(CustomPresets.last())
+	if not custom.is_empty():
+		match_options["custom"] = custom
+	return match_options
+
+
+## The match in a line, as the lobby shows it: "6v6  ·  75 Kills  ·  10 Minutes".
+static func summary(for_mode: String, chosen: Dictionary) -> String:
+	var o := options_for(for_mode, chosen)
+	var parts: Array[String] = []
+	if o.has("team_bots"):
+		var sizes := String(o.team_bots).split(",")
+		parts.append("%dv%d" % [int(sizes[0]) + 1, int(sizes[1])])
+	else:
+		parts.append("%d Players" % (int(o.bots) + 1))
+	match for_mode:
+		"gungame":
+			parts.append("%d Kills a Weapon" % o.kills_per_weapon)
+		"ctf":
+			parts.append("%d Captures" % o.score_limit)
+		"hardpoint", "dom":
+			parts.append("%d Points" % o.score_limit)
+		"snd":
+			parts.append("First to %d Rounds" % o.rounds_to_win)
+		_:
+			parts.append("%d Kills" % o.score_limit)
+	if o.has("time_limit"):
+		parts.append("%d Minutes" % o.time_limit)
+	return "  ·  ".join(parts)
+
+
+## The map a match on `chosen` is played on: [name, id].
+static func map_for(for_mode: String, chosen: Dictionary) -> Array:
+	if for_mode == "snd":
+		return SND_MAP
+	return MAPS[int(chosen.get("map", 0))]
+
+
+static func _score_limits(for_mode: String) -> Array:
+	match for_mode:
+		"ctf":
+			return CAPTURE_LIMITS
+		"hardpoint":
+			return POINT_LIMITS
+		"dom":
+			return DOM_POINT_LIMITS
+		"ffa":
+			return FFA_SCORE_LIMITS
+	return SCORE_LIMITS
 
 
 func _gun_game() -> bool:
@@ -285,7 +378,7 @@ func _build() -> void:
 	body.add_child(_rules)
 	_build_side(body)
 	_build_rows()
-	_show_map(0)
+	_show_map(_pick("map"))
 	_build_custom_line()
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -389,7 +482,7 @@ func _build_rows() -> void:
 		fixed.mouse_default_cursor_shape = Control.CURSOR_ARROW
 		fixed.modulate.a = 0.6
 	else:
-		_map = _row("Map", MAPS.map(func(m: Array) -> String: return m[0]), 0, about_maps[0])
+		_map = _row("Map", MAPS.map(func(m: Array) -> String: return m[0]), "map", about_maps[0])
 		_map.set_meta(&"item_descriptions", about_maps)
 		_map.item_selected.connect(_show_map)
 	var skills := BOT_SKILLS.map(func(s: Array) -> String: return s[0])
@@ -397,61 +490,70 @@ func _build_rows() -> void:
 		_players = _row(
 			"Players",
 			_counted(PLAYER_COUNTS, "Player"),
-			3,
+			"players",
 			"Players in the match, you included. Bots fill the places."
 		)
-		_bot_skill = _row("Bot Skill", skills, 1, "How well the bots play.")
+		_bot_skill = _row("Bot Skill", skills, "bot_skill", "How well the bots play.")
 	else:
 		var sizes := _counted(TEAM_SIZES, "Player")
-		_allies = _row("Allies", sizes, 5, "Your team's size, you included. Bots fill the places.")
-		_ally_skill = _row("Ally Bot Skill", skills, 1, "How well the bots on your team play.")
-		_enemies = _row("Enemies", sizes, 5, "The enemy team's size. Every enemy is a bot.")
-		_enemy_skill = _row("Enemy Bot Skill", skills, 1, "How well the enemy bots play.")
+		_allies = _row(
+			"Allies", sizes, "allies", "Your team's size, you included. Bots fill the places."
+		)
+		_ally_skill = _row(
+			"Ally Bot Skill", skills, "ally_skill", "How well the bots on your team play."
+		)
+		_enemies = _row("Enemies", sizes, "enemies", "The enemy team's size. Every enemy is a bot.")
+		_enemy_skill = _row(
+			"Enemy Bot Skill", skills, "enemy_skill", "How well the enemy bots play."
+		)
 	if _gun_game():
 		_kills_per_weapon = _row(
 			"Kills Per Weapon",
 			_counted(KILLS_PER_WEAPON, "Kill"),
-			1,
+			"kills_per_weapon",
 			"Kills you need with each weapon to move up to the next."
 		)
 	elif _ctf():
 		_score_limit = _row(
 			"Capture Limit",
 			_counted(CAPTURE_LIMITS, "Capture"),
-			1,
+			"score",
 			"The first team to bring this many flags home wins."
 		)
 	elif _hardpoint() or _dom():
 		var limits: Array = POINT_LIMITS if _hardpoint() else DOM_POINT_LIMITS
 		_score_limit = _row(
-			"Score Limit", _counted(limits, "Point"), 2, "The first team to this many points wins."
+			"Score Limit",
+			_counted(limits, "Point"),
+			"score",
+			"The first team to this many points wins."
 		)
 	elif _ffa():
 		_score_limit = _row(
 			"Kill Limit",
 			_counted(FFA_SCORE_LIMITS, "Kill"),
-			2,
+			"score",
 			"The first player to this many kills wins."
 		)
 	elif _snd():
 		_rounds = _row(
 			"Round Win Limit",
 			_counted(ROUNDS_TO_WIN, "Round"),
-			1,
+			"rounds",
 			"Rounds a team must win to take the match. The sides swap at halftime."
 		)
 	else:
 		_score_limit = _row(
 			"Kill Limit",
 			_counted(SCORE_LIMITS, "Kill"),
-			2,
+			"score",
 			"The first team to this many kills wins."
 		)
 	if not _snd():
 		_time_limit = _row(
 			"Time Limit",
 			_counted(TIME_LIMITS, "Minute"),
-			1,
+			"time",
 			"When time runs out, the side ahead wins."
 		)
 
@@ -461,13 +563,16 @@ func _counted(values: Array, unit: String) -> Array:
 	return values.map(func(n: int) -> String: return "%d %s%s" % [n, unit, "" if n == 1 else "s"])
 
 
-func _row(label_text: String, items: Array, chosen: int, description: String) -> RuleRow:
+## A rule row on `items`, starting on `pick`: an index, or a `DEFAULT_PICKS`
+## key to start on the kept choice with the starred default from its default.
+func _row(label_text: String, items: Array, pick: Variant, description: String) -> RuleRow:
 	var row := RuleRow.new()
 	row.name = label_text.replace(" ", "")
 	row.label_text = label_text
-	row.setup(items, chosen)
+	var default_index: int = default_picks(mode)[pick] if pick is String else pick
+	row.setup(items, _pick(pick) if pick is String else pick, default_index)
 	row.set_meta(&"description", description)
-	row.set_meta(&"default", items[chosen])
+	row.set_meta(&"default", items[default_index])
 	row.item_selected.connect(func(_index: int) -> void: _describe(row))
 	_rules.add_child(row)
 	return row
@@ -620,6 +725,11 @@ func _describe(control: Control) -> void:
 		if index >= 0 and index < items.size() and not String(items[index]).is_empty():
 			text = String(items[index])
 	_about_text.text = text
+
+
+## The starting index of row `key`: the one in `picks`, else its default.
+func _pick(key: String) -> int:
+	return int(picks.get(key, default_picks(mode)[key]))
 
 
 func _detail() -> String:

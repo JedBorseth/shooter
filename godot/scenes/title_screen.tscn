@@ -76,6 +76,99 @@ size_flags_horizontal = 0
 mouse_filter = 2
 theme_override_constants/separation = 3
 
+[node name="LocalMatch" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "LOCAL MATCH"
+alignment = 0
+
+[node name="JoinServer" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "JOIN SERVER"
+alignment = 0
+
+[node name="PracticeGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "TESTING AREA"
+alignment = 0
+
+[node name="FreeRoam" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "FREE ROAM"
+alignment = 0
+
+[node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Options" type="Button" parent="Margin/Layout/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "OPTIONS"
+alignment = 0
+
+[node name="Quit" type="Button" parent="Margin/Layout/Menu"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "QUIT"
+alignment = 0
+
+[node name="StartGame" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "START GAME"
+alignment = 0
+
+[node name="GameMode" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "GAME MODE"
+alignment = 0
+
+[node name="SetupGame" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 27)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"FrontMenuItem"
+text = "SETUP GAME"
+alignment = 0
+
 [node name="TeamDeathmatch" type="Button" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(0, 27)
 layout_mode = 2
@@ -137,68 +230,6 @@ size_flags_horizontal = 0
 mouse_default_cursor_shape = 2
 theme_type_variation = &"FrontMenuItem"
 text = "SEARCH AND DESTROY"
-alignment = 0
-
-[node name="ModesGap" type="Control" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 9)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="JoinServer" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 27)
-layout_mode = 2
-size_flags_horizontal = 0
-mouse_default_cursor_shape = 2
-theme_type_variation = &"FrontMenuItem"
-text = "JOIN SERVER"
-alignment = 0
-
-[node name="OnlineGap" type="Control" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 9)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 27)
-layout_mode = 2
-size_flags_horizontal = 0
-mouse_default_cursor_shape = 2
-theme_type_variation = &"FrontMenuItem"
-text = "TESTING AREA"
-alignment = 0
-
-[node name="FreeRoam" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 27)
-layout_mode = 2
-size_flags_horizontal = 0
-mouse_default_cursor_shape = 2
-theme_type_variation = &"FrontMenuItem"
-text = "FREE ROAM"
-alignment = 0
-
-[node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(0, 9)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="Options" type="Button" parent="Margin/Layout/Menu"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 27)
-layout_mode = 2
-size_flags_horizontal = 0
-mouse_default_cursor_shape = 2
-theme_type_variation = &"FrontMenuItem"
-text = "OPTIONS"
-alignment = 0
-
-[node name="Quit" type="Button" parent="Margin/Layout/Menu"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 27)
-layout_mode = 2
-size_flags_horizontal = 0
-mouse_default_cursor_shape = 2
-theme_type_variation = &"FrontMenuItem"
-text = "QUIT"
 alignment = 0
 
 [node name="StatusGap" type="Control" parent="Margin/Layout"]

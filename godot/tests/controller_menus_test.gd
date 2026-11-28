@@ -16,7 +16,7 @@ func _run() -> void:
 	change_scene_to_file("res://scenes/title_screen.tscn")
 	await _frames(3)
 	_title = current_scene as Control
-	_check(_focused() == _route("TeamDeathmatch"), "the title screen starts on Team Deathmatch")
+	_check(_focused() == _route("LocalMatch"), "the title screen starts on Local Match")
 	await _title_navigation()
 	await _lost_focus()
 	await _match_setup()
@@ -29,51 +29,51 @@ func _run() -> void:
 
 func _title_navigation() -> void:
 	await _press(JOY_BUTTON_DPAD_DOWN)
-	_check(_focused() == _route("GunGame"), "D-pad down moves to the next route")
+	_check(_focused() == _route("JoinServer"), "D-pad down moves to the next route")
 	await _press(JOY_BUTTON_DPAD_UP)
-	_check(_focused() == _route("TeamDeathmatch"), "D-pad up moves back")
+	_check(_focused() == _route("LocalMatch"), "D-pad up moves back")
 	await _tilt(0.8)
 	await _tilt(1.0)
-	_check(_focused() == _route("GunGame"), "a stick tilt moves once, however far it goes")
+	_check(_focused() == _route("JoinServer"), "a stick tilt moves once, however far it goes")
 	await _tilt(0.0)
 	await _tilt(-1.0)
 	await _tilt(0.0)
-	_check(_focused() == _route("TeamDeathmatch"), "the stick moves up too")
+	_check(_focused() == _route("LocalMatch"), "the stick moves up too")
 	# Held, a direction repeats like a held key.
 	_pad(JOY_BUTTON_DPAD_DOWN, true)
 	await create_timer(0.7).timeout
 	_pad(JOY_BUTTON_DPAD_DOWN, false)
 	await _frames(2)
 	var routes := _title.get_node("Margin/Layout/Menu").get_children()
-	var steps := routes.find(_focused()) - routes.find(_route("TeamDeathmatch"))
+	var steps := routes.find(_focused()) - routes.find(_route("LocalMatch"))
 	_check(steps >= 4, "holding D-pad down repeats (%d steps in 0.7 s)" % steps)
 	var after_release := _focused()
 	await create_timer(0.3).timeout
 	_check(_focused() == after_release, "the repeat stops on release")
-	_route("TeamDeathmatch").grab_focus()
+	_route("LocalMatch").grab_focus()
 
 
 ## A click (or a freed button) can leave nothing focused; the next press finds
 ## focus again without acting on it.
 func _lost_focus() -> void:
-	_route("Hardpoint").grab_focus()
+	_route("LocalMatch").grab_focus()
 	root.gui_release_focus()
 	await _press(JOY_BUTTON_DPAD_DOWN)
-	_check(_focused() == _route("Hardpoint"), "with no focus, the D-pad refocuses where it was")
+	_check(_focused() == _route("LocalMatch"), "with no focus, the D-pad refocuses where it was")
 	root.gui_release_focus()
 	await _press(JOY_BUTTON_A)
-	_check(_focused() == _route("Hardpoint"), "with no focus, A refocuses")
-	_check(_title.get_node_or_null("TdmSetup") == null, "that A press opens nothing")
-	_route("Hardpoint").grab_focus()
-	_route("Hardpoint").hide()
+	_check(_focused() == _route("LocalMatch"), "with no focus, A refocuses")
+	_check(_route("LocalMatch").visible, "that A press opens nothing")
+	_route("TestingArea").grab_focus()
+	_route("TestingArea").hide()
 	await _frames(1)
 	await _press(JOY_BUTTON_DPAD_DOWN)
 	var near := _focused()
 	_check(
-		near in [_route("CaptureTheFlag"), _route("Domination"), _route("SearchAndDestroy")],
+		near in [_route("FreeRoam"), _route("Options"), _route("JoinServer")],
 		"when that control is gone, the nearest one takes focus (got %s)" % _name(near)
 	)
-	_route("Hardpoint").show()
+	_route("TestingArea").show()
 	# A row rebuilt under focus: focus moves to its replacement without a press.
 	var row := HBoxContainer.new()
 	row.position = Vector2(900, 400)
@@ -95,13 +95,29 @@ func _lost_focus() -> void:
 	await _frames(3)
 	_check(_name(_focused()) == "New1", "a freed control hands focus to its replacement")
 	row.queue_free()
-	_route("TeamDeathmatch").grab_focus()
+	_route("LocalMatch").grab_focus()
 
 
+## Local Match, the mode list, and the setup, by pad: A pushes a page, B pops it.
 func _match_setup() -> void:
 	await _press(JOY_BUTTON_A)
+	_check(_focused() == _route("StartGame"), "A on Local Match opens the lobby on Start Game")
+	await _press(JOY_BUTTON_DPAD_DOWN)
+	_check(_focused() == _route("GameMode"), "down reaches Game Mode")
+	await _press(JOY_BUTTON_A)
+	_check(_focused() == _route("TeamDeathmatch"), "A lists the modes, on the lobby's mode")
+	await _press(JOY_BUTTON_DPAD_DOWN)
+	await _press(JOY_BUTTON_A)
+	_check(_focused() == _route("StartGame"), "A picks Gun Game and returns to Start Game")
+	await _press(JOY_BUTTON_DPAD_DOWN)
+	await _press(JOY_BUTTON_A)
+	await _press(JOY_BUTTON_B)
+	_check(_focused() == _route("GameMode"), "B leaves the mode list for the lobby")
+	await _press(JOY_BUTTON_DPAD_DOWN)
+	_check(_focused() == _route("SetupGame"), "down reaches Setup Game")
+	await _press(JOY_BUTTON_A)
 	var setup := _title.get_node_or_null("TdmSetup")
-	_check(setup != null, "A opens the match setup")
+	_check(setup != null and setup.get("mode") == "gungame", "A opens the lobby mode's setup")
 	if setup == null:
 		return
 	await _frames(1)
@@ -122,7 +138,9 @@ func _match_setup() -> void:
 	await _press(JOY_BUTTON_B)
 	await _frames(1)
 	_check(_title.get_node_or_null("TdmSetup") == null, "B closes the setup")
-	_check(_focused() == _route("TeamDeathmatch"), "focus returns to the route that opened it")
+	_check(_focused() == _route("SetupGame"), "focus returns to Setup Game")
+	await _press(JOY_BUTTON_B)
+	_check(_focused() == _route("LocalMatch"), "B leaves the lobby for Local Match")
 
 
 func _options() -> void:

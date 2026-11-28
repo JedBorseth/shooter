@@ -151,8 +151,9 @@ from 27115 would not answer its query.
 
 ## Local matches
 
-The title screen's match setups (Team Deathmatch, Free-for-all, Gun Game,
-Capture the Flag, Hardpoint, Domination, Search and Destroy) call
+The title screen's Local Match lobby (Start Game, or Start Match in Setup
+Game) plays Team Deathmatch, Free-for-all, Gun Game, Capture the Flag,
+Hardpoint, Domination, or Search and Destroy through
 `Net.start_local_match`: it starts a dedicated server in a background
 process on port 27035, with no query port, and joins it. That server pauses
 with the pause menu and stops when the player leaves. Its log is

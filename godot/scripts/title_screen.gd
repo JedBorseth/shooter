@@ -5,8 +5,20 @@ extends Control
 ## line under the list saying what the focused item does, a card in the
 ## lower left showing where it leads, the player's name and level top right,
 ## and a footer band of key prompts, all over a still of Breakwater darkened
-## from the left. Local match modes open their setup as a panel on the right;
-## the Join screen and Options take the whole screen. The Testing Area and
+## from the left.
+##
+## The list has three pages, pushed one over the other as Black Ops 2 and 3
+## push their menus (the header names the page, the footer offers Back):
+## - Multiplayer: Local Match, Join Server, the Testing Area, Free Roam,
+##   Options, and Quit.
+## - Local Match, the lobby of a local match against bots, as Black Ops 3's
+##   local and custom games lobby: Start Game, Game Mode, and Setup Game, with
+##   the card showing the map and mode and the line the rules.
+## - Game Mode: the seven modes; choosing one returns to the lobby on Start
+##   Game, as Black Ops does after a mode is picked.
+## Setup Game opens the mode's rules as a panel on the right; the lobby keeps
+## what was chosen there (and the mode) for Start Game, until the game quits.
+## The Join screen and Options take the whole screen. The Testing Area and
 ## Free Roam (Breakwater, alone) load straight away, behind a loading screen.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
@@ -14,6 +26,7 @@ const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
 const LoadingScreen := preload("res://scripts/ui/loading_screen.gd")
+const TdmSetup := preload("res://scripts/tdm_setup.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
 const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const JOIN_PATH := "res://scenes/join_server.tscn"
@@ -29,8 +42,33 @@ const SETUP_BUTTONS := {
 	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
 }
+## The items on each page of the list, top to bottom, and the page's header.
+const PAGES := {
+	"root": ["LocalMatch", "JoinServer", "TestingArea", "FreeRoam", "Options", "Quit"],
+	"local": ["StartGame", "GameMode", "SetupGame"],
+	"modes":
+	[
+		"TeamDeathmatch",
+		"GunGame",
+		"FreeForAll",
+		"CaptureTheFlag",
+		"Hardpoint",
+		"Domination",
+		"SearchAndDestroy",
+	],
+}
+## Each page's header: [title, context line above it].
+const PAGE_HEADERS := {
+	"root": ["Multiplayer", "Shooter"],
+	"local": ["Local Match", "Multiplayer"],
+	"modes": ["Game Mode", "Local match"],
+}
+## The page Back returns to from each page, and the item it focuses there.
+const PARENTS := {"local": ["root", "LocalMatch"], "modes": ["local", "GameMode"]}
+## Spacers shown on the Multiplayer page only.
+const ROOT_GAPS := ["PracticeGap", "SystemGap"]
 ## Each item's kind, shown in the map card's header strip, and the line the
-## status shows.
+## status shows. The lobby's items and the modes write their own.
 const ROUTES := {
 	"TeamDeathmatch": ["TEAMS", "Two teams race to the kill limit."],
 	"GunGame": ["LADDER", "Up eight weapons, one kill at a time."],
@@ -39,6 +77,9 @@ const ROUTES := {
 	"Hardpoint": ["OBJECTIVE", "Hold the moving zone to score."],
 	"Domination": ["OBJECTIVE", "Take and hold flags A, B, and C."],
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
+	"LocalMatch": ["VS BOTS", "Play any mode against bots on this machine."],
+	"GameMode": ["", "Choose the mode to play."],
+	"SetupGame": ["", "The map, teams, bots, limits, and game settings."],
 	"JoinServer": ["BY IP", "Join a dedicated server by its address."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"FreeRoam": ["NO BOTS", "Walk Breakwater on your own."],
@@ -57,13 +98,25 @@ const POINTER_X := 50.0
 const FLASH := Color(1.6, 1.6, 1.6)
 const FLASH_TIME := 0.1
 
+## The lobby's mode and each mode's rule choices (`TdmSetup.chosen_picks`),
+## kept in `Net.lobby` while the game runs so a match's end returns to the
+## same setup.
+var lobby_mode: String:
+	get:
+		return Net.lobby.get("mode", "tdm")
+	set(value):
+		Net.lobby["mode"] = value
+var lobby_picks: Dictionary:
+	get:
+		return Net.lobby.get_or_add("picks", {})
+
 var _loading := false
+## The page of the list shown: "root", "local", or "modes".
+var _page := "root"
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 var _tdm_setup: Node
 var _loading_screen: Control
-## The menu button that opened the match setup, focused again when it closes.
-var _setup_button := "TeamDeathmatch"
 var _pointer: Control
 
 @onready var _menu: Control = $Margin/Layout/Menu
@@ -76,11 +129,15 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
+	_menu.get_node("LocalMatch").pressed.connect(_show_page.bind("local", "StartGame"))
+	_menu.get_node("StartGame").pressed.connect(_start_lobby)
+	_menu.get_node("GameMode").pressed.connect(_open_modes)
+	_menu.get_node("SetupGame").pressed.connect(func() -> void: _open_setup(lobby_mode))
 	_menu.get_node("FreeRoam").pressed.connect(start_free_roam)
 	%Options.pressed.connect(_open_options)
 	%Quit.pressed.connect(get_tree().quit)
 	for mode: String in SETUP_BUTTONS:
-		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
+		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_choose_mode.bind(mode))
 	_menu.get_node("JoinServer").pressed.connect(_open_join)
 	_pointer = Control.new()
 	_pointer.name = "Pointer"
@@ -96,21 +153,74 @@ func _ready() -> void:
 		button.focus_entered.connect(_on_focus.bind(button))
 		button.focus_exited.connect(_on_blur.bind(button))
 		button.mouse_entered.connect(_describe.bind(button))
-	_menu.get_node("TeamDeathmatch").grab_focus()
+	if Net.return_to_lobby:
+		Net.return_to_lobby = false
+		_show_page("local", "StartGame")
+	else:
+		_show_page("root", "LocalMatch")
 	$Margin/Layout/Footer/Build.text = "Build %s" % GameBuild.label()
 	var footer_keys := FooterKeys.new()
 	footer_keys.name = "FooterKeys"
 	add_child(footer_keys)
 	footer_keys.bind($Margin/Layout/Footer/SelectKey, &"ui_accept")
 	footer_keys.bind($Margin/Layout/Footer/BackPrompt/BackKey, &"ui_cancel")
-	$Margin/Layout/Footer/BackPrompt/BackHint.pressed.connect(_close_tdm)
-	_show_setup_chrome(false)
+	$Margin/Layout/Footer/BackPrompt/BackHint.pressed.connect(_go_back)
 	# Back from a server (left, or the connection failed): straight to Join.
 	if Net.return_to_join:
 		var message := Net.join_message
 		Net.return_to_join = false
 		Net.join_message = ""
 		_open_join(message)
+
+
+## Back (Escape, or B on a pad) leaves the lobby or the mode list for the
+## page under it. The setup panel, Options, and Join take their own Back.
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed(&"ui_cancel") or _loading:
+		return
+	if _tdm_setup == null and $Margin.visible and PARENTS.has(_page):
+		get_viewport().set_input_as_handled()
+		_go_back()
+
+
+## The footer's Back: closes the setup panel, else goes up a page.
+func _go_back() -> void:
+	if _tdm_setup != null:
+		_close_tdm()
+	elif PARENTS.has(_page):
+		_show_page(PARENTS[_page][0], PARENTS[_page][1])
+
+
+## Shows `page`'s items, header, and footer, and focuses `focus`.
+func _show_page(page: String, focus: String) -> void:
+	_page = page
+	for node: Node in _menu.get_children():
+		var item := node as Control
+		if node is Button:
+			item.visible = PAGES[page].has(String(node.name))
+		else:
+			item.visible = page == "root" and ROOT_GAPS.has(String(node.name))
+	# On the mode list, the lobby's mode wears the dark orange plate.
+	_set_current(SETUP_BUTTONS[lobby_mode] if page == "modes" else "")
+	_show_setup_chrome(false)
+	(_menu.get_node(focus) as Button).grab_focus()
+
+
+func _open_modes() -> void:
+	_show_page("modes", SETUP_BUTTONS[lobby_mode])
+
+
+## Makes `mode` the lobby's and returns to the lobby on Start Game.
+func _choose_mode(mode: String) -> void:
+	lobby_mode = mode
+	_show_page("local", "StartGame")
+
+
+## Starts the lobby's match with its kept rules.
+func _start_lobby() -> void:
+	if _loading:
+		return
+	_start_tdm(TdmSetup.start_options(lobby_mode, lobby_picks.get(lobby_mode, {})))
 
 
 ## Every button on the title menu, top to bottom.
@@ -148,13 +258,31 @@ func _describe(button: Button) -> void:
 	var key := String(button.name)
 	var route: Array = ROUTES.get(key, ["", ""])
 	_status.text = route[1]
-	if CARDS.has(key):
+	if key in ["LocalMatch", "StartGame", "GameMode", "SetupGame"]:
+		_show_lobby_card(key == "LocalMatch")
+		if key == "StartGame":
+			_status.text = TdmSetup.summary(lobby_mode, lobby_picks.get(lobby_mode, {}))
+		elif key == "GameMode":
+			_status.text = "Choose the mode to play. Now: %s." % TdmSetup.MODE_NAMES[lobby_mode]
+	elif CARDS.has(key):
 		var card: Array = CARDS[key]
 		_card.call(&"show_card", card[0], "%s  ·  %s" % [card[1], route[0]], card[2], card[3])
 	elif SETUP_BUTTONS.values().has(key):
 		_card.call(
 			&"show_card", BREAKWATER_PICTURE, "VS BOTS  ·  %s" % route[0], "Breakwater", button.text
 		)
+
+
+## The card for the lobby: the map its match is on, and its mode; `kind`
+## names the mode's kind in the header strip, else "VS BOTS" alone.
+func _show_lobby_card(kind: bool) -> void:
+	var map: Array = TdmSetup.map_for(lobby_mode, lobby_picks.get(lobby_mode, {}))
+	var header := "VS BOTS"
+	if kind:
+		header += "  ·  %s" % ROUTES[SETUP_BUTTONS[lobby_mode]][0]
+	_card.call(
+		&"show_card", TdmSetup.MAP_PICTURES[map[1]], header, map[0], TdmSetup.MODE_NAMES[lobby_mode]
+	)
 
 
 ## Hides the menu's own chrome while a full-screen page covers it.
@@ -199,35 +327,41 @@ func _open_join(message := "") -> void:
 		func() -> void:
 			join.queue_free()
 			_show_chrome(true)
-			$Margin/Layout/Menu/JoinServer.grab_focus()
+			_show_page("root", "JoinServer")
 	)
 
 
-## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame",
-## "ffa", or "snd") as a panel beside the menu, closing any panel already open.
+## Makes `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", or
+## "snd") the lobby's and opens its setup, with the rules kept for it, as a
+## panel beside the lobby's list, closing any panel already open.
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
 	_close_tdm(false)
+	lobby_mode = mode
+	if _page != "local":
+		_show_page("local", "SetupGame")
 	var setup := Control.new()
-	setup.set_script(load("res://scripts/tdm_setup.gd"))
+	setup.set_script(TdmSetup)
 	setup.set("mode", mode)
+	setup.set("picks", lobby_picks.get(mode, {}))
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
-	_setup_button = SETUP_BUTTONS[mode]
-	_set_current(_setup_button)
+	_set_current("SetupGame")
 	add_child(setup)
 	move_child(setup, _pointer.get_index())
-	_show_setup_chrome(true, (_menu.get_node(_setup_button) as Button).text)
+	_show_setup_chrome(true, TdmSetup.MODE_NAMES[mode])
 	setup.back_requested.connect(_close_tdm)
 	setup.page_changed.connect(func(page_title: String) -> void: $Frame.set("title", page_title))
 	setup.start_requested.connect(_start_tdm)
 
 
-## Closes the match setup panel, if open, and focuses the route that opened it.
+## Closes the match setup panel, if open, keeping its choices for the lobby,
+## and focuses Setup Game.
 func _close_tdm(refocus := true) -> void:
 	if _tdm_setup == null:
 		return
+	lobby_picks[lobby_mode] = _tdm_setup.call(&"chosen_picks")
 	_tdm_setup.queue_free()
 	# Free the name now, so a panel opened this frame can take it.
 	remove_child(_tdm_setup)
@@ -235,7 +369,7 @@ func _close_tdm(refocus := true) -> void:
 	_set_current("")
 	_show_setup_chrome(false)
 	if refocus:
-		(_menu.get_node(_setup_button) as Button).grab_focus()
+		(_menu.get_node("SetupGame") as Button).grab_focus()
 
 
 ## While a match setup is open, the header names its mode (a Black Ops 3
@@ -243,28 +377,28 @@ func _close_tdm(refocus := true) -> void:
 ## offers Back, and the line and card under the list step aside (the panel
 ## shows the map and describes the focused row).
 func _show_setup_chrome(open: bool, mode_name := "") -> void:
-	$Frame.set("title", mode_name if open else "Multiplayer")
-	$Frame.set("context", "Local match  ·  vs bots" if open else "Shooter")
+	$Frame.set("title", mode_name if open else PAGE_HEADERS[_page][0])
+	$Frame.set("context", "Local match  ·  vs bots" if open else PAGE_HEADERS[_page][1])
 	_card.visible = not open
 	_status.visible = not open
 	for node: Node in _menu.get_children():
 		if node is Button:
 			var current := (node as Button).theme_type_variation == &"FrontMenuItemCurrent"
 			(node as Button).modulate.a = 0.45 if open and not current else 1.0
-	$Margin/Layout/Footer/BackPrompt.visible = open
+	$Margin/Layout/Footer/BackPrompt.visible = open or PARENTS.has(_page)
 
 
-## Marks route `button_name` as the open one (a dark orange plate); "" clears it.
+## Marks item `button_name` as the open or chosen one (a dark orange
+## plate); "" clears it.
 func _set_current(button_name: String) -> void:
-	for mode: String in SETUP_BUTTONS:
-		var button := _menu.get_node(SETUP_BUTTONS[mode]) as Button
+	for button in _buttons():
 		button.theme_type_variation = (
-			&"FrontMenuItemCurrent" if SETUP_BUTTONS[mode] == button_name else &"FrontMenuItem"
+			&"FrontMenuItemCurrent" if String(button.name) == button_name else &"FrontMenuItem"
 		)
 
 
 func _start_tdm(options: Dictionary) -> void:
-	_close_tdm()
+	_close_tdm(false)
 	_loading = true
 	_set_buttons_disabled(true)
 	_status.text = "Starting a local server…"
