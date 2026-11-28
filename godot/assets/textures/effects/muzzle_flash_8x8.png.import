@@ -2,20 +2,22 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dq0vihp2lq6g2"
-path="res://.godot/imported/muzzle_flash_4x4.png-46e592805fb966bbc178928042fdbccd.ctex"
+uid="uid://dj7llankavxla"
+path.s3tc="res://.godot/imported/muzzle_flash_8x8.png-7985b9b36c8836b86e24db46f55a09b8.s3tc.ctex"
+path.etc2="res://.godot/imported/muzzle_flash_8x8.png-7985b9b36c8836b86e24db46f55a09b8.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
-source_file="res://assets/textures/effects/muzzle_flash_4x4.png"
-dest_files=["res://.godot/imported/muzzle_flash_4x4.png-46e592805fb966bbc178928042fdbccd.ctex"]
+source_file="res://assets/textures/effects/muzzle_flash_8x8.png"
+dest_files=["res://.godot/imported/muzzle_flash_8x8.png-7985b9b36c8836b86e24db46f55a09b8.s3tc.ctex", "res://.godot/imported/muzzle_flash_8x8.png-7985b9b36c8836b86e24db46f55a09b8.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

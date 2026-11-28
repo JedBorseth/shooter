@@ -1,9 +1,10 @@
-[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+[gd_resource type="ShaderMaterial" format=3]
 
 [ext_resource type="Shader" path="res://shaders/muzzle_flash.gdshader" id="1_shader"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/muzzle_flash_4x4.png" id="2_flipbook"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/muzzle_flash_8x8.png" id="2_flipbook"]
 
 [resource]
 render_priority = 1
 shader = ExtResource("1_shader")
 shader_parameter/flipbook = ExtResource("2_flipbook")
+shader_parameter/flash_class = 1

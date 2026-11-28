@@ -4,11 +4,13 @@
 //
 // `shape` 0 is the flash seen down the barrel, `shape` 1 the plume seen from the
 // side (along the quad's +X). Each is a frame of the rendered flash atlas in
-// `flipbook` (the firearms' material, materials/muzzle_flash.tres;
-// tools/build_muzzle_flash.py: front stars, side plumes, and their smaller
-// aimed versions, four of each), picked per shot by `seed` and switched to the
-// aimed row by `aimed`, both set per instance; its heat runs from `color` at
-// the edges to `core_color` in the middle.
+// `flipbook` (tools/build_muzzle_flash.py: 384-pixel cells, two rows per gun
+// class, `flash_class`: 0 rifle, 1 SMG and pistol, 2 shotgun, 3 marksman
+// rifle; set by the class's material, materials/muzzle_flash_<class>.tres),
+// four variants from the hip and four smaller aimed ones per row, picked per
+// shot by `seed` and switched to the aimed ones by `aimed`, both set per
+// instance; its heat runs from `color` at the edges to `core_color` in the
+// middle.
 shader_type spatial;
 render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled;
 
@@ -19,6 +21,7 @@ uniform vec4 core_color : source_color = vec4(1.0, 0.95, 0.85, 1.0);
 uniform float energy = 3.0;
 uniform bool viewmodel = true;
 uniform int shape = 0;
+uniform int flash_class = 0;
 uniform sampler2D flipbook : hint_default_black, filter_linear, repeat_disable;
 /// How much bigger than its quad the first-person flash and plume draw
 /// (Call of Duty's first-person flashes are oversized next to the gun; the
@@ -51,13 +54,14 @@ void vertex() {
 }
 
 void fragment() {
-	// A 4 x 4 atlas: rows front, side, aimed front, aimed side.
-	float row = float(shape) + (aimed > 0.5 ? 2.0 : 0.0);
-	float column = mod(floor(seed), 4.0);
-	vec2 cell = clamp(UV, vec2(0.004), vec2(0.996));
+	// An 8 x 8 atlas: two rows (front, side) per class; columns 0 to 3 from
+	// the hip, 4 to 7 aimed.
+	float row = float(flash_class * 2 + shape);
+	float column = mod(floor(seed), 4.0) + (aimed > 0.5 ? 4.0 : 0.0);
+	vec2 cell = clamp(UV, vec2(0.003), vec2(0.997));
 	// The atlas holds linear heat; lifted, the thin gas round the core
 	// shows as well as the white-hot middle.
-	float heat = pow(texture(flipbook, (vec2(column, row) + cell) * 0.25).r, 0.6);
+	float heat = pow(texture(flipbook, (vec2(column, row) + cell) * 0.125).r, 0.6);
 	if (shape == 0) {
 		// A soft, round hot core and a faint halo under the petals, so the
 		// flash reads as a layered burst of gas rather than a drawn star.

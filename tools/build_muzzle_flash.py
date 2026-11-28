@@ -2,24 +2,27 @@
 
     blender -b --factory-startup --python tools/build_muzzle_flash.py
 
-Writes godot/assets/textures/effects/muzzle_flash_4x4.png: a 4 x 4 atlas of
-256-pixel cells, each a flash rendered with Cycles from emission-only volumes
+Writes godot/assets/textures/effects/muzzle_flash_8x8.png: an 8 x 8 atlas of
+384-pixel cells, each a flash rendered with Cycles from emission-only volumes
 (glowing gas, no smoke), white on black, so the brightness is the flash's
 heat and the shader (shaders/muzzle_flash.gdshader) colours it from deep
-orange at the edges to white-hot in the core and adds it to the picture:
+orange at the edges to white-hot in the core and adds it to the picture.
 
-- row 0, the flash seen down the barrel: a white-hot core and four to six
-  ragged petals of burning gas thrown out sideways from the muzzle, each its
-  own length and turbulence;
-- row 1, the flash seen from the side (the plume, drawn on two quads crossed
-  along the barrel): gas flaring out of the muzzle round a hot core and
-  tapering to a point;
-- rows 2 and 3, the same two views aimed: smaller, tighter, with shorter
-  petals and a shorter plume, so a flash seen along the sights does not wash
-  out the sight picture.
+Two rows per gun class (CLASSES: rifle, SMG and pistol, shotgun, marksman),
+in that order:
 
-Each row has four variants, and the shader picks one at random for every
-shot. The side cells are drawn stretched across the barrel by 1 / SIDE_ASPECT,
+- the flash seen down the barrel: a white-hot core and ragged petals of
+  burning gas thrown out sideways from the muzzle, each its own length and
+  turbulence (a rifle's four to six, a pistol's few short stubby ones, a
+  shotgun's wide ragged ring, a marksman rifle's long thin cross);
+- the flash seen from the side (the plume, drawn on two quads crossed along
+  the barrel): gas flaring out of the muzzle round a hot core and tapering
+  to a point (short and round for a pistol, fat for a shotgun, long for a
+  marksman rifle).
+
+Columns 0 to 3 are four variants from the hip; 4 to 7 the same aimed:
+smaller and tighter, so a flash seen along the sights does not wash out the
+sight picture. The shader picks a variant at random for every shot. The side cells are drawn stretched across the barrel by 1 / SIDE_ASPECT,
 because the plume's quad is SIDE_ASPECT times as tall as it is long.
 
 Everything is built here from fixed seeds (no source files), so a rerun
@@ -36,15 +39,26 @@ import bpy
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "godot" / "assets" / "textures" / "effects" / "muzzle_flash_4x4.png"
+OUT = ROOT / "godot" / "assets" / "textures" / "effects" / "muzzle_flash_8x8.png"
 SCRATCH = Path.home() / ".cache" / "shooter-fidelity" / "muzzle-flash"
 
-CELL = 256
-GRID = 4
+CELL = 384
+GRID = 8
 # The plume quad's height over its length (rust/game/src/viewmodel.rs:
 # PLUME_ASPECT).
 SIDE_ASPECT = 0.5
-SAMPLES = 256
+SAMPLES = int(__import__("os").environ.get("FLASH_SAMPLES", "256"))
+
+# Per gun class: the head-on flash's size, petal count range, petal length
+# and width ranges (times the size), and core radius (times the size); the
+# plume's length (cell widths), flare point range (share of its length),
+# and bulge range (cell heights).
+CLASSES = [
+    ("rifle", 0.95, (4, 6), (0.6, 1.0), (0.14, 0.2), 0.26, 1.8, (0.32, 0.42), (0.17, 0.22)),
+    ("smg", 0.72, (3, 4), (0.45, 0.7), (0.18, 0.26), 0.34, 1.15, (0.4, 0.5), (0.2, 0.26)),
+    ("shotgun", 1.0, (6, 8), (0.55, 0.95), (0.2, 0.28), 0.32, 1.5, (0.45, 0.6), (0.27, 0.33)),
+    ("marksman", 1.0, (4, 4), (0.85, 1.05), (0.1, 0.13), 0.24, 2.1, (0.25, 0.32), (0.15, 0.19)),
+]
 
 
 def reset() -> None:
@@ -52,6 +66,13 @@ def reset() -> None:
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
+    if __import__("os").environ.get("FLASH_GPU"):
+        prefs = bpy.context.preferences.addons["cycles"].preferences
+        prefs.compute_device_type = "CUDA"
+        prefs.get_devices()
+        for device in prefs.devices:
+            device.use = device.type == "CUDA" and "P104" in device.name
+        scene.cycles.device = "GPU"
     scene.cycles.samples = SAMPLES
     scene.cycles.use_denoising = False
     scene.cycles.volume_step_rate = 0.5
@@ -223,32 +244,36 @@ def ball(name, seed, strength, centre, radius, squash_y=1.0):
     return obj
 
 
-def front(rng: random.Random, seed: float, aimed: bool) -> None:
+def front(rng: random.Random, seed: float, aimed: bool, kind: tuple) -> None:
     """Seen down the barrel: a hot core and ragged petals round it."""
-    size = 0.55 if aimed else 0.95
+    _, size, petal_count, petal_length, petal_width, core, *_ = kind
+    size *= 0.58 if aimed else 1.0
     ORIGIN[:] = [0.0, 0.0]
     REACH[0] = size * 1.05
-    petals = rng.randint(4, 5) if aimed else rng.randint(4, 6)
+    petals = rng.randint(*petal_count)
+    if aimed:
+        petals = max(3, petals - 1)
     start = rng.uniform(0.0, math.tau)
     for i in range(petals):
         angle = start + i * math.tau / petals + rng.uniform(-0.3, 0.3)
-        length = size * rng.uniform(0.6, 1.0)
-        width = size * rng.uniform(0.14, 0.2)
+        length = size * rng.uniform(*petal_length)
+        width = size * rng.uniform(*petal_width)
         cone(f"petal{i}", seed + i * 0.37, 10.0, (0.0, 0.0), (math.cos(angle), math.sin(angle)), length, width, width * 0.08)
-    ball("core", seed + 3.1, 16.0, (0.0, 0.0), 0.26 * size)
+    ball("core", seed + 3.1, 16.0, (0.0, 0.0), core * size)
 
 
-def side(rng: random.Random, seed: float, aimed: bool) -> None:
+def side(rng: random.Random, seed: float, aimed: bool, kind: tuple) -> None:
     """From the side: the plume from the muzzle (the left edge, x = -1) along
     +X, flaring out of the muzzle round a hot core and tapering to a point."""
+    *_, plume, flare_range, bulge_range = kind
     squash = 1.0 / SIDE_ASPECT
-    total = 1.0 if aimed else 1.8
+    total = plume * (0.56 if aimed else 1.0)
     total *= rng.uniform(0.88, 1.0)
     muzzle = -1.0
     ORIGIN[:] = [muzzle, 0.0]
     REACH[0] = total * 1.02
-    flare = total * rng.uniform(0.32, 0.42)
-    bulge = rng.uniform(0.17, 0.22) * (0.8 if aimed else 1.0)
+    flare = total * rng.uniform(*flare_range)
+    bulge = rng.uniform(*bulge_range) * (0.8 if aimed else 1.0)
     cone("plume", seed, 7.0, (muzzle, 0.0), (1.0, 0.0), total, 0.05, 0.02, squash, bulge, flare / total)
     ball("core", seed + 3.1, 14.0, (muzzle + 0.13, 0.0), 0.12, squash)
 
@@ -272,13 +297,15 @@ def render(path: Path) -> np.ndarray:
 def main() -> None:
     SCRATCH.mkdir(parents=True, exist_ok=True)
     atlas = np.zeros((CELL * GRID, CELL * GRID), dtype=np.float32)
-    rows = [(front, False), (side, False), (front, True), (side, True)]
-    for row, (build, aimed) in enumerate(rows):
+    for row in range(GRID):
+        kind = CLASSES[row // 2]
+        build = front if row % 2 == 0 else side
         for col in range(GRID):
+            aimed = col >= 4
             seed = 11.0 + row * 7.0 + col * 2.3
             rng = random.Random(row * 100 + col)
             reset()
-            build(rng, seed, aimed)
+            build(rng, seed, aimed, kind)
             cell = render(SCRATCH / f"cell_{row}_{col}.png")
             atlas[row * CELL : (row + 1) * CELL, col * CELL : (col + 1) * CELL] = cell
             print(f"cell {row},{col}: peak {cell.max():.2f} mean {cell.mean():.3f}")

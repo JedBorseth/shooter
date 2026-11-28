@@ -1,7 +1,7 @@
 extends Node3D
 ## A flashbang going off: a white-hot, star-shaped burst for a tenth of a
 ## second (a frame of the Blender-rendered muzzle flash atlas,
-## `assets/textures/effects/muzzle_flash_4x4.png`, picked at random) inside a
+## `assets/textures/effects/muzzle_flash_8x8.png`, picked at random) inside a
 ## wide white glow that dies a little slower, a spray of thin white sparks, a
 ## hard flash of light that lights the walls round it for a fifth of a
 ## second, and a small grey puff of smoke from Unity Labs' CC0 Cloud flipbook
@@ -49,8 +49,9 @@ func setup(ground_y := -1000.0) -> void:
 	puff_mesh.material = Billows.material(_puff_material, _quality(), false, self)
 	_puff.set_instance_shader_parameter(&"ground_y", ground_y)
 	_puff.set_instance_shader_parameter(&"centre", global_position + Vector3.UP * 0.5)
-	# One of the atlas's four flashes seen head on (its top row).
-	_burst_material.uv1_offset = Vector3(0.25 * (randi() % 4), 0.0, 0.0)
+	# One of the atlas's four shotgun flashes seen head on from the hip (row 4,
+	# the widest ragged ring of burning gas).
+	_burst_material.uv1_offset = Vector3(0.125 * (randi() % 4), 0.5, 0.0)
 	for emitter: GPUParticles3D in [_sparks, _puff]:
 		emitter.restart()
 		emitter.emitting = true

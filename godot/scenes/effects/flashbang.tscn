@@ -5,7 +5,7 @@
 [ext_resource type="Shader" path="res://shaders/smoke_screen.gdshader" id="3_cloud_shader"]
 [ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_a.png" id="4_cloud"]
 [ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_b.png" id="4b_cloud"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/muzzle_flash_4x4.png" id="5_flash"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/muzzle_flash_8x8.png" id="5_flash"]
 
 [sub_resource type="StandardMaterial3D" id="Mat_burst"]
 transparency = 1
@@ -13,7 +13,7 @@ blend_mode = 1
 shading_mode = 0
 albedo_color = Color(6, 6, 6, 1)
 albedo_texture = ExtResource("5_flash")
-uv1_scale = Vector3(0.25, 0.25, 1)
+uv1_scale = Vector3(0.125, 0.125, 1)
 billboard_mode = 1
 disable_receive_shadows = true
 proximity_fade_enabled = true
