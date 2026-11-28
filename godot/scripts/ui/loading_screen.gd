@@ -199,9 +199,20 @@ func _draw_mode_mark(at: Vector2) -> void:
 	var ink := UiTheme.TEXT
 	match mode:
 		"tdm":
-			# Two crossed strokes.
-			for d: Vector2 in [Vector2(1, 1), Vector2(1, -1)]:
-				draw_line(at - d * 10.0, at + d * 10.0, ink, 4.0, true)
+			# Two solid arrowheads pointing at each other with a gap between:
+			# two sides meeting (an X here would read as a close button).
+			for side: float in [-1.0, 1.0]:
+				draw_colored_polygon(
+					PackedVector2Array(
+						[
+							at + Vector2(side * 17.0, -14),
+							at + Vector2(side * 3.0, 0),
+							at + Vector2(side * 17.0, 14),
+							at + Vector2(side * 11.0, 0),
+						]
+					),
+					ink
+				)
 		"dom":
 			for x: float in [-11.0, 0.0, 11.0]:
 				draw_circle(at + Vector2(x, 0), 4.0, ink)
@@ -270,8 +281,9 @@ func _draw_versus(view: Rect2) -> void:
 		MatchPaint.team_mark(self, mark, 56.0, mark_team, colour)
 		var label := "YOUR TEAM" if ours else "ENEMY"
 		var width := HudPaint.text_width(LABEL_FONT, label, 19, 3.0) + 16.0
-		var plate_centre := centre.x + side * 270.0
-		var plate := Rect2(plate_centre - width / 2.0, centre.y - 14, width, 28)
+		# Each plate a fixed gap outside its mark, whatever its width.
+		var inner := mark.x + side * 58.0
+		var plate := Rect2(inner if side > 0 else inner - width, centre.y - 14, width, 28)
 		draw_rect(plate, UiTheme.LABEL_BOX)
 		HudPaint.text(
 			self,

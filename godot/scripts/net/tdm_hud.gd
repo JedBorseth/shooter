@@ -414,9 +414,9 @@ func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
 	if victim == me and killer >= 0:
-		# Killing yourself names you, in your yellow, with what did it.
-		var colour := MenuStyle.UiTheme.SELF if killer == victim else _team_colour(killer)
-		_name_killer(killer, colour, key, weapon)
+		# Killing yourself names you (the card writes it in your yellow) on
+		# your side's colour, as the killcam's card shows you.
+		_name_killer(killer, _team_colour(killer), key, weapon)
 	elif killer == me and victim != me:
 		_name_victim(client.name_of(victim), _team_colour(victim))
 
@@ -616,7 +616,8 @@ func _refresh_board() -> void:
 						"me": entry.me,
 						# In Search and Destroy the dead sit out the round.
 						"faint": snd and not entry.alive,
-						"tag": "BOT" if entry.bot else "",
+						# "Bot 3" needs no tag saying so, as in the lobby.
+						"tag": "BOT" if entry.bot and not entry.name.begins_with("Bot") else "",
 					}
 				)
 			)

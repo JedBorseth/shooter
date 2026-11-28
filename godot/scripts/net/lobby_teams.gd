@@ -152,14 +152,15 @@ func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
 		if row.ready:
 			draw_rect(tag, UiTheme.READY)
 		else:
-			draw_rect(tag.grow(-0.5), Color(UiTheme.TEXT_DIM, 0.7), false, 1.0)
+			draw_rect(tag, Color(0, 0, 0, 0.45))
+			draw_rect(tag.grow(-0.5), Color(UiTheme.TEXT, 0.7), false, 1.0)
 		Paint.text(
 			self,
 			Paint.LABEL,
 			word,
 			Vector2(tag.position.x + 6.0, tag.position.y + 15.0),
 			13,
-			UiTheme.READY_INK if row.ready else UiTheme.TEXT_DIM,
+			UiTheme.READY_INK if row.ready else Color(UiTheme.TEXT, 0.8),
 			1.5,
 			false
 		)
