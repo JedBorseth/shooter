@@ -33,6 +33,7 @@ var _frame: ScreenFrame
 var _stage: Control
 var _ladder_box: VBoxContainer
 var _status_label: Label
+var _status_is_count := false
 var _close: Button
 var _footer: HBoxContainer
 var _select_hint: Label
@@ -73,9 +74,10 @@ func _ready() -> void:
 	_status_label = Label.new()
 	_status_label.add_theme_font_override("font", UiTheme.font(UiTheme.LABEL_LIGHT))
 	_status_label.add_theme_font_size_override("font_size", 18)
-	_status_label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+	_status_label.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.85))
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_label.position = Vector2(1036, 748)
+	# Sat on the Ready button it counts toward.
+	_status_label.position = Vector2(1036, 756)
 	_status_label.size = Vector2(500, 28)
 	_stage.add_child(_status_label)
 	ready_button = Button.new()
@@ -87,6 +89,30 @@ func _ready() -> void:
 	ready_button.size = Vector2(316, 46)
 	_stage.add_child(ready_button)
 	_build_footer()
+
+
+## The lobby's ready count is a small tracked caps label sat 8 px above the
+## Ready button, as the other labels on the screen are; any other status
+## is a plain line in the row font.
+func _style_status(count: bool) -> void:
+	if count == _status_is_count:
+		return
+	_status_is_count = count
+	if count:
+		var tracked := FontVariation.new()
+		tracked.base_font = UiTheme.font(UiTheme.LABEL)
+		tracked.spacing_glyph = 2
+		_status_label.add_theme_font_override("font", tracked)
+		_status_label.add_theme_font_size_override("font_size", 15)
+		_status_label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+		_status_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		_status_label.position.y = 752
+	else:
+		_status_label.add_theme_font_override("font", UiTheme.font(UiTheme.LABEL_LIGHT))
+		_status_label.add_theme_font_size_override("font_size", 18)
+		_status_label.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.85))
+		_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		_status_label.position.y = 756
 
 
 ## Close was pressed: connect to it as to a Button's `pressed`.
@@ -111,6 +137,7 @@ func _process(_delta: float) -> void:
 	var picking: bool = class_menu.picker_open()
 	lobby_teams.set("hidden_by_menu", picking)
 	_status_label.text = status
+	_style_status(status.begins_with("PLAYERS READY"))
 	_status_label.visible = not picking
 	ready_button.visible = ready_allowed and not picking
 	_close.get_parent().visible = not editing

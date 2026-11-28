@@ -193,8 +193,9 @@ player carries a yellow READY tag, bots included (they are always ready), a
 player still choosing an outlined NOT READY tag, and
 the count above Ready counts the same way ("11 / 12 ready"), so the match
 starts when it is full. While the item list has focus, the slot being edited
-stays lit (a little softer) at full brightness while the rest of the grid
-dims, with an orange tab down its left edge (along the slant on a wildcard).
+stays at full brightness while the rest of the grid dims, lifted, inside a
+2 px light grey frame (round the slant on a wildcard): marked, but not a
+second focus, since orange means focus alone.
 
 A custom class opens in the editor. The header title becomes the class's
 name in caps; selecting it types a new name (up to 20 characters). The

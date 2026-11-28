@@ -133,13 +133,13 @@ func _draw_overlay() -> void:
 	_draw_weapon(alpha)
 	_draw_strip(alpha, ending)
 	# Skip, after a death only: in the strip's right end, clear of the cards,
-	# its right edge under the weapon row's.
+	# its right edge on the weapon band's.
 	if bool(_info.get("skippable", false)):
 		var key := Settings.prompt_key(&"interact")
 		var row := Paint.split_key("[%s] Skip" % key, UiTheme.TEXT)
-		var width := Paint.cap_width(String(row.key), 23.0) + 9.0
-		width += Paint.text_width(Paint.LABEL, "Skip", 16)
-		Paint.prompt(_canvas, row, 1544.0 - width / 2.0, 816.0, 16, alpha)
+		var width := Paint.cap_width(String(row.key), 25.0) + 9.0
+		width += Paint.text_width(Paint.LABEL, "Skip", 18)
+		Paint.prompt(_canvas, row, 1556.0 - width / 2.0, 817.0, 18, alpha)
 	_canvas.draw_set_transform(Vector2.ZERO)
 	# The cut into the replay: a white flash for its first frames.
 	var flash := 1.0 - clampf((_frames - 1) / 3.0, 0.0, 1.0)
@@ -285,7 +285,7 @@ func _draw_weapon(alpha: float) -> void:
 	elif glyph != "":
 		right -= 14.0 + DeathCard.GLYPH_W
 		var mark := Vector2(right + DeathCard.GLYPH_W / 2.0, baseline - 7.0)
-		DeathCard.cause_mark(_canvas, glyph, mark, tint)
+		DeathCard.cause_mark(_canvas, glyph, mark, Color(DeathCard.MARK_TINT, tint.a))
 	var dim := Color(UiTheme.TEXT, 0.82 * alpha)
 	Paint.text_right(
 		_canvas, Paint.LABEL, label, Vector2(right - 14.0, baseline - 1.0), 15, dim, 2.0
@@ -293,8 +293,9 @@ func _draw_weapon(alpha: float) -> void:
 	if bool(_info.get("headshot", false)):
 		var tag := "HEADSHOT"
 		var tag_w := Paint.text_width(Paint.LABEL, tag, 14, 2.0) + 16.0
-		_canvas.draw_rect(Rect2(1544.0 - tag_w, baseline + 12.0, tag_w, 22.0), shade)
-		Paint.text_right(_canvas, Paint.LABEL, tag, Vector2(1536.0, baseline + 28.0), 14, ink, 2.0)
+		# Its right edge on the weapon band's, as Skip's is.
+		_canvas.draw_rect(Rect2(1556.0 - tag_w, baseline + 12.0, tag_w, 22.0), shade)
+		Paint.text_right(_canvas, Paint.LABEL, tag, Vector2(1548.0, baseline + 28.0), 14, ink, 2.0)
 
 
 ## The silhouette key for a weapon's display name ("AK-47" is `ak47`).
@@ -356,7 +357,7 @@ func _name_card(
 	_canvas.draw_rect(rect, Color(0.06, 0.07, 0.08, 0.88 * alpha))
 	# A hairline round the plate, as on the loading screen's and the death
 	# screen's cards.
-	_canvas.draw_rect(rect.grow(-0.5), Color(1, 1, 1, 0.18 * alpha), false, 1.0)
+	_canvas.draw_rect(rect.grow(-0.5), Color(1, 1, 1, 0.26 * alpha), false, 1.0)
 	var edge_x := rect.end.x - 4.0 if right_side else rect.position.x
 	_canvas.draw_rect(Rect2(edge_x, rect.position.y, 4, rect.size.y), Color(colour, alpha))
 	var mark_x := rect.end.x - 34.0 if right_side else rect.position.x + 34.0
@@ -369,9 +370,10 @@ func _name_card(
 	var baseline := rect.get_center().y + 11.0
 	if right_side:
 		var edge := rect.end.x - 66.0
-		Paint.text_right(_canvas, Paint.LABEL, label, Vector2(edge, top), 15, dim, 2.5)
+		# The label on the card's outer edge, over its team bar.
+		Paint.text_right(_canvas, Paint.LABEL, label, Vector2(rect.end.x, top), 15, dim, 2.5)
 		Paint.text_right(_canvas, Paint.LABEL, shown, Vector2(edge, baseline), 30, ink, 0.5)
 	else:
 		var text_x := rect.position.x + 66.0
-		Paint.text(_canvas, Paint.LABEL, label, Vector2(text_x, top), 15, dim, 2.5)
+		Paint.text(_canvas, Paint.LABEL, label, Vector2(rect.position.x, top), 15, dim, 2.5)
 		Paint.text(_canvas, Paint.LABEL, shown, Vector2(text_x, baseline), 30, ink, 0.5)

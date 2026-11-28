@@ -212,7 +212,8 @@ func _board() -> void:
 		var rows := []
 		for i in names.size():
 			var bot := String(names[i]).begins_with("Bot")
-			var score := 2450 - i * 470 - side * 300
+			# Mixed widths, so the columns show the figures lining up.
+			var score: int = [[12450, 2450, 1040, 950], [2150, 980, 210]][side][i]
 			(
 				rows
 				. append(
@@ -221,12 +222,12 @@ func _board() -> void:
 						[
 							names[i],
 							MatchPaint.number(score),
-							str(14 - i * 3),
+							str([[14, 9, 11, 7], [21, 6, 2]][side][i]),
 							str(4 + i),
 							"—" if bot else str([24, 61, 33, 18][i]),
 						],
 						"me": side == 0 and i == 2,
-						"tag": "BOT" if bot else "",
+						"tag": "",
 					}
 				)
 			)

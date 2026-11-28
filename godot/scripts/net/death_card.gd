@@ -9,11 +9,10 @@ extends RefCounted
 ## icons, the charge), all in one fixed box so the card's width follows the
 ## name only. Killing yourself reads Yourself in your yellow on your side's
 ## colour, as the killcam's card shows you, with what did it; a fatal fall
-## reads Fall damage with a falling mark, an unknown death Unknown with a
-## skull (No killer), both behind the world's grey mark (a fall is
-## captioned World). The respawn bar
-## fills along the card's bottom edge, with RESPAWN IN under the card in
-## whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
+## reads Fall damage with a falling mark, an unknown death Unknown with
+## a skull (captioned Other), both behind a grey mark of no side (a fall is captioned
+## World). The respawn bar fills along the card's bottom edge, with RESPAWN
+## IN under the card in whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
 ## name card.
 ##
 ## Load it with `preload`; everything here is static.
@@ -23,24 +22,28 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-const CARD_FILL := Color(0.055, 0.071, 0.086, 0.88)
+const CARD_FILL := Color(0.055, 0.071, 0.086, 0.96)
 const CARD_H := 80.0
-const MIN_W := 320.0
+const MIN_W := 400.0
 ## The team passed for a death with no killer: an empty grey mark.
 const WORLD := -2
 ## The box a weapon's silhouette fits in on the card (a long launcher
 ## shrinks rather than widening the card), and the width a drawn mark takes
 ## in its place.
 const ICON_H := 26.0
-const ICON_MAX_W := 112.0
+const ICON_MAX_W := 136.0
 const GLYPH_W := 72.0
-## Half the drawn width of each mark, to right-align it.
+## The light grey every mark and silhouette is drawn in (the silhouettes'
+## own grey), so drawn marks match the guns beside them.
+const MARK_TINT := Color(0.8, 0.8, 0.82)
+## How far each mark reaches right of its centre, to right-align it (the
+## grenade line icons are padded inside their boxes).
 const GLYPH_HALF := {
-	"knife": 36.0,
-	"frag": 20.0,
-	"flash": 18.0,
-	"smoke": 20.0,
-	"charge": 22.0,
+	"knife": 37.0,
+	"frag": 8.5,
+	"flash": 13.5,
+	"smoke": 15.0,
+	"charge": 21.0,
 	"fall": 15.0,
 	"skull": 13.0
 }
@@ -119,8 +122,10 @@ static func _killer_card(
 	var team := int(who[3])
 	var icon: Texture2D = how.icon
 	var name_w := Paint.text_width(Paint.LABEL, killer, 36, 0.5)
-	# One fixed box for what did it, so the card's width follows the name only.
-	var right_w := ICON_MAX_W
+	# A fixed box for what did it (a silhouette's, or a drawn mark's), so
+	# the card holds its 400 px for every cause and grows only for a long
+	# name.
+	var right_w := ICON_MAX_W if icon != null else GLYPH_W
 	var icon_h := ICON_H
 	if icon != null:
 		icon_h = minf(ICON_H, ICON_MAX_W * icon.get_height() / icon.get_width())
@@ -143,18 +148,21 @@ static func _killer_card(
 		Shapes.leader_lines(item, from, side, Color(colour, 0.8 * alpha), 0.7)
 	item.draw_rect(card, Color(CARD_FILL, CARD_FILL.a * alpha))
 	# A hairline round the card, as on the killcam's and loading screen's.
-	item.draw_rect(card.grow(-0.5), Color(1, 1, 1, 0.18 * alpha), false, 1.0)
+	item.draw_rect(card.grow(-0.5), Color(1, 1, 1, 0.26 * alpha), false, 1.0)
 	item.draw_rect(Rect2(card.position, Vector2(4, card.size.y)), Color(colour, alpha))
 	var mark := Vector2(card.position.x + 36.0, at.y)
 	if team >= 0:
 		MatchPaint.team_mark(item, mark, 30.0, team, Color(colour, alpha))
 	elif team == WORLD:
-		# The world's mark: a solid grey hexagon with a dark globe in it.
-		Shapes.hexagon(item, mark, 15.0, Color(colour, 0.9 * alpha), Color.TRANSPARENT, 0.0, false)
-		var globe := Color(CARD_FILL, alpha)
-		item.draw_arc(mark, 7.5, 0.0, TAU, 24, globe, 1.6, true)
-		item.draw_line(mark + Vector2(-7.5, 0), mark + Vector2(7.5, 0), globe, 1.4, true)
-		item.draw_line(mark + Vector2(0, -7.5), mark + Vector2(0, 7.5), globe, 1.4, true)
+		# No side's mark: a hexagon in two lines, as the team marks are, in
+		# grey with a plain bar across it.
+		var grey := Color(colour, 0.9 * alpha)
+		for ring_r: float in [15.0, 12.6]:
+			var ring := Shapes.hexagon_points(mark, ring_r, false)
+			ring.append(ring[0])
+			var line := Color(grey, grey.a * (1.0 if ring_r > 13.0 else 0.5))
+			item.draw_polyline(ring, line, 1.4, true)
+		item.draw_rect(Rect2(mark + Vector2(-7, -1.5), Vector2(14, 3)), grey)
 	Paint.text(
 		item,
 		Paint.LABEL,
@@ -165,7 +173,7 @@ static func _killer_card(
 		0.5
 	)
 	var right := card.end.x - 18.0
-	var tint := Color(1, 1, 1, 0.9 * alpha)
+	var tint := Color(MARK_TINT, 0.9 * alpha)
 	# With no name under it, the mark sits in the card's middle.
 	var mark_y := at.y - 9.0 if String(how.name) != "" else at.y
 	if icon != null:
@@ -200,7 +208,7 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 		var name := "RL-4" if weapon == "rl4" else _weapon_name(weapon)
 		return {"key": weapon, "icon": icon, "glyph": "", "name": name if name != "" else cause}
 	var how := {
-		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "No killer"
+		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "Other"
 	}
 	if fell:
 		how.glyph = "fall"
@@ -224,55 +232,101 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 static func cause_mark(item: CanvasItem, kind: String, at: Vector2, colour: Color) -> void:
 	match kind:
 		"knife":
-			# A combat knife pointing right: a clip-point blade with a dark
-			# fuller, a guard, a ridged grip, and a pommel.
-			var blade := PackedVector2Array(
-				[
-					at + Vector2(-4, -6),
-					at + Vector2(22, -6),
-					at + Vector2(28, -4),
-					at + Vector2(36, 1),
-					at + Vector2(24, 5),
-					at + Vector2(-4, 5),
-				]
-			)
-			item.draw_colored_polygon(blade, colour)
-			item.draw_line(
-				at + Vector2(0, -1), at + Vector2(20, -1), Color(0, 0, 0, 0.45 * colour.a), 1.5
-			)
-			item.draw_rect(Rect2(at + Vector2(-9, -11), Vector2(5, 21)), colour)
-			item.draw_rect(Rect2(at + Vector2(-30, -5), Vector2(21, 9)), colour)
-			var ridge := Color(0, 0, 0, 0.5 * colour.a)
-			for x: float in [-26.0, -21.0, -16.0]:
-				item.draw_rect(Rect2(at + Vector2(x, -5), Vector2(1.5, 9)), ridge)
-			item.draw_rect(Rect2(at + Vector2(-35, -6), Vector2(5, 11)), colour)
+			_knife(item, at, colour)
 		"frag", "flash", "smoke":
 			var side := ICON_H * 1.5
 			var box := Rect2(at - Vector2(side, side) / 2.0, Vector2(side, side))
 			item.draw_texture_rect(EQUIPMENT_ICONS[kind], box, false, colour)
 		"charge":
-			# A case with a handle, a dark timer window, and a red lamp.
-			var case := Rect2(at + Vector2(-22, -10), Vector2(44, 24))
-			item.draw_rect(case, colour)
-			item.draw_rect(Rect2(at + Vector2(-16, -5), Vector2(22, 12)), Color(0, 0, 0, 0.7))
-			item.draw_circle(at + Vector2(13, 1), 3.5, Color(UiTheme.HARM, colour.a))
-			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(24, 3)), colour)
-			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(3, 5)), colour)
-			item.draw_rect(Rect2(at + Vector2(9, -15), Vector2(3, 5)), colour)
+			# A strapped block with a detonator on top and its wire.
+			item.draw_rect(Rect2(at + Vector2(-21, -5), Vector2(38, 16)), colour)
+			var strap := Color(0, 0, 0, 0.45 * colour.a)
+			for x: float in [-14.0, 7.0]:
+				item.draw_rect(Rect2(at + Vector2(x, -5), Vector2(2.5, 16)), strap)
+			item.draw_rect(Rect2(at + Vector2(-7, -12), Vector2(8, 7)), colour)
+			item.draw_rect(Rect2(at + Vector2(-5, -14), Vector2(4, 2)), colour)
+			var wire := PackedVector2Array(
+				[
+					at + Vector2(1, -9),
+					at + Vector2(9, -13),
+					at + Vector2(17, -12),
+					at + Vector2(21, -7)
+				]
+			)
+			item.draw_polyline(wire, colour, 1.6, true)
 		"fall":
-			# Two chevrons pointing down over a ground line.
-			for dy: float in [-11.0, -2.0]:
-				item.draw_polyline(
-					PackedVector2Array(
-						[at + Vector2(-11, dy), at + Vector2(0, dy + 8), at + Vector2(11, dy)]
-					),
-					colour,
-					3.0,
-					true
+			# Two solid chevrons pointing down over a ground bar.
+			for dy: float in [-12.0, -3.0]:
+				(
+					item
+					. draw_colored_polygon(
+						PackedVector2Array(
+							[
+								at + Vector2(-12, dy),
+								at + Vector2(-8, dy),
+								at + Vector2(0, dy + 6),
+								at + Vector2(8, dy),
+								at + Vector2(12, dy),
+								at + Vector2(0, dy + 10),
+							]
+						),
+						colour
+					)
 				)
-			item.draw_rect(Rect2(at + Vector2(-15, 11), Vector2(30, 2)), colour)
+			item.draw_rect(Rect2(at + Vector2(-15, 10), Vector2(30, 3)), colour)
 		_:
 			MatchPaint.skull(item, at, ICON_H * 1.1, colour)
+
+
+## A combat knife in profile pointing right, about 74 px long, centred on
+## `at`: a clip-point blade with a fuller, a crossguard, a grip with finger
+## grooves, and a rounded pommel.
+static func _knife(item: CanvasItem, at: Vector2, colour: Color) -> void:
+	var blade := PackedVector2Array(
+		[
+			at + Vector2(-4, -5),
+			at + Vector2(18, -5),
+			at + Vector2(37, -1),
+			at + Vector2(32, 1.5),
+			at + Vector2(24, 4),
+			at + Vector2(14, 5.5),
+			at + Vector2(-4, 5.5),
+		]
+	)
+	item.draw_colored_polygon(blade, colour)
+	var dark := Color(0, 0, 0, 0.45 * colour.a)
+	item.draw_line(at + Vector2(-1, -1.5), at + Vector2(16, -1.5), dark, 1.5, true)
+	var guard := PackedVector2Array(
+		[at + Vector2(-9, -9), at + Vector2(-5, -10), at + Vector2(-5, 10), at + Vector2(-8, 12)]
+	)
+	item.draw_colored_polygon(guard, colour)
+	var grip := PackedVector2Array(
+		[
+			at + Vector2(-31, -5),
+			at + Vector2(-9, -5),
+			at + Vector2(-9, 5),
+			at + Vector2(-12, 6),
+			at + Vector2(-15, 4.5),
+			at + Vector2(-18, 6),
+			at + Vector2(-21, 4.5),
+			at + Vector2(-24, 6),
+			at + Vector2(-27, 4.5),
+			at + Vector2(-31, 5.5),
+		]
+	)
+	item.draw_colored_polygon(grip, colour)
+	for x: float in [-25.0, -17.0]:
+		item.draw_line(at + Vector2(x, -5), at + Vector2(x + 3, 3), dark, 1.2, true)
+	var pommel := PackedVector2Array(
+		[
+			at + Vector2(-31, -6.5),
+			at + Vector2(-35, -5.5),
+			at + Vector2(-37, 0),
+			at + Vector2(-35, 5.5),
+			at + Vector2(-31, 6.5),
+		]
+	)
+	item.draw_colored_polygon(pommel, colour)
 
 
 ## A weapon's name from its silhouette key ("ak47" is "AK-47"), or "".

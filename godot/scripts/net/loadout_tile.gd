@@ -17,10 +17,10 @@ extends Button
 ##   along its top.
 ##
 ## Tiles focus with orange rules along their top and bottom edges and a
-## lighter fill. The slot being edited while focus is in the item list keeps
-## that lit state, a little softer, undimmed while the rest of the grid dims,
-## with an orange tab down its left edge (along the slant on a wildcard), as
-## the current item in a list (`UiTheme.current`). The button keeps its `text`
+## lighter fill. The slot being edited while focus is in the item list stays
+## undimmed while the rest of the grid dims, lifted, inside a 2 px light grey
+## frame (round the slant on a wildcard): marked, but plainly not a second
+## focus, since orange is focus alone. The button keeps its `text`
 ## (what it is, as tests and screen readers see it) but draws its own face.
 
 enum Kind { ROW, WEAPON, SLOT, WILDCARD, CARD }
@@ -41,8 +41,8 @@ const GRENADE_ICONS := {
 }
 ## How far a wildcard's parallelogram leans.
 const SLANT := 12.0
-## How lit the slot being edited stays while focus is in the items.
-const EDITING_LIT := 0.45
+## The frame round the slot being edited while focus is in the items.
+const EDITING_FRAME := Color("a0a2a8")
 
 var kind := Kind.SLOT
 ## The name drawn on the face (the button's `text` may add a lock note).
@@ -111,7 +111,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	# A quick flash as focus arrives, settling.
-	var target := 1.0 if _focused() else (EDITING_LIT if editing else 0.0)
+	var target := 1.0 if _focused() else 0.0
 	if not is_equal_approx(_lit, target):
 		_lit = move_toward(_lit, target, delta / 0.1)
 		queue_redraw()
@@ -119,6 +119,11 @@ func _process(delta: float) -> void:
 
 func _focused() -> bool:
 	return has_focus()
+
+
+## The slot being edited, shown while focus is elsewhere (in its items).
+func _edited() -> bool:
+	return editing and not has_focus()
 
 
 func _take_focus() -> void:
@@ -188,7 +193,7 @@ func _draw_tile() -> void:
 		fill = Color(SLOT_FILL, 0.45)
 	elif kind == Kind.WEAPON or kind == Kind.CARD:
 		fill = Color(0.16, 0.19, 0.22, 0.92)
-	fill = fill.lightened(0.08 * _lit)
+	fill = fill.lightened(0.08 * maxf(_lit, 1.0 if _edited() else 0.0))
 	# A greyed-out item keeps a solid fill so the scene never shows through.
 	draw_rect(rect, fill)
 	draw_rect(rect.grow(-0.5), Color(BORDER, alpha), false, 1.0)
@@ -247,8 +252,8 @@ func _draw_tile() -> void:
 		)
 	if _lit > 0.0:
 		Shapes.focus_rules(self, rect, Color(UiTheme.ACCENT, _lit), 3.0)
-	if editing and not has_focus():
-		draw_rect(Rect2(0, 0, 4, size.y), Color(UiTheme.ACCENT, 0.85))
+	if _edited():
+		draw_rect(rect.grow(-1.0), EDITING_FRAME, false, 2.0)
 
 
 ## An empty slot's mark: a faint plus; on a picker card ("None"), a dash.
@@ -306,7 +311,7 @@ func _draw_art(rect: Rect2, alpha: float) -> void:
 
 func _draw_wildcard() -> void:
 	var fill := Color(0.16, 0.19, 0.22, 0.92) if not empty else Color(UiTheme.TILE, 0.7)
-	fill = fill.lightened(0.08 * _lit)
+	fill = fill.lightened(0.08 * maxf(_lit, 1.0 if _edited() else 0.0))
 	var points := PackedVector2Array(
 		[
 			Vector2(SLANT, 0),
@@ -353,13 +358,17 @@ func _draw_wildcard() -> void:
 			),
 			lit
 		)
-	if editing and not has_focus():
-		draw_colored_polygon(
-			PackedVector2Array(
-				[Vector2(SLANT, 0), Vector2(SLANT + 3, 0), Vector2(3, size.y), Vector2(0, size.y)]
-			),
-			Color(UiTheme.ACCENT, 0.85)
+	if _edited():
+		var frame := PackedVector2Array(
+			[
+				Vector2(SLANT + 1, 1),
+				Vector2(size.x - 1, 1),
+				Vector2(size.x - SLANT - 1, size.y - 1),
+				Vector2(1, size.y - 1),
+				Vector2(SLANT + 1, 1),
+			]
 		)
+		draw_polyline(frame, EDITING_FRAME, 2.0, true)
 
 
 ## The line icon for `grenade` ("frag", "flash", "smoke"), or null.
