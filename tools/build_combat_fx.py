@@ -180,6 +180,10 @@ def blood_mist(size: int = 128) -> None:
 # shape depends on the material, and a faint soot ring, so a hole reads as
 # a hole on any wall colour.
 HOLE_SIZE = 0.16
+# Glass holes are drawn this many times a hole's size (rust/game/src/effects.rs:
+# GLASS_HOLE_SCALE), at GLASS_TEXTURE pixels, for the cracks round them.
+GLASS_SCALE = 2.4
+GLASS_TEXTURE = 512
 HOLE_CLASSES = ("concrete", "metal", "wood", "glass", "dirt")
 
 
@@ -287,23 +291,57 @@ def hole_maps(kind: str, index: int, size: int = 256):
         rough = np.full_like(r, 0.85)
         metal = np.zeros_like(r)
     elif kind == "glass":
-        # A clean hole, a frosted cone round it, and radial and ring cracks.
-        cone_r = 0.24
-        core = np.clip((core_r * 0.8 - r) / 0.02, 0, 1)
-        frost = np.clip((cone_r - r * ragged(angle, rng, 5, 0.12)) / 0.05, 0, 1)
-        radial = cracks(angle, r, rng, 9, (0.7, 0.98), (0.006, 0.012))
-        rings = np.zeros_like(r)
-        for _ in range(2):
-            rad = rng.uniform(0.35, 0.65)
-            arc = np.clip(np.cos(angle - rng.uniform(-np.pi, np.pi)) + rng.uniform(-0.2, 0.6), 0, 1)
-            rings = np.maximum(rings, np.exp(-(((r - rad * ragged(angle, rng, 3, 0.05)) / 0.01) ** 2)) * arc)
-        lines = np.maximum(radial, rings * 0.8)
-        shade = 0.9
-        colour = np.stack([np.full_like(r, shade)] * 3, axis=2)
-        colour = colour * (1 - core[..., None] * 0.85)
-        alpha = np.maximum.reduce([core, frost * 0.6, lines * 0.85]) * np.clip((0.98 - r) / 0.1, 0, 1)
-        height = -core * 0.5 - frost * 0.15 + lines * 0.1
-        rough = 0.15 + frost * 0.5 + lines * 0.3
+        # A spider-web fracture, as a round leaves in a pane: the decal is
+        # GLASS_SCALE times a hole's size, so radii here are that much
+        # smaller. A clean hole, a crushed, frosted cone round it, a dozen
+        # or more radial cracks running out to the rim, each wandering a
+        # little, and the web's rungs: short arcs from one radial to the
+        # next at a few rings. The cracks catch the light (bright, smooth).
+        k = 1.0 / GLASS_SCALE
+        core = np.clip((core_r * k * 0.9 - r) / 0.008, 0, 1)
+        cone_r = 0.24 * k * 1.6 * (0.9 + 0.2 * rng.random())
+        frost = np.clip((cone_r - r * ragged(angle, rng, 6, 0.18)) / 0.02, 0, 1)
+        count = int(rng.integers(12, 18))
+        spokes = np.sort(rng.uniform(-np.pi, np.pi, count))
+        radial = np.zeros_like(r)
+        wobble = np.zeros_like(r)
+        reaches = []
+        for i, a0 in enumerate(spokes):
+            far = rng.uniform(0.55, 0.98)
+            reaches.append(far)
+            w = rng.uniform(0.0025, 0.0045)
+            # Nearly straight, with a slight drift and a fine zigzag.
+            bend = rng.normal(0, 0.06) * r + 0.012 * np.sin(r * rng.uniform(30, 45) + rng.uniform(0, 6))
+            d = np.abs(np.angle(np.exp(1j * (angle - a0 - bend))))
+            line = np.clip(1 - d * r.clip(0.02) / w, 0, 1)
+            fade = np.clip((far - r) / 0.1, 0, 1)
+            radial = np.maximum(radial, line * fade * np.clip((r - cone_r * 0.6) / 0.02, 0, 1))
+            wobble = np.maximum(wobble, line * fade)
+        rungs = np.zeros_like(r)
+        for ring in range(int(rng.integers(3, 5))):
+            base = 0.16 + ring * rng.uniform(0.13, 0.2)
+            for i in range(count):
+                a0, a1 = spokes[i], spokes[(i + 1) % count]
+                span = (a1 - a0) % (2 * np.pi)
+                if rng.random() < 0.3 or span > 1.0:
+                    continue
+                if min(reaches[i], reaches[(i + 1) % count]) < base + 0.05:
+                    continue
+                # A straight rung from one spoke to the next.
+                p0 = np.array([np.cos(a0), np.sin(a0)]) * base * rng.uniform(0.9, 1.1)
+                p1 = np.array([np.cos(a1), np.sin(a1)]) * base * rng.uniform(0.9, 1.1)
+                seg = p1 - p0
+                t = np.clip(((x - p0[0]) * seg[0] + (y - p0[1]) * seg[1]) / max(seg @ seg, 1e-6), 0, 1)
+                dist = np.hypot(x - (p0[0] + t * seg[0]), y - (p0[1] + t * seg[1]))
+                w = rng.uniform(0.002, 0.0032)
+                rungs = np.maximum(rungs, np.clip(1 - dist / w, 0, 1))
+        lines = np.maximum(radial, rungs * 0.9)
+        colour = np.stack([np.full_like(r, 0.92), np.full_like(r, 0.95), np.full_like(r, 0.96)], axis=2)
+        colour = colour * (1 - core[..., None] * 0.9)
+        crushed = frost * (0.55 + 0.35 * fine)
+        alpha = np.maximum.reduce([core, crushed, lines * 0.8]) * np.clip((0.98 - r) / 0.06, 0, 1)
+        height = -core * 0.5 - frost * 0.1 + lines * 0.15
+        rough = 0.06 + frost * 0.55 + lines * 0.1
         metal = np.zeros_like(r)
     else:  # dirt
         crater_r = 0.5 * (0.85 + 0.3 * rng.random())
@@ -337,7 +375,8 @@ def value_noise_1d(coord: np.ndarray, rng: np.random.Generator, cells: int) -> n
 def bullet_holes() -> None:
     for kind in HOLE_CLASSES:
         for index in range(4):
-            colour, alpha, height, rough, metal = hole_maps(kind, index)
+            size = GLASS_TEXTURE if kind == "glass" else 256
+            colour, alpha, height, rough, metal = hole_maps(kind, index, size)
             stem = OUT / f"hole_{kind}_{index}"
             save_rgba(Path(f"{stem}_albedo.png"), np.concatenate([colour, alpha[..., None]], axis=2))
             save_rgb(Path(f"{stem}_normal.png"), normal_from_height(height, 6.0))

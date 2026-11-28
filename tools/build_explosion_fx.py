@@ -15,9 +15,11 @@ Writes:
   it. Early frames are a dense, dark column; later ones mushroom, tear into
   clumps, and thin to dust. `shaders/dirt_burst.gdshader` plays it on
   velocity-stretched quads.
-- godot/assets/effects/chip.glb: one low-poly chip of rubble about 2 cm
-  across (a flattened, dented icosphere, flat shaded), the mesh debris
-  particles draw. Impacts and explosions tint it per particle.
+- godot/assets/effects/chip.glb: the low-poly chips debris particles draw,
+  about 2 cm across, one node each: `Chip`, a spall of rubble (a flattened,
+  dented icosphere, flat shaded), `ChipWood` a twisted splinter, `ChipGlass`
+  a thin shard, and `ChipDirt` a lumpy clod. Explosions throw `Chip`;
+  impacts pick by the surface hit. They are tinted per particle.
 
 Everything is built here from fixed seeds (no source files), so a rerun
 writes the same files. Original, CC0.
@@ -275,30 +277,81 @@ def build_atlas(reuse: bool = False) -> None:
     print(f"wrote {ATLAS}", flush=True)
 
 
-def build_chip() -> None:
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    rng = random.Random(23)
-    mesh = bpy.data.meshes.new("Chip")
+def chip_shape(name: str, rng: random.Random) -> bpy.types.Object:
+    """One debris chip, about 2 cm across, flat shaded: `Chip` a spall of
+    concrete (a dented flake, thicker at one end), `ChipWood` a splinter
+    (long, thin and twisted along the grain), `ChipGlass` a shard (a thin
+    flat sliver with sharp corners) and `ChipDirt` a clod (a round, lumpy
+    crumb)."""
+    mesh = bpy.data.meshes.new(name)
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.01)
-    # Dent it: every corner its own distance out, then flatten it into a
-    # flake thicker at one end, like a spall off a wall.
-    for v in bm.verts:
-        v.co *= rng.uniform(0.7, 1.15)
-        v.co.x *= 1.15
-        v.co.z *= 0.5 + 0.12 * (v.co.x / 0.01)
+    if name == "ChipWood":
+        # A thin box split along its length, its ends whittled to points.
+        bmesh.ops.create_cube(bm, size=1.0)
+        bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if abs((e.verts[0].co - e.verts[1].co).x) > 0.5],
+                                  cuts=3, use_grid_fill=True)
+        for v in bm.verts:
+            t = v.co.x + 0.5
+            taper = 0.35 + 0.65 * math.sin(math.pi * min(max(t, 0.0), 1.0)) ** 0.6
+            twist = (t - 0.5) * 0.8
+            y, z = v.co.y * taper * 0.16, v.co.z * taper * 0.07
+            v.co.y = y * math.cos(twist) - z * math.sin(twist) + rng.uniform(-0.01, 0.01)
+            v.co.z = y * math.sin(twist) + z * math.cos(twist)
+            v.co.x *= 1.0 + rng.uniform(-0.05, 0.05)
+            v.co *= 0.032
+    elif name == "ChipGlass":
+        # A thin, flat, irregular triangle-ish sliver.
+        corners = []
+        for i in range(5):
+            a = i / 5 * math.tau + rng.uniform(-0.35, 0.35)
+            r = rng.uniform(0.45, 1.0) * (1.6 if i == 0 else 1.0)
+            corners.append((math.cos(a) * r * 0.011, math.sin(a) * r * 0.008))
+        top = [bm.verts.new((x, y, 0.0009)) for x, y in corners]
+        bottom = [bm.verts.new((x, y, -0.0009)) for x, y in corners]
+        bm.faces.new(top)
+        bm.faces.new(list(reversed(bottom)))
+        for i in range(5):
+            j = (i + 1) % 5
+            bm.faces.new([top[i], bottom[i], bottom[j], top[j]])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    elif name == "ChipDirt":
+        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.008)
+        for v in bm.verts:
+            v.co *= rng.uniform(0.75, 1.15)
+            v.co.z *= 0.8
+    else:
+        bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.01)
+        # Dent it: every corner its own distance out, then flatten it into a
+        # flake thicker at one end, like a spall off a wall.
+        for v in bm.verts:
+            v.co *= rng.uniform(0.7, 1.15)
+            v.co.x *= 1.15
+            v.co.z *= 0.5 + 0.12 * (v.co.x / 0.01)
     bm.to_mesh(mesh)
     bm.free()
     for poly in mesh.polygons:
-        poly.use_smooth = False
+        poly.use_smooth = name == "ChipDirt"
     mat = bpy.data.materials.new("Chip")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = (0.5, 0.5, 0.5, 1.0)
     bsdf.inputs["Roughness"].default_value = 1.0
     mesh.materials.append(mat)
-    obj = bpy.data.objects.new("Chip", mesh)
+    obj = bpy.data.objects.new(name, mesh)
     bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+CHIPS = ("Chip", "ChipWood", "ChipGlass", "ChipDirt")
+
+
+def build_chip() -> None:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    rng = random.Random(23)
+    for i, name in enumerate(CHIPS):
+        obj = chip_shape(name, rng)
+        # Side by side, so the nodes do not overlap in an editor.
+        obj.location.x = i * 0.05
     CHIP.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(

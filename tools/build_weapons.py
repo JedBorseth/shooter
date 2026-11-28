@@ -2137,13 +2137,17 @@ def build(key: str):
 
 
 # Rows of the shared cartridge texture, top to bottom: (where the case ends
-# and the bullet starts along the round, case colour, bullet colour,
+# and the bullet starts along the round, case colour (sRGB), bullet colour,
 # case roughness, case metallic). Shotgun shells: a brass head, then the hull.
+# Cartridge brass is a bright yellow metal (measured F0 about 0.91, 0.78, 0.42
+# linear; a fired case is a little tarnished, so a touch under that), smooth
+# enough that a spent case glints in the sun as it tumbles. 7.62 x 39 cases
+# are lacquered steel: a satin grey-green coat over the metal.
 CARTRIDGES = [
-    ("rifle", 0.66, (0.58, 0.40, 0.17), (0.50, 0.25, 0.13), 0.32, 1.0),
-    ("pistol", 0.74, (0.60, 0.42, 0.18), (0.52, 0.27, 0.14), 0.3, 1.0),
-    ("shell", 0.22, (0.58, 0.40, 0.17), (0.32, 0.035, 0.03), 0.3, 1.0),
-    ("steel", 0.66, (0.20, 0.21, 0.17), (0.50, 0.26, 0.14), 0.45, 0.6),
+    ("rifle", 0.66, (0.92, 0.78, 0.48), (0.84, 0.54, 0.36), 0.24, 1.0),
+    ("pistol", 0.74, (0.93, 0.80, 0.50), (0.85, 0.55, 0.37), 0.24, 1.0),
+    ("shell", 0.22, (0.92, 0.78, 0.48), (0.32, 0.035, 0.03), 0.26, 1.0),
+    ("steel", 0.66, (0.44, 0.45, 0.38), (0.84, 0.54, 0.36), 0.38, 0.55),
 ]
 
 

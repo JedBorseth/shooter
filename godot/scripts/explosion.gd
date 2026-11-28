@@ -35,8 +35,9 @@ const DETAIL := {
 	&"Debris": [24, 30, 48],
 }
 
-## The chip mesh, taken once from its model and shared by every explosion.
-static var _chip: Mesh
+## The chip meshes, by node name in the model, each taken once and shared by
+## every explosion and impact.
+static var _chips: Dictionary[String, Mesh] = {}
 ## The dust billows' material in its hard-edged form (Low and Medium) and
 ## soft-edged form (High: faded where they meet a wall), shared by every
 ## explosion.
@@ -51,16 +52,17 @@ var _emitters: Array[GPUParticles3D] = [$Fireball, $Core, $Dirt, $Column, $Ring,
 
 
 ## The mesh debris chips draw: the one in `chip.glb`, loaded on first use.
-static func chip_mesh() -> Mesh:
-	if _chip == null:
+## A chip from the model: `Chip` (rubble), `ChipWood`, `ChipGlass` or
+## `ChipDirt`.
+static func chip_mesh(chip_name := "Chip") -> Mesh:
+	if _chips.is_empty():
 		var scene := load(CHIP_MODEL) as PackedScene
 		if scene != null:
 			var root := scene.instantiate()
-			var found := root.find_children("*", "MeshInstance3D", true, false)
-			if not found.is_empty():
-				_chip = (found[0] as MeshInstance3D).mesh
+			for node: Node in root.find_children("*", "MeshInstance3D", true, false):
+				_chips[String(node.name)] = (node as MeshInstance3D).mesh
 			root.free()
-	return _chip
+	return _chips.get(chip_name, _chips.get("Chip"))
 
 
 ## Plays the explosion on a surface facing `normal` (up for the ground), with

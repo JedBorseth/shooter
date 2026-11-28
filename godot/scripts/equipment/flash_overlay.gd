@@ -13,9 +13,17 @@ const HOLD := 0.35
 ## from behind still leaves it about two thirds white.
 const PEAK := 2.0
 ## The afterimage: its strength at the start of the fade (of the flash's
-## amount), and how much smaller than the screen its still is kept (drawn
-## back up, it is soft, as an afterimage is).
-const GHOST := 0.8
+## amount), how much longer than the white it lasts, and how much smaller
+## than the screen its still is kept (drawn back up, it is soft, as an
+## afterimage is). It is a burned-in picture of the pop, its lights glaring
+## and its darks washed to a pale haze, that hangs over the returning view
+## and thins slowly, the white gone well before it (as Call of Duty's flash
+## leaves the frozen frame on screen while the world comes back through it).
+## It never covers more than GHOST_COVER of the live view, so the room stays
+## readable through it.
+const GHOST := 1.0
+const GHOST_OUTLASTS := 1.35
+const GHOST_COVER := 0.72
 const GHOST_SHRINK := 4
 ## Below this amount there is no afterimage, only the white.
 const GHOST_MIN := 0.2
@@ -25,8 +33,15 @@ shader_type canvas_item;
 uniform float strength = 0.0;
 void fragment() {
 	vec3 still = texture(TEXTURE, UV).rgb;
-	// Burned in: the still's lights stay, its darks lift toward white.
-	COLOR = vec4(mix(still, vec3(1.0), 0.45) * 1.1, strength);
+	// Burned in: the still's lights glare and bleed, its darks lift toward
+	// a warm white haze, so the frame reads as a glowing imprint, not a
+	// photo laid over the view.
+	float light = dot(still, vec3(0.3, 0.55, 0.15));
+	vec3 burned = mix(vec3(0.97, 0.95, 0.9), still * 1.25 + 0.2, 0.5);
+	burned += smoothstep(0.55, 0.95, light) * 0.35;
+	// The imprint is held hardest where the eye was looking: the middle.
+	float centre = 1.0 - 0.35 * smoothstep(0.25, 0.75, length(UV - 0.5));
+	COLOR = vec4(burned, strength * centre);
 }
 """
 
@@ -96,9 +111,15 @@ func _level() -> float:
 	return _peak(_amount) * fade * fade
 
 
-## The afterimage's strength: it outlasts the white, fading linearly.
+## The afterimage's strength: full while the screen is white, then it
+## outlasts the white, fading slowly at first and faster at the end.
 func _ghost_level() -> float:
-	return GHOST * _amount * _fade()
+	var hold := _seconds * HOLD
+	var span := _seconds * GHOST_OUTLASTS - hold
+	if _time <= hold or span <= 0.0:
+		return minf(GHOST * _amount, GHOST_COVER)
+	var left := clampf(1.0 - (_time - hold) / span, 0.0, 1.0)
+	return minf(GHOST * _amount, GHOST_COVER) * sqrt(left)
 
 
 ## Keeps the frame on screen now, shrunk, as the afterimage. Reading the
@@ -126,7 +147,7 @@ func _apply() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	_apply()
-	if _time >= _seconds:
+	if _time >= _seconds * GHOST_OUTLASTS:
 		_white.color.a = 0.0
 		_ghost.visible = false
 		_ghost.texture = null
