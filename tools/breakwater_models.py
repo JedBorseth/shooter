@@ -193,16 +193,17 @@ def truck_wheel(b: Model, x, y, z, r, w, dual=False, rim="steel_grey"):
         xc = x - out * k * (w + 0.03)
         b.cyl("x", xc - w / 2, xc + w / 2, (y, z), r * 0.94, "rubber", sides=28)
         b.cyl("x", xc - w / 2 + 0.03, xc + w / 2 - 0.03, (y, z), r, "rubber", sides=28)
-        # Tread: blocks round the crown.
-        for i in range(28):
-            t = 2 * PI * (i + 0.5) / 28
+        # Tread: blocks round the crown (14 a side, wide: 28 narrow ones cost
+        # 7k triangles a truck for detail too fine to see past a few metres).
+        for i in range(14):
+            t = 2 * PI * (i + 0.5) / 14
             cy_, cz_ = y + math.cos(t) * r, z + math.sin(t) * r
             ny, nz = math.cos(t), math.sin(t)
             for side in (-1, 1):
                 x0, x1 = xc + side * 0.015, xc + side * (w / 2 - 0.035)
                 pts = []
                 for xx in (x0, x1):
-                    for dt in (-0.045, 0.045):
+                    for dt in (-0.09, 0.09):
                         for h in (0.0, 0.012):
                             yy = cy_ + ny * h + (-nz) * dt
                             zz = cz_ + nz * h + ny * dt
@@ -529,13 +530,14 @@ def disc(b: Model, c, d, r, thick, look, sides=14, detail=False):
 
 def flanged(b: Model, a, e, r, look, flanges=(0.25, 0.75), bolts=True):
     """A pipe from a to e with bolted flanges at the fractions `flanges`."""
-    b.tube([a, e], r, look, sides=12, detail=False)
+    # Round enough to read as pipe up close (12 sides read as octagons).
+    b.tube([a, e], r, look, sides=16, detail=False)
     length = math.dist(a, e)
     d = tuple((e[j] - a[j]) / length for j in range(3))
     u, v = _basis(d)
     for f in flanges:
         c = tuple(a[j] + (e[j] - a[j]) * f for j in range(3))
-        disc(b, c, d, r * 1.65, 0.05, look, sides=16)
+        disc(b, c, d, r * 1.65, 0.05, look, sides=20)
         if bolts:
             for i in range(8):
                 t = 2 * PI * (i + 0.5) / 8
@@ -760,14 +762,23 @@ def additive_skid(b: Model, look="tank_white"):
         b.box(x - 0.03, x + 0.03, 0.9, 2.0, z - 0.5, z - 0.47, "steel_grey", detail=True)
         flanged(b, (x, 0.75, z), (x, 0.75, 1.2), 0.05, "pipe_grey", flanges=(0.35, 0.95), bolts=False)
         gauge(b, (x + 0.2, 1.9, z - 0.46), (0.0, 0.0, -1.0))
-    b.cyl("x", -1.45, 1.45, (0.75, 1.2), 0.07, "pipe_grey", sides=10)
+    b.cyl("x", -1.45, 1.45, (0.75, 1.2), 0.07, "pipe_grey", sides=18)
     for x in (-0.8, 0.7, -0.05):
         handwheel(b, (x, 0.75, 1.0), (0.0, 0.0, 1.0), 0.12)
     # The dosing pump and its motor, the control box.
-    b.box(0.85, 1.4, 0.27, 0.62, 0.1, 0.8, "steel_blue", bevel=0.02)
-    b.cyl("z", 0.8, 1.15, (1.12, 0.45), 0.15, "steel_blue", sides=12)
-    for k in range(6):
-        b.cyl("z", 0.84 + k * 0.05, 0.86 + k * 0.05, (1.12, 0.45), 0.165, "steel_blue", sides=12, detail=True)
+    # A diaphragm dosing pump: its head and stroke housing on a base frame,
+    # driven by a finned motor with a fan cowl and a terminal box.
+    b.box(0.82, 1.42, 0.27, 0.33, 0.05, 1.12, "steel_dark", bevel=0.01)
+    b.box(0.9, 1.34, 0.33, 0.66, 0.1, 0.42, "steel_blue", bevel=0.03)
+    disc(b, (1.12, 0.5, 0.06), (0.0, 0.0, 1.0), 0.14, 0.08, "steel_blue", sides=20)
+    disc(b, (1.12, 0.5, 0.0), (0.0, 0.0, 1.0), 0.1, 0.06, "steel_grey", sides=16, detail=True)
+    b.cyl("z", 0.46, 0.98, (1.12, 0.52), 0.13, "steel_blue", sides=24)
+    for k in range(9):
+        b.cyl("z", 0.49 + k * 0.055, 0.505 + k * 0.055, (1.12, 0.52), 0.145, "steel_blue", sides=24, detail=True)
+    b.cyl("z", 0.98, 1.1, (1.12, 0.52), 0.14, "steel_grey", sides=24)
+    disc(b, (1.12, 0.52, 1.1), (0.0, 0.0, 1.0), 0.11, 0.012, "steel_dark", sides=20, detail=True)
+    b.box(1.04, 1.2, 0.64, 0.74, 0.62, 0.8, "steel_blue", bevel=0.01)
+    b.box(1.02, 1.22, 0.33, 0.4, 0.5, 0.95, "steel_dark", detail=True)
     b.box(-1.45, -1.05, 0.27, 1.7, 0.75, 1.2, "steel_grey", bevel=0.015)
     b.box(-1.4, -1.1, 0.4, 1.6, 1.2, 1.215, "steel_grey", detail=True)
     for k, lk in enumerate(("signal_walk", "led_amber", "signal_red")):
@@ -925,10 +936,10 @@ def loading_arm(b: Model, look="steel_grey", reach=4.5):
     """A marine loading arm on its riser, folded: a column, an inboard arm up
     and back, an outboard arm hanging toward the sea (-z), a counterweight."""
     b.box(-0.5, 0.5, 0.0, 0.3, -0.5, 0.5, "steel_dark", bevel=0.02)
-    b.cyl("y", 0.3, 4.2, (0.0, 0.0), 0.22, look, sides=12)
-    b.cyl("x", -0.3, 0.3, (4.3, 0.0), 0.32, look, sides=12)
+    b.cyl("y", 0.3, 4.2, (0.0, 0.0), 0.22, look, sides=20)
+    b.cyl("x", -0.3, 0.3, (4.3, 0.0), 0.32, look, sides=20)
     top = (0.0, 4.3 + reach * 0.8, -reach * 0.55)
-    b.tube([(0.0, 4.3, 0.0), top], 0.2, look, sides=10, detail=False)
+    b.tube([(0.0, 4.3, 0.0), top], 0.2, look, sides=16, detail=False)
     b.tube([(0.0, 4.3, 0.0), (0.0, 3.6, 1.6)], 0.12, look, sides=8, detail=False)
     # The counterweight: steel plates bolted in a stack, painted like the arm.
     for k in range(4):
@@ -937,13 +948,21 @@ def loading_arm(b: Model, look="steel_grey", reach=4.5):
     for x in (-0.3, 0.3):
         for z in (1.55, 2.05):
             b.cyl("y", 3.7, 3.74, (x, z), 0.035, "steel_dark", sides=6, detail=True)
-    b.cyl("x", -0.25, 0.25, (top[1], top[2]), 0.28, look, sides=12)
+    b.cyl("x", -0.25, 0.25, (top[1], top[2]), 0.28, look, sides=20)
     end = (0.0, top[1] - reach * 0.9, top[2] - reach * 0.35)
-    b.tube([top, end], 0.17, look, sides=10, detail=False)
+    b.tube([top, end], 0.17, look, sides=16, detail=False)
     b.cyl("y", end[1] - 0.6, end[1], (0.0, end[2]), 0.2, "steel_dark", sides=10)
     b.cyl("y", end[1] - 0.7, end[1] - 0.6, (0.0, end[2]), 0.32, "safety_yellow", sides=12, detail=True)
-    b.tube([(0.0, 1.2, 0.2), (0.0, 1.2, 1.4), (0.0, 0.5, 1.6)], 0.16, "pipe_grey", sides=8, detail=False)
-    b.cyl("y", 0.9, 1.5, (0.0, 0.9), 0.24, "valve_red", sides=10, detail=True)
+    b.tube([(0.0, 1.2, 0.2), (0.0, 1.2, 1.4), (0.0, 0.5, 1.6)], 0.16, "pipe_grey", sides=16, detail=False)
+    # The arm's isolation valve: a ball valve body between flanges, its
+    # bonnet, and a gearbox handwheel, in place of a plain red drum.
+    b.smooth_hull([(math.cos(2 * PI * i / 10) * rr, 1.2 + math.sin(2 * PI * i / 10) * rr, z)
+                   for i in range(10) for z, rr in ((0.62, 0.2), (0.9, 0.27), (1.18, 0.2))], "valve_red", levels=1)
+    for z in (0.6, 1.2):
+        disc(b, (0.0, 1.2, z), (0.0, 0.0, 1.0), 0.29, 0.05, "valve_red", sides=24)
+    b.cyl("y", 1.45, 1.62, (0.0, 0.9), 0.09, "valve_red", sides=16)
+    b.box(-0.12, 0.12, 1.62, 1.8, 0.78, 1.02, "valve_red", bevel=0.02)
+    handwheel(b, (0.2, 1.71, 0.9), (1.0, 0.0, 0.0), 0.16)
 
 
 @model

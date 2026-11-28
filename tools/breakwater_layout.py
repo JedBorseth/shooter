@@ -1677,6 +1677,31 @@ def fit_out(side: Side):
         prop("cardboard_box", -32.4, u + dy, -18.4 + 0.25 * (k % 2), PI / 2 + 0.1 * k, m, scale=0.7)
     prop("trash_can", -23.4, u, -26.2, 0.0, m)
     place("notice_board", -21.4, u + 1.5, -21.0, -PI / 2, m)
+    # The switch room: a log desk under the notices, a shelf of spare
+    # breakers by the stair, a cable drum in the corner.
+    prop("office_desk", -27.6, WALK, -14.6, 0.0, m)
+    blocker(-28.6, -26.6, WALK, WALK + 0.79, -15.1, -14.12, m, "wood")
+    prop("plastic_chair", -27.4, WALK, -15.5, PI + 0.3, m)
+    prop("cardboard_box", -28.2, WALK + 0.79, -14.45, 0.2, m, scale=0.6)
+    prop("steel_shelves", -21.6, WALK, -25.6, -PI / 2, m)
+    blocker(-21.8, -21.35, WALK, WALK + 1.8, -26.1, -25.1, m)
+    for k, dy in enumerate((0.02, 0.62, 1.22)):
+        prop("cardboard_box", -21.6, WALK + dy, -25.75 + 0.3 * (k % 2), -PI / 2 + 0.15 * k, m, scale=0.65)
+    # The drum store: a shelf of filters and cartons, a spill pallet, notices.
+    prop("steel_shelves", -20.4, WALK, 11.5, PI / 2, m)
+    blocker(-20.65, -20.2, WALK, WALK + 1.8, 11.0, 12.0, m)
+    for k, dy in enumerate((0.02, 0.62)):
+        prop("cardboard_box", -20.4, WALK + dy, 11.3 + 0.35 * k, PI / 2, m, scale=0.65)
+    place("spill_pallet", -19.4, WALK, 12.9, 0.0, m, count=2)
+    blocker(-20.05, -18.75, WALK, WALK + 1.1, 12.25, 13.55, m)
+    place("notice_board", -13.35, WALK + 1.4, 9.0, -PI / 2, m)
+    # The east pump room: a bench and coat hooks by the door, a rack of
+    # spares, the duty board.
+    prop("bench_seat", 7.5, WALK, -22.7, PI, m)
+    place("coat_hooks", 7.5, WALK + 1.6, -22.35, PI, m)
+    prop("metal_rack", 8.35, WALK, -27.0, -PI / 2, m)
+    blocker(8.05, 8.65, WALK, WALK + 1.9, -27.5, -26.5, m)
+    place("notice_board", 8.65, WALK + 1.4, -24.6, -PI / 2, m)
     # The mess: a whiteboard rota and a clock over the table, a bin.
     whiteboard(-27.0, WALK + 1.45, -2.35, PI, m, w=1.4, h=0.9)
     wall_clock(-29.5, WALK + 2.55, -2.35, PI, m)
