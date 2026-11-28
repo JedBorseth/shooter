@@ -3,10 +3,9 @@ extends SceneTree
 ## and Destroy's charge going off (`CombatEffects.charge_explosion`, 15 m
 ## further off and looking a little up, to fit its smoke column), a smoke
 ## grenade's cloud (`CombatEffects.smoke`), or a flashbang's pop
-## (`CombatEffects.flash_pop`) as a frame strip in three lights: the
-## Testing Area in the sun (10 m off, and 5 m off looking down at the chips
-## and the scorch), and inside its culvert in shade. Needs a GPU and a display
-## (or Xvfb),
+## (`CombatEffects.flash_pop`) as a frame strip in three lights on Breakwater:
+## in the sun (10 m off, and 5 m off looking down at the chips and the
+## scorch), and in shade. Needs a GPU and a display (or Xvfb),
 ## and --fixed-fps 60 so the strip's moments are true time:
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1600x900 --audio-driver Dummy --fixed-fps 60 \
@@ -17,6 +16,8 @@ extends SceneTree
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
 ##   CAPTURE_ONLY    comma list of lights: sun, close, shade (default: all).
 ##   CAPTURE_EFFECT  explosion (default), charge, smoke, or flash.
+##   CAPTURE_MAP     breakwater (default) or testing (the Testing Area, while
+##                   it lasts).
 
 const Benchmark := preload("res://tests/benchmark.gd")
 ## Per effect, sixtieths of a second after it starts for each frame of the
@@ -27,17 +28,46 @@ const MOMENTS := {
 	"smoke": [20, 60, 150, 300, 600, 900],
 	"flash": [1, 3, 6, 10, 20, 40, 90],
 }
-## Per light: the map, the player's feet, yaw, pitch, and where the blast goes
-## off (on the ground about 10 m ahead).
-const LIGHTS := {
-	"sun": ["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.06, Vector3(0, 0.05, 10)],
-	"close": ["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.35, Vector3(0.5, 0.05, 15)],
-	"shade": ["res://scenes/main.tscn", Vector3(-10, 0.1, -9), 0.0, -0.08, Vector3(-10, 0.05, -17)],
+## Per map and light: the scene, the player's feet, yaw, pitch, and where the
+## blast goes off. Breakwater's sun views look across the north yard at a
+## sunlit wall (6.5 m, and 4 m looking down); its shade view looks along the
+## west road into the covered gateway.
+const MAPS := {
+	"breakwater":
+	{
+		"sun":
+		["res://scenes/breakwater.tscn", Vector3(3, 0.1, 18.5), PI, -0.02, Vector3(4.8, 0.05, 25)],
+		"close":
+		[
+			"res://scenes/breakwater.tscn",
+			Vector3(3, 0.1, 18.5),
+			PI,
+			-0.35,
+			Vector3(3.6, 0.05, 22.5)
+		],
+		"shade":
+		[
+			"res://scenes/breakwater.tscn",
+			Vector3(-37, 0.1, 3),
+			-PI / 2,
+			-0.08,
+			Vector3(-29, 0.05, 3)
+		],
+	},
+	"testing":
+	{
+		"sun": ["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.06, Vector3(0, 0.05, 10)],
+		"close":
+		["res://scenes/main.tscn", Vector3(0, 0.1, 20), 0.0, -0.35, Vector3(0.5, 0.05, 15)],
+		"shade":
+		["res://scenes/main.tscn", Vector3(-10, 0.1, -9), 0.0, -0.08, Vector3(-10, 0.05, -17)],
+	},
 }
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _only := OS.get_environment("CAPTURE_ONLY")
 var _effect := OS.get_environment("CAPTURE_EFFECT")
+var _map := OS.get_environment("CAPTURE_MAP")
 var _player: FpsPlayer
 var _settings: Node
 
@@ -60,13 +90,16 @@ func _run() -> void:
 	_settings.set_graphics_preset(Benchmark.PRESET_KEYS[preset])
 	if not MOMENTS.has(_effect):
 		_effect = "explosion"
-	for light: String in LIGHTS:
+	if not MAPS.has(_map):
+		_map = "breakwater"
+	var lights: Dictionary = MAPS[_map]
+	for light: String in lights:
 		if not _only.is_empty() and not light in _only.split(","):
 			continue
-		var spec: Array = LIGHTS[light].duplicate()
+		var spec: Array = lights[light].duplicate()
 		if _effect == "charge":
 			spec[3] += 0.2
-			spec[4] += Vector3(0, 0, -15)
+			spec[4] += Vector3(0, 0, -15).rotated(Vector3.UP, spec[2])
 		await _load(spec[0])
 		await _hold(spec[1], spec[2], spec[3], 60)
 		var effects := get_first_node_in_group("combat_effects")

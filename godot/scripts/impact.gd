@@ -36,7 +36,7 @@ const SURFACES := {
 	"wood":
 	{
 		"spark": Color(0.55, 0.4, 0.25),
-		"dust": Color(0.5, 0.38, 0.24, 0.6),
+		"dust": Color(0.62, 0.55, 0.45, 0.6),
 		"sparks": false,
 		"debris": Color(0.56, 0.42, 0.26),
 		"dust_scale": 1.2

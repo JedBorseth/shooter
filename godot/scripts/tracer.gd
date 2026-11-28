@@ -7,8 +7,9 @@ extends MeshInstance3D
 
 ## Metres per second. Real rounds are faster; this keeps the streak visible.
 @export var speed: float = 320.0
-@export var length: float = 7.0
-## True width in metres; the shader keeps at least a pixel and a half.
+@export var length: float = 9.0
+## The core's true width in metres; the shader keeps it at least three pixels
+## wide and draws a glow round it.
 @export var width: float = 0.018
 
 var _from: Vector3

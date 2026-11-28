@@ -161,7 +161,7 @@ It measures each variant in several short rounds, each beside a measurement of t
 
 ### Effects in a fight
 
-The benchmark's viewpoints never fire. `godot/tests/combat_fx.gd` with `FX_BENCH=1` stands the player before the Testing Area's tall cover wall holding the trigger on a range dummy, while four other shooters' rounds (traced as remote shots) land on the wall and a second dummy and a frag grenade goes off every two seconds, and prints GPU time idle and while firing at each preset (`FX_PRESETS`, `FX_FRAMES` default 360, `FX_OUT` for JSON). It only presses fire and traces remote shots, so it runs on older builds too: run it on `main` and on the branch, alternating, and compare the firing column. Without `FX_BENCH` it saves frame strips of blood, impacts, and holes into `FX_DIR`.
+The benchmark's viewpoints never fire. `godot/tests/combat_fx.gd` with `FX_BENCH=1` stands the player before a sunlit wall in Breakwater's north yard (the Testing Area's tall cover wall with `FX_MAP=testing`) holding the trigger on a range dummy, while four other shooters' rounds (traced as remote shots) land on the wall and a second dummy and a frag grenade goes off every two seconds, and prints GPU time idle and while firing at each preset (`FX_PRESETS`, `FX_FRAMES` default 360, `FX_OUT` for JSON). It only presses fire and traces remote shots, so it runs on older builds too: run it on `main` and on the branch, alternating, and compare the firing column. Without `FX_BENCH` it saves frame strips of blood, impacts, and holes into `FX_DIR`.
 
 ### Pictures for reviews
 

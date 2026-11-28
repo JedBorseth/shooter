@@ -148,15 +148,19 @@ const TRACER_SCENE: &str = "res://scenes/effects/tracer.tscn";
 /// How fast a tracer streak travels (m/s). Real rounds fly at 700 to 900 m/s;
 /// this is slow enough to follow, as in Call of Duty.
 pub const TRACER_SPEED: f32 = 320.0;
-/// The streak's length and true width (metres). The shader keeps it at
-/// least a pixel and a half wide at any range.
-pub const TRACER_LENGTH: f32 = 7.0;
+/// The streak's length and its core's true width (metres). The shader keeps
+/// the core at least three pixels wide at any range and draws a glow round it.
+pub const TRACER_LENGTH: f32 = 9.0;
 const TRACER_WIDTH: f32 = 0.018;
 
 /// The fired cases weapons eject (`tools/build_weapons.py`), by node name.
 const CASINGS: &str = "res://assets/weapons/shared/casings.glb";
-/// Seconds a case lies where it fell before it goes.
-pub const CASE_LIFETIME: f32 = 10.0;
+/// Seconds a case lies where it fell before it goes (the pool's budget
+/// still caps how many lie at once).
+pub const CASE_LIFETIME: f32 = 20.0;
+/// Cases are drawn this much larger than life once in the world, as Call of
+/// Duty draws them, so brass on the ground reads at a glance.
+const CASE_SCALE: f32 = 1.25;
 /// Share of a case's speed into a surface kept as it bounces off, and of its
 /// speed along it.
 const CASE_RESTITUTION: f32 = 0.35;
@@ -854,7 +858,7 @@ impl CombatEffects {
         else {
             return;
         };
-        let radius = mesh.get_aabb().size.x * 0.5;
+        let radius = mesh.get_aabb().size.x * 0.5 * CASE_SCALE;
         let index = if self.cases.len() < budget {
             let mut node = MeshInstance3D::new_alloc();
             node.set_cast_shadows_setting(ShadowCastingSetting::OFF);
@@ -891,8 +895,10 @@ impl CombatEffects {
             resting: false,
             bounces: 0,
         };
-        case.node
-            .set_global_transform(Transform3D::new(case.basis, position));
+        case.node.set_global_transform(Transform3D::new(
+            case.basis.scaled(Vector3::splat(CASE_SCALE)),
+            position,
+        ));
         self.cases_thrown = self.cases_thrown.wrapping_add(1);
     }
 
@@ -1146,7 +1152,8 @@ impl CombatEffects {
                 // Shrinks away over its last half second.
                 let left = CASE_LIFETIME - case.age;
                 if left < 0.5 {
-                    case.node.set_scale(Vector3::ONE * (left / 0.5).max(0.01));
+                    case.node
+                        .set_scale(Vector3::ONE * (CASE_SCALE * left / 0.5).max(0.01));
                 }
                 continue;
             }
@@ -1192,8 +1199,10 @@ impl CombatEffects {
                     }
                 }
             }
-            case.node
-                .set_global_transform(Transform3D::new(case.basis, case.position));
+            case.node.set_global_transform(Transform3D::new(
+                case.basis.scaled(Vector3::splat(CASE_SCALE)),
+                case.position,
+            ));
         }
         for (at, surface, speed) in clinks {
             self.clink(at, surface, speed);
@@ -1398,8 +1407,11 @@ impl CombatEffects {
         let size = HOLE_SIZE
             * if exit { EXIT_HOLE_SCALE } else { 1.0 }
             * (0.9 + 0.2 * rng::unit(seed, 17));
-        decal.set_size(Vector3::new(size, 0.08, size));
-        decal.set_normal_fade(0.5);
+        // Shallow, and faded off faces turned much away from the hit, so a
+        // hole on a ledge or a bevel does not smear across the next face
+        // into a stretched star.
+        decal.set_size(Vector3::new(size, 0.05, size));
+        decal.set_normal_fade(0.7);
         let up = normal.normalized_or_zero();
         let up = if up == Vector3::ZERO { Vector3::UP } else { up };
         decal.set_global_transform(Transform3D::new(

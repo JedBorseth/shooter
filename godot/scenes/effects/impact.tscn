@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" path="res://assets/textures/effects/blood_mist.png" id="4_mist"]
 [ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_4x4.png" id="5_smoke"]
 [ext_resource type="Shader" path="res://shaders/debris.gdshader" id="6_debris"]
+[ext_resource type="Shader" path="res://shaders/impact_dust.gdshader" id="7_dust"]
 
 [sub_resource type="ParticleProcessMaterial" id="Process_sparks"]
 particle_flag_align_y = true
@@ -62,15 +63,9 @@ anim_speed_min = 0.5
 anim_speed_max = 0.9
 anim_offset_max = 0.4
 
-[sub_resource type="StandardMaterial3D" id="Mat_dust"]
-transparency = 1
-shading_mode = 2
-vertex_color_use_as_albedo = true
-albedo_texture = ExtResource("5_smoke")
-billboard_mode = 3
-particles_anim_h_frames = 4
-particles_anim_v_frames = 4
-particles_anim_loop = false
+[sub_resource type="ShaderMaterial" id="Mat_dust"]
+shader = ExtResource("7_dust")
+shader_parameter/flipbook = ExtResource("5_smoke")
 
 [sub_resource type="QuadMesh" id="Mesh_dust"]
 material = SubResource("Mat_dust")

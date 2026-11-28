@@ -13,8 +13,9 @@ render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, diffus
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
 uniform int frames_across = 5;
 uniform int frames_down = 5;
-/// The first frame played.
+/// The first frame played, and the last (-1: the flipbook's last).
 uniform int first_frame = 0;
+uniform int last_frame = -1;
 /// How brightly the hot frames glow.
 uniform float fire_energy = 3.2;
 /// The fire's colour from its dim edges to its hottest core.
@@ -31,6 +32,10 @@ uniform vec2 cooling = vec2(0.12, 0.5);
 /// Animation progress over which the particle fades out (a frag's core
 /// gives way to the dirt it throws up instead of hanging as a ball).
 uniform vec2 fade_out = vec2(1.0, 1.0);
+/// How much of a frame's bright, colourless middle counts as flame. The
+/// source's first frames are a white-hot ball with little colour in it: the
+/// blast's opening flash plays them with this at 1, so they burn white.
+uniform float white_heat = 0.0;
 
 varying float progress;
 
@@ -59,7 +64,8 @@ void vertex() {
 	progress = clamp(INSTANCE_CUSTOM.z, 0.0, 1.0);
 	float total = float(frames_across * frames_down);
 	float first = float(first_frame);
-	float frame = min(first + floor(progress * (total - first)), total - 1.0);
+	float last = last_frame < 0 ? total - 1.0 : float(last_frame);
+	float frame = min(first + floor(progress * (last + 1.0 - first)), last);
 	UV = (UV + vec2(mod(frame, float(frames_across)), floor(frame / float(frames_across))))
 		/ vec2(float(frames_across), float(frames_down));
 }
@@ -68,9 +74,10 @@ void fragment() {
 	vec4 tex = texture(flipbook, UV);
 	float heat = 1.0 - smoothstep(cooling.x, cooling.y, progress);
 	// The warm, bright parts of a frame are flame; the rest is smoke.
-	float flame = smoothstep(0.08, 0.45, tex.r - tex.b) * heat;
-	ALBEDO = mix(tex.rgb * 1.1 + vec3(0.09, 0.08, 0.07), vec3(0.0), flame);
 	float hot = clamp(dot(tex.rgb, vec3(0.3, 0.5, 0.2)), 0.0, 1.0);
+	float flame = max(smoothstep(0.08, 0.45, tex.r - tex.b), smoothstep(0.25, 0.7, hot) * white_heat)
+		* heat;
+	ALBEDO = mix(tex.rgb * 1.1 + vec3(0.09, 0.08, 0.07), vec3(0.0), flame);
 	EMISSION = mix(fire_edge, fire_core, hot * hot) * hot * flame * fire_energy;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
