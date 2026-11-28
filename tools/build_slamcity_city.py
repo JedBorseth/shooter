@@ -425,8 +425,8 @@ def part_geo(part) -> Geo:
         # Explicit faces whose vertices blend the look's own tint toward a
         # colour (stains, streaks, tide lines): `mix` holds (r, g, b, weight,
         # roughness scale) per vertex, resolved by the map builder.
-        g.add(look, [tuple(v) for v in part["verts"]], [tuple(f) for f in part["faces"]], uvs=part.get("uvs"),
-              color=("mix", [tuple(c) for c in part["mix"]]))
+        g.add(look, [tuple(v) for v in part["verts"]], [tuple(f) for f in part["faces"]],
+              smooth=part.get("smooth", False), uvs=part.get("uvs"), color=("mix", [tuple(c) for c in part["mix"]]))
     elif kind == "pane":
         v, f, uv = quad_geo(part["corners"], part["normal"])
         c = part["corners"]

@@ -5,11 +5,14 @@ extends EditorScenePostImport
 ## material is swapped for the shared material of that name in
 ## materials/breakwater/ (or a look in materials/world/). `*_detail` chunks
 ## cast no shadow, are hidden beyond 45 m, and take light from the lightmap's
-## probes; `*_shadow` chunks are shadow-only proxies (see scripts/breakwater.gd). The `far` chunk (the
-## basin's water, the moored tanker, the shore and the far tank farm) is too
-## big for lightmap texels: it takes the probes' light and casts no shadow.
+## probes; `*_shadow` chunks are shadow-only proxies (see scripts/breakwater.gd). The `far_*` chunks (the
+## land, water and ships beyond the boundary, one per quadrant so each culls on its own) are too
+## big for lightmap texels: they take the probes' light and cast no shadow.
 
 const DETAIL_RANGE := 45.0
+## Beyond the boundary, `far_*_detail` (rails, marks, small fittings on the
+## ship and the far plant) draws this far.
+const FAR_DETAIL_RANGE := 90.0
 
 
 func _post_import(scene: Node) -> Object:
@@ -27,9 +30,12 @@ func _post_import(scene: Node) -> Object:
 			if cache[key] != null:
 				mesh.surface_set_material(i, cache[key])
 		var chunk := String(instance.name)
-		if chunk == "far":
+		if chunk.begins_with("far"):
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
+			if chunk.ends_with("_detail"):
+				instance.visibility_range_end = FAR_DETAIL_RANGE
+				instance.visibility_range_end_margin = 10.0
 		elif chunk.ends_with("_shadow"):
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			instance.gi_mode = GeometryInstance3D.GI_MODE_DISABLED

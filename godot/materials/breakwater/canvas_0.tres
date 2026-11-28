@@ -1,9 +1,9 @@
 [gd_resource type="ShaderMaterial" format=3]
 
 [ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]
-[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/albedo.jpg" id="2_albedo"]
-[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/normal.jpg" id="3_normal"]
-[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/orm.jpg" id="4_orm"]
+[ext_resource type="Texture2D" path="res://assets/textures/canvas/albedo.jpg" id="2_albedo"]
+[ext_resource type="Texture2D" path="res://assets/textures/canvas/normal.jpg" id="3_normal"]
+[ext_resource type="Texture2D" path="res://assets/textures/canvas/orm.jpg" id="4_orm"]
 
 [resource]
 shader = ExtResource("1_shader")
@@ -11,9 +11,9 @@ shader_parameter/albedo_tex = ExtResource("2_albedo")
 shader_parameter/normal_tex = ExtResource("3_normal")
 shader_parameter/orm_tex = ExtResource("4_orm")
 shader_parameter/textured = true
-shader_parameter/tile_size = 4
+shader_parameter/tile_size = 0.8
 shader_parameter/use_vertex_color = true
-shader_parameter/metallic_scale = 0
+shader_parameter/metallic_scale = 1
 shader_parameter/grime = 0
 shader_parameter/normal_strength = 1
 shader_parameter/anti_tile = 0

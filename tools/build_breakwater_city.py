@@ -55,7 +55,16 @@ def log(*args):
 
 def chunk_of(centre, part) -> str:
     chunk = _chunk_of(centre, part)
-    if part.get("stain") and chunk != "far":
+    if chunk == "far":
+        # Beyond the boundary, by quadrant, so the renderer culls the ones
+        # behind and beside the camera: one far mesh was drawn whole (400k
+        # triangles) whenever any of it was in view.
+        x, _, z = centre
+        far = "far_" + ("n" if z < 0.0 else "s") + ("w" if x < 0.0 else "e")
+        # Fine detail out there (rails, stanchions, marks, fittings) stops
+        # drawing at a distance (godot/tools/breakwater_import.gd).
+        return far + "_detail" if part.get("detail") else far
+    if part.get("stain"):
         return chunk + "_stain"
     return chunk
 
@@ -82,6 +91,11 @@ class Materials(B.Materials):
                 '[gd_resource type="ShaderMaterial" format=3]', "",
                 '[ext_resource type="Shader" path="res://shaders/stain_mul.gdshader" id="1_shader"]', "",
                 "[resource]", "render_priority = 1", 'shader = ExtResource("1_shader")']) + "\n"
+        if spec.get("special") == "alu":
+            return "\n".join([
+                '[gd_resource type="ShaderMaterial" format=3]', "",
+                '[ext_resource type="Shader" path="res://shaders/polished_alu.gdshader" id="1_shader"]', "",
+                "[resource]", 'shader = ExtResource("1_shader")']) + "\n"
         if spec.get("special") == "sea_shore":
             return "\n".join([
                 '[gd_resource type="ShaderMaterial" format=3]', "",
@@ -140,7 +154,7 @@ def main():
             # Shadow proxies: the opaque pieces at least SHADOW_MIN across.
             # Pipes, rails, and fittings cast their shadows in the lightmap
             # only; drawing them into every cascade cost about 0.2 ms.
-            if (chunk.endswith(("_detail", "_stain")) or chunk == "far" or name in see_through
+            if (chunk.endswith(("_detail", "_stain")) or chunk.startswith("far") or name in see_through
                     or look in see_through):
                 continue
             span = max(max(v[i] for v in verts) - min(v[i] for v in verts) for i in range(3))
