@@ -180,6 +180,7 @@ func _process(delta: float) -> void:
 ## Marks `slot`'s tile in the grid as the one being edited ("" for none),
 ## and keeps it at full brightness while the rest of the grid dims.
 func _mark_editing(slot: String) -> void:
+	_grid.editing_slot = slot
 	var lift := 1.0 / maxf(_grid.modulate.r, 0.01)
 	for tile: Node in _grid.get_children():
 		if tile is LoadoutTile:

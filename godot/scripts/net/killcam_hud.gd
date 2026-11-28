@@ -133,13 +133,13 @@ func _draw_overlay() -> void:
 	_draw_weapon(alpha)
 	_draw_strip(alpha, ending)
 	# Skip, after a death only: in the strip's right end, clear of the cards,
-	# its right edge under the weapon row's.
+	# its right edge on the weapon band's.
 	if bool(_info.get("skippable", false)):
 		var key := Settings.prompt_key(&"interact")
 		var row := Paint.split_key("[%s] Skip" % key, UiTheme.TEXT)
 		var width := Paint.cap_width(String(row.key), 25.0) + 9.0
 		width += Paint.text_width(Paint.LABEL, "Skip", 18)
-		Paint.prompt(_canvas, row, 1544.0 - width / 2.0, 817.0, 18, alpha)
+		Paint.prompt(_canvas, row, 1556.0 - width / 2.0, 817.0, 18, alpha)
 	_canvas.draw_set_transform(Vector2.ZERO)
 	# The cut into the replay: a white flash for its first frames.
 	var flash := 1.0 - clampf((_frames - 1) / 3.0, 0.0, 1.0)
@@ -293,8 +293,9 @@ func _draw_weapon(alpha: float) -> void:
 	if bool(_info.get("headshot", false)):
 		var tag := "HEADSHOT"
 		var tag_w := Paint.text_width(Paint.LABEL, tag, 14, 2.0) + 16.0
-		_canvas.draw_rect(Rect2(1544.0 - tag_w, baseline + 12.0, tag_w, 22.0), shade)
-		Paint.text_right(_canvas, Paint.LABEL, tag, Vector2(1536.0, baseline + 28.0), 14, ink, 2.0)
+		# Its right edge on the weapon band's, as Skip's is.
+		_canvas.draw_rect(Rect2(1556.0 - tag_w, baseline + 12.0, tag_w, 22.0), shade)
+		Paint.text_right(_canvas, Paint.LABEL, tag, Vector2(1548.0, baseline + 28.0), 14, ink, 2.0)
 
 
 ## The silhouette key for a weapon's display name ("AK-47" is `ak47`).

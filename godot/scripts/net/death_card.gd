@@ -10,7 +10,7 @@ extends RefCounted
 ## name only. Killing yourself reads Yourself in your yellow on your side's
 ## colour, as the killcam's card shows you, with what did it; a fatal fall
 ## reads Fall damage with a falling mark, an unknown death Unknown with
-## a skull (Cause unknown), both behind a grey mark of no side (a fall is captioned
+## a skull (captioned Other), both behind a grey mark of no side (a fall is captioned
 ## World). The respawn bar fills along the card's bottom edge, with RESPAWN
 ## IN under the card in whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
 ## name card.
@@ -22,7 +22,7 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-const CARD_FILL := Color(0.055, 0.071, 0.086, 0.88)
+const CARD_FILL := Color(0.055, 0.071, 0.086, 0.93)
 const CARD_H := 80.0
 const MIN_W := 400.0
 ## The team passed for a death with no killer: an empty grey mark.
@@ -31,7 +31,7 @@ const WORLD := -2
 ## shrinks rather than widening the card), and the width a drawn mark takes
 ## in its place.
 const ICON_H := 26.0
-const ICON_MAX_W := 112.0
+const ICON_MAX_W := 136.0
 const GLYPH_W := 72.0
 ## The light grey every mark and silhouette is drawn in (the silhouettes'
 ## own grey), so drawn marks match the guns beside them.
@@ -206,7 +206,7 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 		var name := "RL-4" if weapon == "rl4" else _weapon_name(weapon)
 		return {"key": weapon, "icon": icon, "glyph": "", "name": name if name != "" else cause}
 	var how := {
-		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "Cause unknown"
+		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "Other"
 	}
 	if fell:
 		how.glyph = "fall"
@@ -253,17 +253,25 @@ static func cause_mark(item: CanvasItem, kind: String, at: Vector2, colour: Colo
 			)
 			item.draw_polyline(wire, colour, 1.6, true)
 		"fall":
-			# Two chevrons pointing down over a ground line.
-			for dy: float in [-11.0, -2.0]:
-				item.draw_polyline(
-					PackedVector2Array(
-						[at + Vector2(-11, dy), at + Vector2(0, dy + 8), at + Vector2(11, dy)]
-					),
-					colour,
-					3.0,
-					true
+			# Two solid chevrons pointing down over a ground bar.
+			for dy: float in [-12.0, -3.0]:
+				(
+					item
+					. draw_colored_polygon(
+						PackedVector2Array(
+							[
+								at + Vector2(-12, dy),
+								at + Vector2(-8, dy),
+								at + Vector2(0, dy + 6),
+								at + Vector2(8, dy),
+								at + Vector2(12, dy),
+								at + Vector2(0, dy + 10),
+							]
+						),
+						colour
+					)
 				)
-			item.draw_rect(Rect2(at + Vector2(-15, 11), Vector2(30, 2)), colour)
+			item.draw_rect(Rect2(at + Vector2(-15, 10), Vector2(30, 3)), colour)
 		_:
 			MatchPaint.skull(item, at, ICON_H * 1.1, colour)
 

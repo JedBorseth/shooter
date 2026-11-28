@@ -234,7 +234,9 @@ func _draw_mode_mark(at: Vector2) -> void:
 			draw_rect(Rect2(at - Vector2(3, 3), Vector2(6, 6)), ink)
 		"snd":
 			# The charge, as the death card draws it: a strapped block with
-			# its detonator and wire.
+			# its detonator and wire, drawn a fifth larger to weigh as much
+			# as the other modes' marks.
+			draw_set_transform(at * -0.25, 0.0, Vector2(1.25, 1.25))
 			draw_rect(Rect2(at + Vector2(-13, -3), Vector2(24, 11)), ink)
 			for x: float in [-8.0, 5.0]:
 				draw_rect(Rect2(at + Vector2(x, -3), Vector2(2, 11)), Color(UiTheme.INK, 0.6))
@@ -252,6 +254,7 @@ func _draw_mode_mark(at: Vector2) -> void:
 				1.5,
 				true
 			)
+			draw_set_transform(Vector2.ZERO)
 		"gungame":
 			for dy: float in [-6.0, 4.0]:
 				draw_polyline(

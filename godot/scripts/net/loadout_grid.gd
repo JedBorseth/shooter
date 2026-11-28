@@ -27,6 +27,13 @@ const ROWS := [22.0, 210.0, 398.0, 586.0]
 const WIDTH := 404.0
 const HEIGHT := 636.0
 
+## The slot being edited ("" for none): its heading reads in white.
+var editing_slot := "":
+	set(value):
+		if editing_slot != value:
+			editing_slot = value
+			queue_redraw()
+
 var _tiles := {}
 
 
@@ -36,19 +43,20 @@ func _ready() -> void:
 
 
 func _draw() -> void:
+	# Each heading with the slot it names.
 	var labels := [
-		["PRIMARY", 0.0, 0],
-		["OPTIC", COL_OPTIC, 0],
-		["ATTACHMENTS", COL_OPTIC + STEP, 0],
-		["SECONDARY", 0.0, 1],
-		["OPTIC", COL_OPTIC, 1],
-		["ATTACHMENTS", COL_OPTIC + STEP, 1],
-		["LETHAL", 0.0, 2],
-		["TACTICAL", STEP, 2],
-		["PERK 1", COL_OPTIC, 2],
-		["PERK 2", COL_OPTIC + STEP, 2],
-		["PERK 3", COL_OPTIC + STEP * 2.0, 2],
-		["WILDCARDS", 0.0, 3],
+		["PRIMARY", 0.0, 0, "primary"],
+		["OPTIC", COL_OPTIC, 0, "primary_attachments"],
+		["ATTACHMENTS", COL_OPTIC + STEP, 0, "primary_attachments"],
+		["SECONDARY", 0.0, 1, "secondary"],
+		["OPTIC", COL_OPTIC, 1, "secondary_attachments"],
+		["ATTACHMENTS", COL_OPTIC + STEP, 1, "secondary_attachments"],
+		["LETHAL", 0.0, 2, "lethal"],
+		["TACTICAL", STEP, 2, "tactical"],
+		["PERK 1", COL_OPTIC, 2, "perk1"],
+		["PERK 2", COL_OPTIC + STEP, 2, "perk2"],
+		["PERK 3", COL_OPTIC + STEP * 2.0, 2, "perk3"],
+		["WILDCARDS", 0.0, 3, "wildcards"],
 	]
 	for label: Array in labels:
 		Paint.text(
@@ -57,7 +65,7 @@ func _draw() -> void:
 			label[0],
 			Vector2(label[1], float(ROWS[label[2]]) - 8.0),
 			14,
-			UiTheme.TEXT_DIM,
+			UiTheme.TEXT if label[3] == editing_slot else UiTheme.TEXT_DIM,
 			1.2
 		)
 
