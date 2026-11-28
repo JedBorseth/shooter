@@ -114,7 +114,12 @@ func _run() -> void:
 	hud.show_victim(names[2], enemy)
 	await _frames(20)
 	await _shot("05_streak_ready")
-	await _seconds(3.5)
+	# Turned round with the plate up: markers behind us stay above it.
+	player.set_look(yaw + PI, -0.05)
+	await _frames(10)
+	await _shot("05b_ready_turned")
+	player.set_look(yaw, -0.05)
+	await _seconds(3.3)
 
 	# Low ammo: fire most of the magazine.
 	Input.action_press("fire")

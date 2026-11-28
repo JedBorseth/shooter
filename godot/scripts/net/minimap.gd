@@ -342,11 +342,12 @@ func _draw_sky() -> void:
 		var colour: Color = tag[2]
 		var width := Paint.text_width(Paint.LABEL, label, 12, 1.0) + 10.0
 		var rect := Rect2(x, WINDOW.y - 20.0, width, 15.0)
-		_icons.draw_rect(rect, Color(0, 0, 0, 0.6))
+		# A near-black plate and light letters, so the tag holds over the light
+		# map; the side's colour is the tab and the tint.
+		_icons.draw_rect(rect, Color(0, 0, 0, 0.8))
 		_icons.draw_rect(Rect2(rect.position, Vector2(2, rect.size.y)), colour)
-		Paint.text(
-			_icons, Paint.LABEL, label, rect.position + Vector2(6, 12), 12, colour, 1.0, false
-		)
+		var ink := colour.lerp(Color.WHITE, 0.5)
+		Paint.text(_icons, Paint.LABEL, label, rect.position + Vector2(6, 12), 12, ink, 1.0, false)
 		x += width + 4.0
 
 

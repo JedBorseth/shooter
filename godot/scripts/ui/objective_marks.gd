@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## `draw_world` places every marker of a mode together so they never pile up:
 ## off-screen markers (and ones that would sit on the HUD's corner clusters)
-## hold to an inset ellipse with an arrow toward their spot and lose their
+## hold to an inset rounded path with an arrow toward their spot and lose their
 ## words; markers closer than a hexagon's pitch slide apart; a farther
 ## marker whose words would cross a nearer one's drops them; and nearer
 ## markers draw on top. `badge` draws the hexagon alone (the minimap and the
@@ -22,12 +22,14 @@ const HudPaint := preload("res://scripts/ui/hud_paint.gd")
 const RADIUS := 15.0
 ## The least distance between two markers' centres.
 const PITCH := 34.0
-## The ellipse off-screen markers hold to: its centre's height as a share of
+## The rounded path off-screen markers hold to: its centre's height as a share of
 ## the screen's, and its insets from the left and right edges and from the
 ## top, with its bottom kept above the HUD's bottom clusters (900 px units).
 const HOLD_CENTRE_Y := 0.43
 const HOLD_INSET_X := 72.0
-const HOLD_BOTTOM := 690.0
+const HOLD_BOTTOM := 670.0
+## The hold path's squareness: 2 is an ellipse, higher hugs the edges.
+const HOLD_POWER := 4.0
 ## The HUD's corner clusters, kept clear of held markers (1600 x 900 units):
 ## the minimap with its rows, the kill feed with the score block, and the
 ## scorestreak column with the ammo.
@@ -119,7 +121,7 @@ static func draw_world(
 		_draw_one(item, placed[i], ui)
 
 
-## Where a world point's marker goes: {"point", "edge" (held at the ellipse),
+## Where a world point's marker goes: {"point", "edge" (held on the path),
 ## "out" (the unit direction from the marker toward the spot when held)}.
 static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := false) -> Dictionary:
 	var ui := screen.y / 900.0
@@ -129,7 +131,7 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := fal
 	var behind := camera.is_position_behind(world)
 	var offset := point - centre
 	if behind:
-		# Behind us: hold on the lower half of the ellipse by the spot's
+		# Behind us: hold on the lower half of the path by the spot's
 		# bearing (straight behind is the bottom middle), never on the top,
 		# as Black Ops 3 holds a waypoint behind you at the screen's foot.
 		var local := camera.global_transform.affine_inverse() * world
@@ -137,7 +139,7 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := fal
 		offset = Vector2(sin(bearing), maxf(-cos(bearing), 0.0)) * axes
 		if offset.length() < 1.0:
 			offset = Vector2(0.0, axes.y)
-	var reach := (offset / axes).length()
+	var reach := _reach(offset, axes)
 	if not behind and reach <= 1.0:
 		var pushed := _keep_clear(point, screen, dead)
 		if pushed == point:
@@ -145,6 +147,15 @@ static func place(camera: Camera3D, world: Vector3, screen: Vector2, dead := fal
 		return {"point": pushed, "edge": true, "out": (point - pushed).normalized()}
 	var held := centre + offset / maxf(reach, 0.001)
 	return {"point": _keep_clear(held, screen, dead), "edge": true, "out": offset.normalized()}
+
+
+## How far out `offset` is on the hold path (1 on it): a squared-off ellipse
+## (a superellipse), so held markers ride close to the screen's edges with
+## rounded corners instead of floating in the picture on an ellipse's flanks.
+static func _reach(offset: Vector2, axes: Vector2) -> float:
+	var x := absf(offset.x / axes.x)
+	var y := absf(offset.y / axes.y)
+	return pow(pow(x, HOLD_POWER) + pow(y, HOLD_POWER), 1.0 / HOLD_POWER)
 
 
 ## A hexagon badge, pointy at the top and bottom: the fill (a little darker

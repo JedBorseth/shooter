@@ -158,8 +158,10 @@ func _draw_killed() -> void:
 	if legend_alpha > 0.01 and not legend.is_empty():
 		bottom = minf(bottom, _legend_top - 20.0)
 	# The plate hugs the name.
-	var plate_w := maxf(name_w + 48.0, 64.0)
-	var plate := Rect2(size.x / 2.0 - plate_w / 2.0, bottom - 40.0, plate_w, 40.0)
+	# Whole pixels, even widths, so its edges and the tab stay crisp and
+	# centred on the screen's middle.
+	var plate_w := ceilf(maxf(name_w + 48.0, 64.0) / 2.0) * 2.0
+	var plate := Rect2(roundf(size.x / 2.0) - plate_w / 2.0, roundf(bottom - 40.0), plate_w, 40.0)
 	killed_top = plate.position.y - 20.0
 	Paint.text(
 		self,
