@@ -429,6 +429,271 @@ def combat_shirt(human, frames: dict, hem: float = 1.02, collar: tuple[float, fl
     return low, high
 
 
+# --- Trousers ---------------------------------------------------------------------
+
+TROUSER_BONES = ["DEF-hips", "DEF-spine", "DEF-thigh.", "DEF-shin."]
+
+
+class Leg:
+    """One leg's frame from the skeleton's rest pose: distance `t` down the
+    leg from the hip joint, and the angle around it (0 = front, -Y;
+    +pi/2 = the outer side; pi = the back)."""
+
+    def __init__(self, frames: dict, side: str):
+        def head(n):
+            return np.array(tuple(frames[n][0]))
+
+        self.side = side
+        self.sign = 1.0 if side == "L" else -1.0
+        self.hip = head(f"DEF-thigh.{side}")
+        self.knee_joint = head(f"DEF-shin.{side}")
+        self.ankle = head(f"DEF-foot.{side}")
+        self.axis = hl.unit(self.ankle - self.hip)
+        self.knee = float((self.knee_joint - self.hip) @ self.axis)
+        front = np.array([0.0, -1.0, 0.0])
+        self.front = hl.unit(front - self.axis * front.dot(self.axis))
+        self.out = np.cross(self.axis, self.front)
+        if self.out[0] * self.sign < 0:
+            self.out = -self.out
+
+    def coords(self, p: np.ndarray):
+        d = p - self.hip
+        t = d @ self.axis
+        r = d - np.outer(t, self.axis)
+        rho = np.linalg.norm(r, axis=1)
+        theta = np.arctan2(r @ self.out, r @ self.front)
+        return t, theta, rho
+
+
+def trouser_shape(p: np.ndarray, n: np.ndarray, legs: list[Leg], waist: float, detail: bool):
+    """How far each point of the smoothed body moves out along its normal to
+    become the trousers and, for the high-detail trousers, the panel it is
+    on. Combat trousers: ripstop, a waistband with belt loops, a seat with a
+    little ease, bellows cargo pockets with flaps on the outer thighs,
+    articulated knees, an outseam and inseam, and slack bunched over the
+    boots. With `detail` off only the large forms remain."""
+    noise = Noise(23)
+    noise2 = Noise(29)
+    x, y, z = p[:, 0], p[:, 1], p[:, 2]
+    count = len(p)
+    disp = np.full(count, 0.007)
+    panel = np.full(count, PANEL_INDEX["ripstop"])
+    thread = np.zeros(count)
+    # The game mesh keeps some of the folds, so the legs have volume.
+    fine = 1.0 if detail else 0.45
+
+    # Waistband: 40 mm of doubled cloth, a little proud, with belt loops.
+    from_top = waist - z
+    band = smoothstep(0.046, 0.04, from_top) * (from_top > -0.01)
+    disp += band * 0.0012
+    if detail:
+        for d in (0.004, 0.036):
+            line = bump(from_top, d, 0.0005)
+            disp -= line * 0.0002
+            thread += line * (np.cos(np.arctan2(y, x) * 160) > -0.1)
+        ang = np.arctan2(x, -y)
+        for a0 in (-2.4, -1.25, -0.35, 0.35, 1.25, 2.4, math.pi):
+            lu = wrap(ang - a0) * 0.17
+            loop = (np.abs(lu) < 0.006) & (from_top > -0.002) & (from_top < 0.05)
+            disp += loop * 0.0016
+            panel[loop] = PANEL_INDEX["cordura"]
+    # The seat: a little ease over the buttocks, less at the front.
+    seat = smoothstep(0.0, 0.08, y) * smoothstep(waist - 0.02, waist - 0.12, z) * smoothstep(0.62, 0.78, z)
+    disp += seat * 0.003
+    # Fly: a stitched J at the front.
+    if detail:
+        fly_u = np.abs(x - 0.018)
+        fly = (y < 0) & (z > waist - 0.2) & (z < waist - 0.04)
+        line = bump(fly_u, 0.0, 0.0006) * fly
+        disp -= line * 0.0003
+        thread += line * (np.cos(z * 2 * math.pi / 0.0032) > -0.1)
+
+    for leg in legs:
+        mine = (x * leg.sign) > -0.005
+        t, theta, rho = leg.coords(p)
+        on = mine & (t > 0.02)
+        # Ease: loose down the thigh, a little less at the shin, and the
+        # inner thigh kept close so the legs never meet.
+        inner = smoothstep(0.3, 0.9, -np.sin(theta))
+        disp += on * smoothstep(0.02, 0.12, t) * (0.010 - 0.0085 * inner)
+        disp -= on * smoothstep(leg.knee + 0.05, leg.knee + 0.2, t) * 0.002
+        # The cloth bags a little above the knee, where it is pushed up.
+        disp += on * bump(t, leg.knee - 0.09, 0.05) * (1.0 - inner) * 0.003
+
+        # The cargo pocket: on the outer thigh, a little forward of the
+        # side seam, 190 mm tall and 160 mm wide, bellowed out at the bottom,
+        # with a flap over its top.
+        theta_c = 1.25
+        u = rho * wrap(theta - theta_c)
+        v = t - (leg.knee * 0.52)
+        d = rounded_rect(u, v, 0.075, 0.095, 0.014)
+        edge = 0.003 if detail else 0.008
+        pocket = smoothstep(edge, -edge, d) * on
+        fill = np.clip(1.0 - (u / 0.085) ** 2, 0.0, 1.0) * smoothstep(-0.095, 0.07, v)
+        disp += pocket * (0.005 + 0.006 * fill)
+        fv = v + 0.07
+        fd = rounded_rect(u, fv, 0.078, 0.03, 0.01)
+        flap = smoothstep(edge * 0.6, -edge * 0.6, fd) * on
+        disp += flap * 0.0025
+        if detail:
+            panel[pocket > 0.5] = PANEL_INDEX["cordura"]
+            for dist, inset in ((d, 0.003), (fd, 0.003), (fd, 0.006)):
+                line, dashes = stitch(dist, (t + u) * 0.7, inset)
+                disp -= line * on * 0.00022
+                thread += dashes * on
+            # Hook-and-loop under the flap's edge.
+            vel = (np.abs(u) < 0.03) & (np.abs(fv - 0.02) < 0.008) & on
+            panel[vel] = PANEL_INDEX["velcro"]
+
+        # Articulated knee: a panel over the knee with darts above and below,
+        # so the cloth bends instead of pulling.
+        kv = t - leg.knee
+        front_k = smoothstep(0.1, 0.8, np.cos(theta))
+        knee = bump(kv, 0.0, 0.07) * front_k * on
+        disp += knee * 0.0025
+        if detail:
+            for q in (-0.075, 0.075):
+                line = bump(kv, q, 0.0012) * front_k * on
+                disp -= line * 0.0009
+                thread += line * (np.cos((rho * theta) * 2 * math.pi / 0.0032) > -0.1)
+        # Behind the knee: compression folds across the crease.
+        back_k = smoothstep(0.2, 0.9, -np.cos(theta)) * bump(kv, 0.02, 0.07) * on
+        folds = np.sin(kv * 2 * math.pi / 0.028 + noise(p, 0.07) * 2.2 + noise2(p, 0.03) * 0.8)
+        disp += back_k * folds * (0.0014 + 0.0012 * fine)
+        # Front of the hip: folds where the thigh lifts.
+        hipf = front_k * bump(t, 0.06, 0.05) * on * smoothstep(-0.2, 0.3, np.cos(theta))
+        disp += hipf * np.sin((t + rho * theta * 0.3) * 2 * math.pi / 0.035 + noise(p, 0.1) * 1.8) * 0.0012 * fine
+        # Above the boot: slack bunched where the leg is bloused.
+        above = t - (np.linalg.norm(leg.ankle - leg.hip) - BOOT_HEIGHT)
+        bunch = smoothstep(-0.16, -0.06, above) * smoothstep(0.02, -0.02, above) * on
+        ring = np.sin(above * 2 * math.pi / 0.022 + np.sin(theta * 2 + noise(p, 0.1) * 2.0) * 1.7)
+        disp += bunch * (0.002 + ring * 0.0018)
+        # Seams down the outside and the inside of the leg, felled and
+        # double-stitched.
+        if detail:
+            for th in (math.pi / 2, -math.pi / 2):
+                su = rho * wrap(theta - th)
+                seam = bump(su, 0.0, 0.004) * on
+                disp += seam * 0.0004
+                for dd in (-0.0026, 0.0026):
+                    line = bump(su, dd, 0.0005) * on
+                    disp -= line * 0.0002
+                    thread += line * (np.cos(t * 2 * math.pi / 0.0032) > -0.1)
+        # Slack drape down the shin's sides.
+        drape = smoothstep(leg.knee + 0.06, leg.knee + 0.14, t) * on * (np.abs(np.sin(theta)) > 0.5)
+        disp += drape * np.sin(t * 2 * math.pi / 0.06 + noise2(p, 0.12) * 2.0) * 0.0012 * fine
+
+    if not detail:
+        return disp, None
+    thread = np.clip(thread, 0.0, 1.0)
+    panel[thread > 0.5] = PANEL_INDEX["thread"]
+    rows = np.array(list(PANELS.values()))[panel]
+    return disp, rows
+
+
+def cut_trousers(human, legs: list[Leg], waist: float):
+    """The body from the waist down to the ankles, cut cleanly at the waist
+    and above each foot."""
+    co = hl.coords(human)
+    keep = co[:, 2] < waist + 0.04
+    for leg in legs:
+        keep &= ~(((co[:, 0] * leg.sign) > 0.0) & (co[:, 2] < leg.ankle[2] + 0.03))
+    base = hl.copy_faces(human, keep, "trousers_base")
+    bm = bmesh.new()
+    bm.from_mesh(base.data)
+    bisect(bm, (0, 0, waist), (0, 0, 1), list(bm.faces), clear_outer=True)
+    for leg in legs:
+        faces = [f for f in bm.faces if all(v.co.x * leg.sign > -0.01 for v in f.verts)]
+        # Removes the side the normal points to: everything below the cut.
+        bisect(bm, tuple(leg.ankle + leg.axis * -0.06), tuple(leg.axis), faces, clear_outer=True)
+    # Anything cut loose (the hands hanging in the T-pose) goes.
+    bm.verts.ensure_lookup_table()
+    seen, islands = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, island = [v], []
+        seen.add(v.index)
+        while stack:
+            a = stack.pop()
+            island.append(a)
+            for e in a.link_edges:
+                b = e.other_vert(a)
+                if b.index not in seen:
+                    seen.add(b.index)
+                    stack.append(b)
+        islands.append(island)
+    biggest = max(islands, key=len)
+    bmesh.ops.delete(bm, geom=[v for island in islands if island is not biggest for v in island], context="VERTS")
+    bm.to_mesh(base.data)
+    bm.free()
+    return base
+
+
+def combat_trousers(human, frames: dict, waist: float = 1.07, ratio: float = 0.4):
+    """The game trousers and their high-detail source, modelled from the body
+    as the shirt is: every vertex keeps the body's shape and weights, and the
+    legs are separate down to the crotch, so nothing bridges them. Replaces
+    MakeHuman's baggy cargo trousers, whose cloth between the legs had to be
+    cut away and tore at the knees. The boots trim the legs inside their
+    shafts (tuck_trousers)."""
+    legs = [Leg(frames, "L"), Leg(frames, "R")]
+    base = cut_trousers(human, legs, waist)
+    # Smoothed so the anatomy does not show, except in the crotch, where
+    # smoothing would pull the inner thighs together into a web.
+    co = hl.coords(base)
+    crotch = hl.smoothstep(0.11, 0.05, np.abs(co[:, 0])) * hl.smoothstep(0.62, 0.72, co[:, 2]) * hl.smoothstep(0.98, 0.9, co[:, 2])
+    hl.taubin_smooth(base, 12, mask=1.0 - crotch)
+    # A heavy soldier's thighs touch in the rest pose: keep each leg's shell
+    # a few millimetres off the midline, so the two never share a surface.
+    co = hl.coords(base)
+    legs_z = co[:, 2] < 0.9
+    near = legs_z & (np.abs(co[:, 0]) < 0.004)
+    co[near, 0] = np.where(co[near, 0] >= 0, 0.004, -0.004)
+    hl.set_coords(base, co)
+    low = hl.duplicate(base, "trousers")
+    hl.subdivide(low, 1)
+    p, n = hl.coords(low), hl.vertex_normals(low)
+    disp, _ = trouser_shape(p, n, legs, waist, detail=False)
+    hl.set_coords(low, p + n * disp[:, None])
+    hl.tuck_boundary(low, 0.004)
+    if ratio < 1.0:
+        mod = low.modifiers.new("decimate", "DECIMATE")
+        mod.ratio = ratio
+        for o in bpy.context.selected_objects:
+            o.select_set(False)
+        low.select_set(True)
+        bpy.context.view_layer.objects.active = low
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    hl.shade_smooth(low)
+
+    high = hl.duplicate(base, "trousers_high")
+    hl.subdivide(high, 3)
+    p, n = hl.coords(high), hl.vertex_normals(high)
+    disp, rows = trouser_shape(p, n, legs, waist, detail=True)
+    hl.set_coords(high, p + n * disp[:, None])
+    hl.paint_panels(high, rows)
+    hl.tuck_boundary(high, 0.004)
+    hl.shade_smooth(high)
+    bpy.data.objects.remove(base)
+    for o in (low, high):
+        o["role"] = "pants"
+        o["material"] = "pants"
+        o["group"] = 0
+        o["bones"] = TROUSER_BONES
+    low["unwrap"] = True
+    low["modelled"] = True
+    # Each leg's cloth follows its own leg only (blender_characters.legs_by_side).
+    low["legs_by_side"] = 0.9
+    high["kind"] = "trousers"
+    # The thighs touch in the rest pose the occlusion is baked in.
+    high["ao_floor"] = 0.6
+    high["cage"] = 0.005
+    high["ray"] = 0.011
+    log(f"trousers: {len(low.data.polygons)} faces, high {len(high.data.polygons)}")
+    return low, high
+
+
 # --- Boots ------------------------------------------------------------------------
 
 # Per-vertex properties of the high-detail boot: (albedo, roughness, leather
@@ -738,10 +1003,12 @@ def tuck_trousers(pants, boot, foot: Foot):
         target = min(r[i], limit) * k + r[i] * (1 - k)
         co[i] = foot.ankle + foot.up * h[i] + d * target
     hl.set_coords(pants, co)
-    # Everything below the bloused cuff (blender_gear.blouses) goes, with the
-    # cargo trousers' ankle straps, which would hang out under it.
+    # Everything below the bloused cuff (blender_gear.blouses) goes, and on
+    # MakeHuman's cargo trousers their ankle straps, which would hang out
+    # under it (modelled trousers have none).
     inside = mine & (h < BOOT_HEIGHT + 0.015)
-    inside |= mine & (h < BOOT_HEIGHT + 0.09) & (r0 > 0.072)
+    if not pants.get("modelled"):
+        inside |= mine & (h < BOOT_HEIGHT + 0.09) & (r0 > 0.072)
     bm = bmesh.new()
     bm.from_mesh(pants.data)
     bm.faces.ensure_lookup_table()

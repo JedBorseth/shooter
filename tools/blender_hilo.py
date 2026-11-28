@@ -781,7 +781,7 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
     grid.inputs["Scale"].default_value = 900.0 if kind == "glove" else 520.0
     links.new(coord, grid.inputs["Vector"])
     fabric = math_node("MULTIPLY", math_node("ADD", weave.outputs["Fac"], grid.outputs["Fac"]), 0.5)
-    if kind in ("sleeve", "shirt", "boot"):
+    if kind in ("sleeve", "shirt", "boot", "trousers"):
         # Ripstop: a heavier thread every 6 mm both ways.
         rip = nodes.new("ShaderNodeTexBrick")
         rip.inputs["Scale"].default_value = 160.0
@@ -791,7 +791,7 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
         rip.offset = 0.0
         links.new(coord, rip.inputs["Vector"])
         fabric = math_node("ADD", math_node("MULTIPLY", fabric, 0.6), math_node("MULTIPLY", math_node("SUBTRACT", 1.0, rip.outputs["Fac"]), 0.8))
-    if kind in ("shirt", "boot"):
+    if kind in ("shirt", "boot", "trousers"):
         # The third-person atlas has texels of about 1.5 mm, where a weave
         # only aliases into a grid: the sleeves keep the ripstop's heavier
         # threads, and the torso's knit is a soft grain.
@@ -819,15 +819,27 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
                        math_node("MULTIPLY", velcro.outputs["Fac"], velcro_w))
     bump = nodes.new("ShaderNodeBump")
     # Leather grain reads; the knit and ripstop stay a texture, not a grid.
-    strength = math_node("ADD", 0.06 if kind in ("shirt", "boot") else 0.12, math_node("MULTIPLY", leather_w, 0.12))
+    strength = math_node("ADD", 0.06 if kind in ("shirt", "boot", "trousers") else 0.12, math_node("MULTIPLY", leather_w, 0.12))
     links.new(strength, bump.inputs["Strength"])
     bump.inputs["Distance"].default_value = 0.0004
     links.new(height, bump.inputs["Height"])
     links.new(bump.outputs[0], bsdf.inputs["Normal"])
     # Albedo: the panel's value, a touch darker in the weave's recesses.
-    contrast = 0.08 if kind in ("shirt", "boot") else 0.18
+    contrast = 0.08 if kind in ("shirt", "boot", "trousers") else 0.18
     shade = math_node("ADD", 1.0 - contrast * 0.8, math_node("MULTIPLY", height, contrast))
     albedo = math_node("MULTIPLY", sep.outputs[0], shade)
+    if kind == "trousers":
+        # Dirt worked in from the boots up to the knee, patchy, and a little
+        # at the seat and knees (rest-pose height in metres).
+        zs = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(coord, zs.inputs[0])
+        patch = nodes.new("ShaderNodeTexNoise")
+        patch.inputs["Scale"].default_value = 9.0
+        links.new(coord, patch.inputs["Vector"])
+        low = math_node("DIVIDE", math_node("SUBTRACT", 0.6, zs.outputs[2]), 0.6)
+        low = math_node("MINIMUM", math_node("MAXIMUM", low, 0.0), 1.0)
+        dirt = math_node("MULTIPLY", math_node("POWER", low, 1.6), math_node("ADD", 0.45, math_node("MULTIPLY", patch.outputs["Fac"], 0.9)))
+        albedo = math_node("MULTIPLY", albedo, math_node("SUBTRACT", 1.0, math_node("MULTIPLY", dirt, 0.3)))
     if kind == "boot":
         # Dirt worked into the boot, darkest at the welt and fading up the
         # shaft, and pale dust right at the sole (rest-pose height in metres).
@@ -965,6 +977,16 @@ def bake_pairs(pairs: list, parts: list, size: int, ao_samples: int) -> dict[str
         result[name] = read_pixels(img)
     for hi in highs:
         hi.hide_render = True
+    # Occlusion baked in the rest pose can be wrong where the body parts
+    # there (the thighs touch, and part as the soldier walks): those parts
+    # keep at least `ao_floor` of the light.
+    for lo, hi in pairs:
+        floor = hi.get("ao_floor")
+        if floor:
+            mask = dilate(coverage([lo], size), 8)
+            ao = result["ao"]
+            ao[mask, :3] = np.maximum(ao[mask, :3], floor)
+            log(f"{lo.name}: occlusion floored at {floor}")
     return result
 
 
@@ -991,13 +1013,20 @@ def build(spec: dict, human, frames: dict, clothes: list = ()):
         lo, hi = blender_wardrobe.combat_shirt(human, frames, **spec["shirt"])
         lows.append(lo)
         pairs.append((lo, hi))
+    trousers = None
+    if spec.get("trousers"):
+        import blender_wardrobe
+
+        trousers, hi = blender_wardrobe.combat_trousers(human, frames, **spec["trousers"])
+        lows.append(trousers)
+        pairs.append((trousers, hi))
     if spec.get("boots"):
         import blender_wardrobe
 
         # Boots over the fitted shoe, which is then dropped (see main in
         # blender_characters.py).
         template = next(o for o in clothes if o.get("source") == "boots")
-        pants = next(o for o in clothes if o.get("role") == "pants")
+        pants = trousers or next(o for o in clothes if o.get("role") == "pants")
         for lo, hi in blender_wardrobe.combat_boots(template, pants, frames, **spec["boots"]):
             lows.append(lo)
             pairs.append((lo, hi))
@@ -1017,7 +1046,7 @@ def build(spec: dict, human, frames: dict, clothes: list = ()):
     # The game meshes keep their forms with fewer triangles: the bake carries
     # the rest.
     for lo in lows:
-        if lo.name.startswith(("shirt", "boot")):
+        if lo.name.startswith(("shirt", "boot", "trousers")):
             continue  # decimated once the gear has covered part of it (build_kit)
         ratio = spec.get("glove_ratio" if lo.name.startswith("glove") else "sleeve_ratio", 1.0)
         if ratio < 1.0:
