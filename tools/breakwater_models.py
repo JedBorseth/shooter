@@ -805,22 +805,34 @@ def pipe_rack(b: Model, length=12.0, bays=2, height=4.6, width=2.6, pipes=None):
 
 @model
 def pump_unit(b: Model, look="steel_blue", length=2.6):
-    """A horizontal pump set on a skid: motor, coupling guard, volute, and its
-    suction and discharge pipes. Length along z."""
+    """A horizontal pump set on a skid: a finned motor with its fan cowl and
+    terminal box, the coupling guard, the volute casing on its feet, and
+    flanged suction and discharge pipes. Length along z."""
     hl = length / 2
     b.box(-0.55, 0.55, 0.0, 0.25, -hl, hl, "steel_dark", bevel=0.02)
-    b.cyl("z", -hl + 0.1, -0.1, (0.0, 0.75), 0.42, look, sides=16)
-    for k in range(8):
-        z = -hl + 0.2 + k * (hl - 0.4) / 7
-        b.cyl("z", z - 0.02, z + 0.02, (0.0, 0.75), 0.46, look, sides=16, detail=True)
-    b.box(-0.35, 0.35, 0.25, 0.4, -hl + 0.2, -0.2, look)
-    b.box(-0.22, 0.22, 0.5, 0.95, -0.1, 0.35, "safety_yellow", bevel=0.02)
-    b.cyl("x", -0.3, 0.3, (0.75, 0.75), 0.45, look, sides=16)
-    b.cyl("y", 1.15, 2.2, (0.0, 0.75), 0.16, "pipe_grey", sides=10)
-    b.cyl("y", 2.2, 2.32, (0.0, 0.75), 0.24, "steel_grey", sides=10, detail=True)
-    b.cyl("z", 0.95, hl, (0.0, 0.75), 0.2, "pipe_grey", sides=10)
-    b.cyl("z", hl - 0.05, hl + 0.05, (0.0, 0.75), 0.28, "steel_grey", sides=10, detail=True)
-    b.box(-0.3, 0.3, 0.9, 1.4, -hl + 0.3, -hl + 0.7, "steel_grey", detail=True)
+    for z0, z1 in ((-hl + 0.15, -hl + 0.3), (-0.35, -0.2)):
+        b.box(-0.38, 0.38, 0.25, 0.42, z0, z1, look)
+    b.cyl("z", -hl + 0.1, -0.15, (0.0, 0.75), 0.4, look, sides=28)
+    for k in range(14):
+        a = 2 * PI * k / 14
+        b.box(math.cos(a) * 0.42 - 0.015, math.cos(a) * 0.42 + 0.015, 0.75 + math.sin(a) * 0.42 - 0.015,
+              0.75 + math.sin(a) * 0.42 + 0.015, -hl + 0.3, -0.25, look, detail=True)
+    b.cyl("z", -hl - 0.05, -hl + 0.12, (0.0, 0.75), 0.37, look, sides=28)
+    disc(b, (0.0, 0.75, -hl - 0.06), (0.0, 0.0, -1.0), 0.3, 0.01, "steel_dark", sides=20, detail=True)
+    b.box(-0.18, 0.18, 1.12, 1.32, -0.9, -0.55, look, bevel=0.02)
+    b.box(-0.22, 0.22, 0.5, 0.95, -0.15, 0.35, "safety_yellow", bevel=0.02)
+    for k in range(4):
+        z = -0.1 + k * 0.12
+        b.box(-0.225, 0.225, 0.58, 0.88, z, z + 0.02, "steel_dark", detail=True)
+    # The volute: a spiral casing (a short fat drum) on feet, its eye facing +z.
+    b.cyl("z", 0.38, 0.78, (0.0, 0.75), 0.46, look, sides=28)
+    b.cyl("z", 0.4, 0.76, (0.0, 0.75), 0.49, look, sides=28, detail=True)
+    for x in (-0.3, 0.3):
+        b.box(x - 0.08, x + 0.08, 0.25, 0.4, 0.45, 0.7, look)
+    flanged(b, (0.0, 1.15, 0.58), (0.0, 2.2, 0.58), 0.15, "pipe_grey", flanges=(0.08, 0.92))
+    b.cyl("y", 2.2, 2.32, (0.0, 0.58), 0.24, "steel_grey", sides=14, detail=True)
+    flanged(b, (0.0, 0.75, 0.78), (0.0, 0.75, hl + 0.02), 0.19, "pipe_grey", flanges=(0.1, 0.95))
+    gauge(b, (0.2, 1.5, 0.58), (1.0, 0.0, 0.0))
 
 
 @model
