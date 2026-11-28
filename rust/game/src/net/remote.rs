@@ -648,7 +648,7 @@ impl RemotePlayer {
             // confirming it only updates the push a death would take.
             let confirms_ours = s.alive && self.predicted.pop_front().is_some();
             if confirms_ours {
-                self.rig.bind_mut().note_hit(push);
+                self.rig.bind_mut().confirm_hit(push);
             } else {
                 self.rig.bind_mut().hit_at(push, !s.alive);
             }
