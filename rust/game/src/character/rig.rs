@@ -1422,10 +1422,26 @@ impl SoldierRig {
     /// reacting to it (it was already shown, predicted).
     pub fn note_hit(&mut self, push: Push) {
         self.last_hit = Some((push, 0.0));
-        if let (Some(point), Some(skeleton)) = (push.point, self.skeleton()) {
-            self.wounds
-                .add(&skeleton, point, wounds::depth_of(push.force));
+        let Some(skeleton) = self.skeleton() else {
+            return;
+        };
+        let depth = wounds::depth_of(push.force);
+        match (push.point, push.part) {
+            (Some(point), _) => self.wounds.add(&skeleton, point, depth),
+            // Known only by the part (the server's report of another
+            // player's shot): that part, on the shooter's side.
+            (None, Some(part)) => {
+                self.wounds
+                    .add_on_part(&skeleton, part, push.direction, depth);
+            }
+            _ => {}
         }
+    }
+
+    /// Updates the push a death would take, without marking the body again:
+    /// the server confirming a hit our own shot already marked.
+    pub fn confirm_hit(&mut self, push: Push) {
+        self.last_hit = Some((push, 0.0));
     }
 
     /// The weapon's magazine through a reload, on the same timeline as the

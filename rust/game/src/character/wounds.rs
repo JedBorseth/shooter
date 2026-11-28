@@ -1,5 +1,7 @@
 //! Wound marks: where a character is hit, its skin and clothes darken and
 //! redden round the hit for a few seconds, then fade (`shaders/character.gdshader`).
+//! Our own shots mark where they struck; other players' shots, which the
+//! server reports by body part only, mark that part on the shooter's side.
 //!
 //! Each mark is kept on the bone nearest the hit, so it moves with the body,
 //! and handed to the shader as a point in the mesh's own space (where the
@@ -10,6 +12,7 @@
 
 use godot::classes::{MeshInstance3D, Skeleton3D};
 use godot::prelude::*;
+use shooter_sim::hitbox::BodyPart;
 
 /// How many marks a character shows at once; a fifth replaces the oldest.
 pub const SLOTS: usize = 4;
@@ -55,6 +58,25 @@ pub struct Wounds {
     next: usize,
     /// Which uniforms hold a mark now, so emptied ones are cleared once.
     shown: [bool; SLOTS],
+}
+
+/// The bone a hit on `part` marks and how far the body's surface is from it
+/// (m), as the hit zones' radii (`shooter_sim::hitbox`).
+fn part_bone(part: BodyPart) -> (&'static str, f32) {
+    match part {
+        BodyPart::Hips => ("Hips", 0.15),
+        BodyPart::Spine => ("Spine", 0.16),
+        BodyPart::Chest => ("UpperChest", 0.19),
+        BodyPart::Head => ("Head", 0.1),
+        BodyPart::LeftUpperArm => ("LeftUpperArm", 0.06),
+        BodyPart::LeftLowerArm => ("LeftLowerArm", 0.05),
+        BodyPart::RightUpperArm => ("RightUpperArm", 0.06),
+        BodyPart::RightLowerArm => ("RightLowerArm", 0.05),
+        BodyPart::LeftUpperLeg => ("LeftUpperLeg", 0.08),
+        BodyPart::LeftLowerLeg => ("LeftLowerLeg", 0.06),
+        BodyPart::RightUpperLeg => ("RightUpperLeg", 0.08),
+        BodyPart::RightLowerLeg => ("RightLowerLeg", 0.06),
+    }
 }
 
 /// A mark's strength `age` seconds after the hit.
@@ -119,6 +141,36 @@ impl Wounds {
             depth,
         });
         self.next = (self.next + 1) % SLOTS;
+    }
+
+    /// A mark for a hit known only by the part it struck and the shot's
+    /// `direction` (world): what the server tells us of other players'
+    /// shots. It goes on the side of that part facing the shooter, halfway
+    /// along its bone, the part's usual radius out from the bone.
+    pub fn add_on_part(
+        &mut self,
+        skeleton: &Gd<Skeleton3D>,
+        part: BodyPart,
+        direction: Vector3,
+        depth: f32,
+    ) {
+        let (name, radius) = part_bone(part);
+        let bone = skeleton.find_bone(name);
+        let Some(back) = (-direction).try_normalized() else {
+            return;
+        };
+        if bone < 0 {
+            return;
+        }
+        let from = skeleton.get_bone_global_pose(bone).origin;
+        let to = skeleton
+            .get_bone_children(bone)
+            .as_slice()
+            .first()
+            .map_or(from, |&child| skeleton.get_bone_global_pose(child).origin);
+        let xform = skeleton.get_global_transform();
+        let middle = xform * from.lerp(to, 0.5);
+        self.add(skeleton, middle + back * radius, depth);
     }
 
     /// Whether there is anything to draw or to clear.

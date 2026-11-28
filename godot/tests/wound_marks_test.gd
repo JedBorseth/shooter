@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless test of wound marks (rust/game/src/character/wounds.rs): a hit
 ## puts a mark on the body near where it landed, which follows the body,
-## fades after a few seconds, and is gone after a respawn.
+## fades after a few seconds, and is gone after a respawn; a hit known only by
+## its part (another player's, from the server) marks that part.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/wound_marks_test.gd
 
@@ -50,6 +51,21 @@ func _run() -> void:
 	await _drive(soldier, 2, true)
 	mark = body.get_instance_shader_parameter("wound_1")
 	_check(mark is Vector4 and (mark as Vector4).w == 0.0, "a respawn clears the marks")
+
+	# Another player's shot, which the server reports by part only (shape 8,
+	# the left thigh), from in front: a mark on the front of that thigh.
+	soldier.take_hit_at(Vector3(0, 0, 1), false, Vector3.ZERO, 8, 4.0)
+	await _drive(soldier, 2, true)
+	mark = body.get_instance_shader_parameter("wound_2")
+	_check(mark is Vector4 and (mark as Vector4).w > 0.5, "a hit known by its part marks the body")
+	if mark is Vector4:
+		var at := body.global_transform * Vector3(mark.x, mark.y, mark.z)
+		var from_feet := at - soldier.global_position
+		_check(
+			from_feet.y > 0.45 and from_feet.y < 0.95,
+			"the part's mark is on the thigh (%s)" % from_feet
+		)
+		_check(from_feet.z < 0.0, "the part's mark faces the shooter (%s)" % from_feet)
 
 	soldier.queue_free()
 	await process_frame
