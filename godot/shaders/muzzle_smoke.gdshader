@@ -17,8 +17,8 @@ render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, diffus
 #define SOFT_SMOKE 0
 
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
-uniform vec4 tint : source_color = vec4(0.62, 0.62, 0.64, 1.0);
-uniform float opacity = 0.55;
+uniform vec4 tint : source_color = vec4(0.7, 0.7, 0.72, 1.0);
+uniform float opacity = 0.85;
 #if SOFT_SMOKE
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 // The puff fades out over this many metres in front of what is behind it.

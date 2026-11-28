@@ -1,8 +1,9 @@
 extends Node3D
 ## An explosion (a frag grenade's, or anything else's), built like a frag going
 ## off on dirt or concrete rather than a fuel fireball:
-## - a white-hot flash for a sixth of a second (the flipbook's first,
-##   colourless frames, burning white) under a short orange core (from its
+## - a white-hot flash for a fifth of a second (the flipbook's early frames,
+##   whose bright, colourless middles burn white while their ragged edges
+##   show flame) under a short orange core (from its
 ##   burning frames on, at a bounded brightness) that is gone in about half a
 ##   second;
 ## - jets of dark dirt and dust thrown up out of the ground in a fan
@@ -15,7 +16,7 @@ extends Node3D
 ##   resting on the floor;
 ## - a few short sparks and a flash of warm light that lights the ground and
 ##   walls round it for about a fifth of a second.
-## About 22 quads and 36 chips on High, fewer on Low and Medium (`DETAIL`).
+## About 28 quads and 48 chips on High (Medium 22 and 30), fewer on Low and Medium (`DETAIL`).
 ## Pooled and placed by `CombatEffects.explosion` (`rust/game/src/effects.rs`),
 ## which also leaves the scorch mark and shakes the camera; the bang plays
 ## from whoever calls it.
@@ -28,14 +29,19 @@ const CHIP_MODEL := "res://assets/effects/chip.glb"
 ## billows rolled along the ground, and chips. The large, soft quads cost per
 ## pixel they cover, so Low draws fewer of them.
 const DETAIL := {
-	&"Dirt": [5, 6, 6],
+	&"Dirt": [5, 6, 9],
 	&"Column": [5, 6, 7],
 	&"Ring": [6, 7, 7],
-	&"Debris": [24, 30, 36],
+	&"Debris": [24, 30, 48],
 }
 
 ## The chip mesh, taken once from its model and shared by every explosion.
 static var _chip: Mesh
+## The dust billows' material in its hard-edged form (Low and Medium) and
+## soft-edged form (High: faded where they meet a wall), shared by every
+## explosion.
+static var _billows_hard: ShaderMaterial
+static var _billows_soft: ShaderMaterial
 
 var _flash_left := 0.0
 
@@ -74,6 +80,7 @@ func setup(normal: Vector3 = Vector3.UP, floor_y := -1000.0, size := 1.0) -> voi
 	for emitter: GPUParticles3D in [$Dirt, $Column, $Ring]:
 		emitter.set_instance_shader_parameter(&"ground_y", ground)
 	var quality := _quality()
+	_soften_billows(quality > 1)
 	for emitter_name: StringName in DETAIL:
 		var emitter := get_node(NodePath(emitter_name)) as GPUParticles3D
 		emitter.amount_ratio = float(DETAIL[emitter_name][quality]) / float(emitter.amount)
@@ -88,6 +95,24 @@ func setup(normal: Vector3 = Vector3.UP, floor_y := -1000.0, size := 1.0) -> voi
 func _ready() -> void:
 	$Debris.draw_pass_1 = chip_mesh()
 	set_process(false)
+
+
+## Gives the column and ring their soft-edged billows (or back the hard ones).
+## The soft form reads the depth buffer for every pixel of the big billows:
+## about 0.3 ms on Medium in the firefight, so it is High only.
+func _soften_billows(soft: bool) -> void:
+	var column_mesh := $Column.draw_pass_1 as QuadMesh
+	if _billows_hard == null:
+		_billows_hard = column_mesh.material as ShaderMaterial
+		_billows_soft = _billows_hard.duplicate() as ShaderMaterial
+		var shader := Shader.new()
+		shader.code = _billows_hard.shader.code.replace(
+			"#define SOFT_EDGE 0\n", "#define SOFT_EDGE 1\n"
+		)
+		_billows_soft.shader = shader
+	var material := _billows_soft if soft else _billows_hard
+	column_mesh.material = material
+	($Ring.draw_pass_1 as QuadMesh).material = material
 
 
 func _quality() -> int:

@@ -2422,12 +2422,14 @@ fn wisp_emitter(shader: &Gd<Shader>) -> Gd<GpuParticles3D> {
     process.set_color_ramp(&fade_texture);
 
     let mut quad = QuadMesh::new_gd();
-    quad.set_size(Vector2::new(0.12, 0.12));
+    // Big and long-lived enough to read as a curl of smoke off the barrel
+    // after a burst, as in Modern Warfare.
+    quad.set_size(Vector2::new(0.28, 0.28));
     quad.set_material(&smoke_material(shader));
 
     let mut particles = GpuParticles3D::new_alloc();
-    particles.set_amount(8);
-    particles.set_lifetime(1.8);
+    particles.set_amount(12);
+    particles.set_lifetime(2.6);
     particles.set_one_shot(true);
     particles.set_explosiveness_ratio(0.0);
     particles.set_use_local_coordinates(false);

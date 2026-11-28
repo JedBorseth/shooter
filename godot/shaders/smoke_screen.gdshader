@@ -22,6 +22,18 @@
 shader_type spatial;
 render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, vertex_lighting, skip_vertex_transform, diffuse_lambert_wrap;
 
+// 1 fades each billow out over its last `SOFT_DEPTH` metres in front of
+// whatever is behind it, so a big billow drifting into a wall shows no hard
+// line where it cuts in. It reads the depth buffer for every pixel of the
+// billows, so only an explosion's column and ring use it, on High, from a
+// copy of this shader with the line rewritten (`explosion.gd`'s
+// `_soften_billows`); keep the line's form.
+#define SOFT_EDGE 0
+#if SOFT_EDGE
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+const float SOFT_DEPTH = 1.2;
+#endif
+
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 tint : source_color = vec4(0.8, 0.8, 0.79, 1.0);
 uniform float opacity = 0.9;
@@ -119,5 +131,10 @@ void fragment() {
 	// A billow grown large shows its frame's square edge where the cloud
 	// reaches it: fade every billow out toward the rim of its quad.
 	float rim = 1.0 - smoothstep(0.72, 1.0, length(corner_uv * 2.0 - 1.0));
-	ALPHA = density * opacity * thick * COLOR.a * ground * rim;
+	ALPHA = min(density * opacity * thick, 1.0) * COLOR.a * ground * rim;
+#if SOFT_EDGE
+	float raw = texture(depth_tex, SCREEN_UV).r;
+	vec4 behind = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, raw, 1.0);
+	ALPHA *= clamp((VERTEX.z - behind.z / behind.w) / SOFT_DEPTH, 0.0, 1.0);
+#endif
 }

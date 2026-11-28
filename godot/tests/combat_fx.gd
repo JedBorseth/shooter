@@ -311,12 +311,15 @@ func _capture() -> void:
 				await _hold(0.0, -0.05, 60)
 			# From the side, three metres off: the spray leaves the far side and
 			# lands on the wall.
-			var side := _w(Vector3(-11.2, 0.1, -0.3))
+			# Out from the wall past the second dummy, aimed at the chest.
+			var side := _w(Vector3(-11.2, 0.1, 2.2))
+			var to_chest := chest - (side + Vector3.UP * 1.6)
+			var side_yaw := atan2(-to_chest.x, -to_chest.z)
 			for frames: int in [2, 5, 10, 20, 40]:
 				effects.blood(chest, _d(Vector3(0.05, -0.05, -1)))
 				for i in frames:
 					_player.global_position = side
-					_player.set_look(_yaw(PI / 2), -0.12)
+					_player.set_look(side_yaw, -0.12)
 					await process_frame
 				await _shot("%s_blood_side_%02d" % [preset, frames])
 				for i in 60:
