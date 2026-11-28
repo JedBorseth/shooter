@@ -169,19 +169,23 @@ func _process(delta: float) -> void:
 		return
 	var focused := get_viewport().gui_get_focus_owner()
 	var in_items := focused != null and _picker.is_ancestor_of(focused)
-	_mark_editing(_slot if in_items and _editing >= 0 else "")
 	var step := delta / DIM_SECONDS * 0.4
 	_fade(_grid, DIM if in_items else 1.0, step)
 	_fade(_list_column, DIM if in_items else 1.0, step)
 	_fade(_streak_box, DIM if in_items else 1.0, step)
 	_fade(_picker, 1.0 if in_items else DIM, step)
+	_mark_editing(_slot if in_items and _editing >= 0 else "")
 
 
-## Marks `slot`'s tile in the grid as the one being edited ("" for none).
+## Marks `slot`'s tile in the grid as the one being edited ("" for none),
+## and keeps it at full brightness while the rest of the grid dims.
 func _mark_editing(slot: String) -> void:
+	var lift := 1.0 / maxf(_grid.modulate.r, 0.01)
 	for tile: Node in _grid.get_children():
 		if tile is LoadoutTile:
-			tile.editing = slot != "" and tile == _grid.tile(slot)
+			var editing: bool = slot != "" and tile == _grid.tile(slot)
+			tile.editing = editing
+			tile.modulate = Color(lift, lift, lift) if editing else Color.WHITE
 
 
 func _fade(node: CanvasItem, target: float, step: float) -> void:

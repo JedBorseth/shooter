@@ -18,8 +18,9 @@ extends Button
 ##
 ## Tiles focus with orange rules along their top and bottom edges and a
 ## lighter fill. The slot being edited while focus is in the item list keeps
-## that lit state, dimmed, with an orange tab down its left edge, as the
-## current item in a list (`UiTheme.current`). The button keeps its `text`
+## that lit state, a little softer, undimmed while the rest of the grid dims,
+## with an orange tab down its left edge (along the slant on a wildcard), as
+## the current item in a list (`UiTheme.current`). The button keeps its `text`
 ## (what it is, as tests and screen readers see it) but draws its own face.
 
 enum Kind { ROW, WEAPON, SLOT, WILDCARD, CARD }
@@ -41,7 +42,7 @@ const GRENADE_ICONS := {
 ## How far a wildcard's parallelogram leans.
 const SLANT := 12.0
 ## How lit the slot being edited stays while focus is in the items.
-const EDITING_LIT := 0.6
+const EDITING_LIT := 0.7
 
 var kind := Kind.SLOT
 ## The name drawn on the face (the button's `text` may add a lock note).
@@ -351,6 +352,13 @@ func _draw_wildcard() -> void:
 				]
 			),
 			lit
+		)
+	if editing and not has_focus():
+		draw_colored_polygon(
+			PackedVector2Array(
+				[Vector2(SLANT, 0), Vector2(SLANT + 4, 0), Vector2(4, size.y), Vector2(0, size.y)]
+			),
+			UiTheme.ACCENT
 		)
 
 

@@ -3,7 +3,7 @@ extends SceneTree
 ## with made-up data over a still of the game, for design review: the
 ## loading screen's team band, the death card for each way to die (a gun, a
 ## knife, a frag, a rocket, the charge, your own frag, a fall, unknown), the
-## killcam's name cards, the scoreboard's grouped numbers, and the slot being
+## killcam's name cards and weapon row (a gun, a knife), the scoreboard's grouped numbers, and the slot being
 ## edited in Create-a-Class while its items have focus. Fast: no match runs.
 ## Needs a GPU and a display (or Xvfb). BACKDROP is a 1600x900 still (a
 ## `clean` capture from `capture_ui.gd`); without it a dark fill stands in.
@@ -167,6 +167,31 @@ func _killcams() -> void:
 	)
 	await _seconds(0.8)
 	await _shot("killcam_02_final")
+	cam.set("preview", {})
+	await _frames(2)
+	(
+		cam
+		. set(
+			"preview",
+			{
+				"kind": "respawn",
+				"killer": 7,
+				"killer_name": "Okafor",
+				"killer_team": 1,
+				"victim_team": 0,
+				"my_team": 0,
+				"victim": 1,
+				"me": 1,
+				"victim_name": "Player",
+				"weapon": "Knife",
+				"attachment": "",
+				"progress": 0.5,
+				"skippable": true,
+			}
+		)
+	)
+	await _seconds(0.8)
+	await _shot("killcam_03_knife")
 	cam.queue_free()
 	await _frames(2)
 

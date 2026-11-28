@@ -25,6 +25,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
+const DeathCard := preload("res://scripts/net/death_card.gd")
 
 ## The title plate's steel blue, dark enough to part from a bright sky, and
 ## its edge; how far its chevron end reaches.
@@ -131,11 +132,14 @@ func _draw_overlay() -> void:
 		_draw_winners(alpha)
 	_draw_weapon(alpha)
 	_draw_strip(alpha, ending)
-	# Skip, after a death only: in the strip's right end, clear of the cards.
+	# Skip, after a death only: in the strip's right end, clear of the cards,
+	# its right edge on the screen's 64 px margin.
 	if bool(_info.get("skippable", false)):
 		var key := Settings.prompt_key(&"interact")
 		var row := Paint.split_key("[%s] Skip" % key, UiTheme.TEXT)
-		Paint.prompt(_canvas, row, 1440.0, 816.0, 16, alpha)
+		var width := Paint.cap_width(String(row.key), 23.0) + 9.0
+		width += Paint.text_width(Paint.LABEL, "Skip", 16)
+		Paint.prompt(_canvas, row, 1536.0 - width / 2.0, 816.0, 16, alpha)
 	_canvas.draw_set_transform(Vector2.ZERO)
 	# The cut into the replay: a white flash for its first frames.
 	var flash := 1.0 - clampf((_frames - 1) / 3.0, 0.0, 1.0)
@@ -247,11 +251,17 @@ func _draw_weapon(alpha: float) -> void:
 	var right := 1544.0
 	var baseline := 140.0
 	var label := "WEAPON" if String(_info.get("kind", "respawn")) != "respawn" else "KILLED BY"
-	var key := _weapon_key(weapon)
+	# A gun's silhouette, or for a knife, grenade, or charge kill the death
+	# card's drawn mark.
+	var how := DeathCard.how_killed(_weapon_key(weapon), weapon, false)
+	var key := String(how.key)
+	var glyph := "" if how.icon != null or how.glyph == "skull" else String(how.glyph)
 	var icon_w := 0.0
-	if key != "" and Paint.weapon_icon(key) != null:
-		var icon := Paint.weapon_icon(key)
+	if how.icon != null:
+		var icon: Texture2D = how.icon
 		icon_w = icon.get_width() * 24.0 / icon.get_height() + 14.0
+	elif glyph != "":
+		icon_w = DeathCard.GLYPH_W + 14.0
 	var row_w := (
 		Paint.text_width(Paint.LABEL, name, 20, 1.0)
 		+ icon_w
@@ -267,10 +277,14 @@ func _draw_weapon(alpha: float) -> void:
 	)
 	var ink := Color(UiTheme.TEXT, alpha)
 	right -= Paint.text_right(_canvas, Paint.LABEL, name, Vector2(right, baseline), 20, ink, 1.0)
-	if icon_w > 0.0:
+	var tint := Color(1, 1, 1, 0.92 * alpha)
+	if how.icon != null:
 		right -= 14.0
-		var tint := Color(1, 1, 1, 0.92 * alpha)
 		right -= Paint.weapon(_canvas, key, Vector2(right, baseline - 7.0), 24.0, tint)
+	elif glyph != "":
+		right -= 14.0 + DeathCard.GLYPH_W
+		var mark := Vector2(right + DeathCard.GLYPH_W / 2.0, baseline - 7.0)
+		DeathCard.cause_mark(_canvas, glyph, mark, tint)
 	var dim := Color(UiTheme.TEXT, 0.82 * alpha)
 	Paint.text_right(
 		_canvas, Paint.LABEL, label, Vector2(right - 14.0, baseline - 1.0), 15, dim, 2.0

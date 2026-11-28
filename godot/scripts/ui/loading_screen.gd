@@ -76,7 +76,8 @@ const OBJECTIVES := {
 const HEADER_HEIGHT := 112.0
 const FOOT_HEIGHT := 108.0
 const BAR_MARGIN := 64.0
-## How long the fade out takes once loading is done.
+## How long the bar takes to fill once loading is done, then the fade out.
+const FILL_OUT := 0.15
 const FADE_OUT := 0.3
 
 ## "tdm", "ctf", …: which mode, or "" when not known yet.
@@ -139,11 +140,12 @@ func _gui_input(event: InputEvent) -> void:
 		cancel_requested.emit()
 
 
-## Fades the screen out and frees it.
+## Fills the bar, then fades the screen out and frees it.
 func finish() -> void:
 	progress = 1.0
 	var tween := create_tween()
-	tween.tween_property(self, "modulate:a", 0.0, FADE_OUT).set_delay(0.12)
+	tween.tween_property(self, "_shown", 1.0, FILL_OUT).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "modulate:a", 0.0, FADE_OUT)
 	tween.tween_callback(queue_free)
 
 
