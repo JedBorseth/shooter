@@ -261,8 +261,8 @@ func _view_lanes(turn: float) -> Array:
 	# (the hardest background for a tracer to read on).
 	return [
 		[
-			eye + ahead * 7.0 - right * 9.0 + Vector3.UP * 2.2,
-			eye + ahead * 8.0 + right * 9.0 + Vector3.UP * 2.4
+			eye + ahead * 9.0 - right * 16.0 + Vector3.UP * 2.2,
+			eye + ahead * 10.0 + right * 16.0 + Vector3.UP * 2.6
 		],
 		[
 			eye + ahead * 22.0 - right * 20.0 + Vector3.UP * 5.0,
@@ -349,7 +349,10 @@ func _capture() -> void:
 		# the Testing Area they fly past the low cover wall; elsewhere the
 		# player turns round to face the open yard.
 		var tracer := get_first_node_in_group("shot_tracer")
-		var turn := 0.0 if _map == "testing" else PI
+		# On Breakwater, turned a little right and looking up, off the
+		# terminal's canopy, so the lanes cross open sky.
+		var turn := 0.0 if _map == "testing" else PI + 0.25
+		var look_up := 0.05 if _map == "testing" else 0.3
 		if not _wants("tracers"):
 			tracer = null
 		var lanes := [
@@ -367,7 +370,7 @@ func _capture() -> void:
 				for lane: Array in lanes:
 					var eye: Vector3 = lane[0]
 					tracer.trace_test_shot("m40", eye, (lane[1] - eye).normalized())
-			_place(turn, 0.05)
+			_place(turn, look_up)
 			await process_frame
 			if i in [2, 3, 5]:
 				await _shot("%s_tracers_%02d" % [preset, i])

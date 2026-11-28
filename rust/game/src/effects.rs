@@ -25,7 +25,8 @@ use std::collections::{HashMap, VecDeque};
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{
     AudioStreamPlayer3D, Decal, INode3D, Mesh, MeshInstance3D, Node3D, PackedScene,
-    PhysicsRayQueryParameters3D, Texture2D, VisualInstance3D, decal::DecalTexture,
+    PhysicsRayQueryParameters3D, QuadMesh, Shader, ShaderMaterial, Texture2D, VisualInstance3D,
+    decal::DecalTexture,
 };
 use godot::prelude::*;
 use shooter_sim::rng;
@@ -99,6 +100,9 @@ pub struct Budget {
     pub smokes: usize,
     /// Fired cases in the world at once, flying or lying where they fell.
     pub cases: usize,
+    /// Whether a tracer's round burns as a glowing point at the head of its
+    /// streak (`shaders/tracer_head.gdshader`).
+    pub tracer_heads: bool,
 }
 
 /// Low, Medium, High. Holes follow the audit's starting point (16, 48, 96);
@@ -113,6 +117,7 @@ pub const BUDGETS: [Budget; 3] = [
         fires: 2,
         smokes: 2,
         cases: 12,
+        tracer_heads: false,
     },
     Budget {
         impacts: 20,
@@ -123,6 +128,7 @@ pub const BUDGETS: [Budget; 3] = [
         fires: 4,
         smokes: 3,
         cases: 24,
+        tracer_heads: true,
     },
     Budget {
         impacts: 32,
@@ -133,6 +139,7 @@ pub const BUDGETS: [Budget; 3] = [
         fires: 6,
         smokes: 4,
         cases: 40,
+        tracer_heads: true,
     },
 ];
 
@@ -144,6 +151,9 @@ const HOLE_CLASSES: [&str; 5] = ["concrete", "metal", "wood", "glass", "dirt"];
 /// wider.
 const HOLE_SIZE: f32 = 0.16;
 const EXIT_HOLE_SCALE: f32 = 1.5;
+/// A hole in glass is drawn this many times larger, for the spider web of
+/// cracks round it (`tools/build_combat_fx.py`: GLASS_SCALE).
+const GLASS_HOLE_SCALE: f32 = 2.4;
 const TRACER_SCENE: &str = "res://scenes/effects/tracer.tscn";
 /// How fast a tracer streak travels (m/s). Real rounds fly at 700 to 900 m/s;
 /// this is slow enough to follow, as in Call of Duty.
@@ -152,6 +162,8 @@ pub const TRACER_SPEED: f32 = 320.0;
 /// the core at least three pixels wide at any range and draws a glow round it.
 pub const TRACER_LENGTH: f32 = 9.0;
 const TRACER_WIDTH: f32 = 0.018;
+/// The glow at a tracer's head (High only).
+const TRACER_HEAD_SHADER: &str = "res://shaders/tracer_head.gdshader";
 
 /// The fired cases weapons eject (`tools/build_weapons.py`), by node name.
 const CASINGS: &str = "res://assets/weapons/shared/casings.glb";
@@ -217,6 +229,18 @@ fn tracer_mesh() -> Option<Gd<Mesh>> {
     let mesh = node.get_mesh();
     node.free();
     mesh
+}
+
+/// The quad a tracer's head glow draws: a unit quad with the head shader.
+fn tracer_head_mesh() -> Option<Gd<Mesh>> {
+    let shader = try_load::<Shader>(TRACER_HEAD_SHADER).ok()?;
+    let mut material = ShaderMaterial::new_gd();
+    material.set_shader(&shader);
+    material.set_render_priority(1);
+    let mut quad = QuadMesh::new_gd();
+    quad.set_size(Vector2::new(1.0, 1.0));
+    quad.set_material(&material);
+    Some(quad.upcast())
 }
 
 /// The vertical FOV the first-person weapon is drawn with
@@ -361,6 +385,9 @@ pub fn tracer_span(travelled: f32, distance: f32) -> (f32, f32) {
 /// One pooled tracer in flight.
 struct Tracer {
     node: Gd<MeshInstance3D>,
+    /// The glowing round at the head of the streak, where the preset draws
+    /// one, shown while the round is still flying.
+    head: Option<Gd<MeshInstance3D>>,
     from: Vector3,
     direction: Vector3,
     distance: f32,
@@ -371,6 +398,13 @@ impl Tracer {
     /// Places the streak; false once it has finished.
     fn place(&mut self) -> bool {
         let (tail, head) = tracer_span(self.travelled, self.distance);
+        if let Some(glow) = self.head.as_mut() {
+            let flying = self.travelled < self.distance;
+            glow.set_visible(flying);
+            if flying {
+                glow.set_global_position(self.from + self.direction * head);
+            }
+        }
         if tail >= self.distance {
             self.node.set_visible(false);
             return false;
@@ -503,6 +537,7 @@ pub struct CombatEffects {
     tracers: Vec<Tracer>,
     next_tracer: usize,
     tracer_mesh: Option<Gd<Mesh>>,
+    tracer_head_mesh: Option<Gd<Mesh>>,
     /// Rounds traced per weapon (model key), for every Nth tracer round.
     remote_rounds: HashMap<String, u32>,
     /// Tracers started so far (tests).
@@ -984,8 +1019,12 @@ impl CombatEffects {
         }
         let budget = self.current_budget().tracers;
         while self.tracers.len() > budget {
-            if let Some(mut old) = self.tracers.pop().map(|t| t.node) {
-                old.queue_free();
+            if let Some(old) = self.tracers.pop() {
+                let mut node = old.node;
+                node.queue_free();
+                if let Some(mut glow) = old.head {
+                    glow.queue_free();
+                }
             }
         }
         if budget == 0 {
@@ -1006,6 +1045,7 @@ impl CombatEffects {
             self.base_mut().add_child(&node);
             self.tracers.push(Tracer {
                 node,
+                head: None,
                 from,
                 direction: Vector3::FORWARD,
                 distance: 0.0,
@@ -1018,6 +1058,22 @@ impl CombatEffects {
             self.next_tracer = index + 1;
             index
         };
+        let heads = self.current_budget().tracer_heads;
+        if heads && self.tracers[index].head.is_none() {
+            if self.tracer_head_mesh.is_none() {
+                self.tracer_head_mesh = tracer_head_mesh();
+            }
+            if let Some(mesh) = self.tracer_head_mesh.clone() {
+                let mut glow = MeshInstance3D::new_alloc();
+                glow.set_mesh(&mesh);
+                glow.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+                glow.set_extra_cull_margin(1.0);
+                self.base_mut().add_child(&glow);
+                self.tracers[index].head = Some(glow);
+            }
+        } else if !heads && let Some(mut glow) = self.tracers[index].head.take() {
+            glow.queue_free();
+        }
         let tracer = &mut self.tracers[index];
         tracer.from = from;
         tracer.direction = (to - from) / distance;
@@ -1406,6 +1462,11 @@ impl CombatEffects {
         decal.set_texture(DecalTexture::ORM, &maps[2]);
         let size = HOLE_SIZE
             * if exit { EXIT_HOLE_SCALE } else { 1.0 }
+            * if look == "glass" {
+                GLASS_HOLE_SCALE
+            } else {
+                1.0
+            }
             * (0.9 + 0.2 * rng::unit(seed, 17));
         // Shallow, and faded off faces turned much away from the hit, so a
         // hole on a ledge or a bevel does not smear across the next face

@@ -1,6 +1,8 @@
 extends Node3D
-## Bullet impact: chips of the surface (the modelled chip,
-## `assets/effects/chip.glb`, tinted like the surface), a soft dust puff, and
+## Bullet impact: chips of the surface (modelled chips,
+## `assets/effects/chip.glb`, each surface its own shape: concrete spalls,
+## wood splinters, glass shards that glint, dirt clods, tinted like the
+## surface), a soft dust puff, and
 ## on metal a few short sparks, chosen by the surface that was hit (`surface`
 ## metadata on the collider). On flesh:
 ## dark, lit blood droplets thrown out along the round and back toward the
@@ -23,6 +25,7 @@ const SURFACES := {
 		"dust": Color(0.62, 0.59, 0.54, 0.6),
 		"sparks": false,
 		"debris": Color(0.6, 0.58, 0.54),
+		"chip": "Chip",
 		"dust_scale": 1.0
 	},
 	"metal":
@@ -31,6 +34,7 @@ const SURFACES := {
 		"dust": Color(0.4, 0.4, 0.42, 0.3),
 		"sparks": true,
 		"debris": Color(0.3, 0.3, 0.32),
+		"chip": "Chip",
 		"dust_scale": 0.4
 	},
 	"wood":
@@ -38,7 +42,8 @@ const SURFACES := {
 		"spark": Color(0.55, 0.4, 0.25),
 		"dust": Color(0.62, 0.55, 0.45, 0.6),
 		"sparks": false,
-		"debris": Color(0.56, 0.42, 0.26),
+		"debris": Color(0.62, 0.48, 0.3),
+		"chip": "ChipWood",
 		"dust_scale": 1.2
 	},
 	"dirt":
@@ -47,6 +52,7 @@ const SURFACES := {
 		"dust": Color(0.42, 0.35, 0.27, 0.7),
 		"sparks": false,
 		"debris": Color(0.32, 0.26, 0.2),
+		"chip": "ChipDirt",
 		"dust_scale": 1.6
 	},
 	"glass":
@@ -54,10 +60,16 @@ const SURFACES := {
 		"spark": Color(0.85, 0.92, 1.0),
 		"dust": Color(0.8, 0.85, 0.9, 0.25),
 		"sparks": false,
-		"debris": Color(0.72, 0.8, 0.84),
+		"debris": Color(0.5, 0.58, 0.56),
+		"chip": "ChipGlass",
 		"dust_scale": 0.3
 	},
 }
+
+## Glass shards: smooth and glossy, so they glint as they tumble; the other
+## chips keep the scene's rough, vertex-coloured material.
+static var _glass: StandardMaterial3D
+var _rough: Material
 
 @onready var _sparks: GPUParticles3D = $Sparks
 @onready var _dust: GPUParticles3D = $Dust
@@ -69,6 +81,12 @@ const SURFACES := {
 
 func _ready() -> void:
 	_debris.draw_pass_1 = EXPLOSION.chip_mesh()
+	_rough = _debris.material_override
+	if _glass == null:
+		_glass = StandardMaterial3D.new()
+		_glass.vertex_color_use_as_albedo = true
+		_glass.roughness = 0.06
+		_glass.metallic_specular = 1.0
 
 
 ## Plays the impact for `surface` (an impact look) on a surface facing
@@ -114,6 +132,8 @@ func setup(
 	var debris := _debris.process_material as ShaderMaterial
 	debris.set_shader_parameter(&"floor_y", floor_y)
 	debris.set_shader_parameter(&"base_color", look["debris"])
+	_debris.draw_pass_1 = EXPLOSION.chip_mesh(look["chip"])
+	_debris.material_override = _glass if surface == "glass" else _rough
 	debris.set_shader_parameter(&"spread_degrees", 30.0 if exit else 50.0)
 	debris.set_shader_parameter(&"speed_max", 7.0 if exit else 4.5)
 	_debris.amount_ratio = 1.0 if exit else 0.7
