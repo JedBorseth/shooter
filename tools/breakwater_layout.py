@@ -422,6 +422,36 @@ def shore(a, b, toward, width, m, step=2.0):
 
 
 # --- Ground ---------------------------------------------------------------------------
+JOINT = 4.5
+
+
+def joints(x0, x1, z0, z1, m, w=0.035, weight=0.38):
+    """Saw-cut joints across a slab from (x0, z0) to (x1, z1): a dark line
+    every JOINT metres each way, with a soft edge either side."""
+    y = STREET + 0.006
+    lines = []
+    x = x0 + JOINT
+    while x < x1 - 0.5:
+        lines.append(("x", x))
+        x += JOINT
+    z = z0 + JOINT
+    while z < z1 - 0.5:
+        lines.append(("z", z))
+        z += JOINT
+    for axis, c in lines:
+        if axis == "x":
+            pts = [(c - w * 2, z0), (c - w / 2, z0), (c + w / 2, z0), (c + w * 2, z0)]
+            far = [(px, z1) for px, _ in pts]
+        else:
+            pts = [(x0, c - w * 2), (x0, c - w / 2), (x0, c + w / 2), (x0, c + w * 2)]
+            far = [(x1, pz) for _, pz in pts]
+        verts = [(px, y, pz) for px, pz in pts] + [(px, y, pz) for px, pz in far]
+        ws = (0.0, weight, weight, 0.0)
+        mix = [(0.22, 0.21, 0.2, wv, 1.0) for wv in ws] * 2
+        faces = [(k, k + 1, 5 + k, 4 + k) for k in range(3)]
+        shaded("stain_mul", verts, faces, mix, (0.0, 1.0, 0.0), m)
+
+
 def ground():
     x0, x1, z0, z1 = BOUNDS
     clip(x0, x1, -3.0, STREET, z0, z1)
@@ -447,6 +477,12 @@ def ground():
         for k in range(8):
             z = -25.0 + k * 2.2
             road_paint(-38.9, -37.1, z, z + 0.6, "paint_white", m)
+    # Saw-cut joints in the concrete slabs, the apron, and the quay: thin
+    # dark lines on a 4.5 m grid (a multiply stain, out of the bake).
+    for side in SIDES:
+        for x0, x1, z0, z1 in ((-13.0, 1.5, -27.0, -22.0), (-9.0, 9.0, -22.0, -13.0), (-41.0, -6.0, -36.0, -27.0),
+                               (-21.0, -17.0, -27.0, -2.0)):
+            joints(x0, x1, z0, z1, side.m)
     # Under the rack: a paved band along the bays (both halves at once: it
     # crosses the centre).
     for v0, v1 in ((1.4, 4.6), (-4.6, -1.4)):
@@ -1362,6 +1398,40 @@ def dressing(side: Side):
     blocker(-20.6, -20.0, WALK, WALK + 1.9, 11.94, 12.86, m)
 
 
+def whiteboard(x, y, z, yaw, m, w=1.8, h=1.1):
+    """A whiteboard on a wall (its face at (x, z), facing `yaw`), with an
+    aluminium frame, a pen tray, and faint marker writing."""
+    cx, cz = local(x, z, yaw, 0.0, 0.015)
+    turned_box(cx, cz, w / 2 + 0.03, 0.015, yaw, y - h / 2 - 0.03, y + h / 2 + 0.03, "steel_galv", None, m,
+               detail=True)
+    cx, cz = local(x, z, yaw, 0.0, 0.032)
+    turned_box(cx, cz, w / 2, 0.003, yaw, y - h / 2, y + h / 2, "sign_white", None, m, detail=True)
+    for k, (dx, ww) in enumerate(((-0.45, 0.5), (-0.3, 0.7), (0.2, 0.45), (-0.4, 0.35))):
+        bx, bz = local(x, z, yaw, dx * w / 1.8, 0.036)
+        turned_box(bx, bz, ww / 2, 0.002, yaw, y + 0.3 - k * 0.16, y + 0.32 - k * 0.16,
+                   ("sign_blue", "trim_black", "hazard_red", "trim_black")[k], None, m, detail=True)
+    tx, tz = local(x, z, yaw, 0.0, 0.06)
+    turned_box(tx, tz, w * 0.4, 0.04, yaw, y - h / 2 - 0.06, y - h / 2 - 0.03, "steel_galv", None, m, detail=True)
+
+
+def wall_clock(x, y, z, yaw, m):
+    """A round office clock on a wall at (x, y, z), facing `yaw`."""
+    c, s_ = math.sin(yaw), math.cos(yaw)
+    for r, out, look in ((0.17, 0.04, "trim_black"), (0.15, 0.045, "sign_white")):
+        pts = []
+        for k in range(16):
+            a = 2 * PI * k / 16
+            lx, ly = math.cos(a) * r, math.sin(a) * r
+            for d in (0.0, out):
+                px, pz = local(x, z, yaw, lx, d)
+                pts.append((px, y + ly, pz))
+        PARTS.append({"kind": "hull", "look": look, "detail": True, "points": [t3(*p, m) for p in pts]})
+    for ang, ln in ((0.6, 0.1), (2.2, 0.13)):
+        px, pz = local(x, z, yaw, 0.0, 0.05)
+        ex, ez = local(x, z, yaw, math.cos(ang) * ln, 0.05)
+        tube([(px, y, pz), (ex, y + math.sin(ang) * ln, ez)], 0.006, "trim_black", m, sides=3)
+
+
 def interiors(side: Side):
     """Services and kit in every room, so none reads empty: cable trays with
     drops to the switchgear, lockers and a microwave in the mess, filing
@@ -1379,6 +1449,12 @@ def interiors(side: Side):
     blocker(-31.26, -30.34, WALK, WALK + 1.12, -14.55, -14.12, m)
     prop("power_box", -23.9, WALK + 1.3, -26.45, 0.0, m)
     extinguisher(-32.4, -15.0, PI / 2, m)
+    # Rubber safety mats in front of the switchgear, a notice board and a
+    # clock on the walls, an extinguisher by the stair.
+    deco(-29.0, -25.0, WALK, WALK + 0.012, -25.95, -24.9, "rubber", m, faces="top", detail=True)
+    deco(-31.95, -30.9, WALK, WALK + 0.012, -21.5, -18.5, "rubber", m, faces="top", detail=True)
+    place("notice_board", -28.0, WALK + 1.5, -14.12, PI, m)
+    wall_clock(-24.5, WALK + 2.6, -14.12, PI, m)
     # The mess: staff lockers, a microwave on the counter.
     place("locker_bank", -31.3, WALK, -13.63, 0.0, m, length=2.4, look="locker_grey" if not m else "locker_blue")
     blocker(-32.5, -30.1, WALK, WALK + 1.85, -13.88, -13.38, m)
@@ -1390,6 +1466,9 @@ def interiors(side: Side):
     for z in (-11.3, -10.7):
         place("filing_cabinet", -21.66, up_floor, z, -PI / 2, m, drawers=3)
     blocker(-21.97, -21.35, up_floor, up_floor + 1.03, -11.6, -10.4, m)
+    whiteboard(-27.0, up_floor + 1.5, -26.65, 0.0, m)
+    wall_clock(-24.2, up_floor + 2.5, -26.65, 0.0, m)
+    prop("plastic_chair", -30.8, up_floor, -17.4, -PI / 2 + 0.4, m)
     prop("cardboard_box", -32.2, up_floor, -22.8, 0.4, m)
     prop("cardboard_box", -32.25, up_floor + 0.34, -22.75, 0.9, m)
     # The meter shed: a tray over the panel, a distribution board.

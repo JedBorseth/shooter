@@ -39,8 +39,8 @@ def _g(color, glow):
 LOOKS: dict[str, dict] = {
     **W.SLAMCITY_LOOKS,
     # Ground: the terminal's slabs, the quay's apron, the bund's gravel.
-    "slab": _t("concrete_floor", 4.0, (0.8, 0.79, 0.76), grime=0.0),
-    "slab_old": _t("concrete_stained", 4.0, (0.76, 0.75, 0.72), grime=0.0),
+    "slab": _t("concrete_floor", 4.0, (0.74, 0.75, 0.75), grime=0.0),
+    "slab_old": _t("concrete_stained", 4.0, (0.7, 0.7, 0.69), grime=0.0),
     "quay": _t("concrete_stained", 4.0, (0.8, 0.78, 0.74), grime=0.0),
     "quay_edge": _t("concrete_smooth", 2.0, (0.72, 0.71, 0.68), grime=0.2),
     "bund_gravel": _t("gravel", 3.0, (0.78, 0.74, 0.68), grime=0.0),
@@ -58,10 +58,10 @@ LOOKS: dict[str, dict] = {
     "roof_sheet": _t("corrugated", 2.0, (0.66, 0.67, 0.68), metal=0.6, grime=0.0),
     "plaster_white": _t("plaster", 3.0, (0.9, 0.9, 0.88), grime=0.1),
     # Plant: tanks, pipes, steel.
-    # Storage tanks: the painted_metal scan at a large scale with its relief
-    # turned down, so it reads as painted plate, not concrete grain.
-    "tank_white": _t("painted_metal", 6.0, (0.86, 0.86, 0.84), metal=0.3, rough=0.75, grime=0.3, normal=0.45),
-    "tank_silver": _t("painted_metal", 6.0, (0.72, 0.74, 0.75), metal=0.8, grime=0.25, normal=0.45),
+    # Storage tanks: plain paint (the shared smudge map breaks it up); the
+    # model shades each shell plate a little apart and grimes the foot.
+    "tank_white": _p((0.85, 0.85, 0.83), 0.55),
+    "tank_silver": _p((0.74, 0.76, 0.77), 0.42, 1),
     "tank_roof": _t("painted_metal", 2.0, (0.62, 0.62, 0.6), metal=0.3, grime=0.0),
     "steel_red": _t("painted_metal", 2.0, (0.6, 0.12, 0.08), metal=0.3, rough=0.8, grime=0.2),
     "steel_blue": _t("painted_metal", 2.0, (0.14, 0.3, 0.55), metal=0.3, rough=0.8, grime=0.2),
@@ -545,7 +545,39 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
     and a level gauge board."""
     sides = 40
     b.cyl("y", 0.0, 0.35, (0.0, 0.0), r + 0.35, "quay_edge", sides=sides)
-    b.cyl("y", 0.35, h, (0.0, 0.0), r, look, sides=sides, cap=False)
+    # The shell, plate by plate (about 2.4 m by 7 m, staggered course to
+    # course): each plate's paint a shade off its neighbours', and grime
+    # rising from the foot, in the vertex colours.
+    rng = random.Random(round(r * 100 + h))
+    courses = [0.35 + k * 2.4 for k in range(int(h / 2.4) + 1)] + [h]
+    courses = sorted(set(min(c, h) for c in courses))
+    nseam = max(3, round(2 * PI * r / 7.0))
+    seg = max(2, sides // nseam)
+    for k in range(len(courses) - 1):
+        y0, y1 = courses[k], courses[k + 1]
+        if y1 - y0 < 0.05:
+            continue
+        ys = [y0] + ([0.8, 1.4, 2.0] if k == 0 else [(y0 + y1) / 2]) + [y1]
+        ys = sorted(set(y for y in ys if y0 <= y <= y1))
+        for i in range(nseam):
+            t0 = 2 * PI * (i + 0.5 * (k % 2)) / nseam + 0.21
+            tone = rng.uniform(0.0, 0.16)
+            verts, mix, faces = [], [], []
+            for j in range(seg + 1):
+                t = t0 + (2 * PI / nseam) * j / seg
+                for y in ys:
+                    verts.append((math.cos(t) * r, y, math.sin(t) * r))
+                    dirt = 0.42 * max(0.0, 1.0 - (y - 0.35) / 1.6)
+                    w = max(dirt, tone)
+                    col = (0.4, 0.37, 0.32) if dirt > tone else (0.62, 0.63, 0.62)
+                    mix.append((*col, w, 1.0 + dirt * 0.6))
+            n = len(ys)
+            for j in range(seg):
+                for q in range(n - 1):
+                    a, c = j * n + q, (j + 1) * n + q
+                    faces.append((a, a + 1, c + 1, c))
+            b._add({"kind": "shaded", "look": look, "verts": verts, "faces": faces, "mix": mix, "smooth": True},
+                   False)
     for k in range(1, int(h / 2.4) + 1):
         y = 0.35 + k * 2.4
         if y < h - 0.3:
@@ -802,6 +834,13 @@ def switch_panel(b: Model, length=3.0, look="steel_grey"):
         for j in range(3):
             b.cyl("z", 0.32, 0.36, (x - 0.15 + j * 0.15, 1.3), 0.025, ("led_amber", "signal_red", "signal_walk")[j],
                   sides=6, detail=True)
+        # The back: bolted rear covers with vent louvres and a rating plate.
+        b.box(x - 0.36, x + 0.36, 0.1, 2.1, -0.32, -0.3, look, detail=True)
+        for j in range(5):
+            y = 0.3 + j * 0.06
+            b.box(x - 0.2, x + 0.2, y, y + 0.025, -0.335, -0.32, "steel_dark", detail=True)
+            b.box(x - 0.2, x + 0.2, y + 1.5, y + 1.525, -0.335, -0.32, "steel_dark", detail=True)
+        b.box(x - 0.08, x + 0.08, 1.2, 1.3, -0.33, -0.32, "sign_white", detail=True)
 
 
 @model

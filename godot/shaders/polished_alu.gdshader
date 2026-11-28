@@ -40,7 +40,7 @@ void fragment() {
 	float along = dot(world_pos, axis);
 	float round_ = world_pos.y + dot(world_pos, across);
 	// Streaks: noise stretched along the axis, fine across it.
-	float streak = texture(world_noise, vec2(along * 0.035, round_ * 2.2)).r;
+	float streak = texture(world_noise, vec2(along * 0.02, round_ * 0.9)).r;
 	float smudge = texture(world_noise, world_pos.xz * 0.37 + world_pos.y * 0.21).r;
 	float film = (1.0 - smoothstep(film_bottom, film_top, world_pos.y)) * (0.55 + 0.45 * smudge);
 
@@ -48,11 +48,11 @@ void fragment() {
 	vec3 r = reflect(-view_w, n);
 	// Below the horizon: the ground, with a slightly soft line.
 	float ground = smoothstep(0.015, -0.05, r.y);
-	float rough = 0.09 + 0.08 * streak + 0.06 * smudge + 0.3 * film;
+	float rough = 0.07 + 0.035 * streak + 0.05 * smudge + 0.3 * film;
 	// Rougher metal blurs the line.
 	ground = mix(ground, smoothstep(0.2, -0.25, r.y), clamp(rough * 1.6 - 0.15, 0.0, 1.0));
 
-	vec3 metal = metal_color * (0.93 + 0.07 * streak);
+	vec3 metal = metal_color * (0.96 + 0.04 * streak);
 	metal = mix(metal, film_color, film * 0.6);
 	ALBEDO = mix(metal, metal * 0.28, ground);
 	METALLIC = 1.0;
