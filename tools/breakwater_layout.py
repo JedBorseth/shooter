@@ -640,6 +640,9 @@ def quay(side: Side):
     place("light_mast", -33.0, STREET, -28.0, 0.0, m)
     clip(-33.4, -32.6, STREET, 14.0, -28.4, -27.6, "metal", m, sight=False)
     place("windsock", -7.0, 5.2, -36.4, 0.0, m)
+    # A fire hose reel by the loading-arm berth.
+    place("hose_reel", -31.0, STREET, -34.6, 0.0, m)
+    blocker(-31.2, -30.8, STREET, 1.5, -34.7, -34.2, m)
     # Life-ring stations by the ladders, IBC totes by the containers.
     for x in (-35.2, -17.2):
         place("lifebuoy_post", x, STREET, -35.85, 0.0, m)
