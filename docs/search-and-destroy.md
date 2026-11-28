@@ -155,7 +155,12 @@ column, and ground skirt. The screen rattles out to about 50 m, hardest
 within 3 m. It rumbles a controller out to 50 m and rings in the ears inside
 18 m, twice a frag's reach. Clients draw it when the charge's status
 turns from planted to detonated, so nobody joining later sees it go off.
-It sounds the frag's distant bang, louder (`godot/scripts/charge_explosion.gd`).
+It plays the charge's own explosion sound (`snd_view.gd`).
+
+## Sound
+
+A sting when the charge is planted, its beep speeding up as the fuse runs
+down, and a close explosion: see [audio.md](audio.md).
 
 ## On screen
 
@@ -172,6 +177,3 @@ It sounds the frag's distant bang, louder (`godot/scripts/charge_explosion.gd`).
 - Calls: CHARGE PLANTED (with the site), CHARGE DEFUSED, CHARGE DROPPED,
   CHARGE PICKED UP, YOU HAVE THE CHARGE.
 - The planted charge's lamp blinks once a second.
-
-The charge's beeps and its own explosion and plant sounds are not built yet;
-see [TODO.md](../TODO.md).

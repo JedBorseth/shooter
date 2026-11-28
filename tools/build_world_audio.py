@@ -26,6 +26,7 @@ from events placed modulo the loop length, so it repeats without a seam:
     uv run tools/build_world_audio.py player
     uv run tools/build_world_audio.py stings
     uv run tools/build_world_audio.py mode-stings
+    uv run tools/build_world_audio.py charge
 
 ``bullets`` synthesizes what a passing or landing round sounds like, seeded:
 supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
@@ -42,6 +43,12 @@ and a mantle's hands on the ledge.
 round win and loss, the time warning, the hardpoint call: drums, a riser, and
 brass-like chords that open as they swell) and the world's one-shots (wind
 gusts, loose metal rattling, distant explosions).
+
+``charge`` synthesizes Search and Destroy's charge: its beep (one short
+electronic chirp; the client repeats it faster as the fuse runs down), its
+explosion up close (a deep thump, a roar, and falling debris), and the
+planted sting (a defuse ends the round, so the round's sting covers it). It writes only those files, so the other stings
+stay as they are.
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
@@ -574,6 +581,7 @@ def bullets() -> None:
 
 PLAYER = AUDIO / "player"
 UI = AUDIO / "ui"
+WORLD = AUDIO / "world"
 
 
 def sine_sweep(n: int, f0: float, f1: float, tau: float) -> np.ndarray:
@@ -943,6 +951,87 @@ def explosion_far(rng: np.random.Generator) -> np.ndarray:
     return normalized(x, 0.8)
 
 
+def charge_beep() -> np.ndarray:
+    """The planted charge's beep: a short square-ish chirp at 2.6 kHz with a
+    click on its front, like a cheap timer's piezo, dry and mono."""
+    n = int(0.11 * RATE)
+    t = np.arange(n) / RATE
+    gate = np.clip(np.minimum(t / 0.002, (0.075 - t) / 0.006), 0, 1)
+    tone = np.tanh(3.0 * np.sin(2 * np.pi * 2_600 * t)) * gate
+    click = highpass(np.random.default_rng(5).standard_normal(n), 3_000) * np.exp(-t / 0.002)
+    return normalized(tone + 0.3 * click, 0.7)
+
+
+def charge_explosion(rng: np.random.Generator) -> np.ndarray:
+    """The charge going off up close: a deep thump that drops in pitch, a
+    wide roar of noise that rolls off, and debris pattering down after it,
+    in stereo."""
+    seconds = 4.5
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    out = np.zeros((n, 2))
+    thump = sine_sweep(n, 90, 28, 0.22) * env_decay(n, 0.6)
+    crack = highpass(rng.standard_normal(n), 1_500) * np.exp(-t / 0.012)
+    for ch in range(2):
+        roar = lowpass(rng.standard_normal(n), 2_200) * np.exp(-t / 0.55) * (1 - np.exp(-t / 0.004))
+        rumble = lowpass(rng.standard_normal(n), 160, order=4) * np.exp(-t / 1.6)
+        debris = np.zeros(n)
+        at_s = 0.35 + rng.uniform(0, 0.1)
+        while at_s < seconds - 0.4:
+            a = int(at_s * RATE)
+            hit = modal(rng, n - a, [rng.uniform(700, 1_400), rng.uniform(2_000, 3_500)], rng.uniform(0.02, 0.06))
+            debris[a:] += rng.uniform(0.2, 0.7) * hit * np.exp(-at_s / 1.2)
+            at_s += rng.exponential(0.07)
+        out[:, ch] = (
+            1.4 * normalized(thump, 1)
+            + 0.9 * normalized(roar, 1)
+            + 0.8 * normalized(rumble, 1)
+            + 0.25 * crack
+            + 0.18 * normalized(debris, 1)
+        )
+    fade = int(0.4 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)[:, None]
+    return normalized(np.tanh(1.6 * out), 0.9)
+
+
+def charge_sting(kind: str) -> np.ndarray:
+    """Planted: two low drum hits under a tense, unresolved brass cluster
+    with the charge's beep on top."""
+    seconds = {"charge_planted": 2.2}[kind]
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    x = np.zeros(n)
+
+    def at(sound: np.ndarray, start: float, gain: float = 1.0) -> None:
+        a = int(start * RATE)
+        x[a:] += gain * sound[: n - a]
+
+    if kind == "charge_planted":
+        at(drum_hit(t, 48, 0.45), 0.0)
+        at(drum_hit(t, 44, 0.6), 0.32, 0.9)
+        # D, E flat and A: a clash that wants to move.
+        at(brass(t, [73.4, 77.8, 110.0, 155.6], 0.25, 0.9, 1_800), 0.0, 0.35)
+        beep = np.zeros(n)
+        b = charge_beep()
+        beep[: len(b)] = b
+        at(beep, 0.05, 0.25)
+        at(beep, 0.37, 0.25)
+    fade = int(0.08 * RATE)
+    x[-fade:] *= np.linspace(1, 0, fade)
+    stereo = np.stack([x, np.roll(x, int(0.0007 * RATE))], axis=1)
+    return normalized(stereo, 0.8)
+
+
+def charge_audio() -> None:
+    """Search and Destroy's charge: the audio/ui/charge_planted.ogg sting,
+    and audio/world/charge_beep.ogg and charge_explosion.ogg."""
+    write_ogg(UI / "charge_planted.ogg", charge_sting("charge_planted"))
+    WORLD.mkdir(parents=True, exist_ok=True)
+    write_ogg(WORLD / "charge_beep.ogg", charge_beep())
+    write_ogg(WORLD / "charge_explosion.ogg", charge_explosion(np.random.default_rng(4512)))
+    print("  audio/ui: charge sting; audio/world: charge beep and explosion")
+
+
 def stings_and_world() -> None:
     """Match stings in audio/ui/ and world one-shots in audio/ambience/."""
     for kind in (
@@ -988,6 +1077,7 @@ def main() -> None:
     sub.add_parser("player", help="hit and kill markers, health, breath, and body sounds")
     sub.add_parser("stings", help="match stings and world one-shots")
     sub.add_parser("mode-stings", help="Gun Game, halftime, and overtime stings")
+    sub.add_parser("charge", help="Search and Destroy's charge: beep, explosion, stings")
     args = parser.parse_args()
     if args.command == "glass":
         glass(args.kenney)
@@ -999,6 +1089,8 @@ def main() -> None:
         stings_and_world()
     elif args.command == "mode-stings":
         mode_stings()
+    elif args.command == "charge":
+        charge_audio()
     else:
         ambience()
 

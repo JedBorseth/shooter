@@ -323,7 +323,7 @@ heartbeat, breathing, death, jump, and mantle.
 
 ## Equipment and streaks
 
-Frags, the Search and Destroy charge, and downed UAVs play the distant
+Frags and downed UAVs play the distant
 explosion takes up close on Effects; a flashbang plays one of them as its
 bang, and a smoke grenade hisses with a wind gust. None of them has a recording of its own. Scavenger pickups
 play the pouch sound.
@@ -369,6 +369,16 @@ found.
 
 During a killcam the live players are muted; the replayed bodies make the
 sounds.
+
+Search and Destroy's charge (`scripts/net/snd_view.gd`, synthesized by
+`tools/build_world_audio.py charge`): a tense sting when it is planted (two
+drum hits under an unresolved brass cluster, the charge's beep on top); its
+beep from where it stands, a dry 2.6 kHz piezo chirp every second, then faster
+as the fuse runs down (the fuse left divided by 25 s, between 1 s and 0.12 s,
+as Call of Duty's bomb ticks faster to the end), heard by everyone within
+45 m on the Effects bus; and a close explosion when it goes off (a falling
+thump, a roar, and debris), heard across the map, over the frag's blast. A
+defuse has no sting of its own: it ends the round, whose sting plays.
 
 ## Reviewing sound without listening
 
