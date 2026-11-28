@@ -77,7 +77,7 @@ func _draw() -> void:
 	if not warning.is_empty():
 		# Blinks twice a second, as Call of Duty's ammo warnings do.
 		# The plate holds steady; only the words blink.
-		var blink := 1.0 if warning.get("steady", false) else 0.7 + 0.3 * cos(_time * TAU * 2.0)
+		var blink := 1.0 if warning.get("steady", false) else 0.82 + 0.18 * cos(_time * TAU * 2.0)
 		# On a dark plate that hugs it, as the interact prompt sits, so it
 		# holds over bright ground.
 		var width := prompt_width(warning, 18)

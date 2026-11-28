@@ -46,7 +46,7 @@ const ROW_TILT := 0.045
 ## While dead: the death card from its KILLED BY tab down to the prompt under
 ## it, with room for a marker's pointer (1600 x 900 units, centred on the
 ## screen).
-const DEATH_CARD := Rect2(-280, 78, 560, 292)
+const DEATH_CARD := Rect2(-280, 62, 560, 308)
 ## The top centre kept clear while a banner, the killcam's title, or a medal
 ## shows there: its half width (1600 x 900 units, about the screen's middle).
 const TOP_HALF_W := 290.0

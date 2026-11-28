@@ -270,7 +270,7 @@ func _draw_spectating(ui: float) -> void:
 		maxf(260.0 * ui, name_w + 40.0 * ui),
 		34.0 * ui
 	)
-	_rows.draw_rect(plate, Color(0, 0, 0, 0.58))
+	_rows.draw_rect(plate, Color(0, 0, 0, 0.72))
 	Paint.text_centred(
 		_rows,
 		Paint.LABEL,
