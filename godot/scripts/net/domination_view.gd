@@ -432,6 +432,15 @@ func _draw_capture_bar(flag: Dictionary, size: Vector2, ui: float) -> void:
 	var width := 260.0 * ui
 	var top := size.y * 0.667
 	var bar := Rect2(size.x / 2.0 - width / 2.0, top, width, 8.0 * ui)
+	# The words on a dark tab over the bar, so they hold over the gun and a
+	# bright floor.
+	var words := Paint.text_width(Paint.LABEL, text, int(17 * ui), 1.5 * ui)
+	_overlay.draw_rect(
+		Rect2(
+			size.x / 2.0 - words / 2.0 - 12.0 * ui, top - 29.0 * ui, words + 24.0 * ui, 26.0 * ui
+		),
+		Color(0, 0, 0, 0.6)
+	)
 	Paint.text_centred(
 		_overlay,
 		Paint.LABEL,

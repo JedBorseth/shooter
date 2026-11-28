@@ -326,6 +326,18 @@ func _draw_bar(
 	_overlay.draw_rect(rect.grow(1.0), Color(0, 0, 0, 0.5))
 	_overlay.draw_rect(rect, Color(1, 1, 1, 0.15))
 	_overlay.draw_rect(Rect2(rect.position, Vector2(size.x * progress, size.y)), colour)
+	# The words on a dark tab over the bar, so they hold over the gun.
+	var words := Paint.text_width(Paint.LABEL, label, int(17 * ui * scale), 1.5 * ui)
+	var tab_h := 26.0 * ui * scale
+	_overlay.draw_rect(
+		Rect2(
+			at.x - words / 2.0 - 12.0 * ui,
+			rect.position.y - 3.0 * ui - tab_h,
+			words + 24.0 * ui,
+			tab_h
+		),
+		Color(0, 0, 0, 0.6)
+	)
 	Paint.text_centred(
 		_overlay,
 		Paint.LABEL,
