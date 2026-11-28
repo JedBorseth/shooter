@@ -8,8 +8,10 @@ extends Control
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
-## Pixels from the screen centre to each marker.
-const RING := 140.0
+## Pixels from the screen centre to each marker, across and up or down: a
+## flat ring, so a warning straight ahead (up) sits under the points popup
+## over the crosshair rather than on it.
+const RING := Vector2(140.0, 80.0)
 ## Grenades farther than this (metres) show nothing: the frag's blast radius.
 const RANGE := 8.0
 

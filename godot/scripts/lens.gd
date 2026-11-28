@@ -135,6 +135,10 @@ func _process(delta: float) -> void:
 		aim = player.ads_amount()
 		# A killcam shows the killer's view in full colour, alive and well.
 		var killcam: bool = player.has_method("in_killcam") and player.in_killcam()
+		# Watching a teammate after death (Search and Destroy) shows their
+		# live fight in full colour too, as Black Ops 3's spectating does:
+		# the grade is for the death beat, not the round after it.
+		killcam = killcam or _watching(player)
 		alive = player.is_alive() or killcam
 		if killcam:
 			target = 1.0
@@ -232,6 +236,15 @@ func _find_sun() -> bool:
 			_sun_flare = Looks.flare_for(scene)
 			break
 	return _sun_flare > 0.0
+
+
+## Whether the dead player watches through a camera other than their own
+## (a teammate's view).
+func _watching(player: Node) -> bool:
+	if not player.has_method("is_alive") or player.is_alive():
+		return false
+	var camera := get_viewport().get_camera_3d()
+	return camera != null and camera != player.get_node_or_null(^"Camera")
 
 
 func _local_player() -> Node:

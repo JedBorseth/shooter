@@ -333,7 +333,10 @@ func _killed_top() -> float:
 ## Notices under the minimap, newest at the bottom: a short line in the
 ## side's colour on a faint plate with a tab in that colour.
 func _draw_notices() -> void:
-	var y := NOTICE_TOP
+	# Under the mode's own rows: S&D's alive counts and its side line, and
+	# CTF's two flag rows, reach lower than the others.
+	var mode := String(client.match_info().get("mode", ""))
+	var y := NOTICE_TOP + float({"snd": 32.0, "ctf": 12.0}.get(mode, 0.0))
 	for notice in _notices:
 		var age: float = notice.age
 		var alpha := clampf(age / 0.15, 0.0, 1.0) * clampf((NOTICE_SECONDS - age) / 0.4, 0.0, 1.0)

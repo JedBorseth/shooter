@@ -100,7 +100,7 @@ func _draw() -> void:
 func _line_plate(x: float, baseline: float, text: String, text_size: int, spacing: float) -> void:
 	var width := Paint.text_width(Paint.LABEL, text, text_size, spacing)
 	var rect := Rect2(x - 6.0, baseline - text_size - 1.0, width + 12.0, text_size + 7.0)
-	var colour := Color(0, 0, 0, 0.42)
+	var colour := Color(0, 0, 0, 0.56)
 	draw_rect(rect, colour)
 	Paint.fade(self, Rect2(rect.end.x, rect.position.y, 18.0, rect.size.y), colour)
 

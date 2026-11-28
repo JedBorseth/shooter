@@ -1,7 +1,8 @@
 extends Control
 ## Score feedback, as Black Ops 3 gives it: a "+N" just above the crosshair
 ## that adds up points coming within a moment of each other and pops with each,
-## the bonus awards under it in small type, and medals along the top centre,
+## the bonus awards under it in small type (an award with a medal has only
+## the medal), and medals along the top centre,
 ## each our own emblem with its name under it, up to three side by side, the
 ## newest arriving on the right with a chime. Outside a match, your own score
 ## sits bottom left. Driven by FpsPlayer.scored; the rules live in Rust
@@ -97,7 +98,8 @@ func add_award(points: int, label: String, medal: bool) -> void:
 	_total += points
 	_total_left = TOTAL_HOLD + TOTAL_FADE
 	_total_pop = 1.0
-	if label != "Kill":
+	# A medal names its own event: no bonus line repeating it under the total.
+	if label != "Kill" and not medal:
 		_lines.push_front({"text": label, "points": points, "age": 0.0})
 		if _lines.size() > MAX_LINES:
 			_lines.resize(MAX_LINES)
