@@ -45,6 +45,7 @@ gradient = SubResource("Gradient_fade")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_dust"]
 resource_local_to_scene = true
+particle_flag_align_y = true
 color = Color(0.55, 0.52, 0.48, 0.55)
 color_ramp = SubResource("Texture_fade")
 direction = Vector3(0, 1, 0)
@@ -56,8 +57,8 @@ damping_min = 1.5
 damping_max = 2.5
 angle_min = -180.0
 angle_max = 180.0
-scale_min = 0.8
-scale_max = 1.4
+scale_min = 0.6
+scale_max = 1.5
 scale_curve = SubResource("Texture_grow")
 anim_speed_min = 0.5
 anim_speed_max = 0.9
@@ -137,6 +138,7 @@ colors = PackedColorArray(1, 1, 1, 0.95, 1, 1, 1, 0.85, 1, 1, 1, 0.35, 1, 1, 1, 
 gradient = SubResource("Gradient_mist_fade")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_mist"]
+particle_flag_align_y = true
 color = Color(0.55, 0.045, 0.035, 1)
 color_ramp = SubResource("Texture_mist_fade")
 direction = Vector3(0, -1, 0)
