@@ -122,7 +122,7 @@ impl INode3D for IronSights {
         let meshes = SIGHT_MESHES.with(|cache| cache.borrow().get(&key).cloned());
         let (mesh, body) = meshes.unwrap_or_else(|| {
             let parts = style.build(&params);
-            let mut mesh = parts_mesh(&parts, self.glow, world, self.size);
+            let mut mesh = parts_mesh(&parts, self.glow, style.glow_energy(), world, self.size);
             let mut body = body_mesh(&parts);
             if let Some(model) = style.model() {
                 let place = Transform3D::new(
@@ -176,6 +176,17 @@ enum Style {
 }
 
 impl Style {
+    /// How far the glow (tritium, fibre, or reticle) is lit past its colour.
+    /// A red dot or chevron lit as hard as a tritium vial burns to white
+    /// through the tonemap and bloom; lit less it stays red, with a halo.
+    fn glow_energy(self) -> f32 {
+        match self {
+            Self::Reflex => 3.6,
+            Self::Acog => 2.8,
+            _ => 6.0,
+        }
+    }
+
     fn from_key(key: &str) -> Option<Self> {
         Some(match key {
             "ar" => Self::Ar,
@@ -592,12 +603,13 @@ fn reflex(p: &Params, parts: &mut Parts) {
         36,
     );
     // The dot sits just behind the lens, so the tint never dims it. About
-    // 6 px across aimed: big enough to find, small enough to stay crisp
-    // through the bloom.
+    // 10 px across aimed at 1080p (a 2 MOA dot as Call of Duty draws it):
+    // big enough to find, and lit only so far that it stays red through
+    // the bloom rather than burning to white.
     parts.glow.cylinder(
         Axis::Z,
         Vector2::ZERO,
-        0.00032 * s,
+        0.0005 * s,
         zr - 0.0056 * s,
         zr - 0.0054 * s,
         16,
@@ -941,7 +953,13 @@ fn triangulate(polygon: &[Vector2]) -> Vec<[usize; 3]> {
 /// One mesh with a surface per material. The materials are standard ones, which
 /// the weapon view converts for first-person drawing; the lens is a shader of its
 /// own because it is transparent.
-fn parts_mesh(parts: &Parts, glow: Color, world: bool, size: f32) -> Gd<ArrayMesh> {
+fn parts_mesh(
+    parts: &Parts,
+    glow: Color,
+    glow_energy: f32,
+    world: bool,
+    size: f32,
+) -> Gd<ArrayMesh> {
     let mut mesh = ArrayMesh::new_gd();
     let mut add = |builder: &Builder, material: Gd<godot::classes::Material>| {
         if builder.vertices.is_empty() {
@@ -959,7 +977,7 @@ fn parts_mesh(parts: &Parts, glow: Color, world: bool, size: f32) -> Gd<ArrayMes
         lit.set_albedo(glow);
         lit.set_feature(godot::classes::base_material_3d::Feature::EMISSION, true);
         lit.set_emission(glow);
-        lit.set_emission_energy_multiplier(6.0);
+        lit.set_emission_energy_multiplier(glow_energy);
         add(&parts.glow, lit.upcast());
     }
 

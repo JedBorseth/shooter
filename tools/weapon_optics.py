@@ -225,13 +225,18 @@ BUILDERS = {"acog": acog, "reddot": reddot}
 # Finishes (tools/weapon_finish.py): hard-anodised housings, rubber eye
 # guard and buttons, steel bolts and screws.
 # Their edges are modelled round already, so wear is looked for over a
-# wider band; and their texels are four times as dense as a rifle's, so the
-# scratches are cut shallower.
+# moderate band (one as wide as a ring's own rounding, 3.5 mm, wore the
+# whole ring into speckle; 1.2 mm left no wear at all); and their texels are four times as dense as a rifle's, so
+# the scratches are cut shallower.
 FINISH = {
     "default": "aluminium",
     "unwrap": True,
-    "wear_radius": 0.0035,
+    "wear_radius": 0.002,
     "scratch_depth": 0.06,
+    # Rounded housings unwrap into many islands: their seams must not read
+    # as chips (weapon_finish `_refill_seams`), and islands sit apart.
+    "seam_fix": True,
+    "uv_margin": 6.0,
     "zones": [
         {"zone": "rubber", "parts": ["rubber"]},
         {"zone": "steel", "parts": ["bolt"]},

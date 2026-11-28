@@ -8,12 +8,19 @@ along -Z, the edge down (-Y), and +X to the right (Godot axes, after the glTF
 Y-up conversion). `rust/game/src/knife.rs` loads it and puts it in the support
 hand.
 
-The blade is a lofted cross-section (spine, flat, grind line, edge) along a
-clip-point profile, split into the blackened flats, spine, and grind and a narrow
-bright sharpened bevel. The grip is a lofted oval with finger grooves, wrapped in
-stacked leather washers with thin dark spacers, between a steel guard with
-rounded quillons and a pommel nut. Everything is built here with bmesh, so
-the knife has no source files to fetch.
+The blade is a lofted cross-section (spine, fuller, flat, grind line, edge)
+along a clip-point profile smoothed through its stations, in a blackened coat
+with a narrow honed bevel along the edge and a maker's mark etched through
+the coat on the ricasso. The grip is a lofted oval with finger grooves, built
+of stacked leather washers (a ridge and a groove each) between dark fibre
+spacers, a steel guard with rounded quillons, and a pommel nut.
+
+Every face carries a finish zone (tools/weapon_finish.py FINISHES), and
+tools/weapon_equipment.py bakes and composes the maps on fresh UVs: edge wear
+through the coat, grime in the washers' grooves, honing lines, and the mark.
+It writes `knife_albedo/normal/orm.png` and `knife.tres` beside the glb.
+Everything is built here with bmesh, so the knife has no source files to
+fetch, and a rebuild writes the same bytes.
 """
 
 from __future__ import annotations
@@ -21,9 +28,14 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import sys
+
 import bmesh
 import bpy
 from mathutils import Vector
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import weapon_equipment  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "godot" / "assets" / "weapons" / "knife" / "knife.glb"
@@ -34,7 +46,7 @@ OUT = ROOT / "godot" / "assets" / "weapons" / "knife" / "knife.glb"
 # height, grind-line height, edge height, half-thickness at the spine.
 BLADE_BASE = 0.059
 # Height of the bright sharpened (secondary) bevel above the edge, metres.
-SECONDARY_BEVEL = 0.0022
+SECONDARY_BEVEL = 0.0026
 BLADE = [
     (0.000, 0.0125, -0.0035, -0.0165, 0.0026),
     (0.010, 0.0125, -0.0040, -0.0170, 0.0026),
@@ -63,88 +75,122 @@ GRIP = [
     (0.108, 0.0120, 0.0150),
 ]
 GRIP_FRONT = -0.0535
+# The washers: one ridge and groove every WASHER metres, the groove this deep.
+WASHER = 0.0062
+WASHER_GROOVE = 0.00035
+# The fuller (a groove along each flat): where it runs along the blade, its
+# top and bottom as shares of the way from the spine down to the grind line,
+# and its depth either side.
+FULLER = (0.03, 0.105)
+FULLER_BAND = (0.2, 0.58)
+FULLER_DEPTH = 0.0009
+TEXTURE_SIZE = 1024
+FINISH = {
+    "wear_radius": 0.0012,
+    "scratch_depth": 0.2,
+    # Etched through the coat on the ricasso, both sides.
+    "markings": [
+        {"text": "FIGHTING\nUTILITY", "at": (BLADE_BASE + 0.016, 0.0035), "side": "+x", "size": 0.0022},
+        {"text": "1095 CS", "at": (BLADE_BASE + 0.016, 0.0035), "side": "-x", "size": 0.0024},
+    ],
+}
 
 
-def material(name: str, color, metallic: float, roughness: float) -> bpy.types.Material:
-    mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (*color, 1.0)
-    bsdf.inputs["Metallic"].default_value = metallic
-    bsdf.inputs["Roughness"].default_value = roughness
-    return mat
 
 
-def mesh_object(name: str, bm: bmesh.types.BMesh, mat: bpy.types.Material, smooth: bool):
+def catmull_rom(stations, steps: int):
+    """Resamples a list of tuples along a Catmull-Rom curve through them,
+    `steps` points per span, so the clip's spine and the grip's swells are
+    smooth instead of a few straight runs."""
+    out = []
+    n = len(stations)
+    for i in range(n - 1):
+        p0, p1, p2, p3 = (stations[max(i - 1, 0)], stations[i], stations[i + 1], stations[min(i + 2, n - 1)])
+        for k in range(steps):
+            t = k / steps
+            out.append(
+                tuple(
+                    0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t ** 3)
+                    for a, b, c, d in zip(p0, p1, p2, p3)
+                )
+            )
+    out.append(stations[-1])
+    return out
+
+
+def mesh_object(name: str, bm: bmesh.types.BMesh, sharp_angle: float = 35.0):
+    """Links the bmesh as an object on the painted material, smooth shaded
+    with edges sharper than `sharp_angle` degrees kept hard."""
     me = bpy.data.meshes.new(name)
     # Caps are n-gons; tangents need triangles and quads.
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.normal_update()
-    # Planar UVs along the knife: no textures use them, but the engine needs
-    # them to build tangents (without UVs they come out degenerate, and the
-    # surface shades with noise).
-    uv = bm.loops.layers.uv.new("UVMap")
-    for face in bm.faces:
-        n = face.normal
-        for loop in face.loops:
-            co = loop.vert.co
-            across = co.x if abs(n.x) < 0.7 else co.z
-            loop[uv].uv = (co.y * 8.0, across * 8.0 + (co.z if abs(n.x) < 0.7 else 0.0) * 4.0)
     bm.to_mesh(me)
     bm.free()
     for poly in me.polygons:
-        poly.use_smooth = smooth
-    me.materials.append(mat)
+        poly.use_smooth = True
+    me.set_sharp_from_angle(angle=math.radians(sharp_angle))
+    me.materials.append(weapon_equipment.material())
     obj = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(obj)
     return obj
 
 
-def blade(coated, steel):
-    """One closed mesh: the flats, spine, and primary grind in `coated`, and
-    only the narrow secondary bevel along the edge in `steel` (material slot
-    1). A bright bevel as wide as the grind caught the sun like a mirror and
-    bloomed white in first person; real blackened knives show bare steel
-    only on the last couple of millimetres."""
+def _ramp(d: float, lo: float, hi: float, run: float) -> float:
+    """1 inside [lo, hi], easing to 0 over `run` past each end."""
+    if d < lo:
+        return max(0.0, 1.0 - (lo - d) / run)
+    if d > hi:
+        return max(0.0, 1.0 - (d - hi) / run)
+    return 1.0
+
+
+def blade():
+    """One closed mesh. The cross-section, round from the spine: the spine,
+    the fuller on the right flat, the flat down to the grind line, the
+    primary grind, the honed secondary bevel to a 0.3 mm edge, and back up
+    the left side. The fuller fades in and out (a ground groove ends in a
+    run-out). Only the secondary bevel is honed steel; the rest is coated."""
     bm = bmesh.new()
     rings = []
-    for d, spine, grind, edge, t in BLADE:
+    for d, spine, grind, edge, t in catmull_rom(BLADE, 4):
         y = BLADE_BASE + d
-        # A flat grind: full thickness down to the grind line, a coated
-        # primary bevel, then a short sharpened bevel to a 0.3 mm edge.
-        secondary = edge + SECONDARY_BEVEL
-        st = max(t * SECONDARY_BEVEL / max(grind - edge, 1e-4), 0.00045)
-        rings.append(
-            [
-                bm.verts.new((-t, y, spine)),
-                bm.verts.new((t, y, spine)),
-                bm.verts.new((t, y, grind)),
-                bm.verts.new((st, y, secondary)),
-                bm.verts.new((0.00015, y, edge)),
-                bm.verts.new((-0.00015, y, edge)),
-                bm.verts.new((-st, y, secondary)),
-                bm.verts.new((-t, y, grind)),
-            ]
-        )
-    sharpened = {3, 4, 5}
+        # Near the point the bevel would rise past the grind line (and the
+        # spine): it stays below both.
+        secondary = min(edge + SECONDARY_BEVEL, edge + (grind - edge) * 0.6, edge + (spine - edge) * 0.3)
+        st = min(max(t * (secondary - edge) / max(grind - edge, 1e-4), 0.00045), t * 0.9)
+        span = spine - grind
+        ft, fb = spine - span * FULLER_BAND[0], spine - span * FULLER_BAND[1]
+        fd = FULLER_DEPTH * _ramp(d, *FULLER, 0.008) * min(1.0, t / 0.0022)
+        # The fuller's floor is rounded: its walls take a quarter of its width.
+        q = (ft - fb) * 0.25
+        right = [(t, ft), (t - fd, ft - q), (t - fd, fb + q), (t, fb)]
+        ring = [(-t, spine), (t, spine), *right, (t, grind), (st, secondary), (0.00015, edge),
+                (-0.00015, edge), (-st, secondary), (-t, grind), *[(-x, z) for x, z in reversed(right)]]
+        rings.append([bm.verts.new((x, y, z)) for x, z in ring])
+    zone = weapon_equipment.zone_layer(bm)
+    coat = weapon_equipment.FINISH_IDS["coating"]
+    honed = weapon_equipment.FINISH_IDS["honed"]
+    # Faces between ring points 7-8, 8-9, and 9-10: the honed bevel.
+    sharpened = {7, 8, 9}
     sides = len(rings[0])
     for a, b in zip(rings, rings[1:]):
         for p in range(sides):
             q = (p + 1) % sides
             face = bm.faces.new((a[p], a[q], b[q], b[p]))
-            face.material_index = 1 if p in sharpened else 0
-    # Close the tip and the ricasso face against the guard.
-    bm.faces.new(tuple(rings[-1]))
-    bm.faces.new(tuple(reversed(rings[0])))
+            face[zone] = honed if p in sharpened else coat
+    for cap in (bm.faces.new(tuple(rings[-1])), bm.faces.new(tuple(reversed(rings[0])))):
+        cap[zone] = coat
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-7)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    obj = mesh_object("Blade", bm, coated, smooth=False)
-    obj.data.materials.append(steel)
+    return mesh_object("Blade", bm, sharp_angle=25.0)
 
 
-def loft_oval(name, stations, y0, direction, mat, sides=16):
-    """A closed loft of ovals (distance, half-width, half-height) along Y."""
-    bm = bmesh.new()
+def loft_oval(bm, stations, y0, direction, zone_id, sides=24):
+    """A closed loft of ovals (distance, half-width, half-height) along Y
+    into `bm`, every face in zone `zone_id`."""
+    zone = weapon_equipment.zone_layer(bm)
     rings = []
     for d, w, h in stations:
         y = y0 + direction * d
@@ -153,43 +199,68 @@ def loft_oval(name, stations, y0, direction, mat, sides=16):
             a = 2 * math.pi * k / sides
             ring.append(bm.verts.new((w * math.cos(a), y, h * math.sin(a))))
         rings.append(ring)
+    faces = []
     for r0, r1 in zip(rings, rings[1:]):
         for k in range(sides):
             n = (k + 1) % sides
             face = (r0[k], r0[n], r1[n], r1[k])
-            bm.faces.new(face if direction < 0 else tuple(reversed(face)))
+            faces.append(bm.faces.new(face if direction < 0 else tuple(reversed(face))))
     for ring, flip in ((rings[0], direction > 0), (rings[-1], direction < 0)):
-        bm.faces.new(tuple(reversed(ring)) if flip else tuple(ring))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return mesh_object(name, bm, mat, smooth=True)
+        faces.append(bm.faces.new(tuple(reversed(ring)) if flip else tuple(ring)))
+    for face in faces:
+        face[zone] = zone_id
+    return faces
 
 
-def grip(leather, spacer):
-    loft_oval("Grip", GRIP, GRIP_FRONT, 1.0, leather, sides=20)
-    # Thin dark spacers between the stacked leather washers.
-    for i, d in enumerate((0.006, 0.030, 0.055, 0.080, 0.102)):
-        w, h = 0.0, 0.0
-        for (d0, w0, h0), (d1, w1, h1) in zip(GRIP, GRIP[1:]):
-            if d0 <= d <= d1:
-                u = (d - d0) / (d1 - d0)
-                w, h = w0 + (w1 - w0) * u, h0 + (h1 - h0) * u
+def _grip_size(d: float):
+    smooth = catmull_rom(GRIP, 8)
+    for (d0, w0, h0), (d1, w1, h1) in zip(smooth, smooth[1:]):
+        if d0 <= d <= d1:
+            u = (d - d0) / max(d1 - d0, 1e-9)
+            return w0 + (w1 - w0) * u, h0 + (h1 - h0) * u
+    return smooth[-1][1], smooth[-1][2]
+
+
+SPACERS = ((0.0, 0.0028), (GRIP[-1][0] - 0.0028, GRIP[-1][0]))
+
+
+def grip():
+    """The stacked washers: the grip's outline, with a rounded groove
+    between washers, from the front spacer to the back one."""
+    bm = bmesh.new()
+    start, end = SPACERS[0][1], SPACERS[1][0]
+    stations = []
+    count = int(round((end - start) / 0.0006))
+    for i in range(count + 1):
+        d = start + (end - start) * i / count
+        phase = ((d - start) / WASHER) % 1.0
+        groove = WASHER_GROOVE * max(0.0, 1.0 - abs(phase - 0.5) / 0.12) ** 2 if 0.38 < phase < 0.62 else 0.0
+        w, h = _grip_size(d)
+        stations.append((d, w - groove, h - groove))
+    loft_oval(bm, stations, GRIP_FRONT, 1.0, weapon_equipment.FINISH_IDS["leather"], sides=28)
+    # The spacers: dark fibre discs a hair proud of the leather.
+    for lo, hi in SPACERS:
+        w0, h0 = _grip_size(lo)
+        w1, h1 = _grip_size(hi)
         loft_oval(
-            f"Spacer{i}",
-            [(0.0, w + 0.0006, h + 0.0006), (0.0018, w + 0.0006, h + 0.0006)],
-            GRIP_FRONT + d,
+            bm,
+            [(lo, w0 + 0.0003, h0 + 0.0003), (hi, w1 + 0.0003, h1 + 0.0003)],
+            GRIP_FRONT,
             1.0,
-            spacer,
-            sides=20,
+            weapon_equipment.FINISH_IDS["rubber"],
+            sides=28,
         )
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return mesh_object("Grip", bm, sharp_angle=50.0)
 
 
-def guard(steel_dark):
-    """A flat steel guard with rounded quillons, wider below than above."""
+def guard():
+    """A flat steel guard with rounded quillons, wider below than above, its
+    edges bevelled."""
     bm = bmesh.new()
     outline = []
-    # Half-outline in X-Z (thin in Y): up to the top quillon, down past the edge.
-    for k in range(24):
-        a = 2 * math.pi * k / 24
+    for k in range(40):
+        a = 2 * math.pi * k / 40
         x = 0.0065 * math.cos(a)
         z = (0.017 if math.sin(a) > 0 else 0.023) * math.sin(a)
         outline.append((x, z))
@@ -203,59 +274,39 @@ def guard(steel_dark):
     bm.faces.new(tuple(front))
     bm.faces.new(tuple(reversed(back)))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    obj = mesh_object("Guard", bm, steel_dark, smooth=True)
-    bevel = obj.modifiers.new("Bevel", "BEVEL")
-    bevel.width = 0.0012
-    bevel.segments = 2
-    bevel.limit_method = "ANGLE"
+    rims = [e for e in bm.edges if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > math.radians(60)]
+    bmesh.ops.bevel(bm, geom=rims, offset=0.0009, segments=2, affect="EDGES", profile=0.5)
+    weapon_equipment.set_zone(bm, bm.faces, "coating")
+    return mesh_object("Guard", bm)
 
 
-def pommel(steel_dark):
+def pommel():
+    bm = bmesh.new()
     loft_oval(
-        "Pommel",
-        [
-            (0.0, 0.0124, 0.0153),
-            (0.004, 0.0130, 0.0160),
-            (0.010, 0.0122, 0.0150),
-            (0.013, 0.0095, 0.0115),
-            (0.0145, 0.004, 0.005),
-        ],
+        bm,
+        catmull_rom(
+            [
+                (0.0, 0.0124, 0.0153),
+                (0.004, 0.0130, 0.0160),
+                (0.010, 0.0122, 0.0150),
+                (0.013, 0.0095, 0.0115),
+                (0.0145, 0.004, 0.005),
+            ],
+            3,
+        ),
         GRIP_FRONT + GRIP[-1][0],
         1.0,
-        steel_dark,
-        sides=20,
+        weapon_equipment.FINISH_IDS["coating"],
+        sides=28,
     )
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return mesh_object("Pommel", bm, sharp_angle=50.0)
 
 
 def main() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    # Colours are linear (glTF base colours), not sRGB.
-    coated = material("KnifeCoated", (0.008, 0.008, 0.009), 0.55, 0.5)
-    # The sharpened edge: honed, not polished, so it glints without blooming.
-    steel = material("KnifeEdge", (0.42, 0.43, 0.45), 1.0, 0.5)
-    leather = material("KnifeLeather", (0.073, 0.03, 0.012), 0.0, 0.72)
-    spacer = material("KnifeSpacer", (0.003, 0.003, 0.0035), 0.0, 0.85)
-    dark = material("KnifeSteel", (0.012, 0.012, 0.013), 0.85, 0.4)
-    blade(coated, steel)
-    grip(leather, spacer)
-    guard(dark)
-    pommel(dark)
-
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.export_scene.gltf(
-        filepath=str(OUT),
-        export_format="GLB",
-        use_selection=True,
-        export_materials="EXPORT",
-        export_tangents=True,
-        export_yup=True,
-        export_apply=True,
-        export_normals=True,
-        export_animations=False,
-        export_skins=False,
-        export_morph=False,
-    )
+    objects = {"Body": blade(), "Grip": grip(), "Guard": guard(), "Pommel": pommel()}
+    weapon_equipment.paint_and_export(objects, OUT.parent, "knife", FINISH, TEXTURE_SIZE)
     print(f"[knife] wrote {OUT.relative_to(ROOT)}", flush=True)
 
 

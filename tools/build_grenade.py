@@ -20,6 +20,13 @@ steel sphere with its yellow filler band and the fuse well's collar), `Fuse`
 (the steel fuse head), `Spoon` (the safety lever, pressed along the body),
 and `Pin` (the pull ring and its split pin through the fuse head). Everything
 is built here with bmesh, so the grenade has no source files to fetch.
+
+Every face carries a finish zone (tools/weapon_finish.py FINISHES), and
+tools/weapon_equipment.py bakes and composes each grenade's maps on fresh UVs:
+olive enamel chipped to steel on edges, grime round the fuse, the stencilled
+name and lot number, and a dull zinc fuse. It writes
+`<kind>_albedo/normal/orm.png` and `<kind>.tres` beside each glb, and a
+rebuild writes the same bytes.
 """
 
 from __future__ import annotations
@@ -27,9 +34,14 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import sys
+
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import weapon_equipment  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "godot" / "assets" / "equipment"
@@ -44,38 +56,44 @@ BODY_RADIUS = 0.032
 FUSE_RADIUS = 0.0095
 FUSE_BASE = 0.0285
 FUSE_TOP = 0.046
+# The frag's yellow band, in degrees of latitude.
+BAND = (46.0, 52.0)
 # The spoon lies on this side of the body (+X), the ring on the other (-X).
 
 
-def material(name: str, color, metallic: float, roughness: float) -> bpy.types.Material:
-    mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (*color, 1.0)
-    bsdf.inputs["Metallic"].default_value = metallic
-    bsdf.inputs["Roughness"].default_value = roughness
-    return mat
+# Painted objects of the grenade being built, by name.
+OBJECTS: dict = {}
+TEXTURE_SIZE = 1024
 
 
-def finish(name: str, bm: bmesh.types.BMesh, mats, smooth: bool = True):
-    """Links `bm` as an object, with spherical UVs (no textures use them, but
-    the engine needs UVs to build tangents)."""
+def finish(name: str, bm: bmesh.types.BMesh, zones, smooth: bool = True, convex: bool = False):
+    """Links `bm` as an object on the painted material, each face in the
+    zone its material index picks from `zones` (FINISHES names), smooth
+    shaded with edges sharper than 40 degrees kept hard."""
+    # Faces point out: the painted material culls back faces (the old
+    # flat colours were double-sided and hid lathes wound inward). `lathe`
+    # turns its faces out itself (`convex`): Blender's guess goes wrong where
+    # the frag's collar meets the sphere.
+    if not convex:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.normal_update()
-    uv = bm.loops.layers.uv.new("UVMap")
+    layer = weapon_equipment.zone_layer(bm)
     for face in bm.faces:
-        for loop in face.loops:
-            co = loop.vert.co
-            loop[uv].uv = (math.atan2(co.y, co.x) / math.tau + 0.5, co.z * 10.0)
+        face[layer] = weapon_equipment.FINISH_IDS[zones[min(face.material_index, len(zones) - 1)]]
+        face.material_index = 0
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
     for poly in me.polygons:
-        poly.use_smooth = smooth
-    for mat in mats:
-        me.materials.append(mat)
+        poly.use_smooth = True
+    # Caps and steps stay hard; a lathe's sides and the spoon's crown shade
+    # round (`smooth` False keeps more of the spoon's folds hard).
+    me.set_sharp_from_angle(angle=math.radians(40.0 if smooth else 30.0))
+    me.materials.append(weapon_equipment.material())
     obj = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(obj)
+    OBJECTS[name] = obj
     return obj
 
 
@@ -100,27 +118,39 @@ def lathe(bm, profile, sides, material_index=0, z_offset=0.0):
             ]
         )
     faces = []
-    for a, b in zip(rings, rings[1:]):
+    for i, (a, b) in enumerate(zip(rings, rings[1:])):
         if len(a) == 1 and len(b) == 1:
             continue
+        # The profile runs bottom to top round the outside, so its outward
+        # normal is its direction turned clockwise.
+        (r0, z0), (r1, z1) = profile[i], profile[i + 1]
+        nr, nz = z1 - z0, -(r1 - r0)
         for k in range(sides):
             n = (k + 1) % sides
             if len(a) == 1:
-                faces.append(bm.faces.new((a[0], b[k], b[n])))
+                face = bm.faces.new((a[0], b[k], b[n]))
             elif len(b) == 1:
-                faces.append(bm.faces.new((a[k], b[0], a[n])))
+                face = bm.faces.new((a[k], b[0], a[n]))
             else:
-                faces.append(bm.faces.new((a[k], b[k], b[n], a[n])))
+                face = bm.faces.new((a[k], b[k], b[n], a[n]))
+            angle = math.tau * (k + 0.5) / sides
+            face.normal_update()
+            if face.normal.dot(Vector((nr * math.cos(angle), nr * math.sin(angle), nz))) < 0.0:
+                face.normal_flip()
+            faces.append(face)
     for f in faces:
         f.material_index = material_index
-    if len(rings[0]) > 1:
-        bm.faces.new(tuple(reversed(rings[0]))).material_index = material_index
-    if len(rings[-1]) > 1:
-        bm.faces.new(tuple(rings[-1])).material_index = material_index
+    for ring, up in ((rings[0], -1.0), (rings[-1], 1.0)):
+        if len(ring) > 1:
+            cap = bm.faces.new(tuple(ring))
+            cap.normal_update()
+            if cap.normal.z * up < 0.0:
+                cap.normal_flip()
+            cap.material_index = material_index
     return faces
 
 
-def body(olive, band, steel):
+def body():
     """The sphere, flattened a hair at the poles, with a raised collar round
     the fuse well and a yellow filler band below it."""
     bm = bmesh.new()
@@ -128,16 +158,19 @@ def body(olive, band, steel):
     steps = 28
     # From the bottom pole to where the collar starts.
     top = math.acos(FUSE_RADIUS * 1.25 / BODY_RADIUS)
-    for i in range(steps + 1):
-        a = -math.pi / 2 + (math.pi / 2 + top) * i / steps
+    # Rings exactly at the band's edges, so its edges run true round the
+    # sphere instead of stepping from face to face.
+    angles = {-math.pi / 2 + (math.pi / 2 + top) * i / steps for i in range(steps + 1)}
+    angles = sorted(angles | {math.radians(BAND[0]), math.radians(BAND[1])})
+    for a in angles:
         profile.append((BODY_RADIUS * math.cos(a), BODY_RADIUS * 0.985 * math.sin(a)))
     profile[0] = (0.0, profile[0][1])
-    lathe(bm, profile, 40, 0)
-    # Mark the band (between 45° and 55° of latitude) yellow.
+    lathe(bm, profile, 64, 0)
+    # Mark the band yellow.
     for face in bm.faces:
         c = face.calc_center_median()
-        lat = math.degrees(math.atan2(c.z, math.hypot(c.x, c.y)))
-        if 46.0 < lat < 53.0:
+        lat = math.degrees(math.atan2(c.z / 0.985, math.hypot(c.x, c.y)))
+        if BAND[0] < lat < BAND[1]:
             face.material_index = 1
     # The collar the fuse screws into.
     collar_z = BODY_RADIUS * 0.985 * math.sin(top)
@@ -149,14 +182,14 @@ def body(olive, band, steel):
             (FUSE_RADIUS * 1.15, FUSE_BASE),
             (0.0, FUSE_BASE),
         ],
-        32,
+        48,
         2,
     )
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    return finish("Body", bm, [olive, band, steel])
+    return finish("Body", bm, ["od_paint", "yellow_paint", "zinc"], convex=True)
 
 
-def fuse(steel):
+def fuse():
     """The fuse head: a squat cylinder with a shoulder, the striker housing,
     and the pin's lugs on the ring side."""
     bm = bmesh.new()
@@ -170,7 +203,7 @@ def fuse(steel):
             (FUSE_RADIUS * 0.7, FUSE_TOP),
             (0.0, FUSE_TOP),
         ],
-        28,
+        48,
         0,
     )
     # Two lugs either side of the pin hole, on the -X side.
@@ -182,10 +215,10 @@ def fuse(steel):
             @ Matrix.Diagonal((0.006, 0.0022, 0.008, 1.0)),
             verts=lug,
         )
-    return finish("Fuse", bm, [steel])
+    return finish("Fuse", bm, ["zinc"], convex=True)
 
 
-def spoon(steel, cylinder=None):
+def spoon(cylinder=None):
     """The safety lever: a strip over the fuse head and down the +X side of
     the body, curving with it (or straight down a can of `cylinder` =
     (radius, length)), slightly crowned across its width."""
@@ -201,14 +234,14 @@ def spoon(steel, cylinder=None):
     # Down the body, a millimetre off it.
     if cylinder is None:
         r = BODY_RADIUS + 0.0018
-        for i in range(12):
-            a = math.radians(62.0 - 92.0 * i / 11)
+        for i in range(24):
+            a = math.radians(62.0 - 92.0 * i / 23)
             path.append(Vector((r * math.cos(a), 0.0, r * 0.985 * math.sin(a))))
     else:
         radius, length = cylinder
         r = radius + 0.0018
-        for i in range(8):
-            path.append(Vector((r, 0.0, FUSE_BASE - 0.002 - length * 0.8 * i / 7)))
+        for i in range(12):
+            path.append(Vector((r, 0.0, FUSE_BASE - 0.002 - length * 0.8 * i / 11)))
     rings = []
     for i, p in enumerate(path):
         prev = path[max(i - 1, 0)]
@@ -236,16 +269,16 @@ def spoon(steel, cylinder=None):
     bm.faces.new(tuple(reversed(rings[0])))
     bm.faces.new(tuple(rings[-1]))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return finish("Spoon", bm, [steel], smooth=False)
+    return finish("Spoon", bm, ["od_paint"], smooth=False)
 
 
-def pin(ring_steel):
+def pin():
     """The pull ring on the -X side, standing a little off the fuse, and the
     split pin through the lugs."""
     bm = bmesh.new()
     major, minor = 0.0115, 0.0011
     centre = Vector((-FUSE_RADIUS - 0.004 - major, 0.0, FUSE_BASE + 0.010))
-    sides, segments = 8, 32
+    sides, segments = 12, 48
     rings = []
     for i in range(segments):
         u = math.tau * i / segments
@@ -270,7 +303,7 @@ def pin(ring_steel):
     rod = bmesh.ops.create_cone(
         bm,
         cap_ends=True,
-        segments=8,
+        segments=12,
         radius1=0.0008,
         radius2=0.0008,
         depth=0.014,
@@ -282,10 +315,10 @@ def pin(ring_steel):
         verts=rod,
     )
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return finish("Pin", bm, [ring_steel])
+    return finish("Pin", bm, ["ring"])
 
 
-def can(name, radius, length, shell, band, lid, band_at, vents):
+def can(name, radius, length, zones, band_at, vents):
     """A cylindrical grenade body from the fuse's base down: chamfered ends,
     a coloured band `band_at` (fraction from the top), and `vents` rows of
     round ports (flashbang) or a ring of holes in the lid (smoke), modelled
@@ -303,7 +336,7 @@ def can(name, radius, length, shell, band, lid, band_at, vents):
         (FUSE_RADIUS * 1.05, top),
         (0.0, top),
     ]
-    lathe(bm, profile, 36, 0)
+    lathe(bm, profile, 64, 0)
     for face in bm.faces:
         cz = face.calc_center_median().z
         from_top = (top - cz) / length
@@ -312,82 +345,88 @@ def can(name, radius, length, shell, band, lid, band_at, vents):
         if face.normal.z > 0.9:
             face.material_index = 2
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    finish(name, bm, [shell, band, lid])
+    finish(name, bm, zones, convex=True)
     if vents:
-        # Ports: short dark cylinders set into the wall.
+        # Ports: dark discs set into the wall.
         holes = bmesh.new()
         for row in range(vents):
             z = top - length * (0.3 + 0.45 * row / max(vents - 1, 1))
             for k in range(8):
                 a = math.tau * (k + 0.5 * row) / 8
                 port = bmesh.ops.create_cone(
-                    holes, cap_ends=True, segments=10, radius1=0.0033, radius2=0.0033, depth=0.002
+                    holes, cap_ends=True, segments=24, radius1=0.0033, radius2=0.0033, depth=0.002
                 )["verts"]
+                # Mostly sunk into the wall, standing 0.15 mm proud: a dark
+                # disc flush with the tube reads as the port's hole.
+                sunk = radius - 0.00085
                 m = (
-                    Matrix.Translation((radius * math.cos(a), radius * math.sin(a), z))
+                    Matrix.Translation((sunk * math.cos(a), sunk * math.sin(a), z))
                     @ Matrix.Rotation(a, 4, "Z")
                     @ Matrix.Rotation(math.pi / 2, 4, "Y")
                 )
                 bmesh.ops.transform(holes, matrix=m, verts=port)
         bmesh.ops.recalc_face_normals(holes, faces=holes.faces)
-        finish(name + "Ports", holes, [lid])
+        finish(name + "Ports", holes, ["rubber"])
 
 
-def export(out: Path) -> None:
-    out.parent.mkdir(parents=True, exist_ok=True)
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.export_scene.gltf(
-        filepath=str(out),
-        export_format="GLB",
-        use_selection=True,
-        export_materials="EXPORT",
-        export_tangents=True,
-        export_yup=True,
-        export_apply=True,
-        export_normals=True,
-        export_animations=False,
-        export_skins=False,
-        export_morph=False,
-    )
-    print(f"[grenade] wrote {out.relative_to(ROOT)}", flush=True)
+LOT_YELLOW = (0.72, 0.6, 0.16)
+STENCIL_DARK = (0.07, 0.07, 0.065)
+STENCIL_PALE = (0.78, 0.76, 0.68)
+# Each grenade's finish: its stencils (tools/weapon_finish.py `_stencils`),
+# on the side that faces the player when held (-Y), and a second set on +Y.
+FINISHES = {
+    "frag": {
+        "wear_radius": 0.0014,
+        "scratch_depth": 0.15,
+        "stencils": [
+            {"text": "GRENADE, HAND\nFRAG, DELAY", "angle": a, "z": -0.003, "size": 0.0034,
+             "color": LOT_YELLOW, "zones": ["od_paint"]}
+            for a in (-90.0, 90.0)
+        ] + [
+            {"text": "LOT 1127-04", "angle": -90.0, "z": -0.0145, "size": 0.0028,
+             "color": LOT_YELLOW, "zones": ["od_paint"]},
+        ],
+    },
+    "flash": {
+        "wear_radius": 0.0012,
+        "scratch_depth": 0.15,
+        "stencils": [
+            {"text": "FLASH-BANG\nLOT 0311-27", "angle": -112.0, "z": FUSE_BASE - FLASH_LENGTH * 0.53,
+             "size": 0.0034, "color": STENCIL_DARK, "zones": ["grey_paint"]},
+        ],
+    },
+    "smoke": {
+        "wear_radius": 0.0014,
+        "scratch_depth": 0.15,
+        "stencils": [
+            {"text": "SMOKE\nWHITE", "angle": a, "z": FUSE_BASE - SMOKE_LENGTH * 0.52, "size": 0.0085,
+             "color": STENCIL_PALE, "zones": ["od_paint"]}
+            for a in (-90.0, 90.0)
+        ] + [
+            {"text": "LOT 0918-11", "angle": -90.0, "z": FUSE_BASE - SMOKE_LENGTH * 0.82, "size": 0.0032,
+             "color": STENCIL_PALE, "zones": ["od_paint"]},
+        ],
+    },
+}
 
 
 def main() -> None:
-    # Colours are linear (glTF base colours), not sRGB.
-    def common():
+    for kind in ("frag", "flash", "smoke"):
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        steel = material("FragSteel", (0.07, 0.07, 0.065), 0.8, 0.55)
-        ring = material("FragRing", (0.3, 0.3, 0.29), 1.0, 0.38)
-        return steel, ring
-
-    steel, ring = common()
-    olive = material("FragOlive", (0.042, 0.048, 0.022), 0.15, 0.62)
-    band = material("FragBand", (0.55, 0.42, 0.02), 0.0, 0.6)
-    body(olive, band, steel)
-    fuse(steel)
-    spoon(steel)
-    pin(ring)
-    export(OUT_DIR / "frag" / "frag.glb")
-
-    steel, ring = common()
-    tube = material("FlashSteel", (0.11, 0.115, 0.1), 0.7, 0.5)
-    pale = material("FlashBand", (0.5, 0.48, 0.4), 0.0, 0.65)
-    dark = material("FlashPort", (0.01, 0.01, 0.01), 0.3, 0.8)
-    can("Body", FLASH_RADIUS, FLASH_LENGTH, tube, pale, dark, (0.06, 0.13), 2)
-    fuse(steel)
-    spoon(steel, (FLASH_RADIUS, FLASH_LENGTH))
-    pin(ring)
-    export(OUT_DIR / "flash" / "flash.glb")
-
-    steel, ring = common()
-    drab = material("SmokeOlive", (0.05, 0.058, 0.03), 0.1, 0.7)
-    white = material("SmokeTop", (0.7, 0.7, 0.66), 0.0, 0.6)
-    lid = material("SmokeLid", (0.04, 0.045, 0.025), 0.4, 0.6)
-    can("Body", SMOKE_RADIUS, SMOKE_LENGTH, drab, white, lid, (0.0, 0.16), 0)
-    fuse(steel)
-    spoon(steel, (SMOKE_RADIUS, SMOKE_LENGTH))
-    pin(ring)
-    export(OUT_DIR / "smoke" / "smoke.glb")
+        OBJECTS.clear()
+        if kind == "frag":
+            body()
+            spoon()
+        elif kind == "flash":
+            can("Body", FLASH_RADIUS, FLASH_LENGTH, ["grey_paint", "pale_paint", "zinc"], (0.06, 0.13), 2)
+            spoon((FLASH_RADIUS, FLASH_LENGTH))
+        else:
+            can("Body", SMOKE_RADIUS, SMOKE_LENGTH, ["od_paint", "pale_paint", "zinc"], (0.0, 0.16), 0)
+            spoon((SMOKE_RADIUS, SMOKE_LENGTH))
+        fuse()
+        pin()
+        weapon_equipment.paint_and_export(dict(OBJECTS), OUT_DIR / kind, kind, FINISHES[kind], TEXTURE_SIZE)
+        print(f"[grenade] wrote {kind}", flush=True)
 
 
 main()

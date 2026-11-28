@@ -1445,7 +1445,9 @@ impl WeaponView {
             let (style, glow) = if acog {
                 ("acog", Color::from_rgba(1.0, 0.25, 0.1, 1.0))
             } else {
-                ("reflex", Color::from_rgba(1.0, 0.12, 0.06, 1.0))
+                // A deep red: the dot is lit only a little past its colour
+                // (sights.rs `glow_energy`), so it must start red to stay red.
+                ("reflex", Color::from_rgba(1.0, 0.05, 0.03, 1.0))
             };
             let mut sights = IronSights::optic(style, z, base, size, glow);
             sights.set_name("Optic");

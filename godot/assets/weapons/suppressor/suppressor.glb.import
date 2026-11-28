@@ -55,11 +55,11 @@ _subresources={
 },
 "Optics": {
 "use_external/enabled": true,
-"use_external/fallback_path": "res://assets/weapons/shared/optics.tres",
 "use_external/path": "res://assets/weapons/shared/optics.tres"
 },
 "Weapon": {
 "use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/suppressor/suppressor.tres",
 "use_external/path": "res://assets/weapons/suppressor/suppressor.tres"
 }
 }

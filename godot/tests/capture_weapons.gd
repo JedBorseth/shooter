@@ -5,7 +5,7 @@ extends SceneTree
 ## Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_weapons.gd
-## Optional: MAP (main, the default), WEAPONS (for example
+## Optional: MAP (main, the default, or breakwater), WEAPONS (for example
 ## `m4,ak47+reddot`), and PARTS (`first,third,racks`, default all three).
 
 const WEAPONS := [
@@ -31,6 +31,12 @@ const WEAPONS := [
 ]
 const MAPS := {
 	"main": "res://scenes/main.tscn",
+	"breakwater": "res://scenes/breakwater.tscn",
+}
+## Where the player stands on each map ([feet, yaw]); maps not listed use
+## their own spawn. Breakwater's yard: open sky, sun from the side.
+const SPOTS := {
+	"breakwater": [Vector3(-37, 0.05, 3), -PI / 2],
 }
 
 var _out := OS.get_environment("CAPTURE_DIR")
@@ -56,7 +62,11 @@ func _run() -> void:
 		if node.name == "Sentry":
 			node.process_mode = Node.PROCESS_MODE_DISABLED
 	var player := level.get_node("Player") as FpsPlayer
-	player.set_look(0.0, -0.04)
+	var yaw := 0.0
+	if SPOTS.has(_map):
+		player.global_position = SPOTS[_map][0]
+		yaw = SPOTS[_map][1]
+	player.set_look(yaw, -0.04)
 	_hide_legend()
 	await _sixtieths(60)
 	var weapons: Array = WEAPONS
@@ -105,11 +115,11 @@ func _first_person(player: FpsPlayer, weapon: String) -> void:
 	# Mid-reload: the magazine out, or a round going in. Fire a few rounds
 	# first, so there is something to reload.
 	Input.action_press("fire")
-	# The first shot's muzzle flash: it lasts 0.05 s (three sixtieths), so
-	# the frame is taken one sixtieth after the press.
-	await _sixtieths(1)
+	# The first shot, inside its 0.05 s muzzle flash (three sixtieths); the
+	# smoke puff shows from the second.
+	await _sixtieths(2)
 	await _shot("%s_0fire" % tag)
-	await _sixtieths(19)
+	await _sixtieths(18)
 	Input.action_release("fire")
 	await _sixtieths(40)
 	await _tap("reload")

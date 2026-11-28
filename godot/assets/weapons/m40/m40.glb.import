@@ -57,8 +57,12 @@ _subresources={
 },
 "Optics": {
 "use_external/enabled": true,
-"use_external/fallback_path": "res://assets/weapons/shared/optics.tres",
 "use_external/path": "res://assets/weapons/shared/optics.tres"
+},
+"Scope": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/m40/m40_scope.tres",
+"use_external/path": "res://assets/weapons/m40/m40_scope.tres"
 },
 "Weapon": {
 "use_external/enabled": true,
