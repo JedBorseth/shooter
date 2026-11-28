@@ -1604,7 +1604,20 @@ def weathering(side: Side):
             if abs(a - PI / 2) < 0.45:
                 continue
             tank_streak(x, z, TANK_R, a, TANK_H - 0.25, rng.uniform(1.2, 4.0), rng.uniform(0.25, 0.5), side.tank,
-                        m, w=rng.uniform(0.5, 0.7), seed=i)
+                        m, w=rng.uniform(0.6, 0.85), seed=i)
+        # Rust run from the shell's course welds and the wind girder, and
+        # grey-green weathering run from the roof edge between them.
+        for k in range(10):
+            a = -PI + rng.uniform(0, 2 * PI)
+            if abs(a - PI / 2) < 0.45:
+                continue
+            y = rng.choice((0.35 + 2.4 * 3, 0.35 + 2.4 * 2, TANK_H * 0.72))
+            tank_streak(x, z, TANK_R, a, y, rng.uniform(0.6, 1.8), rng.uniform(0.12, 0.25), side.tank, m,
+                        w=rng.uniform(0.45, 0.75), seed=i * 31 + k)
+        for k in range(6):
+            a = -PI + rng.uniform(0, 2 * PI)
+            tank_streak(x, z, TANK_R, a, TANK_H - 0.15, rng.uniform(2.5, 6.0), rng.uniform(0.4, 0.9), side.tank, m,
+                        color=(0.45, 0.46, 0.4), w=rng.uniform(0.25, 0.4), seed=i * 53 + k)
     # The quay face: a weed-black tide line, a paler wet band over it, and
     # rust run from the bollards and down behind the ladders.
     band((-42.0, -37.6), (-4.0, -37.6), PI, SEA - 0.6, SEA + 0.7, "quay_edge", m, color=WEED, w=0.88, fade=0.45,
