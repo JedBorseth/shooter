@@ -993,6 +993,86 @@ def canopy_flood(b: Model):
 
 
 @model
+def ups_cabinet(b: Model, count=2):
+    """UPS cabinets against a wall (their backs at z = -0.4, fronts at +z):
+    tall grey cases with vent grilles, a status screen, and a warning label."""
+    w = 0.6
+    for k in range(count):
+        x = (k - (count - 1) / 2) * (w + 0.02)
+        b.box(x - w / 2, x + w / 2, 0.0, 1.95, -0.4, 0.4, "locker_grey", bevel=0.01)
+        b.box(x - w / 2 + 0.03, x + w / 2 - 0.03, 0.05, 0.1, 0.4, 0.41, "steel_dark", detail=True)
+        for j in range(8):
+            y = 0.25 + j * 0.05
+            b.box(x - 0.22, x + 0.22, y, y + 0.02, 0.4, 0.412, "steel_dark", detail=True)
+        b.box(x - 0.1, x + 0.1, 1.45, 1.57, 0.4, 0.41, "screen_level", detail=True)
+        b.box(x - 0.08, x + 0.08, 1.25, 1.33, 0.4, 0.408, "adr_orange", detail=True)
+        b.cyl("z", 0.4, 0.42, (x + 0.2, 1.51), 0.015, "signal_walk", sides=6, detail=True)
+
+
+@model
+def battery_rack(b: Model, length=1.8):
+    """A two-tier rack of standby batteries (along x, back at z = -0.3): a
+    galvanised frame, black cells with red and black terminals, link bars."""
+    hl = length / 2
+    for x in (-hl, hl):
+        for z in (-0.28, 0.28):
+            b.box(x - 0.02, x + 0.02, 0.0, 1.1, z - 0.02, z + 0.02, "steel_galv")
+    for y in (0.1, 0.62):
+        b.box(-hl, hl, y - 0.03, y, -0.3, 0.3, "steel_galv")
+        n = int(length / 0.2)
+        for k in range(n):
+            x = -hl + 0.1 + k * (length - 0.2) / max(1, n - 1)
+            b.box(x - 0.085, x + 0.085, y, y + 0.32, -0.2, 0.2, "trim_black", bevel=0.01)
+            for dz, lk in ((-0.08, "hazard_red"), (0.08, "steel_dark")):
+                b.cyl("y", y + 0.32, y + 0.36, (x, dz), 0.018, lk, sides=6, detail=True)
+        b.box(-hl + 0.05, hl - 0.05, y + 0.36, y + 0.375, -0.1, -0.06, "brass", detail=True)
+
+
+@model
+def fire_panel(b: Model):
+    """A fire alarm panel on a wall (back at z = 0): a red case, a door with a
+    window, indicator LEDs, and a key switch."""
+    b.box(-0.25, 0.25, -0.22, 0.22, 0.0, 0.1, "hazard_red", bevel=0.01)
+    b.box(-0.18, 0.18, -0.02, 0.15, 0.1, 0.105, "glass_dark", detail=True)
+    for k in range(6):
+        b.cyl("z", 0.1, 0.11, (-0.15 + k * 0.06, -0.08), 0.008, ("signal_walk", "led_amber", "signal_red")[k % 3],
+              sides=6, detail=True)
+    b.cyl("z", 0.1, 0.12, (0.17, -0.16), 0.015, "steel_galv", sides=6, detail=True)
+
+
+@model
+def coat_hooks(b: Model):
+    """A row of hooks on a wall (back at z = 0) with hi-vis vests, a jacket,
+    and a hard hat on the shelf above."""
+    b.box(-0.7, 0.7, 0.0, 0.08, 0.0, 0.02, "booth_wood")
+    b.box(-0.75, 0.75, 0.25, 0.27, 0.0, 0.25, "booth_wood")
+    for k, (x, look) in enumerate(((-0.5, "barrier_yellow"), (-0.15, "barrier_orange"), (0.2, "fabric_blue"),
+                                   (0.5, "barrier_yellow"))):
+        b.cyl("z", 0.02, 0.08, (x, 0.04), 0.012, "steel_galv", sides=5, detail=True)
+        pts = [(x + dx, y, z) for dx, y, z in ((-0.12, 0.0, 0.04), (0.12, 0.0, 0.04), (-0.16, -0.6, 0.06),
+                                               (0.16, -0.6, 0.06), (-0.12, 0.0, 0.1), (0.12, 0.0, 0.1),
+                                               (-0.16, -0.62, 0.13), (0.16, -0.62, 0.13), (0.0, 0.05, 0.08))]
+        b.smooth_hull(pts, look, levels=1)
+        if look != "fabric_blue":
+            b.box(x - 0.15, x + 0.15, -0.35, -0.3, 0.125, 0.135, "sign_white", detail=True)
+    b.smooth_hull([(0.3 + math.cos(a) * 0.15, 0.27, 0.12 + math.sin(a) * 0.12) for a in
+                   [i * PI / 4 for i in range(8)]] + [(0.3, 0.42, 0.12)], "safety_yellow", levels=1)
+
+
+@model
+def water_cooler(b: Model):
+    """An office water cooler: a white cabinet, the blue bottle on top, two
+    taps and a drip tray."""
+    b.box(-0.17, 0.17, 0.0, 1.0, -0.17, 0.17, "appliance_white", bevel=0.02)
+    b.box(-0.1, 0.1, 0.7, 0.75, 0.17, 0.22, "steel_dark", detail=True)
+    for x, lk in ((-0.05, "hazard_red"), (0.05, "pipe_blue")):
+        b.box(x - 0.015, x + 0.015, 0.78, 0.84, 0.17, 0.21, lk, detail=True)
+    rings = [(math.cos(2 * PI * i / 14) * rr, y, math.sin(2 * PI * i / 14) * rr)
+             for y, rr in ((1.0, 0.07), (1.05, 0.14), (1.38, 0.14), (1.44, 0.06)) for i in range(14)]
+    b.hull(rings, "pipe_blue")
+
+
+@model
 def ibc(b: Model):
     """A 1000-litre IBC tote (1.2 x 1.0 m): a translucent white bottle in a
     galvanised tube cage on a pallet, its filler cap and the outlet valve."""

@@ -1474,6 +1474,17 @@ def interiors(side: Side):
     deco(-31.95, -30.9, WALK, WALK + 0.012, -21.5, -18.5, "rubber", m, faces="top", detail=True)
     place("notice_board", -28.0, WALK + 1.5, -14.12, PI, m)
     wall_clock(-24.5, WALK + 2.6, -14.12, PI, m)
+    # UPS cabinets and the standby batteries in the corner, the fire alarm
+    # panel by the door.
+    place("ups_cabinet", -31.0, WALK, -26.25, 0.0, m)
+    blocker(-31.65, -30.35, WALK, WALK + 1.95, -26.65, -25.85, m)
+    place("battery_rack", -32.35, WALK, -24.55, PI / 2, m)
+    blocker(-32.65, -32.05, WALK, WALK + 1.1, -25.45, -23.65, m)
+    place("fire_panel", -26.3, WALK + 1.5, -14.12, PI, m)
+    # The mess: hi-vis on the hooks, a water cooler.
+    place("coat_hooks", -28.5, WALK + 1.7, -13.88, 0.0, m)
+    place("water_cooler", -22.0, WALK, -12.4, -PI / 2, m)
+    blocker(-22.2, -21.35, WALK, WALK + 1.45, -12.6, -12.2, m)
     # The mess: staff lockers, a microwave on the counter.
     place("locker_bank", -31.3, WALK, -13.63, 0.0, m, length=2.4, look="locker_grey" if not m else "locker_blue")
     blocker(-32.5, -30.1, WALK, WALK + 1.85, -13.88, -13.38, m)
