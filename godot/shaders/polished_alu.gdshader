@@ -48,7 +48,7 @@ void fragment() {
 	vec3 r = reflect(-view_w, n);
 	// Below the horizon: the ground, with a slightly soft line.
 	float ground = smoothstep(0.015, -0.05, r.y);
-	float rough = 0.13 + 0.06 * streak + 0.05 * smudge + 0.3 * film;
+	float rough = 0.2 + 0.1 * streak + 0.05 * smudge + 0.3 * film;
 	// Rougher metal blurs the line.
 	ground = mix(ground, smoothstep(0.2, -0.25, r.y), clamp(rough * 1.6 - 0.15, 0.0, 1.0));
 

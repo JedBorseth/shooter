@@ -1566,7 +1566,7 @@ def weathering(side: Side):
                                 (-36.3, -24.6, 0.55, "road", STREET, 0.5), (-35.8, 17.9, 0.42, "road", STREET, 0.55),
                                 (-27.0, -32.5, 0.75, "quay", STREET, 0.45), (-14.5, -29.9, 0.5, "quay", STREET, 0.4),
                                 (-6.0, -16.4, 0.5, "slab", STREET, 0.45), (5.2, -31.5, 0.6, "slab_old", WALK, 0.55),
-                                (-27.0, 14.6, 0.5, "floor_epoxy_grey", WALK, 0.45),
+                                (-25.9, 15.95, 0.28, "floor_epoxy_grey", WALK, 0.35),
                                 (-30.8, 7.3, 0.32, "floor_epoxy_grey", WALK, 0.4)):
         stain(x, z, r, look, m, y=y, w=w, stretch=rng.uniform(0.9, 1.4), yaw=rng.uniform(0, PI))
     # Under the loading tankers in the rack's bays (both halves: the bay band
