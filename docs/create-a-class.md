@@ -207,7 +207,7 @@ shows a faint plus; one that needs a wildcard is darker with a grey lock; one
 the weapon has no use for is darker and blank. Focusing a slot shows its items
 beside the grid (`item_picker.gd`): cards with their art (weapon silhouettes,
 and white line icons drawn for this game in `godot/assets/ui/perks/` and
-`godot/assets/ui/loadout/`), a green tick on the chosen ones, and under them
+`godot/assets/ui/loadout/`), a yellow tick on the chosen ones, and under them
 the focused item's name on a light plate, what it does, and for a weapon its
 stat bars (`weapon_stats.gd`), with the change from the equipped weapon in
 green or red. A card that would break a rule is greyed out with a short note

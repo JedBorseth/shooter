@@ -99,7 +99,7 @@ var team := 0:
 		queue_redraw()
 ## Loading progress from 0 to 1, or -1 to creep toward the end on its own.
 var progress := -1.0
-## A short line above the bar's right end ("Connecting to Local match").
+## A short line above the bar's right end ("Joining the local match").
 var status := "":
 	set(value):
 		status = value

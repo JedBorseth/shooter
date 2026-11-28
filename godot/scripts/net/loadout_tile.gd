@@ -12,9 +12,9 @@ extends Button
 ##   small grey lock;
 ## - `WILDCARD`: a wildcard as a parallelogram leaning right;
 ## - `CARD`: an item in the item picker: its art, its name bottom left, a
-##   green tick when equipped, and, while locked, a grey lock and the level or
-##   kills that open it (or, greyed out, why it cannot be taken) in a band
-##   along its top.
+##   yellow tick when equipped (yellow marks what is yours), and, while
+##   locked, a grey lock and the level or kills that open it (or, greyed
+##   out, why it cannot be taken) in a band along its top.
 ##
 ## Tiles focus with orange rules along their top and bottom edges and a
 ## lighter fill. The slot being edited while focus is in the item list stays
@@ -30,7 +30,6 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 
 const BORDER := Color("3a3e44")
-const TICK := Color("30d840")
 const SLOT_FILL := Color("24282c")
 const NAME_PLATE := Color("0e1216")
 ## Line icons for the grenades, by key.
@@ -227,8 +226,8 @@ func _draw_tile() -> void:
 		)
 	if chosen and kind == Kind.CARD:
 		var box := Rect2(size.x - 24.0, 5.0, 18.0, 18.0)
-		draw_rect(box, TICK)
-		_tick(box.position + Vector2(3, 4), 12.0, UiTheme.INK)
+		draw_rect(box, UiTheme.READY)
+		_tick(box.position + Vector2(3, 4), 12.0, UiTheme.READY_INK)
 	if lock != "":
 		_draw_lock(Vector2(size.x - 14.0, 13.0), Color(UiTheme.TEXT_DIM, 0.6))
 		Paint.text_right(

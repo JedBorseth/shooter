@@ -340,6 +340,11 @@ func _draw_strip(alpha: float, ending: bool) -> void:
 			alpha * slide,
 			true
 		)
+		# A dark hexagon behind the chip, as dark as the name cards, so the
+		# world under the see-through strip (litter, decals) never touches it.
+		Shapes.hexagon(
+			_canvas, Vector2(800, middle), 34.0, Color(0.06, 0.07, 0.08, 0.88 * alpha * slide)
+		)
 		MatchPaint.vs_hex(_canvas, Vector2(800, middle), alpha * slide, 26.0)
 
 
