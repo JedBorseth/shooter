@@ -43,13 +43,13 @@ LOOKS: dict[str, dict] = {
     "slab_old": _t("concrete_stained", 4.0, (0.7, 0.7, 0.69), grime=0.0),
     "quay": _t("concrete_stained", 4.0, (0.8, 0.78, 0.74), grime=0.0),
     "quay_edge": _t("concrete_smooth", 2.0, (0.72, 0.71, 0.68), grime=0.2),
-    "bund_gravel": _t("gravel", 3.0, (0.78, 0.74, 0.68), grime=0.0),
+    "bund_gravel": _t("gravel", 1.6, (0.78, 0.74, 0.68), grime=0.0),
     "road": _t("asphalt", 4.0, (0.7, 0.7, 0.71), grime=0.0),
     "grass_dry": _t("dirt", 6.0, (0.62, 0.62, 0.46), grime=0.0),
     "rock": _t("gravel", 6.0, (0.62, 0.6, 0.57), grime=0.0),
     # Buildings: painted block, claddings, and roofs.
-    "block_white": _t("concrete_smooth", 3.0, (0.86, 0.85, 0.82), grime=0.4),
-    "block_sand": _t("concrete_smooth", 3.0, (0.86, 0.78, 0.62), grime=0.4),
+    "block_white": _t("concrete_smooth", 3.0, (0.86, 0.85, 0.82), grime=0.4, normal=0.5),
+    "block_sand": _t("concrete_smooth", 3.0, (0.86, 0.78, 0.62), grime=0.4, normal=0.5),
     "block_grey": _t("concrete_panels", 3.0, (0.74, 0.74, 0.73), grime=0.35),
     "clad_blue": _t("corrugated", 2.4, (0.42, 0.55, 0.68), metal=0.5, grime=0.25),
     "clad_cream": _t("corrugated", 2.4, (0.88, 0.84, 0.72), metal=0.5, grime=0.25),
@@ -83,8 +83,11 @@ LOOKS: dict[str, dict] = {
     "container_grey": _t("container", 2.5, (0.56, 0.57, 0.57), metal=0.6, grime=0.2),
     # Antifouling red below the waterline band: paint, its rust and weed are
     # stains and streaks laid over it (layout `basin`).
-    "hull_red": _t("painted_metal", 4.0, (0.42, 0.11, 0.08), metal=0.3, grime=0.0),
-    "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.2, rough=1.7, grime=0.0),
+    # The hull is plain paint (the shared smudge map and the baked wear break
+    # it up): the painted-metal scan's blotches read as noise across 90 m of
+    # side.
+    "hull_red": _p((0.38, 0.1, 0.07), 0.7),
+    "hull_black": _p((0.1, 0.11, 0.12), 0.75),
     "ship_white": _t("painted_metal", 3.0, (0.86, 0.86, 0.84), metal=0.3, grime=0.0),
     "deck_green": _t("painted_metal", 3.0, (0.3, 0.42, 0.34), metal=0.3, grime=0.0),
     # Paint and signs.
@@ -133,6 +136,12 @@ LOOKS: dict[str, dict] = {
     "dado_grey": _t("plaster", 3.0, (0.55, 0.56, 0.56), rough=0.75, grime=0.1),
     "dado_rail": _t("plaster", 3.0, (0.26, 0.28, 0.3), rough=0.6, grime=0.1),
     "ceiling_tile": _t("plaster", 3.0, (0.86, 0.86, 0.83), rough=1.2, grime=0.0),
+    # Vinyl tile floors in the control house's offices and mess.
+    "vinyl_floor": _t("tiles_floor", 3.0, (0.62, 0.61, 0.58), rough=0.8, grime=0.0),
+    "vinyl_floor_warm": _t("tiles_floor", 3.0, (0.66, 0.62, 0.55), rough=0.8, grime=0.0),
+    # Workshop stores: parts bins and labels.
+    "bin_blue": _p((0.14, 0.22, 0.36), 0.55), "bin_red": _p((0.4, 0.09, 0.07), 0.55),
+    "label_white": _p((0.82, 0.82, 0.78), 0.8),
     "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
     # A drinks can in the litter: Slamcity's shop green read as lit in the sun.
     "goods_green": _p((0.1, 0.3, 0.13), 0.45),
@@ -1037,14 +1046,29 @@ def workshop_shelf(b: Model):
                 kind = rng.random()
                 h = rng.uniform(0.15, 0.32)
                 if kind < 0.4:
-                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.16, rng.choice(["pipe_blue", "barrier_orange",
-                                                                            "steel_grey"]), bevel=0.01, detail=True)
+                    # A parts bin: open, with a raised back and a lip
+                    # under a white label at the front.
+                    look = rng.choice(["bin_blue", "bin_red", "steel_dark"])
+                    hb = min(h, 0.18)
+                    b.hull([(xx, yy, zz) for xx in (x, x + w - 0.03)
+                            for yy, zz in ((y, -0.18), (y, 0.14), (y + hb * 0.55, 0.16), (y + hb, -0.18))],
+                           look, detail=True)
+                    b.box(x + 0.03, x + w - 0.06, y + hb * 0.3, y + hb * 0.5, 0.15, 0.156, "label_white",
+                          detail=True)
                 elif kind < 0.7:
-                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.12, "paper_brown", detail=True)
+                    # A cardboard box, taped, with its label.
+                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.12, "paper_brown", bevel=0.005, detail=True)
+                    b.box(x + (w - 0.03) * 0.42, x + (w - 0.03) * 0.58, y + h, y + h + 0.002, -0.18, 0.12,
+                          "paper_litter", detail=True)
+                    b.box(x + 0.03, x + 0.03 + min(0.12, w * 0.4), y + h * 0.5, y + h * 0.5 + 0.06, 0.12, 0.123,
+                          "label_white", detail=True)
                 else:
+                    # Tins: zinc, a coloured label band, a lid.
                     for k in range(int(w / 0.1)):
-                        b.cyl("y", y, y + 0.14, (x + 0.05 + k * 0.1, 0.0), 0.045,
-                              rng.choice(["hazard_red", "steel_galv", "sign_blue"]), sides=10, detail=True)
+                        cx = x + 0.05 + k * 0.1
+                        b.cyl("y", y, y + 0.14, (cx, 0.0), 0.045, "steel_galv", sides=12, detail=True)
+                        b.cyl("y", y + 0.03, y + 0.1, (cx, 0.0), 0.0465,
+                              rng.choice(["hazard_red", "sign_blue", "label_white"]), sides=12, detail=True)
                 x += w
     # The pegboard with tools, over a shelf at bench height.
     b.box(0.0, 1.15, 0.8, 0.84, -0.22, 0.12, "booth_wood")

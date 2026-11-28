@@ -690,13 +690,14 @@ def control_house(side: Side):
                    "N": [(-31.0, -29.6, *up), (-25.0, -23.6, *up)]},
           inner="plaster_white", inner_top=7.4)
     floor(x0 + T, x1 - T, z0 + T, CONTROL_SPLIT, "floor_epoxy_grey", "concrete", m)
-    floor(x0 + T, x1 - T, CONTROL_SPLIT, z1 - T, "floor_epoxy_grey" if not m else "floor_epoxy_green", "concrete", m)
+    floor(x0 + T, x1 - T, CONTROL_SPLIT, z1 - T, "vinyl_floor" if not m else "vinyl_floor_warm", "concrete", m)
     # The upper floor's slab with the stair's opening (on the east wall), the roof.
     hole = (x1 - T - 1.3, x1 - T, -24.5, -16.0)
     for a0, a1, b0, b1 in ((x0 + T, hole[0], z0 + T, z1 - T), (hole[0], x1 - T, z0 + T, hole[2]),
                            (hole[0], x1 - T, hole[3], z1 - T)):
         solid(a0, a1, ceil, UPPER, b0, b1, "plaster_ceiling", "concrete", m=m)
-        deco(a0, a1, UPPER - 0.005, UPPER, b0, b1, "floor_epoxy_grey", m, faces="top")
+        deco(a0, a1, UPPER - 0.005, UPPER, b0, b1, "vinyl_floor" if not m else "vinyl_floor_warm", m,
+             faces="top")
     railing([(hole[0], UPPER, hole[2]), (hole[0], UPPER, hole[3])], m, bars=0.12)
     railing([(hole[0], UPPER, hole[3]), (hole[1], UPPER, hole[3])], m, bars=0.12)
     stair("z", hole[0] + 0.05, hole[1] - 0.05, -16.0, -24.5, WALK, UPPER, m, tread="tread_plate",
@@ -1330,9 +1331,24 @@ def backdrops(side: Side):
             box(a0, a1, STREET, 1.4, b0, b1, "quay_edge", None, m, chunk="far")
         far_shadow_box(x0, x1, z0, z0 + 0.4, 1.4, m, w=0.45, soft=0.5)
         for x, z, r, h in tanks:
-            place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h,
-                  look="tank_white" if (round(x + z) // 3) % 3 else "tank_silver")
+            look = "tank_white" if (round(x + z) // 3) % 3 else "tank_silver"
+            place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h, look=look)
             far_shadow_round(x, z, r, h + r * 0.15, m)
+            # Weathering seen from across the basin: rust run from the roof
+            # edge, grey-green wash between, and dirt up the foot.
+            frng = random.Random(round(x * 7 + z * 3))
+            for k in range(9):
+                a = frng.uniform(-PI, PI)
+                tank_streak(x, z, r, a, h - 0.2, frng.uniform(2.0, 5.5), frng.uniform(0.5, 1.2), look, m,
+                            w=frng.uniform(0.5, 0.8), seed=k)
+            for k in range(5):
+                a = frng.uniform(-PI, PI)
+                tank_streak(x, z, r, a, h - 0.1, frng.uniform(4.0, 9.0), frng.uniform(1.5, 3.0), look, m,
+                            color=(0.45, 0.46, 0.4), w=frng.uniform(0.3, 0.45), seed=20 + k)
+            for k in range(12):
+                a = -PI + k * 2 * PI / 12
+                tank_streak(x, z, r, a, 1.3, 1.3, 2 * PI * r / 12 * 0.62, look, m, color=DIRT,
+                            w=0.35, seed=40 + k)
     # Pipe tracks: three lines on sleepers along the roads.
     for (a, b, fixed, axis) in ((-160.0, -6.0, 43.6, "x"), (-160.0, -6.0, 89.0, "x"), (46.0, 160.0, -47.2, "z")):
         for k, (off, r, look) in enumerate(((0.0, 0.3, "pipe_grey"), (0.7, 0.22, "pipe_green"),
@@ -1661,6 +1677,10 @@ def fit_out(side: Side):
         prop("cardboard_box", -32.4, u + dy, -18.4 + 0.25 * (k % 2), PI / 2 + 0.1 * k, m, scale=0.7)
     prop("trash_can", -23.4, u, -26.2, 0.0, m)
     place("notice_board", -21.4, u + 1.5, -21.0, -PI / 2, m)
+    # The mess: a whiteboard rota and a clock over the table, a bin.
+    whiteboard(-27.0, WALK + 1.45, -2.35, PI, m, w=1.4, h=0.9)
+    wall_clock(-29.5, WALK + 2.55, -2.35, PI, m)
+    prop("trash_can", -32.2, WALK, -6.0, 0.0, m)
 
 
 def weathering(side: Side):
