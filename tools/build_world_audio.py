@@ -36,8 +36,9 @@ a short reflection tail), plus new grass, tile, gravel, and carpet sets.
 
 ``player`` synthesizes the feedback and body sounds, seeded: hit, headshot,
 and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
-a heartbeat, breathing (normal and hurt), a death fall, a jump's push-off,
-and a mantle's hands on the ledge.
+a heartbeat, breathing (normal and hurt), and a death fall. The jump,
+landing, mantle, vault, and sprint-out are real recordings
+(tools/build_movement_audio.py).
 
 ``stings`` synthesizes the match stings (start, win, loss, draw, round start,
 round win and loss, the time warning, the hardpoint call: drums, a riser, and
@@ -693,36 +694,6 @@ def death_sound(rng: np.random.Generator) -> np.ndarray:
     return normalized(out, 0.9)
 
 
-def push_off(rng: np.random.Generator) -> np.ndarray:
-    """A jump: a boot scuffing off the ground, cloth, and kit bouncing."""
-    n = int(0.35 * RATE)
-    scuff = bandpass(rng.standard_normal(n), 400, 4_000) * env_decay(n, 0.025)
-    swish = bandpass(rng.standard_normal(n), 300, 3_000) * np.sin(np.pi * np.linspace(0, 1, n)) ** 2
-    rattle = grains(rng, n, 5, 0.12, 2_500, 6_000, 0.01)
-    out = normalized(scuff, 1) + 0.5 * normalized(swish, 1) + 0.45 * normalized(rattle, 1)
-    return normalized(out, 0.8)
-
-
-def mantle_sound(rng: np.random.Generator) -> np.ndarray:
-    """Climbing over a ledge: two hands slapping onto it, cloth dragging, and
-    kit knocking."""
-    n = int(0.7 * RATE)
-    out = np.zeros(n)
-    for at in (0.0, rng.uniform(0.06, 0.1)):
-        a = int(at * RATE)
-        m = n - a
-        slap = bandpass(rng.standard_normal(m), 600, 3_500) * env_decay(m, 0.012)
-        slap += 0.6 * sine_sweep(m, 220, 150, 0.01) * env_decay(m, 0.02)
-        out[a:] += normalized(slap, 1)
-    t = np.linspace(0, 1, n)
-    drag = bandpass(rng.standard_normal(n), 250, 2_500) * np.sin(np.pi * t) ** 1.5
-    out += 0.6 * normalized(drag, 1)
-    out += 0.4 * normalized(grains(rng, n, 6, 0.4, 2_500, 6_000, 0.01), 1)
-    fade = int(0.05 * RATE)
-    out[-fade:] *= np.linspace(1, 0, fade)
-    return normalized(out, 0.8)
-
-
 def write_wav(path: Path, x: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(path, np.clip(x, -1, 1).astype(np.float32), RATE, subtype="PCM_16")
@@ -730,15 +701,13 @@ def write_wav(path: Path, x: np.ndarray) -> None:
 
 def player() -> None:
     """Hit, headshot, and kill markers (audio/ui/), and heartbeat, breathing,
-    death, jump, and mantle (audio/player/)."""
+    and death (audio/player/)."""
     makers = (
         (UI, "hit", hit_marker, 4, True),
         (UI, "hit_head", head_marker, 3, True),
         (UI, "kill", kill_marker, 3, True),
         (PLAYER, "heartbeat", heartbeat, 2, False),
         (PLAYER, "death", death_sound, 2, False),
-        (PLAYER, "jump", push_off, 4, False),
-        (PLAYER, "mantle", mantle_sound, 3, False),
     )
     for folder, name, make, takes, wav in makers:
         for i in range(1, takes + 1):

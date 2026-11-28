@@ -1,7 +1,7 @@
 //! The local player's body, heard from inside it: breathing after a sprint
 //! and when hurt, the held breath on a scope, a heartbeat at low health, a
 //! soft thud when hit, the fall when killed, the push-off of a jump, hands on
-//! a ledge, and the kit rattling on every step.
+//! a ledge or a hand planted on cover, and the kit rattling on every step.
 //!
 //! Breath, heart, and hurt play on the `Player` bus. Being hurt never dulls
 //! the world: no ringing ears and no low-pass on the other buses, so you can
@@ -47,7 +47,19 @@ pub struct BodyFrame {
     /// Upward speed, m/s.
     pub rising: f32,
     pub mantling: bool,
+    /// The climb is a vault over cover rather than a mantle onto a ledge.
+    pub vaulting: bool,
     pub holding_breath: bool,
+}
+
+/// The sound of starting a climb: hands on a ledge, or a hand planted on
+/// cover to vault it. Other players' climbs (`footsteps::Foley`) use it too.
+pub fn climb_sound(vaulting: bool) -> &'static str {
+    if vaulting {
+        "res://assets/audio/player/vault"
+    } else {
+        "res://assets/audio/player/mantle"
+    }
 }
 
 /// Seconds between heartbeats at a share of health, or `None` above the
@@ -121,12 +133,13 @@ impl PlayerSounds {
             return;
         }
 
-        // A jump's push-off, and hands on a ledge.
+        // A jump's push-off, and hands on a ledge (a mantle) or one hand
+        // planted on cover (a vault).
         if last.on_floor && !frame.on_floor && frame.rising > 1.5 {
             self.play_on(Slot::Body, "res://assets/audio/player/jump", -6.0);
         }
         if frame.mantling && !last.mantling {
-            self.play_on(Slot::Body, "res://assets/audio/player/mantle", -4.0);
+            self.play_on(Slot::Body, climb_sound(frame.vaulting), -4.0);
         }
 
         // The held breath.
@@ -282,6 +295,12 @@ enum Slot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_vault_has_its_own_sound() {
+        assert!(climb_sound(true).ends_with("/vault"));
+        assert!(climb_sound(false).ends_with("/mantle"));
+    }
 
     #[test]
     fn the_heart_races_near_death() {
