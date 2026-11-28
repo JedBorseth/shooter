@@ -18,7 +18,7 @@ extends SceneTree
 ##
 ## Environment:
 ##   FX_DIR      output directory (capture mode, required).
-##   FX_BENCH    1 for the firefight measurement.
+##   FX_BENCH    1 for the firefight measurement (and then a smoke cloud's).
 ##   FX_PRESETS  comma list of low, medium, high (default: all three).
 ##   FX_FRAMES   frames measured per preset (default 360).
 ##   FX_OUT      JSON results file (firefight, optional).
@@ -438,6 +438,24 @@ func _capture() -> void:
 		await _unload()
 
 
+## GPU time looking at a smoke grenade's cloud in full bloom between the
+## player and the wall (the player outside it), or -1 without one.
+func _smoke_bench() -> float:
+	var effects := _effects()
+	if effects == null or not effects.has_method("smoke"):
+		return -1.0
+	effects.smoke(_w(Vector3(-14, 0.05, -0.4)), 6.0)
+	for i in 30:
+		_place(AIM_YAW, AIM_PITCH)
+		await process_frame
+	var total := 0.0
+	for i in 120:
+		_place(AIM_YAW, AIM_PITCH)
+		await process_frame
+		total += RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid())
+	return total / 120.0
+
+
 func _bench() -> void:
 	var frames := (
 		int(OS.get_environment("FX_FRAMES"))
@@ -479,6 +497,7 @@ func _bench() -> void:
 				RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid())
 			)
 		Input.action_release("fire")
+		var smoke_ms := await _smoke_bench()
 		var total := 0.0
 		for g in gpu:
 			total += g
@@ -490,8 +509,16 @@ func _bench() -> void:
 			"fire_gpu_ms": total / gpu.size(),
 			"fire_p95_ms": sorted[int(sorted.size() * 0.95)],
 			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			"smoke_gpu_ms": smoke_ms,
+			"video_mem_mb": Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
 		}
 		results.append(result)
+		print(
+			(
+				"smoke     %-6s %5.2f ms with a full smoke cloud 6 m ahead, video memory %4.0f MB"
+				% [preset, smoke_ms, result["video_mem_mb"]]
+			)
+		)
 		print(
 			(
 				"firefight %-6s idle %5.2f ms  firing %5.2f ms  p95 %5.2f ms  %4d draws"

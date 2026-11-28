@@ -4,7 +4,7 @@
 # ///
 """Build the combat effect textures in godot/assets/textures/effects/:
 
-    uv run tools/build_combat_fx.py [blood holes smoke explosion flame cloud scorch]
+    uv run tools/build_combat_fx.py [blood holes smoke flame scorch]
 
 Everything here is generated (original, CC0), from fixed seeds, so a rerun
 writes the same files:
@@ -13,8 +13,6 @@ writes the same files:
   behind a close hit. A dense spray from one side, thrown droplets that
   stretch into tails away from it, a dark wet core, and an ORM texture that
   makes thick blood glossy and thin blood matte.
-- blood_mist.png: a soft, lumpy puff (grey, tinted by the particle colour) for
-  the mist a hit throws.
 - hole_<class>_<n>_{albedo,normal,orm}.png: four bullet holes for each surface
   class (concrete, metal, wood, glass, dirt), each with a dark core, a crater
   shaped by the material (chipped concrete, paint chipped back to bare steel,
@@ -24,12 +22,11 @@ writes the same files:
 Downloaded (CC0), cached in ~/.cache/shooter-fidelity/combat-vfx/sources:
 
 - smoke_4x4.png: sixteen frames of Unity Labs' WispySmoke01 flipbook, for
-  impact dust and gun smoke.
-- explosion_5x5.png: Unity Labs' Explosion02HD flipbook, a fireball burning
-  out into smoke.
+  gun smoke.
 - flame_8x4.png: Unity Labs' SmallFlame01 loop, for fires.
-- cloud_8x4.png: Unity Labs' Cloud02 and Cloud01 loops, sixteen frames each,
-  for the smoke grenade's billows and the flashbang's puff.
+
+The smoke grenade's billows, the frag's fireball and the impact puffs are
+rendered in Blender by tools/build_flipbooks.py.
 
 Also generated: scorch_{albedo,orm}.png, the soot, thrown dirt, and fragment
 pits a blast leaves.
@@ -160,31 +157,6 @@ def blood_splat(index: int, size: int = 512) -> None:
     orm[..., 3] = alpha
     save_rgba(Path(f"{stem}_orm.png"), orm)
     print(f"blood_splat_{index}")
-
-
-def blood_mist(size: int = 128) -> None:
-    rng = np.random.default_rng(77)
-    y, x = (np.mgrid[0:size, 0:size] + 0.5) / size * 2 - 1
-    r = np.hypot(x, y)
-    lumps = fbm(size, rng, 3, 4)
-    density = np.clip(1 - r / (0.55 + 0.4 * lumps), 0, 1) ** 1.6
-    density *= 0.55 + 0.45 * fbm(size, rng, 6, 3)
-    shade = 0.75 + 0.25 * lumps
-    rgba = np.stack([shade, shade, shade, density], axis=2)
-    save_rgba(OUT / "blood_mist.png", rgba)
-    print("blood_mist")
-
-
-# Bullet holes: per surface class, four variants each. Every hole has a dark
-# core about 1 cm across (the decal is HOLE_SIZE metres), a crater whose
-# shape depends on the material, and a faint soot ring, so a hole reads as
-# a hole on any wall colour.
-HOLE_SIZE = 0.16
-# Glass holes are drawn this many times a hole's size (rust/game/src/effects.rs:
-# GLASS_HOLE_SCALE), at GLASS_TEXTURE pixels, for the cracks round them.
-GLASS_SCALE = 2.4
-GLASS_TEXTURE = 512
-HOLE_CLASSES = ("concrete", "metal", "wood", "glass", "dirt")
 
 
 def polar(size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -439,16 +411,6 @@ def smoke_flipbook() -> None:
     print("smoke_4x4")
 
 
-def explosion_flipbook() -> None:
-    """explosion_5x5.png: Unity Labs' Explosion02HD, all 25 frames at 256 px:
-    a fireball that burns out into dark smoke. Its colour stays as rendered
-    (the shader lets the hot frames glow and lights the smoky ones)."""
-    atlas = unity_flipbook("Explosion02HD", "Explosion02HD_5x5.tga")
-    rgba = repack(atlas, 5, list(range(25)), 5, 256)
-    save_rgba(OUT / "explosion_5x5.png", rgba)
-    print("explosion_5x5")
-
-
 def scorch(size: int = 512) -> None:
     """scorch_{albedo,orm}.png: what a frag leaves on the ground. A soft,
     irregular blotch of dark grey-brown soot (never pure black), densest at
@@ -525,44 +487,13 @@ def flame_flipbook() -> None:
     print("flame_8x4")
 
 
-def cloud_flipbook() -> None:
-    """cloud_8x4.png: two billowing loops, Unity Labs' Cloud02 (top two rows)
-    and Cloud01 (bottom two), every fourth of each one's 64 frames at 128 px,
-    for the smoke grenade's cloud and the flashbang's puff. As for gun smoke,
-    the colour is shading only (normalised grey with its shadows lifted, so
-    the scene's light decides how dark it is) and alpha is density."""
-    rows = []
-    for name in ("Cloud02", "Cloud01"):
-        atlas = unity_flipbook(name, f"{name}_8x8.tga")
-        rows.append(repack(atlas, 8, list(range(0, 64, 4)), 4, 128))
-    # Two 4 x 4 atlases side by side would mix the loops; lay each loop out
-    # as two rows of eight instead.
-    out = np.zeros((4 * 128, 8 * 128, 4), dtype=np.float32)
-    for loop, rgba in enumerate(rows):
-        for frame in range(16):
-            sx, sy = (frame % 4) * 128, (frame // 4) * 128
-            dx, dy = (frame % 8) * 128, (loop * 2 + frame // 8) * 128
-            out[dy:dy + 128, dx:dx + 128] = rgba[sy:sy + 128, sx:sx + 128]
-    grey = out[..., :3].mean(axis=2)
-    dense = out[..., 3] > 0.2
-    level = np.percentile(grey[dense], 90) if dense.any() else 1.0
-    # Keep the billows' self-shadowing, softened: it gives the bank its
-    # volume, while the scene's light sets the overall tone.
-    shade = 0.55 + 0.45 * np.clip(grey / max(level, 1e-3), 0, 1)
-    out[..., 0] = out[..., 1] = out[..., 2] = shade
-    save_rgba(OUT / "cloud_8x4.png", out)
-    print("cloud_8x4")
-
-
 def main(parts: list[str]) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     steps = {
-        "blood": lambda: ([blood_splat(i) for i in range(4)], blood_mist()),
+        "blood": lambda: [blood_splat(i) for i in range(4)],
         "holes": bullet_holes,
         "smoke": smoke_flipbook,
-        "explosion": explosion_flipbook,
         "flame": flame_flipbook,
-        "cloud": cloud_flipbook,
         "scorch": scorch,
     }
     for name, step in steps.items():

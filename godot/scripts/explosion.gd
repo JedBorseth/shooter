@@ -25,6 +25,7 @@ extends Node3D
 const FLASH_TIME := 0.22
 const FLASH_ENERGY := 18.0
 const CHIP_MODEL := "res://assets/effects/chip.glb"
+const Billows := preload("res://scripts/billows.gd")
 ## Per preset (Low, Medium, High): dirt jets, dust billows rising, dust
 ## billows rolled along the ground, and chips. The large, soft quads cost per
 ## pixel they cover, so Low draws fewer of them.
@@ -42,7 +43,6 @@ static var _chips: Dictionary[String, Mesh] = {}
 ## soft-edged form (High: faded where they meet a wall), shared by every
 ## explosion.
 static var _billows_hard: ShaderMaterial
-static var _billows_soft: ShaderMaterial
 
 var _flash_left := 0.0
 
@@ -99,20 +99,15 @@ func _ready() -> void:
 	set_process(false)
 
 
-## Gives the column and ring their soft-edged billows (or back the hard ones).
-## The soft form reads the depth buffer for every pixel of the big billows:
-## about 0.3 ms on Medium in the firefight, so it is High only.
+## Gives the column and ring their billows for the preset: on High lit per
+## pixel through the six-way flipbook and soft-edged (faded where they meet
+## a wall: that reads the depth buffer for every pixel of the big billows,
+## about 0.3 ms on Medium in the firefight, so it is High only).
 func _soften_billows(soft: bool) -> void:
 	var column_mesh := $Column.draw_pass_1 as QuadMesh
 	if _billows_hard == null:
 		_billows_hard = column_mesh.material as ShaderMaterial
-		_billows_soft = _billows_hard.duplicate() as ShaderMaterial
-		var shader := Shader.new()
-		shader.code = _billows_hard.shader.code.replace(
-			"#define SOFT_EDGE 0\n", "#define SOFT_EDGE 1\n"
-		)
-		_billows_soft.shader = shader
-	var material := _billows_soft if soft else _billows_hard
+	var material := Billows.material(_billows_hard, 2 if soft else 1, soft, self)
 	column_mesh.material = material
 	($Ring.draw_pass_1 as QuadMesh).material = material
 

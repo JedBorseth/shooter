@@ -2,8 +2,10 @@
 
 [ext_resource type="Script" path="res://scripts/charge_explosion.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/explosion.gdshader" id="2_fireball"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/explosion_5x5.png" id="3_flipbook"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/cloud_8x4.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/fireball_a.png" id="3_flipbook"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/fireball_b.png" id="3b_flipbook"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_a.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_b.png" id="4b_cloud"]
 [ext_resource type="Shader" path="res://shaders/smoke_screen.gdshader" id="5_billow"]
 
 [sub_resource type="ParticleProcessMaterial" id="Process_fireball"]
@@ -27,9 +29,10 @@ anim_speed_max = 1.0
 render_priority = 2
 shader = ExtResource("2_fireball")
 shader_parameter/flipbook = ExtResource("3_flipbook")
-shader_parameter/first_frame = 3
-shader_parameter/fire_energy = 2.8
-shader_parameter/cooling = Vector2(0.1, 0.55)
+shader_parameter/flipbook_b = ExtResource("3b_flipbook")
+shader_parameter/first_frame = 1
+shader_parameter/fire_energy = 3.0
+shader_parameter/cooling = Vector2(0.4, 1.0)
 shader_parameter/soft_distance = 1.2
 shader_parameter/fade_out = Vector2(0.35, 0.85)
 
@@ -71,6 +74,7 @@ color_ramp = SubResource("Texture_plume")
 [sub_resource type="ShaderMaterial" id="Mat_plume"]
 shader = ExtResource("5_billow")
 shader_parameter/flipbook = ExtResource("4_cloud")
+shader_parameter/flipbook_b = ExtResource("4b_cloud")
 shader_parameter/tint = Color(0.27, 0.25, 0.23, 1)
 shader_parameter/opacity = 0.9
 shader_parameter/frame_rate = 2.0
@@ -107,6 +111,7 @@ color_ramp = SubResource("Texture_skirt")
 [sub_resource type="ShaderMaterial" id="Mat_skirt"]
 shader = ExtResource("5_billow")
 shader_parameter/flipbook = ExtResource("4_cloud")
+shader_parameter/flipbook_b = ExtResource("4b_cloud")
 shader_parameter/tint = Color(0.5, 0.46, 0.4, 1)
 shader_parameter/opacity = 0.8
 shader_parameter/frame_rate = 2.5

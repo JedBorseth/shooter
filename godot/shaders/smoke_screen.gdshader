@@ -1,11 +1,18 @@
 // A billow of a smoke grenade's cloud (or a flashbang's puff, or an
 // explosion's dust): a camera-facing particle that plays one of two billowing
-// loops from Unity Labs' CC0 Cloud flipbooks
-// (`assets/textures/effects/cloud_8x4.png`, two rows of eight frames per
-// loop), cross-fading between frames so it churns slowly instead of
-// stepping. Lit by the scene per vertex (the billows are large and soft, so
-// per-pixel light would only cost more), so the bank is pale in the sun,
-// grey in shade, and never glows at night. It thins out over its lowest
+// loops of a ball of thick smoke rendered in Blender
+// (`assets/textures/effects/smoke_cloud_{a,b}.png`, `tools/build_flipbooks.py`:
+// two rows of eight 512-pixel cells per loop, each loop seamless), cross-fading
+// between frames so it churns slowly instead of stepping. The flipbook is a
+// six-way lightmap (`sixway.gdshaderinc`): the same smoke lit from six sides,
+// so each billow's lobes take the sun on the side it shines from and shade
+// themselves on the far side. On Low and Medium the scene lights each billow
+// per vertex (cheap: the billows are large) and the flipbook shapes that
+// light by the sun's direction (`sun_direction`, set by the scripts that
+// spawn billows); on High (`SIXWAY_PIXEL`, a copy made by `billows.gd`) each
+// light the scene has is applied per pixel through the six-way blend, so a
+// muzzle flash or a lamp lights the side of the smoke facing it too. The
+// bank is pale in the sun, grey in shade, and never glows at night. It thins out over its lowest
 // `ground_fade` metres above the ground it popped on, so the bank has no hard
 // line where the billows cross the floor. (A depth-faded edge against walls,
 // as High gives gun smoke, is left out: it needs a copy of the depth buffer
@@ -20,7 +27,18 @@
 // cloud's rim (by their own density, so the edge breaks into wisps rather
 // than shrinking as a disc).
 shader_type spatial;
+
+// 1 lights every pixel of the billows through the six-way blend (High: a
+// copy of this shader with the line rewritten by `billows.gd`; keep its
+// form). 0 lights them per vertex.
+#define SIXWAY_PIXEL 0
+#if SIXWAY_PIXEL
+render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform;
+#else
 render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, vertex_lighting, skip_vertex_transform, diffuse_lambert_wrap;
+#endif
+
+#include "res://shaders/sixway.gdshaderinc"
 
 // 1 fades each billow out over its last `SOFT_DEPTH` metres in front of
 // whatever is behind it, so a big billow drifting into a wall shows no hard
@@ -35,7 +53,15 @@ const float SOFT_DEPTH = 1.2;
 #endif
 
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
+uniform sampler2D flipbook_b : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 tint : source_color = vec4(0.8, 0.8, 0.79, 1.0);
+/// The direction toward the sun (world), for the per-vertex six-way.
+uniform vec3 sun_direction = vec3(0.35, 0.8, 0.45);
+/// How much of a billow's shading follows the sun (the rest is the even
+/// light of the sky), per vertex.
+uniform float sun_share = 0.7;
+/// The flipbook's light scaled to the old flat billows' brightness.
+uniform float light_gain = 2.7;
 uniform float opacity = 0.9;
 /// Frames a second each billow churns through (16 frames a loop).
 uniform float frame_rate = 2.0;
@@ -64,6 +90,14 @@ varying float shade;
 varying float thick;
 varying float cut;
 varying vec2 corner_uv;
+// The cell's right and up, in view space (the billow is turned by its angle).
+varying vec2 cell_x;
+varying vec3 sun_cell;
+#if SIXWAY_PIXEL
+varying vec4 lit_a;
+varying vec4 lit_b;
+varying float lit_mean;
+#endif
 
 void vertex() {
 	float size = length(MODEL_MATRIX[0].xyz) * size_scale;
@@ -91,6 +125,11 @@ void vertex() {
 	}
 	VERTEX = (VIEW_MATRIX * vec4(at, 1.0)).xyz;
 	NORMAL = normalize(mat3(VIEW_MATRIX) * normal);
+	// The quad's X runs along (cos a, -sin a) on screen, its Y along
+	// (sin a, cos a).
+	cell_x = vec2(cos(a), -sin(a));
+	vec3 sun_view = normalize(mat3(VIEW_MATRIX) * normalize(sun_direction));
+	sun_cell = vec3(dot(sun_view.xy, cell_x), dot(sun_view.xy, vec2(-cell_x.y, cell_x.x)), sun_view.z);
 	// Each billow's own brightness and thickness, and how much the rim eats
 	// it: none in the middle of the cloud, most at and past its radius.
 	float s1 = fract(seed * 13.17);
@@ -118,10 +157,23 @@ void vertex() {
 
 void fragment() {
 	vec4 tex = texture(flipbook, UV);
+	vec4 tex_b = texture(flipbook_b, UV);
 	if (blend > 0.0) {
 		tex = mix(tex, texture(flipbook, next_uv), blend);
+		tex_b = mix(tex_b, texture(flipbook_b, next_uv), blend);
 	}
-	ALBEDO = tint.rgb * tex.rgb * shade;
+	float mean = sixway_ambient(tex, tex_b);
+#if SIXWAY_PIXEL
+	// The sky lights the billow by its mean response; light() adds each
+	// light through the six-way blend, relative to it.
+	lit_a = tex;
+	lit_b = tex_b;
+	lit_mean = max(mean, 0.02);
+	ALBEDO = tint.rgb * mean * light_gain * shade;
+#else
+	float sun = sixway_light(tex, tex_b, normalize(sun_cell));
+	ALBEDO = tint.rgb * mix(mean, sun, sun_share) * light_gain * shade;
+#endif
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
 	float ground = clamp((world_y - ground_y) / ground_fade, 0.0, 1.0);
@@ -138,3 +190,11 @@ void fragment() {
 	ALPHA *= clamp((VERTEX.z - behind.z / behind.w) / SOFT_DEPTH, 0.0, 1.0);
 #endif
 }
+
+#if SIXWAY_PIXEL
+void light() {
+	vec3 l = vec3(dot(LIGHT.xy, cell_x), dot(LIGHT.xy, vec2(-cell_x.y, cell_x.x)), LIGHT.z);
+	float lit = sixway_light(lit_a, lit_b, normalize(l)) / lit_mean;
+	DIFFUSE_LIGHT += lit * ATTENUATION * LIGHT_COLOR / PI;
+}
+#endif

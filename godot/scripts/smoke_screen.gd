@@ -1,7 +1,8 @@
 extends Node3D
 ## A smoke grenade's cloud: billows that pour out over two seconds, hang for
-## the cloud's life churning slowly, and thin away, played from Unity Labs'
-## CC0 Cloud flipbooks (`shaders/smoke_screen.gdshader`) and lit by the scene
+## the cloud's life churning slowly, and thin away, played from the
+## Blender-rendered six-way smoke flipbook (`shaders/smoke_screen.gdshader`,
+## lit per pixel on High through `billows.gd`) and lit by the scene
 ## as one round bank (the side toward the sun bright, the far side and
 ## underside in shade), each billow its own shade and thickness and the rim
 ## broken into wisps, with a grey fog over the screen while the camera is
@@ -22,10 +23,11 @@ const THIN := 3.0
 const HEIGHT := 1.6
 ## Per preset (Low, Medium, High): billows and their size in metres.
 const BILLOWS := [14, 18, 22]
-const BILLOW_SIZE := [2.9, 2.7, 2.6]
+const BILLOW_SIZE := [3.3, 3.1, 3.0]
 ## Seconds a cloud the server dropped takes to fade.
 const DISSIPATE := 0.5
 const FOG := Color(0.62, 0.62, 0.6)
+const Billows := preload("res://scripts/billows.gd")
 
 ## Bumped by each `start`, so whoever started the cloud can tell whether the
 ## pool has since given it to another grenade.
@@ -35,6 +37,7 @@ var _age := SECONDS + 1.0
 ## Seconds left of a quick fade-out, or < 0.
 var _dissipating := -1.0
 var _fog: ColorRect
+var _base_material: ShaderMaterial
 
 @onready var _billows: GPUParticles3D = $Billows
 
@@ -62,7 +65,11 @@ func start(age := 0.0, ground_y := -1000.0) -> int:
 	_age = age
 	_dissipating = -1.0
 	_billows.amount_ratio = float(BILLOWS[quality]) / float(_billows.amount)
-	var material := _billows.draw_pass_1.surface_get_material(0) as ShaderMaterial
+	var mesh := _billows.draw_pass_1 as QuadMesh
+	if _base_material == null:
+		_base_material = mesh.material as ShaderMaterial
+	var material := Billows.material(_base_material, quality, false, self)
+	mesh.material = material
 	material.set_shader_parameter(&"size_scale", BILLOW_SIZE[quality] / 2.7)
 	_billows.set_instance_shader_parameter(&"ground_y", ground_y)
 	# Lit as one round bank about its middle, ragged toward its rim.

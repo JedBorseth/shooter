@@ -2,8 +2,10 @@
 
 [ext_resource type="Script" path="res://scripts/explosion.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/explosion.gdshader" id="2_fireball"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/explosion_5x5.png" id="3_flipbook"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/cloud_8x4.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/fireball_a.png" id="3_flipbook"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/fireball_b.png" id="3b_flipbook"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_a.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_b.png" id="4b_cloud"]
 [ext_resource type="Shader" path="res://shaders/debris.gdshader" id="5_debris"]
 [ext_resource type="Shader" path="res://shaders/spark.gdshader" id="6_spark"]
 [ext_resource type="Shader" path="res://shaders/dirt_burst.gdshader" id="7_dirt"]
@@ -31,9 +33,10 @@ anim_speed_max = 1.0
 render_priority = 2
 shader = ExtResource("2_fireball")
 shader_parameter/flipbook = ExtResource("3_flipbook")
-shader_parameter/first_frame = 5
-shader_parameter/fire_energy = 2.6
-shader_parameter/cooling = Vector2(0.05, 0.4)
+shader_parameter/flipbook_b = ExtResource("3b_flipbook")
+shader_parameter/first_frame = 2
+shader_parameter/fire_energy = 3.6
+shader_parameter/cooling = Vector2(0.4, 1.0)
 shader_parameter/soft_distance = 0.6
 shader_parameter/fade_out = Vector2(0.25, 0.75)
 
@@ -58,15 +61,16 @@ scale_max = 1.1
 render_priority = 3
 shader = ExtResource("2_fireball")
 shader_parameter/flipbook = ExtResource("3_flipbook")
-shader_parameter/first_frame = 2
-shader_parameter/last_frame = 8
+shader_parameter/flipbook_b = ExtResource("3b_flipbook")
+shader_parameter/first_frame = 0
+shader_parameter/last_frame = 7
 shader_parameter/fire_energy = 6.0
 shader_parameter/fire_edge = Color(1, 0.5, 0.16, 1)
 shader_parameter/fire_core = Color(1, 0.9, 0.7, 1)
 shader_parameter/cooling = Vector2(0.55, 1.0)
 shader_parameter/soft_distance = 0.5
 shader_parameter/fade_out = Vector2(0.45, 1.0)
-shader_parameter/white_heat = 0.3
+shader_parameter/white_heat = 0.35
 
 [sub_resource type="QuadMesh" id="Mesh_fireball"]
 material = SubResource("Mat_fireball")
@@ -90,8 +94,8 @@ scale_max = 1.25
 render_priority = 1
 shader = ExtResource("7_dirt")
 shader_parameter/flipbook = ExtResource("8_burst")
-shader_parameter/tint = Color(0.48, 0.42, 0.34, 1)
-shader_parameter/shadow = 0.5
+shader_parameter/tint = Color(0.56, 0.49, 0.4, 1)
+shader_parameter/shadow = 0.68
 shader_parameter/opacity = 1.0
 shader_parameter/ease = 0.55
 shader_parameter/ground_fade = 0.4
@@ -149,7 +153,8 @@ color_ramp = SubResource("Texture_column")
 [sub_resource type="ShaderMaterial" id="Mat_dust"]
 shader = ExtResource("9_billow")
 shader_parameter/flipbook = ExtResource("4_cloud")
-shader_parameter/tint = Color(0.52, 0.47, 0.41, 1)
+shader_parameter/flipbook_b = ExtResource("4b_cloud")
+shader_parameter/tint = Color(0.68, 0.6, 0.49, 1)
 shader_parameter/opacity = 0.85
 shader_parameter/frame_rate = 3.0
 shader_parameter/size_scale = 1.0

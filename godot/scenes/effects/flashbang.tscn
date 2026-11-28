@@ -3,7 +3,8 @@
 [ext_resource type="Script" path="res://scripts/flashbang.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/spark.gdshader" id="2_spark"]
 [ext_resource type="Shader" path="res://shaders/smoke_screen.gdshader" id="3_cloud_shader"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/cloud_8x4.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_a.png" id="4_cloud"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_cloud_b.png" id="4b_cloud"]
 [ext_resource type="Texture2D" path="res://assets/textures/effects/muzzle_flash_4x4.png" id="5_flash"]
 
 [sub_resource type="StandardMaterial3D" id="Mat_burst"]
@@ -103,6 +104,7 @@ color_ramp = SubResource("Texture_puff")
 [sub_resource type="ShaderMaterial" id="Mat_puff"]
 shader = ExtResource("3_cloud_shader")
 shader_parameter/flipbook = ExtResource("4_cloud")
+shader_parameter/flipbook_b = ExtResource("4b_cloud")
 shader_parameter/tint = Color(0.66, 0.66, 0.65, 1)
 shader_parameter/opacity = 0.8
 shader_parameter/rounding = 0.6
