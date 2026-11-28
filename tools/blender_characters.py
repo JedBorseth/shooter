@@ -470,6 +470,71 @@ def split_legs(obj, below: float):
     log(f"{obj.name}: split the legs, {len(gone)} bridging faces removed")
 
 
+def legs_by_side(obj, crotch: float):
+    """Gives each vertex below the crotch to the leg on its side of the
+    midline only (the other leg's thigh, shin, and foot weights go, and the
+    rest is renormalised), easing in over the 10 cm below `crotch`. For cloth
+    modelled from the body, whose legs are separate meshes: deleting faces
+    as `split_legs` does would open holes along the inner thighs."""
+    names, w = group_weights(obj)
+    co = np.array([tuple(obj.matrix_world @ v.co) for v in obj.data.vertices])
+    below = np.clip((crotch - co[:, 2]) / 0.1, 0.0, 1.0)
+    # Which leg: below the crotch each leg is its own connected surface (a
+    # heavy soldier's thighs cross the midline in the rest pose, so the side
+    # of the midline is not enough). Above it, the side of the midline.
+    side = np.sign(co[:, 0])
+    low = co[:, 2] < crotch - 0.1
+    edges = np.zeros(len(obj.data.edges) * 2, dtype=np.int64)
+    obj.data.edges.foreach_get("vertices", edges)
+    edges = edges.reshape(-1, 2)
+    edges = edges[low[edges[:, 0]] & low[edges[:, 1]]]
+    parent = np.arange(len(co))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for a, b in edges:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+    roots = np.array([find(i) for i in range(len(co))])
+    for r in np.unique(roots[low]):
+        members = low & (roots == r)
+        side[members] = np.sign(co[members, 0].mean())
+    # The other leg's weight moves to the same bone of this leg, so no
+    # vertex is left without any.
+    missing = [n for n in names if n.startswith(("DEF-thigh.", "DEF-shin.", "DEF-foot."))]
+    for n in missing:
+        mirror = n[:-1] + ("R" if n.endswith("L") else "L")
+        if mirror not in names:
+            obj.vertex_groups.new(name=mirror)
+            names.append(mirror)
+            w = np.concatenate([w, np.zeros((len(w), 1))], axis=1)
+    for s, sign in (("L", 1.0), ("R", -1.0)):
+        other = "R" if s == "L" else "L"
+        mine = side == sign
+        moved = below[mine]
+        for i, n in enumerate(names):
+            if n.startswith((f"DEF-thigh.{other}", f"DEF-shin.{other}", f"DEF-foot.{other}")):
+                j = names.index(n[:-1] + s)
+                take = w[mine, i] * moved
+                w[mine, i] -= take
+                w[mine, j] += take
+    total = w.sum(axis=1, keepdims=True)
+    w = np.where(total > 1e-9, w / np.maximum(total, 1e-9), w)
+    for i, g in enumerate(obj.vertex_groups):
+        nz = np.nonzero(w[:, i] > 1e-4)[0]
+        zero = np.nonzero(w[:, i] <= 1e-4)[0]
+        if len(zero):
+            g.remove([int(v) for v in zero])
+        for v in nz:
+            g.add([int(v)], float(w[v, i]), "REPLACE")
+    log(f"{obj.name}: legs weighted by side below {crotch:.2f} m ({len(np.unique(roots[low]))} pieces below the crotch)")
+
+
 def keep_body_region(obj, bones: tuple[str, ...], threshold: float):
     """Deletes the body's vertices that mostly follow other bones: they are
     under clothes, and would only poke through them."""
@@ -1244,6 +1309,8 @@ def main():
         for o in lows:
             if o.get("bones"):
                 transfer_weights(o, mannequin, allowed=tuple(o["bones"]), smooth=4 if o["role"] == "boots" else 0)
+            if o.get("legs_by_side"):
+                legs_by_side(o, o["legs_by_side"])
             if o.get("unwrap"):
                 import blender_gear
 

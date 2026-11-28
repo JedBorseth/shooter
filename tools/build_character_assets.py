@@ -113,9 +113,6 @@ SOURCES = {
         "b542127a8e25547c7c29c19f2d1d2adb9a664c80396ecd694095dbc8028a0107",
     ),
     "skins02": (f"{MH}/skins02/skins02_cc0.zip", "1613f1ef3afca53094511d26620ed7cf1d2dedc29ed3d384d60bdebe250698ae"),
-    "pants01": (f"{MH}/pants01/pants01_cc0.zip", "e4e0ec60db34f279be291a83cfd7b342a7c5cf09bb7676682a5f39f4f6ac4ad9"),
-    "shirts01": (f"{MH}/shirts01/shirts01_cc0.zip", "a5a723b0e84a109bb190fcfeac7f1de4138d875da3e30fe5b3340eac9f38bcd3"),
-    "gloves01": (f"{MH}/gloves01/gloves01_cc0.zip", "ecdaee1d02749d17352791d415cb622a883350cc8a4b90eda3725aef35d9afb2"),
     "hands01": (f"{MH}/hands01/hands01_cc0.zip", "b874210dc3a9a179b73a3dd04976bc27521f47f985d106ce46fb45a480ee1701"),
 }
 # The MakeHuman file server answers a bare "Mozilla/5.0" with HTTP 466.
@@ -457,10 +454,7 @@ def asset_paths(src: dict[str, Path]) -> dict[str, str]:
     """Short names for the MakeHuman assets the kits use."""
     sys_ = src["makehuman_system_assets"]
     files = {
-        "cargo": src["pants01"] / "clothes/cortu_cargo_pants/cortu_cargo_pants.mhclo",
-        "shirt": src["shirts01"] / "clothes/toigo_fisherman_sweater/toigo_fisherman_sweater.mhclo",
         "boots": sys_ / "clothes/shoes03/shoes03.mhclo",
-        "gloves": src["gloves01"] / "clothes/toigo_gloves_short/toigo_gloves_short.mhclo",
         "eyes": sys_ / "eyes/low-poly/low-poly.mhclo",
         "skin_young_caucasian_male": sys_ / "skins/young_caucasian_male/young_caucasian_male.mhmat",
     }
@@ -550,7 +544,6 @@ KITS = {
                 {"age": 0.32, "weight": 0.4, "muscle": 0.85, "race": {"caucasian": 0.45, "african": 0.3, "asian": 0.25}},
             ],
             "parts": [
-                {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
                 # Only the shape of the foot for the modelled boots.
                 {"asset": "boots", "role": "boots"},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
@@ -559,7 +552,8 @@ KITS = {
             # A modelled combat shirt and boots (tools/blender_wardrobe.py),
             # and the first-person arms' gloves with fewer triangles
             # (tools/blender_hilo.py), baked from their high-detail sources.
-            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.45}, "boots": {"faces": 1150},
+            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.45},
+                     "trousers": {"waist": 1.07, "ratio": 0.42}, "boots": {"faces": 1150},
                      "gloves": True, "glove_ratio": 0.09, "glove_tuck": 0.005},
             "body_decimate": 0.32,
             # A close crop under the helmet and stubble on bare faces (paint_hair).

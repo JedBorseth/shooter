@@ -11,7 +11,7 @@ extends SceneTree
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/character_models_test.gd
 
-const SOLDIER_TRIANGLES := 36000
+const SOLDIER_TRIANGLES := 40000
 const ARMS_TRIANGLES := 26000
 const SOLDIER_HEAD_SHAPES := 4
 
