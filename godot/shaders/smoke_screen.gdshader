@@ -59,9 +59,9 @@ uniform vec4 tint : source_color = vec4(0.8, 0.8, 0.79, 1.0);
 uniform vec3 sun_direction = vec3(0.35, 0.8, 0.45);
 /// How much of a billow's shading follows the sun (the rest is the even
 /// light of the sky), per vertex.
-uniform float sun_share = 0.7;
+uniform float sun_share = 0.55;
 /// The flipbook's light scaled to the old flat billows' brightness.
-uniform float light_gain = 2.7;
+uniform float light_gain = 2.9;
 uniform float opacity = 0.9;
 /// Frames a second each billow churns through (16 frames a loop).
 uniform float frame_rate = 2.0;
