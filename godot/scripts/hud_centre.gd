@@ -162,17 +162,22 @@ func _draw_killed() -> void:
 	# centred on the screen's middle.
 	var plate_w := ceilf(maxf(name_w + 48.0, 64.0) / 2.0) * 2.0
 	var plate := Rect2(roundf(size.x / 2.0) - plate_w / 2.0, roundf(bottom - 40.0), plate_w, 40.0)
-	killed_top = plate.position.y - 20.0
+	killed_top = plate.position.y - 24.0
+	# KILLED on a small tab atop the plate's left end.
+	var tab_w := Paint.text_width(Paint.LABEL, "KILLED", 14, 1.5) + 14.0
+	draw_rect(
+		Rect2(plate.position + Vector2(0, -20.0), Vector2(tab_w, 20.0)), Color(0, 0, 0, 0.8 * alpha)
+	)
 	Paint.text(
 		self,
 		Paint.LABEL,
 		"KILLED",
-		plate.position + Vector2(0, -6.0),
+		plate.position + Vector2(7.0, -5.0),
 		14,
 		Color(UiTheme.TEXT, 0.9 * alpha),
 		1.5
 	)
-	draw_rect(plate, Color(0, 0, 0, 0.6 * alpha))
+	draw_rect(plate, Color(0, 0, 0, 0.85 * alpha))
 	draw_rect(Rect2(plate.position, Vector2(plate.size.x, 1.0)), Color(1, 1, 1, 0.3 * alpha))
 	draw_rect(Rect2(plate.position, Vector2(4.0, plate.size.y)), Color(_victim_colour, alpha))
 	Paint.text(

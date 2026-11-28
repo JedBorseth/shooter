@@ -52,6 +52,8 @@ var _names := {}
 ## The ready plate: the streak's name, and seconds since it was earned.
 var _ready_name := ""
 var _ready_age := -1.0
+## The READY plate and its prompt as last drawn (empty when not up).
+var _ready_box := Rect2()
 ## Notices under the minimap: {"text", "colour", "age"}, newest last.
 var _notices: Array[Dictionary] = []
 var _sound: AudioStreamPlayer
@@ -83,6 +85,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed(&"streak_next"):
 		get_viewport().set_input_as_handled()
 		client.cycle_streak()
+
+
+func _enter_tree() -> void:
+	# Objective markers keep off the READY plate (`objective_marks.gd`).
+	add_to_group(&"top_centre")
+
+
+## The READY plate and its prompt on screen while they show (empty
+## otherwise).
+func popup_box() -> Rect2:
+	if _ready_box.size.y <= 0.0 or not visible:
+		return Rect2()
+	var to_screen := get_global_transform_with_canvas()
+	return Rect2(to_screen * _ready_box.position, to_screen.basis_xform(_ready_box.size))
 
 
 func _process(delta: float) -> void:
@@ -158,6 +174,7 @@ func _name(key: String) -> String:
 
 
 func _draw() -> void:
+	_ready_box = Rect2()
 	if _info.is_empty():
 		return
 	draw_set_transform_matrix(Shapes.tilt(size.x - RIGHT, -Shapes.TILT))
@@ -298,6 +315,7 @@ func _draw_ready() -> void:
 	var title := "%s READY" % _ready_name.to_upper()
 	var width := maxf(READY_SIZE.x, Paint.text_width(Paint.DISPLAY, title, 21, 2.0) + 80.0)
 	var plate := Rect2(centre - Vector2(width, READY_SIZE.y) / 2.0, Vector2(width, READY_SIZE.y))
+	_ready_box = Rect2(plate.position, plate.size + Vector2(0, 34.0))
 	draw_rect(plate.grow(1.0), Color(0, 0, 0, 0.3 * alpha))
 	draw_rect(plate, Color(UiTheme.READY, 0.96 * alpha))
 	Paint.text_centred(
@@ -317,8 +335,7 @@ func _draw_ready() -> void:
 		centre.x,
 		plate.end.y + 26.0,
 		17,
-		alpha,
-		false
+		alpha
 	)
 
 

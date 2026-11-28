@@ -83,6 +83,20 @@ func _enter_tree() -> void:
 	add_to_group(&"top_centre")
 
 
+## The points popup's box on screen while it shows (empty otherwise), kept
+## clear of objective markers (`objective_marks.gd`).
+func popup_box() -> Rect2:
+	if _total_left <= 0.0:
+		return Rect2()
+	var ui := get_viewport_rect().size.y / BASE_HEIGHT
+	var at := Vector2(size.x / 2.0, size.y * 0.34)
+	var box := Rect2(
+		at + Vector2(-95.0, -30.0) * ui, Vector2(190.0, 34.0 + 22.0 * _lines.size()) * ui
+	)
+	var to_screen := get_global_transform_with_canvas()
+	return Rect2(to_screen * box.position, to_screen.basis_xform(box.size))
+
+
 ## How far down the medals reach on screen (pixels; 0 with none up).
 func top_taken() -> float:
 	if _medals.is_empty():
@@ -163,16 +177,18 @@ func _draw_points(ui: float) -> void:
 		var alpha := clampf(_total_left / TOTAL_FADE, 0.0, 1.0)
 		var pop := lerpf(1.0, 1.25, _ease_out_cubic(_total_pop))
 		_with_transform(at, ui * pop)
-		Paint.text_centred(
-			self,
-			Paint.LABEL,
-			"+%d" % _total,
-			Vector2(0, 2),
-			25,
-			Color(0, 0, 0, 0.55 * alpha),
-			0.0,
-			false
-		)
+		# A soft dark halo all round, so the total holds over bright cloud.
+		for offset: Vector2 in [Vector2(0, 2), Vector2(1.5, 1), Vector2(-1.5, 1), Vector2(0, -1)]:
+			Paint.text_centred(
+				self,
+				Paint.LABEL,
+				"+%d" % _total,
+				offset,
+				25,
+				Color(0, 0, 0, 0.5 * alpha),
+				0.0,
+				false
+			)
 		Paint.text_centred(
 			self, Paint.LABEL, "+%d" % _total, Vector2(0, 0), 25, Color(UiTheme.TEXT, alpha)
 		)

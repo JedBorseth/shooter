@@ -174,6 +174,13 @@ func _draw_rows() -> void:
 			var at := Vector2(44.0, 246.0 + i * 30.0) * ui
 			_draw_alive_row(at, i == 0, int(_alive[i][0]), ui)
 		if _side != "":
+			var side_w := Paint.text_width(Paint.LABEL, _side, int(14 * ui), 1.5 * ui)
+			Marks.row_plate(
+				_rows,
+				Rect2(Vector2(44.0, 307.0) * ui, Vector2(0.0, 23.0 * ui)),
+				48.0 * ui + side_w,
+				ui
+			)
 			Paint.text(
 				_rows,
 				Paint.LABEL,
@@ -237,6 +244,15 @@ func _draw_alive_row(at: Vector2, ours: bool, alive: int, ui: float) -> void:
 func _draw_spectating(ui: float) -> void:
 	var centre_x := _rows.size.x / 2.0
 	var top := _rows.size.y * 0.74
+	# SPECTATING on a tab atop the name plate, so it holds over the watched
+	# soldier behind it.
+	var label_w := Paint.text_width(Paint.LABEL, "SPECTATING", int(16 * ui), 1.5 * ui)
+	_rows.draw_rect(
+		Rect2(
+			centre_x - label_w / 2.0 - 12.0 * ui, top - 18.0 * ui, label_w + 24.0 * ui, 28.0 * ui
+		),
+		Color(0, 0, 0, 0.58)
+	)
 	Paint.text_centred(
 		_rows,
 		Paint.LABEL,
