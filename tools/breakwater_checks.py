@@ -233,12 +233,12 @@ BAKE_HASH = REPO / "godot/scenes/breakwater.bake.hash"
 
 def mesh_hash() -> str:
     """A hash of everything city.gltf is built from: the layout's parts and
-    placed models, and the model, look, and builder sources."""
+    placed models, and the model, look, builder, and wear-bake sources."""
     tools = Path(__file__).resolve().parent
     data = json.dumps([L.PARTS, L.PLACED], sort_keys=True, default=list, separators=(",", ":"))
     digest = hashlib.sha256(data.encode())
     for name in ("breakwater_models.py", "slamcity_models.py", "world_looks.py", "build_breakwater_city.py",
-                 "build_slamcity_city.py"):
+                 "build_slamcity_city.py", "world_wear.py"):
         digest.update((tools / name).read_bytes())
     return digest.hexdigest()[:16]
 

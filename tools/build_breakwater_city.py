@@ -37,6 +37,7 @@ import breakwater_models as BM  # noqa: E402
 import build_slamcity_city as B  # noqa: E402
 import slamcity_models as M  # noqa: E402
 import world_looks as W  # noqa: E402
+import world_wear as WW  # noqa: E402
 
 OUT = REPO / "godot/assets/maps/breakwater/city.gltf"
 B.MATERIALS = REPO / "godot/materials/breakwater"
@@ -118,7 +119,26 @@ class FarModel(M.Model):
 
 
 class Materials(B.Materials):
+    def wearable(self, name: str) -> bool:
+        """Painted and bare metal materials drawn by the world shaders, which
+        have a wear variant (concrete, brick, and timber do not rust)."""
+        if name in self.group_params:
+            return self.group_params[name]["set"] in WW.METAL_SETS
+        return name in ("palette", "palette_metal", "paint")
+
     def _material(self, name: str) -> str | None:
+        base, _, level = name.rpartition("_w")
+        if base and level in WW.LEVELS and self.wearable(base):
+            text = (self._material(base)
+                    .replace('path="res://shaders/world.gdshader"', 'path="res://shaders/world_wear.gdshader"')
+                    .replace('path="res://shaders/world_extras.gdshader"',
+                             'path="res://shaders/world_wear_extras.gdshader"'))
+            head, rest = text.split("\n[resource]\n", 1)
+            head += ('[ext_resource type="Texture2D" path="res://assets/maps/breakwater/wear.png" id="9_wear"]\n'
+                     '[ext_resource type="Texture2D" path="res://assets/textures/rust/albedo.jpg" id="10_rust"]\n')
+            params = "".join(f"shader_parameter/{k} = {v:g}\n" for k, v in WW.LEVELS[level].items())
+            return (head + "\n[resource]\n" + rest + 'shader_parameter/wear_mask = ExtResource("9_wear")\n'
+                    'shader_parameter/rust_tex = ExtResource("10_rust")\n' + params)
         spec = BM.LOOKS.get(name, {})
         if spec.get("special") == "stain_mul":
             return "\n".join([
@@ -177,11 +197,16 @@ def main():
                        + (default[3] * (1.0 + (rough - 1.0) * w),))
         return out
 
-    def emit(geo: B.Geo, chunk: str):
+    def emit(geo: B.Geo, chunk: str, wear: int = 0):
         for look, verts, faces, smooth, uvs, color in geo.pieces:
             if not faces:
                 continue
             name, default = mats.resolve(look)
+            if wear and uvs and look not in WW.NO_WEAR and mats.wearable(name):
+                # Hero pieces with baked wear: the same look in the wear
+                # variant of its material (world_wear.gdshader).
+                name = f"{name}_w{wear}"
+                mats.used.add(name)
             if isinstance(color, tuple) and color and color[0] == "mix":
                 color = shade(default, color[1])
             accs.setdefault((chunk, name), B.Acc()).add(verts, faces, smooth, uvs, color or default)
@@ -203,6 +228,7 @@ def main():
 
     missing = set()
     model_cache: dict = {}
+    placements = []
     for placed in L.PLACED:
         name = placed["model"]
         builder = M.MODELS.get(name)
@@ -218,19 +244,38 @@ def main():
             model = (FarModel if far else M.Model)(B.part_geo)
             builder(model, **args)
             model_cache[key] = model
+        placements.append((placed, key))
+    if missing:
+        raise SystemExit(f"missing models: {', '.join(sorted(missing))}")
+
+    # Baked wear: UVs into the shared mask atlas for the hero models
+    # (tools/world_wear.py); the far chunks' coarse models go without.
+    hero = {}
+    geo_key = {}
+    for key, model in model_cache.items():
+        if key[0] in WW.HERO and not key[2]:
+            geo_key[key] = WW.geometry_key(model)
+            hero[geo_key[key]] = model
+    wear_uvs = WW.build(hero)
+
+    for placed, key in placements:
         model = model_cache[key]
+        uvs = wear_uvs.get(geo_key.get(key), {})
+        level = WW.level(key[0]) if uvs else 0
         mat = B.yaw_matrix(placed["pos"], placed["yaw"], placed["scale"], placed.get("pitch", 0.0))
-        for detail, geo in ((False, model.main), (True, model.detail)):
+        for gi, (detail, geo) in enumerate(((False, model.main), (True, model.detail))):
             world = B.Geo()
+            if uvs:
+                geo = B.Geo()
+                geo.pieces = [(look, v, f, sm, uv if uv else uvs.get((gi, pi)), col)
+                              for pi, (look, v, f, sm, uv, col) in enumerate((model.main, model.detail)[gi].pieces)]
             world.extend(geo, mat)
             if not world.pieces:
                 continue
             hint = {"detail": detail or placed["detail"]}
             if placed.get("chunk"):
                 hint["chunk"] = placed["chunk"]
-            emit(world, chunk_of(placed["pos"], hint))
-    if missing:
-        raise SystemExit(f"missing models: {', '.join(sorted(missing))}")
+            emit(world, chunk_of(placed["pos"], hint), level)
 
     mats.used.add("shadow_proxy")
 

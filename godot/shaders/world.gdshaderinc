@@ -94,6 +94,26 @@ uniform float lit_rooms = 0.2;
 uniform float window_min_y = 2.0;
 #endif
 
+#ifdef BAKED_WEAR
+// Baked wear (world_wear.gdshader): the hero models' own UVs index a shared
+// mask atlas that tools/world_wear.py bakes in Blender from each model's
+// geometry: R ambient occlusion, G convex edges, B crevices and corners, A
+// rust runs falling straight down from ledges and fittings. The
+// masks steer layers of the projected scans: chipped paint and rust along
+// the edges, grime packed into the crevices, rust runs below ledges and
+// fittings. Two extra fetches: the mask and the rust scan.
+uniform sampler2D wear_mask : hint_default_white, filter_linear_mipmap, repeat_disable;
+// The rust scan (assets/textures/rust, ambientCG Rust009).
+uniform sampler2D rust_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+// Metres per repeat of the rust scan.
+uniform float rust_tile = 1.2;
+uniform float edge_wear : hint_range(0.0, 1.0) = 0.6;
+uniform float cavity_grime : hint_range(0.0, 1.0) = 0.6;
+uniform float rust_runs : hint_range(0.0, 1.0) = 0.5;
+// How much of a chipped edge is rust (the rest bare grey primer and steel).
+uniform float rust_share : hint_range(0.0, 1.0) = 0.6;
+#endif
+
 // The generated maps' shared materials (tools/build_slamcity_city.py): many
 // looks share one material and carry their tint in the vertex colour and
 // their roughness scale (halved) in its alpha; plain colours carry their
@@ -245,6 +265,39 @@ void fragment() {
 	float near_floor = 1.0 - smoothstep(floor_height, floor_height + grime_height, world_position.y);
 	float wall = 1.0 - a.y;
 	albedo *= 1.0 - grime * 0.45 * near_floor * wall * (0.6 + 0.4 * noise);
+#ifdef BAKED_WEAR
+	{
+		vec4 mask = texture(wear_mask, UV);
+		// A breakup texture in the surface's own projection, so chips and runs
+		// are ragged and differ from model to model.
+		vec2 wuv = (uv * tile_size) * 1.7 + vec2(world_position.y * 0.31, 0.0);
+		float rag = texture(world_wear, wuv).r;
+		vec3 rust_col = texture(rust_tex, uv * tile_size / rust_tile).rgb;
+		// Chipped edges: the edge mask widened or narrowed by the breakup.
+		float chip = smoothstep(0.3, 0.5, mask.g * (0.55 + 0.9 * rag)) * edge_wear;
+		// Grime in crevices and corners, heavier low down.
+		float packed = clamp(mask.b * (0.7 + 0.6 * rag) + (1.0 - mask.r) * 0.35, 0.0, 1.0) * cavity_grime;
+		// Rust runs: baked streaks under ledges (the mask's alpha), ragged
+		// by the breakup, on walls only.
+		float run = mask.a * smoothstep(0.2, 0.6, rag + mask.a * 0.4) * wall * rust_runs;
+		// Water staining: broad, faint streaks down every wall from rain
+		// run-off, darker and a little warmer where they gather.
+		float wash = texture(world_noise, vec2(dot(world_position, u_dir) * 0.35, world_position.y * 0.018)).r;
+		float stain = smoothstep(0.45, 0.85, wash + rag * 0.15) * wall * cavity_grime;
+		albedo *= 1.0 - 0.2 * stain;
+		albedo = mix(albedo, albedo * vec3(1.05, 0.95, 0.85), stain * 0.5);
+		rough = clamp(rough + stain * 0.1, 0.04, 1.0);
+		vec3 primer = vec3(0.34, 0.33, 0.31);
+		vec3 chipped = mix(primer, rust_col, rust_share);
+		albedo = mix(albedo, chipped, chip);
+		// A run is a thin rust stain over the paint, darkest where it starts.
+		albedo = mix(albedo, rust_col * 0.85, run * 0.65);
+		albedo *= 1.0 - packed * 0.55;
+		rough = clamp(rough + chip * 0.25 + packed * 0.3 + run * 0.15, 0.04, 1.0);
+		metal *= 1.0 - max(chip * rust_share, run);
+		ao = min(ao, mix(1.0, mask.r, 0.8));
+	}
+#endif
 #ifdef WORLD_EXTRAS
 	if (dust > 0.0) {
 		float fine = texture(world_noise, world_position.xz * 0.9 + world_position.y * 1.7).r;

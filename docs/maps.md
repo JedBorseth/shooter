@@ -95,7 +95,12 @@ battens (`batten`) and the rack's canopy eight LED floodlights
 read as lit spaces in daylight, as a working terminal's do. Painted steel is
 paint, not bare metal: the Breakwater looks keep paint dielectric (metallic
 paint lost its diffuse light in baked shade with no reflection probes), and
-roof undersides are off-white liner panels (`soffit`).
+roof undersides are off-white liner panels (`soffit`). The control house is fitted
+out (`fit_out`): painted dados with a dark rail (grey in the switch room, the
+side's colour elsewhere), and suspended ceilings of mineral tiles a shade apart
+on a T-bar grid upstairs and in the mess; the workshop and the pump house have
+yellow walkways and keep-clear boxes painted on their floors. All of it is in
+the plaster and paint materials those rooms already draw.
 
 **Beyond the boundary** (`backdrops()`, the `far` chunk) the land is laid in
 parts that never overlap, each with Red's twin: the landside west of the gate

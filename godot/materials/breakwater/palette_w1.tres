@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/world_wear.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/maps/breakwater/wear.png" id="9_wear"]
+[ext_resource type="Texture2D" path="res://assets/textures/rust/albedo.jpg" id="10_rust"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/textured = false
+shader_parameter/use_vertex_color = true
+shader_parameter/vertex_roughness = true
+shader_parameter/metallic_scale = 0
+shader_parameter/variation = 0.14
+shader_parameter/wear = 1
+shader_parameter/grime = 0.4
+shader_parameter/wear_mask = ExtResource("9_wear")
+shader_parameter/rust_tex = ExtResource("10_rust")
+shader_parameter/edge_wear = 0.45
+shader_parameter/cavity_grime = 0.5
+shader_parameter/rust_runs = 0.3
+shader_parameter/rust_share = 0.35
