@@ -344,7 +344,7 @@ FINISHES = {
         "wear": 0.55,
         "grime": 0.7,
         # Open-pored walnut: the oil leaves its pores as a fine texture.
-        "bump": 0.0001,
+        "bump": 0.00005,
         "tint": 0.02,
         "wood": True,
     },
@@ -595,9 +595,11 @@ def _normal_material(n: Nodes, scratch_depth: float, stock_y: float = -0.07):
         term = n.math("MULTIPLY", n.math("MULTIPLY", texture, mask), finish["bump"] / 0.0001)
         height = term if height == 0.0 else n.math("ADD", height, term)
     # Scratches cut into every coated metal surface a little.
-    # Walnut: its pores open along the grain's dark lines.
+    # Walnut: open pores, short streaks along the grain at random (pores
+    # that followed the regular bands read as a woven hatch).
     walnut = _zone_is(n, FINISHES["walnut"]["id"])
-    pores = n.math("MULTIPLY", _wood_bands(n, stock_y), n.math("MULTIPLY", walnut, -FINISHES["walnut"]["bump"] / 0.0001))
+    streaks = _ridge(n, _noise(n, (1300.0, 35.0, 1300.0), detail=1.0, w=4.4), 12.0)
+    pores = n.math("MULTIPLY", streaks, n.math("MULTIPLY", walnut, -FINISHES["walnut"]["bump"] / 0.0001))
     height = n.math("ADD", height, pores)
     # (Not into moulded polymer or leather.)
     soft = n.math("ADD", _zone_is(n, FINISHES["polymer"]["id"]), _zone_is(n, FINISHES["leather"]["id"]))
@@ -644,9 +646,9 @@ WOOD_STOCK_PITCH = -0.245
 def _wood_wave(n: Nodes, pitch: float):
     geo = n.new("ShaderNodeNewGeometry")
     turned = n.new("ShaderNodeMapping", Vector=geo.outputs["Position"], Rotation=(pitch, 0.0, 0.0))
-    scaled = n.new("ShaderNodeMapping", Vector=turned.outputs[0], Scale=(60.0, 25.0, 380.0))
-    wave = n.new("ShaderNodeTexWave", Vector=scaled.outputs[0], Scale=1.0, Distortion=2.5,
-                 Detail=2.0, **{"Detail Scale": 1.0})
+    scaled = n.new("ShaderNodeMapping", Vector=turned.outputs[0], Scale=(60.0, 25.0, 260.0))
+    wave = n.new("ShaderNodeTexWave", Vector=scaled.outputs[0], Scale=1.0, Distortion=4.0,
+                 Detail=3.0, **{"Detail Scale": 1.2})
     wave.wave_type = "BANDS"
     wave.bands_direction = "Z"
     wave.wave_profile = "SIN"

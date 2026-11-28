@@ -2058,7 +2058,9 @@ def build(key: str):
             metallic = load_pixels(textures["metallic"], False)[..., 0] if "metallic" in textures else None
             color = None
         else:
-            metallic = load_pixels(textures[2], False)[..., 1]
+            # A pack with only a colour map (the TEC-9) has no metallic to
+            # read zones from.
+            metallic = load_pixels(textures[2], False)[..., 1] if len(textures) > 2 else None
             color = load_pixels(textures[0], True)[..., :3]
         weapon_finish.assign_zones(source.obj, spec["finish"], metallic, color)
     objects = split(source.obj, spec)
