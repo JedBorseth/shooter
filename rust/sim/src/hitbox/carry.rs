@@ -57,6 +57,11 @@ pub const PALM_SKIN: f32 = 0.019;
 /// Where the grip sits in each hand's bone space (from the wrist).
 pub const RIGHT_PALM: Vec3 = Vec3::new(0.0, 0.085, 0.035);
 pub const LEFT_PALM: Vec3 = Vec3::new(0.0, 0.07, 0.05);
+/// On a handguard or pump the section's centre sits this much further toward
+/// the knuckles from the wrist: the hand comes in from the near side, so the
+/// heel of the palm is under the near edge and the fingertips end on the far
+/// side instead of curling over the top into the sight picture.
+pub const SECTION_PALM_BACK: f32 = 0.012;
 /// How far (m) the support shoulder may come forward toward a handguard the
 /// arm cannot otherwise reach, as a rifleman's shoulder blade slides round
 /// the ribs: the soldier's arm is 55 cm from shoulder to wrist and a rifle's
@@ -316,7 +321,11 @@ pub fn section_contact(section: Section, z: f32, hand: Mat3) -> (Vec3, Vec3) {
     let reach = ((n.x * half.x).powi(2) + (n.y * half.y).powi(2)).sqrt();
     (
         section.centre.extend(z),
-        Vec3::new(LEFT_PALM.x, LEFT_PALM.y, reach + PALM_SKIN),
+        Vec3::new(
+            LEFT_PALM.x,
+            LEFT_PALM.y + SECTION_PALM_BACK,
+            reach + PALM_SKIN,
+        ),
     )
 }
 

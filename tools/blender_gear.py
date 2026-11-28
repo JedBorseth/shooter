@@ -204,7 +204,7 @@ class Body:
             if outward:
                 # No further than a thick thigh's radius: past a gap in the
                 # cloth (between the legs) the ray would find the other limb.
-                hit = self.surface(centre, d, centre + d * min(0.085, reach * 0.5), distance=0.11)
+                hit = self.surface(centre, d, centre + d * min(0.075, reach * 0.5), distance=0.11)
             else:
                 far = centre + d * reach
                 hit = self.surface(far, -d, centre + d * min(0.1, reach * 0.5))
@@ -314,7 +314,7 @@ def helmet(head_top: float, head_centre: Vector, head_size: Vector, body: "Body 
         e = e0 + (math.radians(88) - e0) * 0.3
         for ring, elevation in ((band, e), (upper, e + 0.02 / rz)):
             q = point(a, elevation)
-            ring.append(q + (q - c).normalized() * 0.008)
+            ring.append(q + (q - c).normalized() * 0.0045)
     verts = band + upper
     out.append(new_object("helmet_band", verts, grid_faces(2, segs, closed=True), "accent", "band", rigid="DEF-head"))
     out[-1].modifiers.new("s", "SOLIDIFY").thickness = 0.0025
@@ -471,6 +471,48 @@ def split_head(head, eye_z: float, nose_z: float):
     return head, low, up
 
 
+def smooth_boundary(obj, iterations: int = 12, keep=None, tuck: float = 0.0):
+    """Smooths each open edge along itself, so a cut that follows a mesh's
+    triangles does not step in a sawtooth: each boundary vertex moves toward
+    the middle of its two boundary neighbours, and the ring inside follows a
+    quarter as far, so the edge does not fold. `keep(co)` limits it to the
+    boundary vertices it returns true for. `tuck` then turns those edges in
+    by that much, so the cut shows a little thickness instead of a gap."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    mw = obj.matrix_world
+
+    def chosen(v):
+        return v.is_boundary and (keep is None or keep(mw @ v.co))
+
+    for _ in range(iterations):
+        moves = {}
+        for v in bm.verts:
+            if not chosen(v):
+                continue
+            nb = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+            if len(nb) == 2:
+                moves[v] = ((nb[0].co + nb[1].co) / 2 - v.co) * 0.5
+        for v, d in moves.items():
+            v.co += d
+            for e in v.link_edges:
+                w = e.other_vert(v)
+                if not w.is_boundary:
+                    w.co += d * 0.25
+    if tuck > 0.0:
+        bm.normal_update()
+        edges = [e for e in bm.edges if e.is_boundary and all(chosen(v) for v in e.verts)]
+        ret = bmesh.ops.extrude_edge_only(bm, edges=edges)
+        for v in [g for g in ret["geom"] if isinstance(g, bmesh.types.BMVert)]:
+            n = Vector((0, 0, 0))
+            for f in v.link_faces:
+                n += f.normal
+            if n.length > 0:
+                v.co -= n.normalized() * tuck
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
 def face_cover(pieces: list, kind: str, group: int) -> bpy.types.Object:
     """A knit covering made from the head regions it hides, pushed out a few
     millimetres and smoothed: a balaclava (all but the eye window) or a neck
@@ -498,28 +540,9 @@ def face_cover(pieces: list, kind: str, group: int) -> bpy.types.Object:
     disp.strength = 0.0045
     disp.mid_level = 0.0
     apply_modifiers(obj)
-    # Smooth each open edge along itself: cut from the face's triangles, it
-    # steps in a sawtooth over the nose and cheeks. Each boundary vertex moves
-    # toward the middle of its two boundary neighbours (and the ring inside
-    # follows half as far, so the edge does not fold).
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    for _ in range(12):
-        moves = {}
-        for v in bm.verts:
-            if not v.is_boundary:
-                continue
-            nb = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
-            if len(nb) == 2:
-                moves[v] = ((nb[0].co + nb[1].co) / 2 - v.co) * 0.5
-        for v, d in moves.items():
-            v.co += d
-            for e in v.link_edges:
-                w = e.other_vert(v)
-                if not w.is_boundary:
-                    w.co += d * 0.25
-    bm.to_mesh(obj.data)
-    bm.free()
+    # Cut from the face's triangles, each open edge steps in a sawtooth over
+    # the nose and cheeks.
+    smooth_boundary(obj)
     # Tuck the open edges in to the skin, so no gap shows at the eyes or neck.
     bm = bmesh.new()
     bm.from_mesh(obj.data)
