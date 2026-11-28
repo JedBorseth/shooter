@@ -3,7 +3,8 @@
 The Options screen (Options on the title screen, or in the pause menu)
 follows the options Call of Duty exposes on PC, Black Ops 6 and Modern Warfare
 III first, and offers only what the engine honours. It has five tabs:
-Controls, Keybinds, Graphics, Audio, and General (LB and RB, or Page Up and
+Controls, Keybinds (Button layout while a controller plays), Graphics, Audio,
+and General (LB and RB, or Page Up and
 Page Down, step between them). Picking a setting shows what it does in the
 pane beside the list. Every change applies at once and saves itself shortly
 after (0.75 s) to `user://settings.cfg`; Reset to Default (R, or Y on a
@@ -71,12 +72,36 @@ so on) are left out by decision.
 
 ## Keybinds and controls
 
-Every gameplay action can be rebound on keyboard and mouse in the Keybinds
-tab: choose a binding, then press a key or mouse button; Esc or B cancels. A
-key already used by another action swaps with it. Controller buttons follow
-Call of Duty's default layout and are not rebindable; the tab shows each
-action's controller button beside it. The defaults are in
-`godot/project.godot` and the list in `Settings.REBINDABLE`.
+The second tab follows Input device, as Call of Duty splits its Keyboard &
+Mouse and Controller tabs.
+
+With keyboard and mouse it is **Keybinds**: every gameplay action can be
+rebound; choose a binding, then press a key or mouse button; Esc or B
+cancels. A key already used by another action swaps with it. Each row also
+shows the action's controller button under the current controller layout.
+The defaults are in `godot/project.godot` and the list in
+`Settings.REBINDABLE`.
+
+With a controller it is **Button layout**: Call of Duty's controller presets
+instead of free remapping, over a read-only map of every button (what it
+does, its name, its glyph) that updates as the presets change. Gameplay
+prompts and the controls legend follow the layout, because they read the
+input map. The presets are in `godot/scripts/controller_layouts.gd`; they move
+only the face buttons, bumpers, triggers, and stick clicks, as Call of Duty's
+do; the D-pad, View, and Menu stay put.
+
+| Setting | Options (default) | What it does | Call of Duty |
+| --- | --- | --- | --- |
+| Button layout | Default, Tactical, Bumper Jumper, Bumper Jumper Tactical, Lefty (Default) | Tactical: crouch on R3, melee on B. Bumper Jumper: jump on LB, tactical on A. Bumper Jumper Tactical: both. Lefty: fire and aim, lethal and tactical trade sides | Button Layout Preset (Black Ops 2 onward, Modern Warfare 2019 onward) |
+| Stick layout | Default, Southpaw, Legacy, Legacy Southpaw (Default) | Southpaw swaps the sticks. Legacy: left stick forward, back, and turn; right stick strafe and look up and down. Legacy Southpaw mirrors it. The Southpaw layouts swap the stick clicks too, so sprint stays on the walking stick | Stick Layout Preset |
+| Flip triggers and bumpers | off | Each bumper swaps with the trigger on its side, on any layout | "Flipped" layouts (Black Ops), Flip L1/L2 with R1/R2 (Modern Warfare) |
+
+Call of Duty also ships Stick and Move, Charlie, Nomad, Brawler, and
+One-Hand Gunslinger presets. They are left out until their exact maps are
+confirmed from the games' own menus; published sources disagree on them. The
+trigger deadzone applies to whichever actions the layout puts on a trigger.
+
+The table below is the default layout.
 
 | Action | Keyboard and mouse | Controller |
 | --- | --- | --- |

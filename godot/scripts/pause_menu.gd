@@ -21,14 +21,17 @@ const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const OptionRow := preload("res://scripts/ui/option_row.gd")
 const OptionText := preload("res://scripts/ui/option_text.gd")
 const BindCells := preload("res://scripts/ui/bind_cells.gd")
+const ControllerLayouts := preload("res://scripts/controller_layouts.gd")
 const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const PadMap := preload("res://scripts/ui/pad_map.gd")
+const MenuSounds := preload("res://scripts/ui/menu_sounds.gd")
 
 const PAUSE_ACTION := &"pause"
-const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
-const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
-const UI_BUS := &"UI"
 const TAB_NAMES: Array[String] = ["Controls", "Keybinds", "Graphics", "Audio", "General"]
+## The bindings tab's name while a controller plays: it shows the layouts.
+const PAD_TAB_NAME := "Button layout"
+const BINDINGS_TAB := 1
 const RESET_QUESTION := "Reset every setting and key binding to its default?"
 
 ## The player that settings (look speed, input device, FOV) are pushed onto.
@@ -42,6 +45,15 @@ var _tab_sections: Array[VBoxContainer] = []
 var _bind_buttons: Dictionary[StringName, Button] = {}
 var _bind_rows: Dictionary[StringName, OptionRow] = {}
 var _pad_cells: Dictionary[StringName, TextureRect] = {}
+## The bindings tab's two faces: the key list for keyboard and mouse, and the
+## layout pickers and button map for a controller. Only the one for the
+## device in play shows.
+var _key_nodes: Array[Control] = []
+var _pad_nodes: Array[Control] = []
+var _pad_map := PadMap.new()
+## Which face the bindings tab shows: 1 for the controller's, 0 for the
+## keys', -1 before the first sync.
+var _bindings_face := -1
 var _capturing: StringName
 var _capture_time := 0.0
 var _binding_hint: Label
@@ -69,9 +81,7 @@ var _choices: Dictionary[StringName, OptionButton] = {}
 var _scale_option: OptionButton
 ## The rows a section is building into, while `_build_settings` runs.
 var _collect: Array[OptionRow] = []
-var _click: AudioStreamPlayer
-var _hover: AudioStreamPlayer
-var _quiet := false
+var _sounds := MenuSounds.new()
 var _owns_pause := false
 
 @onready var _root: Control = %Root
@@ -104,7 +114,9 @@ func _ready() -> void:
 	footer_keys.bind($Root/SettingsPage/TabRow/PrevTab/Cap/PrevKey, &"ui_tab_prev")
 	footer_keys.bind($Root/SettingsPage/TabRow/NextTab/Cap/NextKey, &"ui_tab_next")
 	footer_keys.bind($Root/Confirm/BackPrompt/ConfirmKey, &"ui_cancel")
-	_setup_sounds()
+	_sounds.name = "Sounds"
+	add_child(_sounds)
+	_sounds.attach(_root, _sliders.values())
 
 	_resume_button.pressed.connect(close)
 	_settings_button.pressed.connect(_show_settings)
@@ -342,7 +354,7 @@ func _show_settings() -> void:
 	_frame.context = "MAIN MENU" if title_menu else _pause_context()
 	_show_footer()
 	_scroll.scroll_vertical = 0
-	_describe(TAB_NAMES[_tabs.current_tab], OptionText.TAB_INTROS[_tabs.current_tab], "")
+	_describe(_tab_name(_tabs.current_tab), _tab_intro(_tabs.current_tab), "")
 	_focus(_tabs)
 
 
@@ -423,9 +435,9 @@ func _quit() -> void:
 
 
 func _focus(control: Control) -> void:
-	_quiet = true
+	_sounds.quiet = true
 	control.grab_focus()
-	_quiet = false
+	_sounds.quiet = false
 
 
 ## The mouse moved onto an item or row: it takes the focus, unless a binding
@@ -489,10 +501,16 @@ func _build_settings() -> void:
 	_collect.clear()
 
 	var keybinds := _add_section("Keybinds")
+	var first := keybinds.get_child_count()
 	_add_heading(keybinds, "Keybinds", false)
 	_binding_hint = _add_note(keybinds)
 	_binding_hint.text = "Choose a binding, then press a key or mouse button. Conflicts swap."
 	_build_bindings(keybinds)
+	_key_nodes.assign(keybinds.get_children().slice(first))
+	first = keybinds.get_child_count()
+	_pad_map.build(self, keybinds)
+	_pad_nodes.assign(keybinds.get_children().slice(first))
+	_collect.clear()
 
 	var video := _add_section("Graphics")
 	_add_heading(video, "Display", false)
@@ -552,6 +570,10 @@ func _record_defaults() -> void:
 	_defaults[&"render_scale"] = _scale_name(Settings.DEFAULTS[&"render_scale"])
 	_defaults[&"audio_mix"] = Settings.AUDIO_MIXES[Settings.DEFAULTS[&"audio_mix"]]
 	_defaults[&"input_device"] = Settings.INPUT_DEVICES[Settings.DEFAULTS[&"input_device"]]
+	_defaults[&"button_layout"] = ControllerLayouts.layout_names()[
+		Settings.DEFAULTS[&"button_layout"]
+	]
+	_defaults[&"stick_layout"] = ControllerLayouts.STICK_LAYOUTS[Settings.DEFAULTS[&"stick_layout"]]
 
 
 func _scale_name(scale: float) -> String:
@@ -611,7 +633,7 @@ func _add_section(title: String) -> VBoxContainer:
 func _chain_focus(section: VBoxContainer) -> void:
 	var controls: Array[Control] = []
 	for child: Node in section.get_children():
-		if child is OptionRow:
+		if child is OptionRow and (child as OptionRow).visible:
 			controls.append((child as OptionRow).control)
 	for i in controls.size():
 		var control := controls[i]
@@ -631,9 +653,9 @@ func _select_tab(index: int) -> void:
 	for i in _tab_sections.size():
 		_tab_sections[i].visible = i == index
 	_scroll.scroll_vertical = 0
-	_describe(TAB_NAMES[index], OptionText.TAB_INTROS[index], "")
+	_describe(_tab_name(index), _tab_intro(index), "")
 	for child: Node in _tab_sections[index].get_children():
-		if child is OptionRow:
+		if child is OptionRow and (child as OptionRow).visible:
 			_tabs.focus_neighbor_bottom = _tabs.get_path_to((child as OptionRow).control)
 			break
 	_tabs.focus_neighbor_top = ^"."
@@ -757,6 +779,37 @@ func _capture_input(event: InputEvent) -> void:
 	_show_footer()
 	_binding_hint.text = "Binding saved. Any conflicting key was swapped with the previous binding."
 	_focus(_bind_buttons[action])
+
+
+## Shows the bindings tab's face for the device in play, renames the tab to
+## match, and fills the button map from the current layout.
+func _sync_bindings_face() -> void:
+	var controller := Settings.uses_controller()
+	if int(controller) != _bindings_face:
+		_bindings_face = int(controller)
+		if _capturing != &"":
+			_cancel_capture()
+		for node: Control in _key_nodes:
+			node.visible = not controller
+		for node: Control in _pad_nodes:
+			node.visible = controller
+		_tabs.set_tab_title(BINDINGS_TAB, _tab_name(BINDINGS_TAB).to_upper())
+		_chain_focus(_tab_sections[BINDINGS_TAB])
+		if _tabs.current_tab == BINDINGS_TAB:
+			_select_tab(BINDINGS_TAB)
+	_pad_map.fill()
+
+
+func _tab_name(index: int) -> String:
+	if index == BINDINGS_TAB and Settings.uses_controller():
+		return PAD_TAB_NAME
+	return TAB_NAMES[index]
+
+
+func _tab_intro(index: int) -> String:
+	if index == BINDINGS_TAB and Settings.uses_controller():
+		return OptionText.PAD_LAYOUT_INTRO
+	return OptionText.TAB_INTROS[index]
 
 
 func _add_slider(
@@ -909,6 +962,7 @@ func _sync_controls() -> void:
 		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
 		BindCells.show_pad(_pad_cells[action], action)
 	_input_option.select(_input_option.get_item_index(Settings.input_device))
+	_sync_bindings_face()
 	var controller := Settings.uses_controller()
 	_show_lock(_mouse_heading, _mouse_rows, controller)
 	_show_lock(_controller_heading, _controller_rows, not controller)
@@ -942,44 +996,3 @@ func _closest_scale(scale: float) -> int:
 		):
 			best = i
 	return best
-
-
-# --- Sounds -----------------------------------------------------------------
-
-
-func _setup_sounds() -> void:
-	# The UI sounds are optional until they are added to the project.
-	_click = _sound_player(CLICK_SOUND)
-	_hover = _sound_player(HOVER_SOUND)
-	for node: Node in _root.find_children("*", "BaseButton", true, false):
-		var button := node as BaseButton
-		button.pressed.connect(_play.bind(_click))
-		button.mouse_entered.connect(_play.bind(_hover))
-		button.focus_entered.connect(_on_focus_sound)
-	for slider: HSlider in _sliders.values():
-		slider.focus_entered.connect(_on_focus_sound)
-
-
-func _sound_player(path: String) -> AudioStreamPlayer:
-	if not ResourceLoader.exists(path):
-		return null
-	var stream := load(path) as AudioStream
-	if stream == null:
-		return null
-	var player := AudioStreamPlayer.new()
-	player.stream = stream
-	player.bus = UI_BUS
-	player.max_polyphony = 3
-	add_child(player)
-	return player
-
-
-func _on_focus_sound() -> void:
-	# Keyboard and gamepad navigation only: a click already plays its own sound.
-	if not _quiet and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_play(_hover)
-
-
-func _play(player: AudioStreamPlayer) -> void:
-	if player != null:
-		player.play()

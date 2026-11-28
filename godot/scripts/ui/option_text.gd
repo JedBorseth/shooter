@@ -10,13 +10,39 @@ const TAB_INTROS: Array[String] = [
 		"What you play with, and how it aims. The device you don't pick is locked out"
 		+ " of play until you pick it here."
 	),
-	"Every action's key or mouse button. Controller buttons are fixed; they show on the right.",
+	(
+		"Every action's key or mouse button. The controller column follows the button"
+		+ " layout, which you pick here while Input device is Controller."
+	),
 	"Display and quality. Every change applies right away.",
 	"Volume for each kind of sound, and how it is mixed.",
 	"Your name, and what the screen shows while you play.",
 ]
+## The bindings tab's intro while a controller plays.
+const PAD_LAYOUT_INTRO := (
+	"Pick a button layout and a stick layout. The map below shows where every action"
+	+ " sits, and prompts in play follow it."
+)
 ## What each setting does, for the pane beside the list.
 const DESCRIPTIONS := {
+	&"button_layout":
+	(
+		"Where actions sit on the controller. Tactical puts crouch on the right stick click"
+		+ " and melee on B, so you slide without leaving your aim. Bumper Jumper puts jump on"
+		+ " the left bumper and the tactical on A; Bumper Jumper Tactical does both. Lefty"
+		+ " fires with the left trigger."
+	),
+	&"stick_layout":
+	(
+		"Which stick moves and which looks. Southpaw swaps them, clicks included. Legacy"
+		+ " walks forward, back, and turns on the left stick, and strafes and looks up and"
+		+ " down on the right; Legacy Southpaw is its mirror."
+	),
+	&"trigger_flip":
+	(
+		"Swaps each bumper with the trigger beside it, so you fire with the right bumper"
+		+ " and aim with the left. Works with every button layout."
+	),
 	&"input_device":
 	(
 		"Play with keyboard and mouse or with a controller. The other one is locked out"
@@ -106,6 +132,18 @@ const DESCRIPTIONS := {
 		"Choose a binding, then press a key or mouse button. A key used by another action"
 		+ " swaps with it."
 	),
+}
+
+## What an action does where the controller's button map says it differently
+## from the Keybinds list.
+const PAD_DESCRIPTIONS := {
+	&"reload": "Reload your weapon. Facing a weapon or the bomb, it picks up or uses that instead.",
+	&"weapon_next": "Switch between your primary and secondary weapons.",
+	&"move_forward": "Walk forward and back. Which stick depends on the stick layout.",
+	&"move_left": "Step left and right. Which stick depends on the stick layout.",
+	&"look_right": "Turn left and right. Which stick depends on the stick layout.",
+	&"look_up": "Look up and down. Which stick depends on the stick layout.",
+	&"pause": "Open the menu.",
 }
 
 ## What each rebindable action does, for the pane beside the Keybinds list.

@@ -3,8 +3,8 @@ extends SceneTree
 ## review: the pause list and match card (offline, and in a local Team
 ## Deathmatch), each options tab, focused rows of each kind, an open
 ## drop-down, a binding waiting for a key, a long tab scrolled to its end,
-## the locked device section, the reset confirm band, and Options opened from
-## the title screen. Needs a GPU and a display (or Xvfb).
+## the locked device section, the controller's button layout page, the reset
+## confirm band, and Options opened from the title screen. Needs a GPU and a display (or Xvfb).
 ## CAPTURE_PHASE picks one group (arena, title, match); without it every
 ## group runs.
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
@@ -94,6 +94,19 @@ func _arena() -> void:
 	(pause.get("_toggles")[&"rumble"] as Control).grab_focus()
 	await _frames(12)
 	await _shot("p12_controls_end")
+	# With the controller in play, the bindings tab shows the layouts and map.
+	tabs.current_tab = 1
+	await _frames(12)
+	await _shot("p12a_button_layout")
+	root.get_node("Settings").call("set_setting", &"button_layout", 1)
+	root.get_node("Settings").call("set_setting", &"trigger_flip", true)
+	var map_rows: Dictionary = pause.get("_pad_map").get("rows")
+	((map_rows[JOY_BUTTON_B] as Control).get(&"control") as Control).grab_focus()
+	await _frames(12)
+	await _shot("p12b_button_layout_tactical_flipped")
+	root.get_node("Settings").call("set_setting", &"button_layout", 0)
+	root.get_node("Settings").call("set_setting", &"trigger_flip", false)
+	tabs.current_tab = 0
 	root.get_node("Settings").call("set_setting", &"input_device", 0)
 	# General: the name field.
 	tabs.current_tab = 4

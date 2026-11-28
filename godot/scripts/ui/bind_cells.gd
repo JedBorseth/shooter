@@ -70,15 +70,14 @@ static func show_pad(cell: TextureRect, action: StringName) -> void:
 	(cell.get_child(0) as Label).text = "" if glyph != null else gamepad_label(action).to_upper()
 
 
+## Shows a pad token's glyph in `cell`, or its name in words.
+static func show_token(cell: TextureRect, token: String) -> void:
+	var glyph := Glyphs.texture(token) if Glyphs.is_pad(token) else null
+	cell.texture = glyph
+	var words := "" if glyph != null else ("—" if token == "?" else Glyphs.plain(token))
+	(cell.get_child(0) as Label).text = words.to_upper()
+
+
 static func gamepad_label(action: StringName) -> String:
-	for event: InputEvent in Settings.action_events(action):
-		if event is InputEventJoypadMotion:
-			match event.axis:
-				JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
-					return "Left stick"
-				JOY_AXIS_TRIGGER_LEFT:
-					return "LT"
-				JOY_AXIS_TRIGGER_RIGHT:
-					return "RT"
 	var label := Settings.key_label(action, true)
 	return "—" if label == "?" else Glyphs.plain(label)
