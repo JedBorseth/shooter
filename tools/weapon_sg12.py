@@ -224,6 +224,7 @@ def build() -> tuple[dict, dict]:
 FINISH = {
     "default": "steel",
     "unwrap": True,
+    "seam_fix": "edges",
     "wear_radius": 0.0032,
     "scratch_depth": 0.15,
     "zones": [

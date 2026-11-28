@@ -46,7 +46,7 @@ OUT = ROOT / "godot" / "assets" / "weapons" / "knife" / "knife.glb"
 # height, grind-line height, edge height, half-thickness at the spine.
 BLADE_BASE = 0.059
 # Height of the bright sharpened (secondary) bevel above the edge, metres.
-SECONDARY_BEVEL = 0.0022
+SECONDARY_BEVEL = 0.0026
 BLADE = [
     (0.000, 0.0125, -0.0035, -0.0165, 0.0026),
     (0.010, 0.0125, -0.0040, -0.0170, 0.0026),
@@ -83,7 +83,7 @@ WASHER_GROOVE = 0.00035
 # and its depth either side.
 FULLER = (0.03, 0.105)
 FULLER_BAND = (0.2, 0.58)
-FULLER_DEPTH = 0.0006
+FULLER_DEPTH = 0.0009
 TEXTURE_SIZE = 1024
 FINISH = {
     "wear_radius": 0.0012,

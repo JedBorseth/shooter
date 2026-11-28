@@ -56,6 +56,8 @@ BODY_RADIUS = 0.032
 FUSE_RADIUS = 0.0095
 FUSE_BASE = 0.0285
 FUSE_TOP = 0.046
+# The frag's yellow band, in degrees of latitude.
+BAND = (46.0, 52.0)
 # The spoon lies on this side of the body (+X), the ring on the other (-X).
 
 
@@ -156,16 +158,19 @@ def body():
     steps = 28
     # From the bottom pole to where the collar starts.
     top = math.acos(FUSE_RADIUS * 1.25 / BODY_RADIUS)
-    for i in range(steps + 1):
-        a = -math.pi / 2 + (math.pi / 2 + top) * i / steps
+    # Rings exactly at the band's edges, so its edges run true round the
+    # sphere instead of stepping from face to face.
+    angles = {-math.pi / 2 + (math.pi / 2 + top) * i / steps for i in range(steps + 1)}
+    angles = sorted(angles | {math.radians(BAND[0]), math.radians(BAND[1])})
+    for a in angles:
         profile.append((BODY_RADIUS * math.cos(a), BODY_RADIUS * 0.985 * math.sin(a)))
     profile[0] = (0.0, profile[0][1])
     lathe(bm, profile, 64, 0)
-    # Mark the band (between 45° and 55° of latitude) yellow.
+    # Mark the band yellow.
     for face in bm.faces:
         c = face.calc_center_median()
-        lat = math.degrees(math.atan2(c.z, math.hypot(c.x, c.y)))
-        if 46.0 < lat < 53.0:
+        lat = math.degrees(math.atan2(c.z / 0.985, math.hypot(c.x, c.y)))
+        if BAND[0] < lat < BAND[1]:
             face.material_index = 1
     # The collar the fuse screws into.
     collar_z = BODY_RADIUS * 0.985 * math.sin(top)

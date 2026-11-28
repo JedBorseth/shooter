@@ -188,6 +188,8 @@ WEAPONS = {
         "finish": {
             "default": "aluminium",
             "unwrap": True,
+            # Seams must not read as chips (weapon_finish `_refill_seams`).
+            "seam_fix": "edges",
             "bore": (-0.0008, 0.0209),
             "zones": [
                 # The pack's own metallic map marks the grip and stock.
@@ -642,6 +644,7 @@ WEAPONS = {
         "finish": {
             "default": "steel",
             "unwrap": True,
+            "seam_fix": "edges",
             "zones": [
                 {"zone": "bolt", "parts": ["BOLT"]},
                 {"zone": "fibreglass", "parts": ["CHEEK"]},
@@ -2193,6 +2196,20 @@ emission_energy_multiplier = 2.0
 # mounts: the suppressor's rear face on the bore axis (it extends along -Z),
 # the foregrip's clamp top on the rail (it hangs along -Y).
 ATTACHMENTS = ("suppressor", "foregrip")
+ATTACHMENT_TEXTURE_SIZE = 1024
+ATTACHMENT_FINISH = {
+    "suppressor": {
+        "unwrap": True,
+        "seam_fix": True,
+        "uv_margin": 6.0,
+        "wear_radius": 0.0012,
+        "scratch_depth": 0.08,
+        "markings": [{"text": "SD-556  CAL 5.56", "at": (0.09, 0.0), "side": "-x", "size": 0.0045}],
+        "font": REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf",
+    },
+    "foregrip": {"unwrap": True, "seam_fix": True, "uv_margin": 6.0, "wear_radius": 0.0012,
+                 "scratch_depth": 0.08},
+}
 
 
 def build_attachment(key: str):
@@ -2247,12 +2264,29 @@ def build_attachment(key: str):
     mesh.set_sharp_from_angle(angle=np.radians(35.0))
     obj = bpy.data.objects.new("Body", mesh)
     bpy.context.scene.collection.objects.link(obj)
-    obj.data.materials.append(bpy.data.materials.new("Optics"))
+    obj.data.materials.append(bpy.data.materials.new("Weapon"))
+    # Painted like the modelled guns on its own maps: the suppressor's coat
+    # browned toward the muzzle, the grip in stippled polymer.
+    ids = {n: f["id"] for n, f in weapon_finish.FINISHES.items()}
+    zone = obj.data.attributes.new(weapon_finish.ZONE_ATTRIBUTE, "INT", "FACE")
+    values = []
+    for poly in mesh.polygons:
+        if key == "foregrip":
+            values.append(ids["polymer"])
+        else:
+            values.append(ids["scorched"] if poly.center.y > 0.1495 else ids["cerakote"])
+    zone.data.foreach_set("value", values)
+    bpy.context.view_layer.update()
+    painted = weapon_finish.paint({"Body": obj}, {"finish": ATTACHMENT_FINISH[key]}, Matrix.Identity(4),
+                                  ATTACHMENT_TEXTURE_SIZE)
+    obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
     out = WEAPONS_DIR / key
     out.mkdir(parents=True, exist_ok=True)
     tris = sum(len(p.vertices) - 2 for p in mesh.polygons)
     log(f"{key}: {tris} triangles")
     export({"Body": obj}, out / f"{key}.glb")
+    save_maps(key, out, *painted)
+    write_material(key, out, key)
     write_import(key, out, key)
 
 

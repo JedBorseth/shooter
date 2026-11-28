@@ -30,9 +30,10 @@ Nodes: `Body`, `Pump` (the forend and action bars) with `Pump/BoltCarrier`
 
 from __future__ import annotations
 
+import bmesh
 import numpy as np
 from mathutils import Matrix, Vector
-from weapon_shapes import bevel, boolean, box, group, join, lathe, side_profile
+from weapon_shapes import _link, bevel, boolean, box, group, join, lathe, side_profile
 
 # Receiver, in gun space.
 RECEIVER_LENGTH = 0.229
@@ -253,25 +254,81 @@ def bolt() -> object:
     return group(face, "bolt")
 
 
+# The stock's side outline, (y, z, corner radius) in gun space, from the
+# receiver back to the butt and along the belly forward again.
+STOCK_OUTLINE = [
+    (0.002, -0.004, 0.0), (-0.050, -0.017, 0.03), (-0.296, -0.040, 0.004), (-0.300, -0.046, 0.0),
+    (-0.300, -0.166, 0.0), (-0.292, -0.172, 0.006), (-0.150, -0.120, 0.05), (-0.085, -0.093, 0.04),
+    (-0.048, -0.080, 0.02), (-0.022, -0.068, 0.015), (0.002, -0.050, 0.0),
+]
+STOCK_BUTT = -0.2995
+STOCK_HALF = 0.0185
+
+
+def _stock_heights(outline: np.ndarray, y: float) -> tuple[float, float]:
+    """Where a vertical line at `y` crosses the outline: top and bottom."""
+    zs = []
+    for (y0, z0), (y1, z1) in zip(outline, np.roll(outline, -1, axis=0)):
+        if (y0 - y) * (y1 - y) <= 0.0 and abs(y1 - y0) > 1e-9:
+            zs.append(z0 + (z1 - z0) * (y - y0) / (y1 - y0))
+    return max(zs), min(zs)
+
+
+def _stock_section(y: float, top: float, bottom: float, half: float, sides: int, power: float) -> list:
+    """A rounded-rectangle (superellipse) section across the stock: full
+    sides, a rounded comb and belly."""
+    mid, h = (top + bottom) * 0.5, (top - bottom) * 0.5
+    ring = []
+    for k in range(sides):
+        a = 2.0 * np.pi * k / sides
+        c, sn = np.cos(a), np.sin(a)
+        x = half * np.sign(c) * abs(c) ** (2.0 / power)
+        z = mid + h * np.sign(sn) * abs(sn) ** (2.0 / power)
+        ring.append((x, y, z))
+    return ring
+
+
 def stock(finish: str = "walnut") -> list:
     """A sporting stock (walnut on the M870, polymer on the SG-12) with a
-    rubber recoil pad: slim at the wrist, swelling to the butt, its comb
-    and toe drawn in curves."""
-    outline = rounded([
-        (0.002, -0.004, 0.0), (-0.050, -0.017, 0.03), (-0.296, -0.040, 0.004), (-0.300, -0.046, 0.0),
-        (-0.300, -0.166, 0.0), (-0.292, -0.172, 0.006), (-0.150, -0.120, 0.05), (-0.085, -0.093, 0.04),
-        (-0.048, -0.080, 0.02), (-0.022, -0.068, 0.015), (0.002, -0.050, 0.0),
-    ], 0.0, steps=8)
-    body = side_profile("Stock", outline, -0.0185, 0.0185)
-    bevel(body, 0.0075, 5)
-    # Thinner at the wrist (86%), fuller at the butt (110%).
-    for v in body.data.vertices:
-        t = min(max((-v.co.y - 0.02) / 0.26, 0.0), 1.0)
-        v.co.x *= 0.86 + 0.24 * t * t * (3.0 - 2.0 * t)
+    rubber recoil pad, lofted from rounded sections along its length: slim
+    at the wrist, swelling to the butt, its comb and belly rounded, as a
+    stock is shaped from a blank rather than cut from a plank."""
+    outline = np.array(rounded(STOCK_OUTLINE, 0.0, steps=8))
+    sides = 40
+    bm = bmesh.new()
+    rings = []
+    for y in np.linspace(0.0015, STOCK_BUTT, 72):
+        top, bottom = _stock_heights(outline, y)
+        t = min(max((-y - 0.02) / 0.26, 0.0), 1.0)
+        # Thinner at the wrist (86%), fuller at the butt (110%).
+        half = STOCK_HALF * (0.86 + 0.24 * t * t * (3.0 - 2.0 * t))
+        ring = _stock_section(y, top, bottom, half, sides, 3.2)
+        rings.append([bm.verts.new(v) for v in ring])
+    for r0, r1 in zip(rings, rings[1:]):
+        for k in range(sides):
+            n = (k + 1) % sides
+            bm.faces.new((r0[k], r0[n], r1[n], r1[k]))
+    bm.faces.new(tuple(reversed(rings[0])))
+    bm.faces.new(tuple(rings[-1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    body = _link("Stock", bm)
     group(body, finish)
-    pad = side_profile("Pad", [(-0.299, -0.042), (-0.320, -0.044), (-0.320, -0.168), (-0.299, -0.170)],
-                       -0.0206, 0.0206)
-    bevel(pad, 0.004, 3)
+    # The pad: the butt's own section, a millimetre proud, 20 mm deep, its
+    # back edge rounded.
+    top, bottom = _stock_heights(outline, STOCK_BUTT)
+    bm = bmesh.new()
+    rings = []
+    for y, grow in ((STOCK_BUTT + 0.0005, 0.0008), (-0.316, 0.0012), (-0.3195, 0.0002), (-0.3205, -0.0025)):
+        ring = _stock_section(y, top + grow, bottom - grow, STOCK_HALF * 1.1 + grow, sides, 3.2)
+        rings.append([bm.verts.new(v) for v in ring])
+    for r0, r1 in zip(rings, rings[1:]):
+        for k in range(sides):
+            n = (k + 1) % sides
+            bm.faces.new((r0[k], r0[n], r1[n], r1[k]))
+    bm.faces.new(tuple(reversed(rings[0])))
+    bm.faces.new(tuple(rings[-1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    pad = _link("Pad", bm)
     group(pad, "rubber")
     return [body, pad]
 

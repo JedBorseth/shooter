@@ -171,7 +171,8 @@ FINISHES = {
         "bare": ((0.33, 0.34, 0.27), 0.6, 0.0),
         "wear": 0.5,
         "grime": 0.8,
-        "bump": 0.00006,
+        # The sprayed finish leaves a light pebble.
+        "bump": 0.0001,
         "tint": 0.012,
         "mottle": ((0.19, 0.2, 0.155), 0.58),
     },
@@ -232,7 +233,9 @@ FINISHES = {
     "honed": {
         "id": 13,
         "color": (0.56, 0.57, 0.59),
-        "roughness": 0.3,
+        # Satin from the stone, not a mirror: a mirror bevel broke into
+        # dashes, each facet catching the sky on its own.
+        "roughness": 0.44,
         "metallic": 1.0,
         "bare": ((0.6, 0.61, 0.63), 0.26, 1.0),
         "wear": 0.0,
@@ -258,7 +261,7 @@ FINISHES = {
     # can): flat, chipped to steel on edges and where it rolls on the ground.
     "od_paint": {
         "id": 15,
-        "color": (0.25, 0.28, 0.18),
+        "color": (0.235, 0.245, 0.185),
         "roughness": 0.62,
         "metallic": 0.0,
         "bare": ((0.4, 0.4, 0.39), 0.42, 1.0),
@@ -282,7 +285,7 @@ FINISHES = {
     # Pale paint: a flashbang's band, a smoke can's top.
     "pale_paint": {
         "id": 17,
-        "color": (0.72, 0.7, 0.62),
+        "color": (0.6, 0.585, 0.52),
         "roughness": 0.62,
         "metallic": 0.0,
         "bare": ((0.4, 0.4, 0.39), 0.42, 1.0),
@@ -295,7 +298,7 @@ FINISHES = {
     "zinc": {
         "id": 18,
         "color": (0.34, 0.34, 0.3),
-        "roughness": 0.52,
+        "roughness": 0.6,
         "metallic": 0.65,
         "bare": ((0.52, 0.52, 0.5), 0.38, 1.0),
         "wear": 0.5,
@@ -332,7 +335,7 @@ FINISHES = {
     # paler and smoother where hands wear the oil off its edges.
     "walnut": {
         "id": 21,
-        "color": (0.36, 0.2, 0.1),
+        "color": (0.31, 0.185, 0.105),
         "roughness": 0.5,
         "metallic": 0.0,
         "bare": ((0.47, 0.3, 0.17), 0.42, 0.0),
@@ -342,6 +345,32 @@ FINISHES = {
         "bump": 0.0001,
         "tint": 0.02,
         "wood": True,
+    },
+    # A suppressor's high-temperature ceramic coat: flat dark grey, worn to
+    # steel on its flats and grooves' edges.
+    "cerakote": {
+        "id": 22,
+        "color": (0.165, 0.165, 0.163),
+        "roughness": 0.64,
+        "metallic": 0.0,
+        "bare": ((0.45, 0.45, 0.46), 0.36, 1.0),
+        "wear": 0.6,
+        "grime": 0.9,
+        "bump": 0.00004,
+        "tint": 0.014,
+    },
+    # Its front cap, baked by the gas: carbon-browned coat, sooty in its
+    # grooves.
+    "scorched": {
+        "id": 23,
+        "color": (0.135, 0.12, 0.105),
+        "roughness": 0.72,
+        "metallic": 0.0,
+        "bare": ((0.42, 0.38, 0.33), 0.4, 1.0),
+        "wear": 0.5,
+        "grime": 1.4,
+        "bump": 0.00005,
+        "tint": 0.03,
     },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
@@ -589,15 +618,35 @@ def _noise_material(n: Nodes):
     _emit(n, (grain, blotch, _scratches(n)))
 
 
-def _wood_bands(n: Nodes):
-    """Walnut's grain: bands a few millimetres apart running along the gun
-    (+Y), warped by noise."""
-    wave = n.new("ShaderNodeTexWave", Vector=_position(n, (60.0, 25.0, 380.0)), Scale=1.0, Distortion=7.0,
-                 Detail=3.0, **{"Detail Scale": 1.5})
+# Walnut grain runs along the blank. The forend lies along the gun (+Y); a
+# stock, behind `WOOD_STOCK_Y` in view space, slopes down to its butt, so
+# its grain is turned by `WOOD_STOCK_PITCH` (radians about X) to follow it;
+# grain crossing a face at a steep angle read as tiger stripes.
+WOOD_STOCK_Y = -0.07
+WOOD_STOCK_PITCH = -0.245
+
+
+def _wood_wave(n: Nodes, pitch: float):
+    geo = n.new("ShaderNodeNewGeometry")
+    turned = n.new("ShaderNodeMapping", Vector=geo.outputs["Position"], Rotation=(pitch, 0.0, 0.0))
+    scaled = n.new("ShaderNodeMapping", Vector=turned.outputs[0], Scale=(60.0, 25.0, 380.0))
+    wave = n.new("ShaderNodeTexWave", Vector=scaled.outputs[0], Scale=1.0, Distortion=2.5,
+                 Detail=2.0, **{"Detail Scale": 1.0})
     wave.wave_type = "BANDS"
     wave.bands_direction = "Z"
     wave.wave_profile = "SIN"
     return wave.outputs["Fac"]
+
+
+def _wood_bands(n: Nodes):
+    """Walnut's grain: bands a few millimetres apart along the blank,
+    gently warped."""
+    geo = n.new("ShaderNodeNewGeometry")
+    y = n.new("ShaderNodeSeparateXYZ", Vector=geo.outputs["Position"]).outputs["Y"]
+    stock = n.math("LESS_THAN", y, WOOD_STOCK_Y)
+    forend = _wood_wave(n, 0.0)
+    butt = _wood_wave(n, WOOD_STOCK_PITCH)
+    return n.math("ADD", n.math("MULTIPLY", forend, n.math("SUBTRACT", 1.0, stock)), n.math("MULTIPLY", butt, stock))
 
 
 def _wood_material(n: Nodes):
@@ -854,8 +903,10 @@ def _refill_seams(edges: np.ndarray, covered: np.ndarray, steps: int = 2) -> np.
     """The bevel shader reads a texel on an island's border from a point
     off its face, and finds an edge where a smooth surface is only cut by a
     UV seam (bare-metal chips along every seam of a sphere). Drops the
-    edge mask on the outer `steps` texels of every island and grows the
-    interior's values back over them (and into the gaps)."""
+    values on the outer `steps` texels of every island and grows the
+    interior's back over them (and into the gaps). `finish["seam_fix"]`
+    True does this to the edge mask, the normal map, and the finished
+    colours; "edges" to the edge mask only."""
     inside = covered.copy()
     for _ in range(steps):
         shrunk = inside.copy()
@@ -926,7 +977,10 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     _normal_material(n, finish.get("scratch_depth", SCRATCH_DEPTH))
     normal = _bake(targets, material, _new_image("Normal", size, (0.5, 0.5, 1, 1)), "NORMAL", 16,
                    normal_space="TANGENT")
-    if finish.get("seam_fix"):
+    # `seam_fix: "edges"` (hard-edged guns, whose seams are mostly real
+    # edges) keeps the normal map's bevels at island borders; only rounded
+    # models, whose seams cut smooth surfaces, refill them.
+    if finish.get("seam_fix") and finish.get("seam_fix") != "edges":
         normal = _refill_seams(normal, own > 0)
     markings = stencils = None
     if finish.get("markings") or finish.get("stencils"):
@@ -956,7 +1010,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
         "markings": markings,
         "stencils": stencils,
         "wood": wood,
-        "covered": (own > 0) if finish.get("seam_fix") else None,
+        "covered": (own > 0) if finish.get("seam_fix") and finish.get("seam_fix") != "edges" else None,
     }
     # WEAPON_FINISH_DEBUG=<dir> keeps the baked masks, to tune `compose`
     # without baking again.
@@ -1016,16 +1070,17 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tint = (blotch[m] - 0.5) * 2.0 * f["tint"] + (grain[m] - 0.5) * 0.6 * f["tint"]
         color[m] = np.asarray(f["color"], np.float32) + tint[:, None]
         if "mottle" in f:
-            # A sprayed web: blobs from the blotch noise, freckled by the
-            # grain at their edges.
+            # A sprayed web: blobs from the blotch noise, their edges broken
+            # into overspray speckle by the grain (a spray gun leaves a
+            # crisp core and a freckled fringe, not a blur).
             web_color, threshold = f["mottle"]
-            web = _smoothstep(threshold - 0.015, threshold + 0.015, blotch[m] + (grain[m] - 0.5) * 0.08)
+            web = _smoothstep(threshold - 0.006, threshold + 0.006, blotch[m] + (grain[m] - 0.5) * 0.16)
             color[m] = color[m] * (1.0 - web[:, None]) + np.asarray(web_color, np.float32) * web[:, None]
         if f.get("wood") and maps.get("wood") is not None:
             # Dark late-wood lines where the bands peak, and the figure.
             bands, figure = maps["wood"][..., 0][m], maps["wood"][..., 1][m]
-            lines = _smoothstep(0.55, 0.97, bands)
-            shade = (1.0 - 0.42 * lines) * (0.8 + 0.45 * figure)
+            lines = _smoothstep(0.6, 0.97, bands)
+            shade = (1.0 - 0.24 * lines) * (0.86 + 0.3 * figure)
             color[m] = color[m] * shade[:, None] * np.asarray((1.0, 0.97, 0.93), np.float32) ** lines[:, None]
         rough[m] = f["roughness"] + (grain[m] - 0.5) * 0.08 + (blotch[m] - 0.5) * 0.08
         metal[m] = f["metallic"]

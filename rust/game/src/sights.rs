@@ -181,7 +181,7 @@ impl Style {
     /// through the tonemap and bloom; lit less it stays red, with a halo.
     fn glow_energy(self) -> f32 {
         match self {
-            Self::Reflex => 2.2,
+            Self::Reflex => 3.6,
             Self::Acog => 2.8,
             _ => 6.0,
         }
@@ -603,13 +603,13 @@ fn reflex(p: &Params, parts: &mut Parts) {
         36,
     );
     // The dot sits just behind the lens, so the tint never dims it. About
-    // 9 px across aimed at 1080p (a 2 MOA dot as Call of Duty draws it):
+    // 10 px across aimed at 1080p (a 2 MOA dot as Call of Duty draws it):
     // big enough to find, and lit only so far that it stays red through
     // the bloom rather than burning to white.
     parts.glow.cylinder(
         Axis::Z,
         Vector2::ZERO,
-        0.00046 * s,
+        0.0005 * s,
         zr - 0.0056 * s,
         zr - 0.0054 * s,
         16,

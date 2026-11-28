@@ -1,6 +1,6 @@
 {
-  "triangles": 12660,
-  "world_triangles": 1882,
+  "triangles": 17392,
+  "world_triangles": 2672,
   "nodes": [
     "Body",
     "BoltCarrier",
