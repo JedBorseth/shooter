@@ -13,6 +13,10 @@ extends Node3D
 
 ## Shares the explosion's chip mesh.
 const EXPLOSION := preload("res://scripts/explosion.gd")
+const Billows := preload("res://scripts/billows.gd")
+## The puff each surface raises (`shaders/impact_dust.gdshader`): 0 fine
+## dust, 1 a clumpier dirt burst; flesh raises 2, a blood mist.
+const DIRT_PUFF := ["dirt"]
 
 ## Per surface: spark colour and whether sparks fly (only metal: concrete,
 ## wood, dirt, and glass throw chips and dust, not sparks), dust colour,
@@ -112,6 +116,12 @@ func setup(
 	var x := reference.cross(up).normalized()
 	global_basis = Basis(x, up, x.cross(up))
 
+	var dust_material := (_dust.draw_pass_1 as QuadMesh).material as ShaderMaterial
+	dust_material.set_shader_parameter(&"sun_direction", Billows.sun_toward(self))
+	var mist_material := (_mist.draw_pass_1 as QuadMesh).material as ShaderMaterial
+	mist_material.set_shader_parameter(&"sun_direction", Billows.sun_toward(self))
+	_mist.set_instance_shader_parameter(&"variant", 2.0)
+	_dust.set_instance_shader_parameter(&"variant", 1.0 if surface in DIRT_PUFF else 0.0)
 	for emitter: GPUParticles3D in [_blood_exit, _blood_back, _mist]:
 		emitter.visible = flesh
 		if flesh:

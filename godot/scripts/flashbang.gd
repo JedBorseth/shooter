@@ -20,10 +20,12 @@ const LIGHT_ENERGY := 40.0
 const SPARKS := [10, 14, 20]
 ## Seconds until everything has played out.
 const LIFETIME := 2.8
+const Billows := preload("res://scripts/billows.gd")
 
 var _age := LIFETIME
 var _burst_material: StandardMaterial3D
 var _halo_material: StandardMaterial3D
+var _puff_material: ShaderMaterial
 
 @onready var _burst: MeshInstance3D = $Burst
 @onready var _halo: MeshInstance3D = $Halo
@@ -41,6 +43,10 @@ func _ready() -> void:
 ## Plays the flash on ground at height `ground_y`.
 func setup(ground_y := -1000.0) -> void:
 	_sparks.amount_ratio = float(SPARKS[_quality()]) / float(_sparks.amount)
+	var puff_mesh := _puff.draw_pass_1 as QuadMesh
+	if _puff_material == null:
+		_puff_material = puff_mesh.material as ShaderMaterial
+	puff_mesh.material = Billows.material(_puff_material, _quality(), false, self)
 	_puff.set_instance_shader_parameter(&"ground_y", ground_y)
 	_puff.set_instance_shader_parameter(&"centre", global_position + Vector3.UP * 0.5)
 	# One of the atlas's four flashes seen head on (its top row).

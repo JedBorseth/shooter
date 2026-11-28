@@ -3,8 +3,8 @@
 [ext_resource type="Script" path="res://scripts/impact.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/spark.gdshader" id="2_spark"]
 [ext_resource type="Shader" path="res://shaders/blood.gdshader" id="3_blood"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/blood_mist.png" id="4_mist"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_4x4.png" id="5_smoke"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/impact_puff_a.png" id="4_puff"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/impact_puff_b.png" id="4b_puff"]
 [ext_resource type="Shader" path="res://shaders/debris.gdshader" id="6_debris"]
 [ext_resource type="Shader" path="res://shaders/impact_dust.gdshader" id="7_dust"]
 
@@ -65,11 +65,12 @@ anim_offset_max = 0.4
 
 [sub_resource type="ShaderMaterial" id="Mat_dust"]
 shader = ExtResource("7_dust")
-shader_parameter/flipbook = ExtResource("5_smoke")
+shader_parameter/flipbook = ExtResource("4_puff")
+shader_parameter/flipbook_b = ExtResource("4b_puff")
 
 [sub_resource type="QuadMesh" id="Mesh_dust"]
 material = SubResource("Mat_dust")
-size = Vector2(0.4, 0.4)
+size = Vector2(0.34, 0.34)
 
 [sub_resource type="ShaderMaterial" id="Process_debris"]
 resource_local_to_scene = true
@@ -119,7 +120,7 @@ shader = ExtResource("3_blood")
 
 [sub_resource type="QuadMesh" id="Mesh_blood"]
 material = SubResource("Mat_blood")
-size = Vector2(0.018, 0.06)
+size = Vector2(0.026, 0.09)
 
 [sub_resource type="Curve" id="Curve_mist_grow"]
 _data = [Vector2(0, 0.45), 0.0, 3.0, 0, 0, Vector2(0.3, 0.85), 0.6, 0.6, 0, 0, Vector2(1, 1), 0.1, 0.0, 0, 0]
@@ -136,7 +137,7 @@ colors = PackedColorArray(1, 1, 1, 0.95, 1, 1, 1, 0.85, 1, 1, 1, 0.35, 1, 1, 1, 
 gradient = SubResource("Gradient_mist_fade")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_mist"]
-color = Color(0.42, 0.035, 0.028, 0.9)
+color = Color(0.55, 0.045, 0.035, 1)
 color_ramp = SubResource("Texture_mist_fade")
 direction = Vector3(0, -1, 0)
 spread = 75.0
@@ -153,13 +154,12 @@ scale_curve = SubResource("Texture_mist_grow")
 
 [sub_resource type="ShaderMaterial" id="Mat_mist"]
 shader = ExtResource("7_dust")
-shader_parameter/flipbook = ExtResource("4_mist")
-shader_parameter/frames_across = 1
-shader_parameter/frames_down = 1
+shader_parameter/flipbook = ExtResource("4_puff")
+shader_parameter/flipbook_b = ExtResource("4b_puff")
 
 [sub_resource type="QuadMesh" id="Mesh_mist"]
 material = SubResource("Mat_mist")
-size = Vector2(0.65, 0.65)
+size = Vector2(0.9, 0.9)
 
 [node name="Impact" type="Node3D"]
 script = ExtResource("1_script")
