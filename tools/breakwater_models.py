@@ -122,6 +122,8 @@ LOOKS: dict[str, dict] = {
     # Light fittings: powder-coated housings and opal diffusers, lit (their
     # light is baked: layout `light`).
     "fitting_white": _p((0.84, 0.85, 0.84), 0.45),
+    "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
+    "rope_tan": _p((0.55, 0.45, 0.3), 0.9),
     "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
     "locker_blue": _t("painted_metal", 1.5, (0.26, 0.38, 0.55), metal=0.1, rough=0.7, grime=0.15),
     "cable_orange": _p((0.8, 0.35, 0.08), 0.6),
@@ -674,6 +676,72 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
     b.box(-0.25, 0.25, 1.4, 2.4, -r - 0.18, -r - 0.12, "sign_white", detail=True)
 
 
+def gauge(b: Model, c, d, r=0.07):
+    """A pressure gauge on a short stem: a steel case and a white dial."""
+    disc(b, c, d, r, 0.04, "steel_grey", sides=12, detail=True)
+    disc(b, tuple(c[j] + d[j] * 0.021 for j in range(3)), d, r * 0.85, 0.005, "sign_white", sides=12, detail=True)
+
+
+@model
+def additive_skid(b: Model, look="tank_white"):
+    """An additive injection skid (3 x 2.5 m, along x): three vertical vessels
+    with dished heads on legs, a dosing pump and motor, flanged lines to a
+    header, valves with handwheels, gauges, and a control box."""
+    b.box(-1.5, 1.5, 0.0, 0.25, -1.25, 1.25, "steel_dark", bevel=0.02)
+    b.box(-1.45, 1.45, 0.25, 0.27, -1.2, 1.2, "grate", detail=True)
+    for x, z in ((-0.8, -0.55), (0.7, -0.55), (-0.05, 0.45)):
+        for dx, dz in ((-0.3, -0.3), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)):
+            b.box(x + dx - 0.04, x + dx + 0.04, 0.25, 0.65, z + dz - 0.04, z + dz + 0.04, "steel_grey", detail=True)
+        b.cyl("y", 0.6, 2.15, (x, z), 0.48, look, sides=20)
+        rings = [(math.cos(2 * PI * i / 20) * 0.48 * k, y, math.sin(2 * PI * i / 20) * 0.48 * k)
+                 for y, k in ((2.15, 1.0), (2.3, 0.88), (2.4, 0.6)) for i in range(20)]
+        b.hull([(x + px, py, z + pz) for px, py, pz in rings] + [(x, 2.44, z)], look)
+        rings = [(math.cos(2 * PI * i / 20) * 0.48 * k, y, math.sin(2 * PI * i / 20) * 0.48 * k)
+                 for y, k in ((0.6, 1.0), (0.48, 0.85)) for i in range(20)]
+        b.hull([(x + px, py, z + pz) for px, py, pz in rings], look)
+        b.cyl("y", 2.4, 2.55, (x, z), 0.08, "steel_grey", sides=8)
+        disc(b, (x, 2.57, z), (0.0, 1.0, 0.0), 0.13, 0.04, "steel_grey", sides=10)
+        b.box(x - 0.03, x + 0.03, 0.9, 2.0, z - 0.5, z - 0.47, "steel_grey", detail=True)
+        flanged(b, (x, 0.75, z), (x, 0.75, 1.2), 0.05, "pipe_grey", flanges=(0.35, 0.95), bolts=False)
+        gauge(b, (x + 0.2, 1.9, z - 0.46), (0.0, 0.0, -1.0))
+    b.cyl("x", -1.45, 1.45, (0.75, 1.2), 0.07, "pipe_grey", sides=10)
+    for x in (-0.8, 0.7, -0.05):
+        handwheel(b, (x, 0.75, 1.0), (0.0, 0.0, 1.0), 0.12)
+    # The dosing pump and its motor, the control box.
+    b.box(0.85, 1.4, 0.27, 0.62, 0.1, 0.8, "steel_blue", bevel=0.02)
+    b.cyl("z", 0.8, 1.15, (0.45, 1.12), 0.15, "steel_blue", sides=12)
+    for k in range(6):
+        b.cyl("z", 0.84 + k * 0.05, 0.86 + k * 0.05, (0.45, 1.12), 0.165, "steel_blue", sides=12, detail=True)
+    b.box(-1.45, -1.05, 0.27, 1.7, 0.75, 1.2, "steel_grey", bevel=0.015)
+    b.box(-1.4, -1.1, 0.4, 1.6, 1.2, 1.215, "steel_grey", detail=True)
+    for k, lk in enumerate(("signal_walk", "led_amber", "signal_red")):
+        b.cyl("z", 1.215, 1.24, (1.4 - k * 0.12, -1.25), 0.025, lk, sides=6, detail=True)
+
+
+@model
+def manifold(b: Model):
+    """A pipeline manifold on a skid (3 x 2.5 m): three risers out of the
+    ground through gate valves with handwheels to a header, a second line
+    low along the back, gauges, a drip tray, and pipe supports."""
+    b.box(-1.5, 1.5, 0.0, 0.2, -1.25, 1.25, "steel_dark", bevel=0.02)
+    b.box(-1.3, 1.3, 0.2, 0.28, -0.6, 0.6, "steel_galv", bevel=0.01)
+    for x in (-1.0, 0.0, 1.0):
+        flanged(b, (x, 0.0, -0.1), (x, 1.6, -0.1), 0.17, "pipe_grey", flanges=(0.3, 0.5, 0.92))
+        disc(b, (x, 0.95, -0.1), (0.0, 1.0, 0.0), 0.26, 0.28, "valve_red", sides=12)
+        b.box(x - 0.09, x + 0.09, 1.05, 1.25, -0.19, -0.01, "valve_red", bevel=0.02)
+        b.cyl("z", -0.1, 0.55, (1.15, x), 0.04, "steel_dark", sides=6, detail=True)
+        handwheel(b, (x, 1.15, 0.6), (0.0, 0.0, 1.0), 0.24)
+        gauge(b, (x + 0.25, 1.4, 0.0), (0.0, 0.0, 1.0))
+        b.cyl("z", -0.1, 0.0, (1.4, x + 0.25), 0.015, "steel_dark", sides=4, detail=True)
+    b.cyl("x", -1.6, 1.6, (1.75, -0.1), 0.2, "pipe_grey", sides=12)
+    for x in (-1.6, 1.6):
+        disc(b, (x, 1.75, -0.1), (1.0, 0.0, 0.0), 0.32, 0.06, "pipe_grey", sides=14)
+    b.cyl("x", -1.6, 1.6, (0.6, 0.85), 0.16, "pipe_green", sides=12)
+    for x in (-1.3, 1.3):
+        b.box(x - 0.08, x + 0.08, 0.2, 1.55, -0.25, 0.05, "steel_grey", detail=True)
+        b.box(x - 0.08, x + 0.08, 0.2, 0.45, 0.7, 1.0, "steel_grey", detail=True)
+
+
 @model
 def pipe_rack(b: Model, length=12.0, bays=2, height=4.6, width=2.6, pipes=None):
     """A steel pipe rack along z: portal frames every `length / bays` metres,
@@ -1144,33 +1212,218 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
     # The boot-topping: red at the waterline.
     b.box(-hl + 6.0, hl - 10.0, -0.2, 1.8, -hb - 0.02, hb + 0.02, "hull_red")
     b.box(-hl + 6.0, hl - 10.0, free - 0.05, free + 0.05, -hb + 0.1, hb - 0.1, "deck_green", detail=False)
-    # Deck: the pipe runs, the manifold amidships, a catwalk.
-    for z in (-2.5, -1.8, 1.8, 2.5):
-        b.cyl("x", -hl + 22.0, hl - 14.0, (free + 0.6, z), 0.22, "pipe_grey", sides=8)
-    b.box(-hl + 22.0, hl - 14.0, free + 1.6, free + 1.75, -0.8, 0.8, "grate")
-    for x in range(int(-hl + 24), int(hl - 14), 6):
-        b.box(x - 0.1, x + 0.1, free, free + 1.6, -0.6, 0.6, "steel_grey", detail=True)
-    for z in (-hb + 2.0, hb - 2.0):
-        for x in (-6.0, -3.0, 0.0, 3.0):
-            b.cyl("y", free, free + 2.2, (x, z), 0.25, "pipe_grey", sides=8)
-    b.box(-8.0, 8.0, free, free + 1.0, -hb + 1.0, hb - 1.0, "deck_green")
-    # Rails along the deck edge.
+    # Shell plating: strake seams along the sides and butts every frame bay.
+    for z in (-hb - 0.012, hb + 0.012):
+        for y in (3.1, 5.4):
+            b.box(-hl + 6.0, hl - 10.0, y - 0.02, y + 0.02, *sorted((z, z - math.copysign(0.012, z))),
+                  "hull_black", detail=True)
+        for x in range(int(-hl + 10), int(hl - 10), 8):
+            b.box(x - 0.02, x + 0.02, 1.8, free - 0.1, *sorted((z, z - math.copysign(0.012, z))), "hull_black",
+                  detail=True)
+    # Draught marks at the stern, amidships, and the bow; the load line.
+    for z, s in ((hb + 0.03, 1), (-hb - 0.03, -1)):
+        for x in (-hl + 7.0, 0.0, hl - 11.0):
+            for k, y in enumerate((0.6, 1.6, 2.6, 3.6, 4.6)):
+                label = f"{k * 2 + 2}M" if k % 2 == 0 else f"{k * 2 + 2}"
+                b.text(label, x, y, z, 0.0 if s > 0 else PI, 0.42, "ship_white", depth=0.02)
+        ring = [(4.0 + math.cos(2 * PI * i / 16) * 0.45, 3.2 + math.sin(2 * PI * i / 16) * 0.45, z)
+                for i in range(17)]
+        b.tube(ring, 0.03, "ship_white", sides=4, detail=True)
+        b.box(3.3, 4.7, 3.17, 3.23, *sorted((z, z + s * 0.01)), "ship_white", detail=True)
+        b.box(5.1, 5.6, 3.17, 3.23, *sorted((z, z + s * 0.01)), "ship_white", detail=True)
+        for y in (2.6, 3.2, 3.8):
+            b.box(5.6, 6.4, y - 0.03, y + 0.03, *sorted((z, z + s * 0.01)), "ship_white", detail=True)
+        b.box(5.57, 5.63, 2.4, 3.9, *sorted((z, z + s * 0.01)), "ship_white", detail=True)
+        # The bow thruster mark and the port of registry at the stern.
+        tm = [(hl - 13.0 + math.cos(2 * PI * i / 12) * 0.5, 2.6 + math.sin(2 * PI * i / 12) * 0.5, z)
+              for i in range(13)]
+        b.tube(tm, 0.03, "ship_white", sides=4, detail=True)
+        b.text("VALLETTA", -hl + 12.0, free - 2.2, z, 0.0 if s > 0 else PI, 0.7, "ship_white", depth=0.03,
+               detail=False)
+        # Fairleads at the deck edge, fore and aft: dark mouths in steel frames.
+        for x in (-hl + 9.0, -hl + 21.0, hl - 16.0, hl - 22.0):
+            b.box(x - 0.6, x + 0.6, free + 0.2, free + 1.0, *sorted((z, z - s * 0.4)), "steel_grey", bevel=0.03)
+            b.box(x - 0.45, x + 0.45, free + 0.35, free + 0.85, *sorted((z + s * 0.002, z - s * 0.41)),
+                  "trim_black", detail=True)
+    # The anchors in their pockets at the bow.
+    for s in (-1, 1):
+        ax, ay = hl - 6.0, free - 1.6
+        az = s * (hb * 0.86 + 0.05)
+        b.box(ax - 0.8, ax + 0.8, ay - 0.9, ay + 0.6, *sorted((az, az - s * 0.25)), "trim_black", detail=True)
+        b.hull([(ax - 0.15, ay + 0.5, az), (ax + 0.15, ay + 0.5, az), (ax - 0.12, ay - 0.6, az),
+                (ax + 0.12, ay - 0.6, az), (ax - 0.7, ay - 0.75, az + s * 0.12), (ax + 0.7, ay - 0.75, az + s * 0.12),
+                (ax, ay - 0.95, az + s * 0.2), (ax, ay + 0.5, az + s * 0.18)], "steel_dark", detail=True)
+    # Deck: the cargo lines on supports, a raised catwalk with rails down the
+    # middle, tank hatches either side, the manifold and its hose crane, the
+    # vent riser, fire monitors, mooring winches, and the forecastle's kit.
+    x0d, x1d = -hl + 20.0, hl - 14.0
+    for z, r, look in ((-2.6, 0.28, "pipe_grey"), (-1.9, 0.22, "pipe_grey"), (-1.3, 0.16, "pipe_green"),
+                       (1.3, 0.16, "pipe_green"), (1.9, 0.22, "pipe_grey"), (2.6, 0.28, "pipe_grey"),
+                       (3.4, 0.12, "pipe_red")):
+        b.cyl("x", x0d, x1d, (free + 0.55, z), r, look, sides=10)
+    for x in range(int(x0d) + 2, int(x1d), 4):
+        b.box(x - 0.1, x + 0.1, free, free + 0.27, -3.0, 3.6, "steel_grey", detail=True)
+    b.box(x0d, x1d, free + 1.6, free + 1.68, -0.6, 0.6, "grate")
+    for x in range(int(x0d), int(x1d), 3):
+        b.box(x - 0.06, x + 0.06, free, free + 1.6, -0.06, 0.06, "steel_grey", detail=True)
+        for z in (-0.58, 0.58):
+            b.cyl("y", free + 1.68, free + 2.7, (x, z), 0.025, "ship_white", sides=4, detail=True)
+    for z in (-0.58, 0.58):
+        for y in (free + 2.2, free + 2.7):
+            b.tube([(x0d, y, z), (x1d, y, z)], 0.025, "ship_white", sides=4, detail=False)
+    for x in range(int(x0d) + 3, int(x1d) - 2, 7):
+        for z in (-hb + 2.4, hb - 2.4):
+            b.cyl("y", free, free + 0.55, (x, z), 0.42, "deck_green", sides=12)
+            b.cyl("y", free + 0.55, free + 0.62, (x, z), 0.48, "steel_grey", sides=12, detail=True)
+            b.cyl("y", free, free + 0.9, (x + 1.2, z * 0.8), 0.09, "steel_grey", sides=8, detail=True)
+            b.cyl("y", free + 0.9, free + 1.05, (x + 1.2, z * 0.8), 0.16, "steel_grey", sides=8, detail=True)
+    # The manifold: crossover lines to each side with valves and reducers, a
+    # drip tray, and the hose-handling crane.
+    for z in (-1.0, 1.0):
+        b.box(-6.5, 6.5, free, free + 0.35, z * (hb - 2.0) - 1.6, z * (hb - 2.0) + 1.6, "steel_grey")
+    for x in (-4.5, -1.5, 1.5, 4.5):
+        flanged(b, (x, free + 1.1, -hb + 0.6), (x, free + 1.1, hb - 0.6), 0.2, "pipe_grey",
+                flanges=(0.04, 0.2, 0.8, 0.96))
+        for z in (-hb + 2.6, hb - 2.6):
+            disc(b, (x, free + 1.1, z), (0.0, 0.0, 1.0), 0.3, 0.32, "valve_red", sides=12)
+            b.cyl("y", free + 1.1, free + 1.8, (x, z), 0.05, "steel_dark", sides=6, detail=True)
+            handwheel(b, (x, free + 1.85, z), (0.0, 1.0, 0.0), 0.28)
+        b.cyl("y", free, free + 1.1, (x, 0.0), 0.12, "steel_grey", sides=8, detail=True)
+    b.cyl("y", free, free + 6.5, (0.0, hb - 1.2), 0.35, "ship_white", sides=12)
+    b.box(-0.6, 0.6, free + 6.2, free + 7.0, hb - 1.8, hb - 0.6, "ship_white", bevel=0.05)
+    b.tube([(0.0, free + 6.8, hb - 1.2), (9.0, free + 4.2, hb - 1.6)], 0.16, "ship_white", sides=8, detail=False)
+    b.tube([(9.0, free + 4.2, hb - 1.6), (9.0, free + 1.5, hb - 1.6)], 0.012, "cable", sides=3, detail=True)
+    b.box(8.85, 9.15, free + 1.2, free + 1.5, hb - 1.75, hb - 1.45, "safety_yellow", detail=True)
+    # The vent riser forward, with its high-velocity head; fire monitors.
+    b.cyl("y", free, free + 8.0, (hl - 18.0, -3.6), 0.2, "ship_white", sides=10)
+    b.cyl("y", free + 8.0, free + 8.6, (hl - 18.0, -3.6), 0.32, "steel_grey", sides=10)
+    for z in (-3.5, 3.5):
+        b.cyl("y", free, free + 2.6, (-hl + 21.0, z), 0.12, "pipe_red", sides=8)
+        b.box(-hl + 20.4, -hl + 21.6, free + 2.6, free + 2.7, z - 0.6, z + 0.6, "grate", detail=True)
+        b.tube([(-hl + 21.0, free + 2.9, z), (-hl + 22.2, free + 3.3, z)], 0.08, "pipe_red", sides=8, detail=True)
+    # Mooring winches aft and on the forecastle; the windlass and foremast.
+    for x, z in ((-hl + 22.0, -5.5), (-hl + 22.0, 5.5), (hl - 15.0, -4.5), (hl - 15.0, 4.5)):
+        b.box(x - 0.9, x + 0.9, free, free + 0.5, z - 1.0, z + 1.0, "deck_green", bevel=0.04)
+        b.cyl("z", z - 0.8, z + 0.8, (free + 1.0, x), 0.55, "steel_grey", sides=12)
+        b.cyl("z", z - 0.3, z + 0.3, (free + 1.0, x), 0.6, "rope_tan", sides=12, detail=True)
+    for s in (-1, 1):
+        b.cyl("z", *sorted((s * 1.4, s * 2.8)), (free + 1.9, hl - 8.0), 0.5, "deck_green", sides=12)
+        b.box(hl - 9.0, hl - 7.0, free + 0.9, free + 1.5, *sorted((s * 1.2, s * 3.0)), "deck_green", bevel=0.04)
+        b.tube([(hl - 7.6, free + 1.4, s * 2.1), (hl - 5.0, free + 0.9, s * 2.4), (hl - 6.0, free - 1.0, s * 6.8)],
+               0.06, "steel_dark", sides=5, detail=True)
+    b.cyl("y", free + 1.5, free + 13.0, (hl - 5.0, 0.0), 0.18, "ship_white", sides=8)
+    b.box(hl - 5.3, hl - 4.7, free + 10.0, free + 10.1, -0.8, 0.8, "ship_white", detail=True)
+    # Rails along the deck edge: top and mid rails on stanchions.
     for z in (-hb + 0.1, hb - 0.1):
-        b.tube([(-hl + 6.0, free + 1.1, z), (hl - 10.0, free + 1.1, z)], 0.04, "ship_white", sides=4, detail=False)
-    # The accommodation block and funnel, aft.
-    b.box(-hl + 4.0, -hl + 18.0, free, free + 12.0, -hb + 1.5, hb - 1.5, "ship_white")
-    b.box(-hl + 6.0, -hl + 16.0, free + 12.0, free + 15.0, -hb + 0.5, hb - 0.5, "ship_white")
-    for y in (free + 3.0, free + 6.0, free + 9.0):
-        for z in (-hb + 1.49, hb - 1.49):
-            b.box(-hl + 6.0, -hl + 16.0, y, y + 1.0, z - 0.01, z + 0.01, "window_dark", detail=False)
-    for z in (-hb + 0.49, hb - 0.49):
-        b.box(-hl + 7.0, -hl + 15.0, free + 13.2, free + 14.4, z - 0.01, z + 0.01, "window_dark")
-    b.box(-hl + 8.0, -hl + 12.0, free + 15.0, free + 22.0, -2.0, 2.0, "ship_white")
-    b.box(-hl + 7.9, -hl + 12.1, free + 19.5, free + 22.0, -2.05, 2.05, "steel_blue")
-    b.box(-hl + 4.0, -hl + 4.3, free + 15.0, free + 25.0, -0.15, 0.15, "steel_grey")
+        for y in (free + 1.1, free + 0.6):
+            b.tube([(-hl + 6.0, y, z), (hl - 10.0, y, z)], 0.035 if y > free + 1 else 0.025, "ship_white", sides=4,
+                   detail=False)
+        for x in range(int(-hl + 6), int(hl - 10), 2):
+            b.cyl("y", free, free + 1.1, (x, z), 0.022, "ship_white", sides=4, detail=True)
+    # The accommodation block aft: four decks stepped back from the front,
+    # windows in rows, open decks with rails, the bridge with its wings
+    # reaching the ship's sides, a radar mast, the funnel, and the freefall
+    # lifeboat on its ramp over the stern.
+    xa, xb = -hl + 3.0, -hl + 18.0
+    for k in range(4):
+        y0, y1 = free + k * 2.9, free + (k + 1) * 2.9
+        front = xb - k * 0.6
+        half = hb - 1.5 - k * 0.3
+        b.box(xa, front, y0, y1, -half, half, "ship_white")
+        b.box(xa - 0.1, front + 0.9, y1 - 0.12, y1, -half - 0.6, half + 0.6, "ship_white", detail=False)
+        n = int((half * 2 - 1.0) / 1.6)
+        for j in range(n):
+            zc = -half + 0.5 + (j + 0.5) * (half * 2 - 1.0) / n
+            b.box(front, front + 0.02, y0 + 1.0, y0 + 2.0, zc - 0.45, zc + 0.45, "window_dark", detail=False)
+        n = int((front - xa - 1.0) / 1.8)
+        for j in range(n):
+            xc = xa + 0.5 + (j + 0.5) * (front - xa - 1.0) / n
+            for z in (-half - 0.02, half):
+                b.box(xc - 0.4, xc + 0.4, y0 + 1.1, y0 + 1.9, z, z + 0.02, "window_dark", detail=False)
+        for z in (-half - 0.55, half + 0.55):
+            b.tube([(front + 0.85, y1 + 1.0, z), (xa, y1 + 1.0, z)], 0.025, "ship_white", sides=4, detail=True)
+        b.tube([(front + 0.85, y1 + 1.0, -half - 0.55), (front + 0.85, y1 + 1.0, half + 0.55)], 0.025, "ship_white",
+               sides=4, detail=True)
+        # Outside stairs between the decks on each side.
+        for s in (-1, 1):
+            zs = s * (half + 0.35)
+            b.hull([(xa + 1.0, y0, zs - 0.35), (xa + 1.0, y0, zs + 0.35), (xa + 4.0, y1, zs - 0.35),
+                    (xa + 4.0, y1, zs + 0.35), (xa + 1.0, y0 + 0.08, zs - 0.35), (xa + 4.0, y1 + 0.08, zs + 0.35)],
+                   "steel_grey", detail=True)
+    yb_ = free + 4 * 2.9
+    b.box(xb - 3.2, xb - 1.6, yb_, yb_ + 2.8, -hb + 0.2, hb - 0.2, "ship_white")
+    b.box(xb - 3.4, xb - 1.4, yb_ + 2.8, yb_ + 3.0, -hb - 0.1, hb + 0.1, "ship_white")
+    b.box(xb - 1.6, xb - 1.58, yb_ + 1.0, yb_ + 2.5, -hb + 0.3, hb - 0.3, "window_dark")
+    for z in (-hb + 0.18, hb - 0.2):
+        b.box(xb - 3.0, xb - 1.8, yb_ + 1.0, yb_ + 2.5, z, z + 0.02, "window_dark")
+    b.box(xa + 2.0, xb - 3.2, yb_, yb_ + 2.8, -hb + 2.6, hb - 2.6, "ship_white")
+    b.box(xa + 2.0, xb - 3.2, yb_ + 2.8, yb_ + 3.0, -hb + 2.4, hb - 2.4, "ship_white")
+    # Radar mast over the bridge: a tripod, two scanners, antennas, lights.
+    mx = xb - 4.5
+    for dz in (-0.9, 0.9):
+        b.tube([(mx - 0.6, yb_ + 3.0, dz), (mx, yb_ + 7.5, 0.0)], 0.08, "ship_white", sides=6, detail=False)
+    b.tube([(mx + 0.8, yb_ + 3.0, 0.0), (mx, yb_ + 7.5, 0.0)], 0.08, "ship_white", sides=6, detail=False)
+    for y, w in ((yb_ + 5.0, 2.4), (yb_ + 7.6, 3.4)):
+        b.box(mx - 0.25, mx + 0.25, y, y + 0.12, -0.4, 0.4, "ship_white", detail=True)
+        b.box(mx - 0.08, mx + 0.08, y + 0.15, y + 0.3, -w / 2, w / 2, "steel_dark", detail=True)
+    b.cyl("y", yb_ + 7.5, yb_ + 10.0, (mx, 0.0), 0.06, "ship_white", sides=6)
+    for z in (-0.5, 0.5):
+        b.cyl("y", yb_ + 7.6, yb_ + 9.2, (mx - 0.3, z), 0.02, "steel_dark", sides=4, detail=True)
+    # The funnel: tapered, in the owner's band with a black top, two exhausts.
+    fx0, fx1 = xa + 0.5, xa + 5.0
+    b.hull([(fx0, yb_, -1.8), (fx0, yb_, 1.8), (fx1, yb_, -2.0), (fx1, yb_, 2.0),
+            (fx0 - 0.6, yb_ + 6.5, -1.6), (fx0 - 0.6, yb_ + 6.5, 1.6), (fx1 - 1.2, yb_ + 6.5, -1.7),
+            (fx1 - 1.2, yb_ + 6.5, 1.7)], "ship_white")
+    b.hull([(fx0 - 0.42, yb_ + 4.2, -1.69), (fx0 - 0.42, yb_ + 4.2, 1.69), (fx1 - 0.79, yb_ + 4.2, -1.81),
+            (fx1 - 0.79, yb_ + 4.2, 1.81), (fx0 - 0.5, yb_ + 5.4, -1.67), (fx0 - 0.5, yb_ + 5.4, 1.67),
+            (fx1 - 0.96, yb_ + 5.4, -1.77), (fx1 - 0.96, yb_ + 5.4, 1.77)], "steel_blue")
+    b.hull([(fx0 - 0.56, yb_ + 6.1, -1.62), (fx0 - 0.56, yb_ + 6.1, 1.62), (fx1 - 1.12, yb_ + 6.1, -1.71),
+            (fx1 - 1.12, yb_ + 6.1, 1.71), (fx0 - 0.6, yb_ + 6.55, -1.61), (fx0 - 0.6, yb_ + 6.55, 1.61),
+            (fx1 - 1.2, yb_ + 6.55, -1.7), (fx1 - 1.2, yb_ + 6.55, 1.7)], "trim_black")
+    for z in (-0.6, 0.6):
+        b.cyl("y", yb_ + 6.0, yb_ + 7.4, (fx0 + 1.0, z), 0.22, "steel_dark", sides=10)
+    # The freefall lifeboat on its ramp over the stern, and the rescue boat.
+    b.hull([(-hl + 0.5, free + 5.0, -1.4), (-hl + 0.5, free + 5.0, 1.4), (xa, free + 7.6, -1.4),
+            (xa, free + 7.6, 1.4), (-hl + 0.5, free + 4.8, -1.4), (xa, free + 7.4, 1.4)], "steel_grey")
+    rings = []
+    for t, w, hgt in ((0.0, 0.05, 0.4), (0.08, 0.55, 0.95), (0.3, 1.0, 1.2), (0.7, 1.0, 1.25), (0.92, 0.8, 1.15),
+                      (1.0, 0.45, 0.9)):
+        bx = -hl + 0.2 + t * 7.2
+        by = free + 5.4 + t * 2.6
+        rings.append([(bx, by - hgt * 0.3, -w * 1.25 * 0.2), (bx, by - hgt * 0.3, w * 1.25 * 0.2),
+                      (bx, by + hgt * 0.4, w * 1.25), (bx, by + hgt, w * 0.9), (bx, by + hgt, -w * 0.9),
+                      (bx, by + hgt * 0.4, -w * 1.25)])
+    verts, faces = loft(rings)
+    b.smooth(verts, faces, "boat_orange", levels=2)
+    for s in (-1, 1):
+        b.hull([(xa + 6.0, free + 3.0, s * (hb - 0.2)), (xa + 9.5, free + 3.0, s * (hb - 0.2)),
+                (xa + 6.3, free + 3.0, s * (hb + 0.9)), (xa + 9.2, free + 3.0, s * (hb + 0.9)),
+                (xa + 6.6, free + 3.9, s * (hb + 0.5)), (xa + 8.9, free + 3.9, s * (hb + 0.5))], "boat_orange")
+        b.tube([(xa + 7.75, free + 2.9, s * (hb - 1.4)), (xa + 7.75, free + 6.2, s * (hb - 0.6)),
+                (xa + 7.75, free + 5.6, s * (hb + 0.4))], 0.1, "ship_white", sides=6, detail=False)
+    # The accommodation ladder down the quay side, to a platform and a short
+    # gangway onto the quay.
+    zl = hb + 0.75
+    b.hull([(-1.0, free + 0.1, zl - 0.45), (-1.0, free + 0.1, zl + 0.45), (-8.5, 2.7, zl - 0.45),
+            (-8.5, 2.7, zl + 0.45), (-1.0, free - 0.1, zl - 0.45), (-8.5, 2.5, zl + 0.45)], "steel_galv")
+    for k in range(26):
+        t = k / 25
+        x, y = -1.0 + (-7.5) * t, free + 0.12 + (2.72 - free - 0.12) * t
+        b.box(x - 0.12, x + 0.12, y, y + 0.03, zl - 0.42, zl + 0.42, "tread_plate", detail=True)
+    for z in (zl - 0.48, zl + 0.48):
+        b.tube([(-1.0, free + 1.1, z), (-8.5, 3.7, z)], 0.025, "ship_white", sides=4, detail=False)
+        for k in range(6):
+            t = k / 5
+            b.cyl("y", 2.7 + (free + 0.1 - 2.7) * (1 - t), 3.7 + (free + 1.1 - 3.7) * (1 - t),
+                  (-8.5 + 7.5 * (1 - t), z), 0.018, "ship_white", sides=4, detail=True)
+    b.box(-10.0, -8.5, 2.55, 2.7, zl - 0.5, zl + 0.5, "grate")
+    b.hull([(-9.6, 2.7, zl + 0.4), (-8.9, 2.7, zl + 0.4), (-9.6, 2.3, 12.4), (-8.9, 2.3, 12.4),
+            (-9.6, 2.6, zl + 0.4), (-8.9, 2.2, 12.4)], "steel_galv")
     # The name at the bow.
     for z, s in ((hb + 0.03, 1), (-hb - 0.03, -1)):
         b.text("NORDSTRAND", hl - 18.0, free - 2.0, z, 0.0 if s > 0 else PI, 1.4, "ship_white", depth=0.05,
+               detail=False)
+        b.text("NORDSTRAND", -hl + 12.0, free - 1.1, z, 0.0 if s > 0 else PI, 0.9, "ship_white", depth=0.04,
                detail=False)
 
 

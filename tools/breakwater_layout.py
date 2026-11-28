@@ -1069,11 +1069,7 @@ def rack_corners(side: Side):
     m = side.m
     # Additive skid (north-west corner): three tanks on a skid.
     blocker(-10.5, -7.5, STREET, 2.6, -11.5, -9.0, m)
-    deco(-10.5, -7.5, STREET, 0.25, -11.5, -9.0, "steel_dark", m, bevel=0.02)
-    for x, z in ((-9.8, -10.6), (-8.3, -10.6), (-9.0, -9.6)):
-        cyl(x, 0.25, 2.5, z, 0.5, "tank_white" if not m else "tank_silver", m, sides=14)
-        cyl(x, 2.5, 2.6, z, 0.35, "steel_grey", m, sides=10)
-    tube([(-10.3, 0.6, -9.1), (-7.6, 0.6, -9.1)], 0.07, "pipe_grey", m, sides=6, detail=False)
+    place("additive_skid", -9.0, STREET, -10.25, PI, m, look="tank_white" if not m else "tank_silver")
     # Foam monitor (north-east corner).
     place("foam_unit", 7.75, STREET, -10.75, 0.0, m)
     blocker(6.5, 9.0, STREET, 2.5, -12.0, -9.5, m)
@@ -1088,12 +1084,7 @@ def rack_corners(side: Side):
     text("SPILL KIT", -6.5, 1.3, 13.58, PI, 0.3, "sign_white", m, depth=0.01)
     # The manifold on the north apron.
     blocker(-7.5, -4.5, STREET, 2.0, -19.5, -17.0, m)
-    deco(-7.5, -4.5, STREET, 0.2, -19.5, -17.0, "steel_dark", m)
-    for x in (-7.0, -6.0, -5.0):
-        cyl(x, 0.2, 1.8, -18.25, 0.18, "pipe_grey", m, sides=8)
-        cyl(x, 1.1, 1.4, -18.25, 0.28, "valve_red", m, sides=10)
-    tube([(-7.6, 1.6, -19.0), (-4.4, 1.6, -19.0)], 0.2, "pipe_grey", m, sides=8, detail=False)
-    tube([(-7.6, 0.6, -17.5), (-4.4, 0.6, -17.5)], 0.16, "pipe_green", m, sides=8, detail=False)
+    place("manifold", -6.0, STREET, -18.25, PI, m)
     lamp(-8.6, -21.6, 0.0, m)
 
 
