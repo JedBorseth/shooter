@@ -206,8 +206,8 @@ def lamp_light(x, y, z, energy, rng, m):
     """A ceiling batten's baked light: most of it thrown down in a wide cone,
     so the floor under it pools brighter and the walls fall off with height,
     and a weak unshadowed fill that lights the ceiling round the fitting."""
-    light(x, y, z, energy * 0.85, LAMP, rng, m, kind="spot", angle=78.0, size=0.5)
-    light(x, y + 0.1, z, energy * 0.3, LAMP, rng * 0.6, m, shadow=False)
+    light(x, y, z, energy * 0.75, LAMP, rng, m, kind="spot", angle=80.0, size=0.5)
+    light(x, y + 0.1, z, energy * 0.55, LAMP, rng * 0.75, m, shadow=False)
 
 
 def lamp(x, z, yaw, m, y=STREET):
@@ -727,9 +727,11 @@ def control_house(side: Side):
     for x in (x0 + 0.3, x1 - 0.3):
         downpipe(x, z1, 0.0, top, m, ground="road")
     # Inside, downstairs: the switch room (north) and the mess (south).
-    for x, z, tint in ((-27.0, -20.0, LAMP), (-27.0, -8.0, LAMP)):
-        place("batten", x, ceil, z, 0.0, m)
-        lamp_light(x, ceil - 0.3, z, 3.6, 10.0, m)
+    # Battens on a grid, four to a room, as an office or switch room has.
+    for x in (-30.0, -24.5):
+        for z in (-23.5, -17.0, -10.8, -5.2):
+            place("batten", x, ceil, z, 0.0, m)
+            lamp_light(x, ceil - 0.3, z, 2.3, 8.0, m)
     place("switch_panel", -27.0, WALK, -26.3, 0.0, m, length=4.0, look="steel_grey")
     blocker(-29.0, -25.0, WALK, 2.35, -26.65, -26.0, m)
     place("switch_panel", -32.3, WALK, -20.0, PI / 2, m, length=3.0, look="steel_grey")
@@ -742,9 +744,10 @@ def control_house(side: Side):
     place("notice_board", -21.4, WALK + 1.4, -11.0, -PI / 2, m)
     extinguisher(-21.6, -4.0, -PI / 2, m)
     # Upstairs: the control room (Blue) or the test lab (Red), and the office.
-    for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
-        place("batten", x, 7.4, z, 0.0, m)
-        lamp_light(x, 7.1, z, 3.2, 10.0, m)
+    for x in (-30.0, -24.5):
+        for z in (-23.0, -15.8, -9.2, -4.8):
+            place("batten", x, 7.4, z, 0.0, m)
+            lamp_light(x, 7.1, z, 2.2, 8.0, m)
     if not m:
         place("console", -27.5, UPPER, -4.2, PI, m, length=6.0)
         place("console", -27.5, UPPER, -8.0, PI, m, length=4.0)
