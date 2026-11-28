@@ -121,6 +121,8 @@ const WORLD_SHADER_PATHS: Array[String] = [
 	"res://shaders/world.gdshader",
 	"res://shaders/world_windows.gdshader",
 	"res://shaders/world_extras.gdshader",
+	"res://shaders/world_wear.gdshader",
+	"res://shaders/world_wear_extras.gdshader",
 ]
 ## Gun smoke (first- and third-person puffs), soft against the world on High.
 const SMOKE_SHADER_PATH := "res://shaders/muzzle_smoke.gdshader"

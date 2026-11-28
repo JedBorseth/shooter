@@ -897,7 +897,7 @@ def workshop(side: Side):
     shell(x0, x1, z0, z1, top, side.clad, m,
           doors={"N": [(-27.0, -25.4)], "W": [(9.0, 10.6)], "S": [(-24.0, -22.4)], "E": [(11.0, 12.6)]},
           windows={"N": [(-30.5, -28.0, 0.9, 2.4)], "W": [(16.0, 19.0, 1.2, 2.4)]},
-          inner="block_white", inner_top=4.0, door_h=2.8)
+          inner="block_white", inner_top=ROOF_DECK - 0.25, door_h=2.8)
     floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
     roof(x0 + T, x1 - T, z0 + T, z1 - T, ROOF_DECK - 0.25, m, look="soffit", holes=(hatch,), top="roof_pavers")
     coping(x0, x1, z0, z1, top, m, look="quay_edge")
@@ -1551,6 +1551,118 @@ def interiors(side: Side):
     prop("power_box", 8.45, WALK + 1.3, -24.5, -PI / 2, m)
 
 
+def _dado(axis, face, d, a0, a1, y, cuts, look, m, h=0.85):
+    """A painted dado on the inside of a wall: a band of paint from the floor
+    at y to h above it with a darker rail on top, 1 cm proud of the wall face
+    (at x = face for axis "z", z = face for axis "x"), on the room's side `d`
+    (+1 toward +x or +z), from a0 to a1 along the wall, broken at `cuts`
+    (door openings)."""
+    spans = [(a0, a1)]
+    for c0, c1 in cuts:
+        spans = [piece for s0, s1 in spans
+                 for piece in ((s0, min(s1, c0)), (max(s0, c1), s1)) if piece[1] - piece[0] > 0.05]
+    f0, f1 = sorted((face, face + d * 0.012))
+    r0, r1 = sorted((face, face + d * 0.022))
+    for s0, s1 in spans:
+        for y0, y1, lk, (g0, g1) in ((y, y + h, look, (f0, f1)), (y + h, y + h + 0.045, "dado_rail", (r0, r1))):
+            if axis == "x":
+                deco(s0, s1, y0, y1, g0, g1, lk, m, detail=True)
+            else:
+                deco(g0, g1, y0, y1, s0, s1, lk, m, detail=True)
+
+
+def _tiles(x0, x1, z0, z1, y, m, seed):
+    """A suspended ceiling: 1.2 x 0.6 m mineral tiles a shade apart, laid just
+    under the plaster ceiling at y, and the T-bar grid between them."""
+    rng = random.Random(seed)
+    nx, nz = int((x1 - x0) / 0.6), int((z1 - z0) / 1.2)
+    for i in range(nx):
+        for k in range(nz):
+            a0, a1 = x0 + i * 0.6, x0 + (i + 1) * 0.6 if i < nx - 1 else x1
+            b0, b1 = z0 + k * 1.2, z0 + (k + 1) * 1.2 if k < nz - 1 else z1
+            t = rng.uniform(-0.035, 0.03)
+            shaded("ceiling_tile", [(a0, y - 0.008, b0), (a1, y - 0.008, b0), (a1, y - 0.008, b1), (a0, y - 0.008, b1)],
+                   [(0, 1, 2, 3)], [(0.8 + t, 0.8 + t, 0.78 + t, 1.0, 1.0)] * 4, (0.0, -1.0, 0.0), m)
+            # Lit by the lightmap's probes, as the grid is: baked 8 mm under
+            # the slab, the tiles came out nearly black.
+            PARTS[-1]["detail"] = True
+    K.ceiling_grid(x0, x1, z0, z1, y - 0.008, m, step=0.6)
+
+
+def fit_out(side: Side):
+    """Finishes that set the rooms apart: painted dados and suspended
+    ceilings in the control house, and painted walkways and keep-clear boxes
+    on the workshop's and pump house's floors. All in the plaster and paint
+    materials the rooms already draw, so they add no draw calls."""
+    m = side.m
+    dado = "dado_blue" if not m else "dado_green"
+    x0, x1, z0, z1 = CONTROL
+    wx0, wx1, wz0, wz1 = x0 + T, x1 - T, z0 + T, z1 - T
+    split_n, split_s = CONTROL_SPLIT - 0.12, CONTROL_SPLIT + 0.12
+    stair = (-24.5, -16.0)
+    door_split = [(-25.0, -23.4)]
+    # Ground floor: the switch room (north) in plain grey, the mess (south)
+    # in the side's colour.
+    for axis, face, d, a0, a1, cuts, look in (
+            ("x", wz0, 1, wx0, wx1, [(-28.0, -26.4)], "dado_grey"),
+            ("z", wx0, 1, wz0, split_n, [], "dado_grey"),
+            ("z", wx1, -1, wz0, split_n, [stair], "dado_grey"),
+            ("x", split_n, -1, wx0, wx1, door_split, "dado_grey"),
+            ("x", wz1, -1, wx0, wx1, [(-30.0, -28.4)], dado),
+            ("z", wx0, 1, split_s, wz1, [], dado),
+            ("z", wx1, -1, split_s, wz1, [(-8.0, -6.6)], dado),
+            ("x", split_s, 1, wx0, wx1, door_split, dado)):
+        _dado(axis, face, d, a0, a1, WALK, cuts, look, m)
+    # Upstairs: the office (north) and the control room or lab (south).
+    up_doors = [(-29.0, -26.6), (-24.6, -23.4)]
+    for axis, face, d, a0, a1, cuts in (
+            ("x", wz0, 1, wx0, wx1, []), ("z", wx0, 1, wz0, -12.12, []), ("z", wx1, -1, wz0, -12.12, [stair]),
+            ("x", -12.12, -1, wx0, wx1, up_doors), ("x", -11.88, 1, wx0, wx1, up_doors),
+            ("x", wz1, -1, wx0, wx1, []), ("z", wx0, 1, -11.88, wz1, []), ("z", wx1, -1, -11.88, wz1, [])):
+        _dado(axis, face, d, a0, a1, UPPER, cuts, dado, m)
+    # Suspended ceilings upstairs and in the mess (the switch room keeps its
+    # open slab for the cable trays).
+    _tiles(wx0, wx1, wz0, -12.12, 7.38, m, 11)
+    _tiles(wx0, wx1, -11.88, wz1, 7.38, m, 12)
+    _tiles(wx0, wx1, split_s, wz1, UPPER - 0.22, m, 13)
+    # The workshop: a walkway from the north door to the south door, and a
+    # keep-clear box round the lathe (Red: the foam unit).
+    y = WALK + 0.003
+
+    def line(a0, a1, b0, b1):
+        deco(a0, a1, WALK, y, b0, b1, "safety_yellow", m, faces="top", detail=True)
+
+    def box_line(a0, a1, b0, b1, w=0.06):
+        line(a0, a1, b0, b0 + w)
+        line(a0, a1, b1 - w, b1)
+        line(a0, a0 + w, b0 + w, b1 - w)
+        line(a1 - w, a1, b0 + w, b1 - w)
+
+    for x in (-24.75, -22.55):
+        line(x, x + 0.08, WORKSHOP[2] + T, WORKSHOP[3] - T)
+    box_line(-28.9, -25.1, 14.6, 17.9)
+    # The pump house: keep-clear boxes round the pump sets and the panels.
+    box_line(3.3, 7.2, -31.2, -27.3)
+    box_line(-4.7, -1.3, -34.7, -32.3)
+    # The upstairs office: two workstations against the walls with their
+    # screens, a shelf of archive boxes, a bin, and a notice board.
+    u = UPPER
+    prop("office_desk", -25.0, u, -26.1, PI, m)
+    blocker(-26.0, -24.0, u, u + 0.79, -26.65, -25.65, m, "wood")
+    prop("tv", -25.3, u + 0.79, -26.25, PI, m, scale=0.8)
+    prop("plastic_chair", -25.1, u, -25.1, 0.25, m)
+    prop("office_desk", -32.15, u, -15.0, -PI / 2, m)
+    blocker(-32.65, -31.65, u, u + 0.79, -16.0, -14.0, m, "wood")
+    prop("tv", -32.3, u + 0.79, -14.6, -PI / 2, m, scale=0.8)
+    prop("plastic_chair", -31.1, u, -15.3, PI / 2 + 0.3, m)
+    prop("steel_shelves", -32.4, u, -18.2, PI / 2, m)
+    blocker(-32.65, -32.2, u, u + 1.8, -18.7, -17.7, m)
+    for k, dy in enumerate((0.02, 0.62, 1.22)):
+        prop("cardboard_box", -32.4, u + dy, -18.4 + 0.25 * (k % 2), PI / 2 + 0.1 * k, m, scale=0.7)
+    prop("trash_can", -23.4, u, -26.2, 0.0, m)
+    place("notice_board", -21.4, u + 1.5, -21.0, -PI / 2, m)
+
+
 def weathering(side: Side):
     """Oil and drips on the ground, rust and dirt run down the walls, rust on
     the tanks, the tide line on the quay face, and the moored tanker's weed
@@ -1695,6 +1807,7 @@ def build():
         rack_corners(side)
         dressing(side)
         interiors(side)
+        fit_out(side)
         weathering(side)
     rack()
     litter_pass()

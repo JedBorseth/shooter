@@ -29,6 +29,9 @@ SETS: dict[str, tuple[str, dict]] = {
     "planks": ("Planks023A", {}),
     "plaster": ("Plaster001", {"grey": True}),
     "rusty_paint": ("PaintedMetal006", {}),
+    # Bare rust: chipped edges and rust runs on Breakwater's baked-wear
+    # models (shaders/world_wear.gdshader).
+    "rust": ("Rust009", {}),
     "tread_plate": ("DiamondPlate007D", {}),
     # Slamcity
     "brick_tan": ("Bricks105", {}),

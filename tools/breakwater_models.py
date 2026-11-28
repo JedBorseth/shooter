@@ -125,7 +125,17 @@ LOOKS: dict[str, dict] = {
     # roughness read as crumpled foil).
     "floor_epoxy_grey": _t("concrete_floor", 4.0, (0.58, 0.6, 0.61), rough=0.8, grime=0.0),
     "floor_epoxy_green": _t("concrete_floor", 4.0, (0.38, 0.5, 0.43), rough=0.8, grime=0.0),
+    # Room finishes (layout `fit_out`): painted dados in the plaster's own
+    # material (tint and a satin finish in the vertex colour), and mineral
+    # ceiling tiles.
+    "dado_blue": _t("plaster", 3.0, (0.42, 0.5, 0.57), rough=0.75, grime=0.1),
+    "dado_green": _t("plaster", 3.0, (0.42, 0.52, 0.45), rough=0.75, grime=0.1),
+    "dado_grey": _t("plaster", 3.0, (0.55, 0.56, 0.56), rough=0.75, grime=0.1),
+    "dado_rail": _t("plaster", 3.0, (0.26, 0.28, 0.3), rough=0.6, grime=0.1),
+    "ceiling_tile": _t("plaster", 3.0, (0.86, 0.86, 0.83), rough=1.2, grime=0.0),
     "boat_orange": _p((0.95, 0.4, 0.06), 0.45),
+    # A drinks can in the litter: Slamcity's shop green read as lit in the sun.
+    "goods_green": _p((0.1, 0.3, 0.13), 0.45),
     "plastic_white": _p((0.88, 0.88, 0.84), 0.35),
     "rope_tan": _p((0.55, 0.45, 0.3), 0.9),
     "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
@@ -844,7 +854,11 @@ def switch_panel(b: Model, length=3.0, look="steel_grey"):
     for k in range(n):
         x = -hl + (k + 0.5) * length / n
         b.box(x - 0.36, x + 0.36, 0.1, 2.1, 0.3, 0.32, look, detail=True)
-        b.box(x - 0.12, x + 0.12, 1.5, 1.7, 0.32, 0.34, "screen_blue", detail=True)
+        # A dim LCD with a few lit readouts, not a flat glowing square.
+        b.box(x - 0.12, x + 0.12, 1.5, 1.7, 0.32, 0.34, "screen_process", detail=True)
+        for j, (y, w, lk) in enumerate(((1.66, 0.18, "screen_header"), (1.6, 0.12, "screen_line"),
+                                        (1.55, 0.15, "screen_level"))):
+            b.box(x - 0.1, x - 0.1 + w, y - 0.008, y + 0.008, 0.34, 0.343, lk, detail=True)
         b.box(x + 0.25, x + 0.29, 0.9, 1.2, 0.32, 0.36, "trim_black", detail=True)
         for j in range(3):
             b.cyl("z", 0.32, 0.36, (x - 0.15 + j * 0.15, 1.3), 0.025, ("led_amber", "signal_red", "signal_walk")[j],
@@ -1490,15 +1504,21 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
     # The bow: sections from the parallel body to a raked stem, fine at the
     # waterline and flared under the deck; each pair of neighbouring
     # sections is one convex piece, so the stem stays sharp.
+    # The first two sections sit inside the parallel body at its full
+    # section, so the loft's capped (and smoothed) end is hidden in the box
+    # hull and its sides run on flush from the hull's; the forecastle rises
+    # from there.
     rings = []
-    for x, deck, mid, wl, bot, keel, rake in ((hl - 10.5, 1.0, 1.0, 1.0, 1.0, -2.0, 0.0),
+    for x, deck, mid, wl, bot, keel, rake in ((hl - 14.0, 1.0, 1.0, 1.0, 1.0, -2.0, 0.0),
+                                              (hl - 12.5, 1.0, 1.0, 1.0, 1.0, -2.0, 0.0),
+                                              (hl - 10.5, 1.0, 1.0, 1.0, 1.0, -2.0, 0.0),
                                               (hl - 8.5, 0.99, 0.96, 0.9, 0.75, -2.0, 0.1),
                                               (hl - 6.5, 0.94, 0.85, 0.72, 0.48, -2.0, 0.35),
                                               (hl - 4.5, 0.84, 0.66, 0.5, 0.26, -1.9, 0.75),
                                               (hl - 2.8, 0.66, 0.43, 0.28, 0.1, -1.6, 1.25),
                                               (hl - 1.4, 0.42, 0.2, 0.1, 0.03, -1.1, 1.8),
                                               (hl - 0.4, 0.12, 0.04, 0.02, 0.01, -0.5, 2.3)):
-        top = free + 0.8 + (hl - x) * 0.05
+        top = free + 0.8 + min(hl - x, 10.5) * 0.05
         # The deck edge is a pair of close points, so smoothing keeps it a
         # crisp knuckle instead of rounding the bow into a blob.
         keel -= 2.5  # smoothing pulls the bottom up; keep it well under the water

@@ -1,0 +1,27 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/world_wear.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/albedo.jpg" id="2_albedo"]
+[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/normal.jpg" id="3_normal"]
+[ext_resource type="Texture2D" path="res://assets/textures/painted_metal/orm.jpg" id="4_orm"]
+[ext_resource type="Texture2D" path="res://assets/maps/breakwater/wear.png" id="9_wear"]
+[ext_resource type="Texture2D" path="res://assets/textures/rust/albedo.jpg" id="10_rust"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/albedo_tex = ExtResource("2_albedo")
+shader_parameter/normal_tex = ExtResource("3_normal")
+shader_parameter/orm_tex = ExtResource("4_orm")
+shader_parameter/textured = true
+shader_parameter/tile_size = 4
+shader_parameter/use_vertex_color = true
+shader_parameter/metallic_scale = 0.5
+shader_parameter/grime = 0
+shader_parameter/normal_strength = 1
+shader_parameter/anti_tile = 0
+shader_parameter/wear_mask = ExtResource("9_wear")
+shader_parameter/rust_tex = ExtResource("10_rust")
+shader_parameter/edge_wear = 0.75
+shader_parameter/cavity_grime = 0.7
+shader_parameter/rust_runs = 0.7
+shader_parameter/rust_share = 0.75
