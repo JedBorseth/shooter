@@ -101,10 +101,16 @@ def receiver() -> list:
     outline = rounded([
         (0.000, 0.000, 0.0), (RECEIVER_LENGTH, 0.000, 0.0), (RECEIVER_LENGTH, -0.050, 0.004),
         (0.150, RECEIVER_BOTTOM, 0.012), (0.012, RECEIVER_BOTTOM, 0.012), (-0.006, -0.042, 0.016),
-        (-0.004, -0.010, 0.006),
+        # The rear top rolls down into the wrist, which joins 12 mm below
+        # the receiver's top.
+        (-0.004, -0.014, 0.012),
     ], 0.0, steps=8)
     body = side_profile("Receiver", outline, -RECEIVER_HALF, RECEIVER_HALF)
     bevel(body, 0.003, 4)
+    # A matted sight groove along the receiver's top, 4 mm wide: aimed, the
+    # eye runs along it to the bead.
+    groove = box("SightGroove", (-0.002, 0.012, -0.0006), (0.002, RECEIVER_LENGTH - 0.010, 0.002))
+    body = boolean(body, groove, "DIFFERENCE")
     # The seam where the trigger plate meets the receiver, along each side.
     for side in (-1.0, 1.0):
         x0, x1 = sorted((side * (RECEIVER_HALF - 0.0004), side * (RECEIVER_HALF + 0.002)))
@@ -256,8 +262,12 @@ def bolt() -> object:
 
 # The stock's side outline, (y, z, corner radius) in gun space, from the
 # receiver back to the butt and along the belly forward again.
+# The wrist joins 12 mm below the receiver's top, and the comb drops 40 mm
+# and the heel 63 mm below the sight line (the eye, 13 mm over the
+# receiver), a field stock's drop: aimed, the cheek rests on the comb and
+# the eye looks over the receiver, not down the stock.
 STOCK_OUTLINE = [
-    (0.002, -0.004, 0.0), (-0.050, -0.017, 0.03), (-0.296, -0.040, 0.004), (-0.300, -0.046, 0.0),
+    (0.002, -0.012, 0.0), (-0.050, -0.027, 0.03), (-0.296, -0.050, 0.004), (-0.300, -0.056, 0.0),
     (-0.300, -0.166, 0.0), (-0.292, -0.172, 0.006), (-0.150, -0.120, 0.05), (-0.085, -0.093, 0.04),
     (-0.048, -0.080, 0.02), (-0.022, -0.068, 0.015), (0.002, -0.050, 0.0),
 ]

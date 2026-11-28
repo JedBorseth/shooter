@@ -107,7 +107,9 @@ FINISHES = {
         "wear": 1.0,
         "grime": 0.6,
         "bump": 0.00012,
-        "tint": 0.016,
+        # Moulded glass-filled nylon is not one flat black: the fill and
+        # handling leave it mottled.
+        "tint": 0.03,
     },
     # A GI aluminium magazine: a lighter, grey-green dry-film coat that
     # scuffs on every edge from being dropped and stuffed in pouches.
@@ -371,6 +373,18 @@ FINISHES = {
         "grime": 1.4,
         "bump": 0.00005,
         "tint": 0.03,
+    },
+    # Black enamel over stamped steel: a drum magazine.
+    "black_paint": {
+        "id": 24,
+        "color": (0.1, 0.1, 0.1),
+        "roughness": 0.56,
+        "metallic": 0.0,
+        "bare": ((0.44, 0.44, 0.45), 0.36, 1.0),
+        "wear": 1.0,
+        "grime": 0.8,
+        "bump": 0.00004,
+        "tint": 0.012,
     },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
