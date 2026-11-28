@@ -116,9 +116,11 @@ const HIGH_ONLY := &"graphics_high_only"
 const AMBIENT_PUFFS := &"graphics_ambient_puffs"
 const MotionBlur := preload("res://scripts/motion_blur.gd")
 const Looks := preload("res://scripts/looks.gd")
-## The world surface shaders (both include shaders/world.gdshaderinc).
+## The world surface shaders (all include shaders/world.gdshaderinc).
 const WORLD_SHADER_PATHS: Array[String] = [
-	"res://shaders/world.gdshader", "res://shaders/world_windows.gdshader"
+	"res://shaders/world.gdshader",
+	"res://shaders/world_windows.gdshader",
+	"res://shaders/world_extras.gdshader",
 ]
 ## Gun smoke (first- and third-person puffs), soft against the world on High.
 const SMOKE_SHADER_PATH := "res://shaders/muzzle_smoke.gdshader"

@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3]
 
-[ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]
+[ext_resource type="Shader" path="res://shaders/world_extras.gdshader" id="1_shader"]
 [ext_resource type="Texture2D" path="res://assets/textures/painted_metal/albedo.jpg" id="2_albedo"]
 [ext_resource type="Texture2D" path="res://assets/textures/painted_metal/normal.jpg" id="3_normal"]
 [ext_resource type="Texture2D" path="res://assets/textures/painted_metal/orm.jpg" id="4_orm"]

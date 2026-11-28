@@ -1,6 +1,10 @@
-// The world surface shader's body, shared by world.gdshader and
+// The world surface shader's body, shared by world.gdshader,
 // world_windows.gdshader (which defines WORLD_WINDOWS for the skyline's
-// windows, so every other surface skips that code entirely).
+// windows, so every other surface skips that code entirely), and
+// world_extras.gdshader (WORLD_EXTRAS: stripes, checkerboards, road dust, and
+// projection in a model's own space, for the few materials that use them).
+// Code a uniform switches off still slows every pixel: compiling those four
+// out of world.gdshader made Breakwater's worst Medium view 0.3 ms faster.
 //
 // On High (WORLD_DETAIL, set in both shaders), a fine detail normal (a shared
 // noise texture, `world_detail_normal`) adds grain and roughness breakup up
@@ -52,9 +56,11 @@ uniform float wear : hint_range(0.0, 1.0) = 0.0;
 // Darkening of walls toward floor_height, fading out over grime_height metres.
 uniform float grime : hint_range(0.0, 1.0) = 0.3;
 uniform float grime_height = 0.7;
+#ifdef WORLD_EXTRAS
 // Road dust (vehicle paint): low on vertical faces the albedo turns toward
 // dust and the finish goes matt, in blotches.
 uniform float dust : hint_range(0.0, 1.0) = 0.0;
+#endif
 // Breaks up visible tiling on big isotropic surfaces (asphalt, concrete,
 // plaster): a second albedo sample, shifted by a fraction of a repeat (same
 // scale and the same way up, so its features match the relief and the light
@@ -94,6 +100,7 @@ uniform float window_min_y = 2.0;
 // roughness itself (`vertex_roughness`).
 uniform bool use_vertex_color = false;
 uniform bool vertex_roughness = false;
+#ifdef WORLD_EXTRAS
 // Stripes across the texture's u axis (awnings), `stripe_width` metres wide.
 uniform float stripe_width = 0.0;
 uniform vec4 stripe_color : source_color = vec4(1.0);
@@ -107,15 +114,19 @@ uniform vec4 checker_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 // with its origin on the ground under it, and the result turns back into the
 // world at the end.
 uniform bool object_space = false;
+#endif
 
 varying vec3 world_position;
 varying vec3 world_normal;
 
 void vertex() {
+#ifdef WORLD_EXTRAS
 	if (object_space) {
 		world_position = VERTEX;
 		world_normal = normalize(NORMAL);
-	} else {
+	} else
+#endif
+	{
 		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		// The normal matrix, not the model matrix: props are rotated and
 		// scaled unevenly, which would tilt their normals.
@@ -149,6 +160,7 @@ void fragment() {
 	if (use_vertex_color) {
 		albedo *= COLOR.rgb;
 	}
+#ifdef WORLD_EXTRAS
 	if (stripe_width > 0.0) {
 		float u_m = dot(world_position, u_dir);
 		albedo = mix(albedo, stripe_color.rgb, step(1.0, mod(floor(u_m / stripe_width), 2.0)));
@@ -157,6 +169,7 @@ void fragment() {
 		vec2 cell = floor(world_position.xz / checker_size);
 		albedo = mix(albedo, checker_color.rgb, mod(cell.x + cell.y, 2.0));
 	}
+#endif
 	float ao = 1.0;
 	float rough = 0.85;
 	float metal = 0.0;
@@ -232,6 +245,7 @@ void fragment() {
 	float near_floor = 1.0 - smoothstep(floor_height, floor_height + grime_height, world_position.y);
 	float wall = 1.0 - a.y;
 	albedo *= 1.0 - grime * 0.45 * near_floor * wall * (0.6 + 0.4 * noise);
+#ifdef WORLD_EXTRAS
 	if (dust > 0.0) {
 		float fine = texture(world_noise, world_position.xz * 0.9 + world_position.y * 1.7).r;
 		float d = dust * (1.0 - smoothstep(0.25, 1.1, world_position.y - floor_height)) * wall
@@ -239,6 +253,7 @@ void fragment() {
 		albedo = mix(albedo, vec3(0.3, 0.27, 0.23), d * 0.75);
 		rough = mix(rough, 0.9, d);
 	}
+#endif
 
 #if WORLD_WET
 	{
@@ -339,8 +354,10 @@ void fragment() {
 	// Texture AO is for light that comes from all around (sky, bounce); the
 	// sun reaches into a crevice the texture cannot see, so it barely dims it.
 	AO_LIGHT_AFFECT = 0.1;
+#ifdef WORLD_EXTRAS
 	if (object_space) {
 		surface_normal = normalize(MODEL_NORMAL_MATRIX * surface_normal);
 	}
+#endif
 	NORMAL = normalize((VIEW_MATRIX * vec4(surface_normal, 0.0)).xyz);
 }

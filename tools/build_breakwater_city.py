@@ -83,6 +83,40 @@ def _chunk_of(centre, part) -> str:
     return col + row
 
 
+# Models beyond the boundary are seen from 40 m and more: they are built
+# coarser (FarModel). The moored ship is the backdrop's hero and keeps its own
+# detail; the far tanks are plain already.
+FAR_FULL = {"tanker_ship", "far_tank"}
+
+
+class FarModel(M.Model):
+    """A far placement's model, built coarser: half the sides on cylinders,
+    tubes, and lathed rings, one subdivision level, and none of the fittings
+    too small to make out past 40 m (tread blocks, nuts, small text). The
+    lorry park's ten tankers, its cars, and the quays' bollards drew about
+    300k triangles at full detail, a quarter of the map's."""
+
+    def _add(self, part, detail):
+        part = dict(part)
+        kind = part["kind"]
+        if kind == "text" and part["size"] < 0.3:
+            return
+        if "sides" in part:
+            part["sides"] = max(6, part["sides"] // 2)
+        if "levels" in part:
+            part["levels"] = min(part["levels"], 1)
+        if kind == "cyl" and detail and part["r"] < 0.04:
+            return
+        if kind == "hull":
+            pts = part["points"]
+            span = max(max(p[i] for p in pts) - min(p[i] for p in pts) for i in range(3))
+            if detail and span < 0.15:
+                return
+            if len(pts) > 24:
+                part["points"] = pts[::2]
+        super()._add(part, detail)
+
+
 class Materials(B.Materials):
     def _material(self, name: str) -> str | None:
         spec = BM.LOOKS.get(name, {})
@@ -178,9 +212,10 @@ def main():
         args = dict(placed["params"])
         if "to" in args:
             args["to"] = tuple(t - p for t, p in zip(args["to"], placed["pos"]))
-        key = (name, json.dumps(args, sort_keys=True))
+        far = name not in FAR_FULL and chunk_of(placed["pos"], {"chunk": placed.get("chunk")}).startswith("far")
+        key = (name, json.dumps(args, sort_keys=True), far)
         if key not in model_cache:
-            model = M.Model(B.part_geo)
+            model = (FarModel if far else M.Model)(B.part_geo)
             builder(model, **args)
             model_cache[key] = model
         model = model_cache[key]

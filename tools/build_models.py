@@ -7,7 +7,7 @@ API and geometry (tools/slamcity_models.py, tools/build_slamcity_city.py),
 its surfaces merged by material, and written to
 godot/assets/models/<name>/<name>.gltf. Looks fold into shared materials the
 way Slamcity's do, written to godot/materials/models/, each projecting its
-textures in the model's own space (the world shader's `object_space`), so they
+textures in the model's own space (`object_space`, in world_extras.gdshader), so they
 stay on a model that moves. The import script, godot/tools/model_import.gd,
 swaps them in for the placeholder materials in the glTF. Models in STANDARD
 (the sentry's eye, whose glow code drives) instead export plain glTF
@@ -224,7 +224,8 @@ def main():
     # each texture set its close-up detail strength (world_detail.DETAIL).
     for path in MATERIALS.glob("*.tres"):
         text = path.read_text()
-        if 'path="res://shaders/world.gdshader"' in text:
+        if 'path="res://shaders/world.gdshader"' in text or 'path="res://shaders/world_extras.gdshader"' in text:
+            text = text.replace('path="res://shaders/world.gdshader"', 'path="res://shaders/world_extras.gdshader"')
             path.write_text(text.rstrip("\n") + "\nshader_parameter/object_space = true\n" + detail_line(text))
     import test_models  # noqa: PLC0415
 

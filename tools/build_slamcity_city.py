@@ -542,9 +542,13 @@ class Materials:
 
     def _material(self, name: str) -> str | None:
         world = '[ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]'
+        # Stripes, checkerboards, and road dust compile only into
+        # world_extras.gdshader (see world.gdshaderinc).
+        extras = world.replace("world.gdshader", "world_extras.gdshader")
         if name in self.group_params:
             spec = self.group_params[name]
-            lines = ['[gd_resource type="ShaderMaterial" format=3]', "", world]
+            shader = extras if spec.get("stripes") or spec.get("checker") else world
+            lines = ['[gd_resource type="ShaderMaterial" format=3]', "", shader]
             for i, kind in enumerate(("albedo", "normal", "orm"), start=2):
                 lines.append(f'[ext_resource type="Texture2D" path="res://assets/textures/{spec["set"]}/{kind}.jpg" '
                              f'id="{i}_{kind}"]')
@@ -571,7 +575,7 @@ class Materials:
         if name == "paint":
             # Vehicle paint: a little metallic, clean, dirtier toward the road.
             return "\n".join([
-                '[gd_resource type="ShaderMaterial" format=3]', "", world, "", "[resource]",
+                '[gd_resource type="ShaderMaterial" format=3]', "", extras, "", "[resource]",
                 'shader = ExtResource("1_shader")', "shader_parameter/textured = false",
                 "shader_parameter/use_vertex_color = true", "shader_parameter/vertex_roughness = true",
                 "shader_parameter/metallic_scale = 0.35", "shader_parameter/specular = 0.6",
