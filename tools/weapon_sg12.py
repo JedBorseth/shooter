@@ -234,5 +234,7 @@ FINISH = {
     "markings": [
         # The left of the receiver, the side the player sees.
         {"text": "SG-12\n12 GA  SEMI-AUTO", "at": (0.120, -0.024), "size": 0.0062},
+        # A proof mark and serial ahead of it, over the chamber.
+        {"text": "PROOF 1200 BAR\nSN 2611-0457", "at": (0.200, -0.030), "size": 0.0042},
     ],
 }

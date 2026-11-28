@@ -843,7 +843,7 @@ def face_parts(obj, spec: dict) -> list[str]:
 
 
 def material_kind(name: str) -> str:
-    if name in ("Optics", "Lens", "Scope"):
+    if name in ("Optics", "Lens", "Scope", "Drum"):
         return name
     if any(m in name for m in CARTRIDGE_MATERIALS):
         return "Cartridge"
@@ -915,8 +915,9 @@ def set_materials(objects: dict, key: str):
     shared = {}
     for name in ("Weapon", "Cartridge", "Glow"):
         shared[name] = bpy.data.materials.new(name)
-    # Parts the tool models (a drum, a bipod) use the shared optics finish.
-    for name in ("Optics", "Lens"):
+    # Parts the tool models: a bipod in the shared optics finish, a drum on
+    # its own painted maps (`paint_part`).
+    for name in ("Optics", "Lens", "Drum"):
         shared[name] = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     for obj in objects.values():
         kinds = [material_kind(s.material.name if s.material else "") for s in obj.material_slots]
@@ -1211,7 +1212,7 @@ def add_drum(source: Source, spec: dict):
     # the tower.
     radius, half = 0.085, 0.038
     cy, cz = 0.040, -0.070 - radius
-    seg = 40
+    seg = 72
     # Each face: a raised hub, a recessed band, a pressed rib, and the
     # rolled rim; the rim seam runs round the middle of the edge.
     face = [
@@ -1229,13 +1230,15 @@ def add_drum(source: Source, spec: dict):
         local = turn @ v.co
         v.co = convert((local.x, cy + local.y, cz + local.z))
     # The winding key: a hub and a folding lever on the left face.
-    key = revolve(bm, [(0.0, 0.0), (0.0, 0.016), (0.010, 0.016), (0.012, 0.010), (0.012, 0.0)], 20, uv)
+    key = revolve(bm, [(0.0, 0.0), (0.0, 0.016), (0.010, 0.016), (0.012, 0.010), (0.012, 0.0)], 32, uv)
     verts = [v for ring in key for v in ring]
     for v in verts:
         local = Matrix.Rotation(np.pi / 2, 4, "Z") @ v.co
         v.co = convert((-half + local.x, cy + local.y, cz + local.z))
     box(bm, uv, (-half - 0.016, -0.004 + cy, cz - 0.004), (-half - 0.010, 0.034 + cy, cz + 0.004), convert, 0.0015)
-    add_part(source, bm, "DRUM", "Optics")
+    # Painted on its own maps (`paint_part`): it is a separate stamping in
+    # black enamel, not part of the rifle's atlas.
+    add_part(source, bm, "DRUM", "Drum")
     # Rounds in the tower's lips.
     profile = CARTRIDGE_PROFILES[info["rounds"]]
     bm = bmesh.new()
@@ -1411,27 +1414,19 @@ SCOPE_FINISH = {
     "markings": [{"text": "3.5-10 X 40", "at": (0.098, 0.0), "side": "-x", "size": 0.0042}],
     "font": REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf",
 }
-# Painted scope maps, waiting for `build` to save them beside the weapon's.
-SCOPE_MAPS: dict = {}
+# Painted part maps (the scope, a drum), waiting for `build` to save them
+# beside the weapon's own.
+PART_MAPS: dict = {}
 
 
-def paint_scope(obj, ring_ys: list, rail: float):
-    """Paints the riflescope's own maps (weapon_finish), on a "Scope"
-    material: the weapon's "Weapon" material steps aside while it bakes,
-    since the finish bakes the material of that name."""
-    zone = obj.data.attributes.new(weapon_finish.ZONE_ATTRIBUTE, "INT", "FACE")
+def paint_part(obj, material_name: str, zones: list, finish: dict, size: int):
+    """Paints one part's own maps (weapon_finish) on a material of its own
+    (`material_name`), its faces in `zones` (one FINISHES name per face).
+    The weapon's "Weapon" material steps aside while it bakes, since the
+    finish bakes the material of that name. Returns (colour, normal, ORM)."""
     ids = {n: f["id"] for n, f in weapon_finish.FINISHES.items()}
-    values = []
-    for poly in obj.data.polygons:
-        c = poly.center
-        radius = np.hypot(c.x, c.z)
-        if c.y < -0.0035 or (0.0415 < c.y < 0.0615 and radius > 0.0199):
-            values.append(ids["rubber"])
-        elif any(abs(c.y - y) < 0.0095 and (radius > 0.0153 or c.z < -0.0153) for y in ring_ys):
-            values.append(ids["steel"])
-        else:
-            values.append(ids["aluminium"])
-    zone.data.foreach_set("value", values)
+    zone = obj.data.attributes.new(weapon_finish.ZONE_ATTRIBUTE, "INT", "FACE")
+    zone.data.foreach_set("value", [ids[z] for z in zones])
     gun = bpy.data.materials.get("Weapon")
     if gun is not None:
         gun.name = "WeaponGun"
@@ -1439,12 +1434,45 @@ def paint_scope(obj, ring_ys: list, rail: float):
     obj.data.materials.clear()
     obj.data.materials.append(material)
     bpy.context.view_layer.update()
-    SCOPE_MAPS["maps"] = weapon_finish.paint({"Body": obj}, {"finish": SCOPE_FINISH}, Matrix.Identity(4),
-                                             SCOPE_TEXTURE_SIZE)
+    maps = weapon_finish.paint({"Body": obj}, {"finish": finish}, Matrix.Identity(4), size)
     obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
-    material.name = "Scope"
+    # A placeholder of that name (set_materials makes one) would push this
+    # one to "<name>.001", which its import mapping would miss.
+    placeholder = bpy.data.materials.get(material_name)
+    if placeholder is not None:
+        bpy.data.materials.remove(placeholder)
+    material.name = material_name
     if gun is not None:
         gun.name = "Weapon"
+    return maps
+
+
+def paint_scope(obj, ring_ys: list, rail: float):
+    """The riflescope's zones: rubber eye guard and power-ring grip, steel
+    rings and bases, anodised tube, bells, and turrets."""
+    zones = []
+    for poly in obj.data.polygons:
+        c = poly.center
+        radius = np.hypot(c.x, c.z)
+        if c.y < -0.0035 or (0.0415 < c.y < 0.0615 and radius > 0.0199):
+            zones.append("rubber")
+        elif any(abs(c.y - y) < 0.0095 and (radius > 0.0153 or c.z < -0.0153) for y in ring_ys):
+            zones.append("steel")
+        else:
+            zones.append("aluminium")
+    PART_MAPS["scope"] = paint_part(obj, "Scope", zones, SCOPE_FINISH, SCOPE_TEXTURE_SIZE)
+
+
+# A drum magazine's finish: black enamel over stamped steel, worn bright on
+# its rims and ribs from being carried and dropped.
+DRUM_FINISH = {
+    "unwrap": True,
+    "seam_fix": True,
+    "uv_margin": 6.0,
+    "wear_radius": 0.0025,
+    "scratch_depth": 0.1,
+}
+DRUM_TEXTURE_SIZE = 1024
 
 
 # Parts left out of `World`: the spare magazine stays hidden, and the rail
@@ -1797,11 +1825,13 @@ def write_import(key: str, out: Path, folder: str):
     of the file on import."""
     path = out / f"{key}.glb.import"
     material = f"res://assets/weapons/{folder}/{key}.tres"
-    # A weapon with a riflescope maps its "Scope" to its own painted maps.
+    # A weapon with a riflescope or a drum maps its "Scope" or "Drum" to
+    # that part's own painted maps.
     scope = ""
-    if (out / f"{key}_scope.tres").exists():
-        scope = (f'"Scope": {{\n"use_external/enabled": true,\n'
-                 f'"use_external/path": "res://assets/weapons/{folder}/{key}_scope.tres"\n}},\n')
+    for part, part_material in (("drum", "Drum"), ("scope", "Scope")):
+        if (out / f"{key}_{part}.tres").exists():
+            scope += (f'"{part_material}": {{\n"use_external/enabled": true,\n'
+                      f'"use_external/path": "res://assets/weapons/{folder}/{key}_{part}.tres"\n}},\n')
     sub = IMPORT_SUBRESOURCES.format(shared=SHARED, material=material, scope=scope)
     if path.exists():
         text = path.read_text()
@@ -1977,9 +2007,10 @@ def build_modelled(key: str):
     export(objects, out / f"{stem}.glb")
     save_maps(stem, out, *painted)
     write_material(stem, out, spec["dir"])
-    if "scope" in spec:
-        save_maps(f"{stem}_scope", out, *SCOPE_MAPS.pop("maps"))
-        write_material(f"{stem}_scope", out, spec["dir"])
+    for part in ("scope", "drum"):
+        if part in PART_MAPS:
+            save_maps(f"{stem}_{part}", out, *PART_MAPS.pop(part))
+            write_material(f"{stem}_{part}", out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
     (out / f"{stem}.json").write_text(
@@ -2052,6 +2083,10 @@ def build(key: str):
                 obj.data.attributes.remove(attr)
     if "scope" in spec:
         objects["Scope"] = riflescope(spec)
+    if "drum" in spec:
+        drum = objects["Magazine"]
+        PART_MAPS["drum"] = paint_part(drum, "Drum", ["black_paint"] * len(drum.data.polygons), DRUM_FINISH,
+                                       DRUM_TEXTURE_SIZE)
     bpy.context.view_layer.update()
     world_mesh(objects)
     world_magazine(objects)
@@ -2079,9 +2114,10 @@ def build(key: str):
     else:
         build_textures(stem, spec, out, uv_mask(objects))
     write_material(stem, out, spec["dir"])
-    if "scope" in spec:
-        save_maps(f"{stem}_scope", out, *SCOPE_MAPS.pop("maps"))
-        write_material(f"{stem}_scope", out, spec["dir"])
+    for part in ("scope", "drum"):
+        if part in PART_MAPS:
+            save_maps(f"{stem}_{part}", out, *PART_MAPS.pop(part))
+            write_material(f"{stem}_{part}", out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
     (out / f"{stem}.json").write_text(
