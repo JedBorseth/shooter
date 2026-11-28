@@ -1543,7 +1543,7 @@ impl SoldierRig {
             if g.hold == Hold::Handguard && !g.foregrip {
                 // Mid-handguard rather than at the muzzle end of it, so the
                 // support elbow bends and drops under the weapon. The fingers
-                // keep the pose fitted where the first-person hand holds, 2 cm
+                // keep the pose fitted where the first-person hand holds, 7 cm
                 // further forward on the same handguard, so they still wrap
                 // it; the seat is left out, as the palm rests on the section.
                 // (On a foregrip the hand stays where its pose was fitted.)

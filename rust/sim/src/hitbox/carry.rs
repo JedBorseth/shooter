@@ -43,10 +43,10 @@ pub const SHELL_POUCH: Vec3 = Vec3::new(-0.14, -0.22, 0.14);
 /// the support arm reaches further up the handguard and the stock comes out
 /// of the chest onto the firing shoulder. The neck turns back as much, so the
 /// head still faces the aim. Pistols are held square.
-pub const BLADE: f32 = 0.26;
+pub const BLADE: f32 = 0.4;
 /// How far (m) the support hand sits behind the weapon's `GripLeft` marker on
 /// a rifle handguard, so the support elbow bends and drops under the weapon.
-pub const SUPPORT_BACK: f32 = 0.02;
+pub const SUPPORT_BACK: f32 = 0.07;
 /// Where a vertical foregrip moves the support hand from the weapon's
 /// `GripLeft` marker: down onto the grip under the handguard (the drawn
 /// weapon moves its marker the same way, `viewmodel.rs`).
@@ -57,6 +57,29 @@ pub const PALM_SKIN: f32 = 0.019;
 /// Where the grip sits in each hand's bone space (from the wrist).
 pub const RIGHT_PALM: Vec3 = Vec3::new(0.0, 0.085, 0.035);
 pub const LEFT_PALM: Vec3 = Vec3::new(0.0, 0.07, 0.05);
+/// How far (m) the support shoulder may come forward toward a handguard the
+/// arm cannot otherwise reach, as a rifleman's shoulder blade slides round
+/// the ribs: the soldier's arm is 55 cm from shoulder to wrist and a rifle's
+/// handguard sits further out than that from a bladed chest.
+pub const MAX_PROTRACTION: f32 = 0.1;
+/// The support arm reaches this share of its length at most before the
+/// shoulder comes forward, so the elbow keeps a little bend.
+pub const PROTRACT_FROM: f32 = 0.96;
+
+/// The support shoulder brought forward toward `wrist_target` as far as the
+/// arm (`arm_length`, shoulder to wrist) falls short of it, up to
+/// [`MAX_PROTRACTION`]. The drawn soldier turns the collarbone to put the
+/// shoulder there; the arm hit zones start from it.
+pub fn protracted(shoulder: Vec3, wrist_target: Vec3, arm_length: f32) -> Vec3 {
+    let to = wrist_target - shoulder;
+    let distance = to.length();
+    if distance < 1e-6 {
+        return shoulder;
+    }
+    let short = (distance - arm_length * PROTRACT_FROM).clamp(0.0, MAX_PROTRACTION);
+    shoulder + to * (short / distance)
+}
+
 /// Elbow hints in weapon space: the firing elbow down and out, the support
 /// elbow down and in under the weapon.
 pub const RIGHT_POLE: Vec3 = Vec3::new(0.45, -0.7, 0.35);
@@ -619,6 +642,25 @@ pub fn smoothstep(t: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::weapon::WeaponId;
+
+    #[test]
+    fn the_support_shoulder_comes_forward_only_as_far_as_the_arm_falls_short() {
+        let shoulder = Vec3::new(-0.15, 1.4, 0.0);
+        // Within reach: the shoulder stays.
+        let near = shoulder + Vec3::new(0.0, 0.0, -0.4);
+        assert_eq!(protracted(shoulder, near, 0.55), shoulder);
+        // 5 cm past the arm's bent reach: the shoulder comes 5 cm toward it.
+        let far = shoulder + Vec3::new(0.0, 0.0, -(0.55 * PROTRACT_FROM + 0.05));
+        let moved = protracted(shoulder, far, 0.55);
+        assert!(
+            (moved - (shoulder + Vec3::new(0.0, 0.0, -0.05))).length() < 1e-5,
+            "{moved}"
+        );
+        // Never more than the most a shoulder blade slides.
+        let out = shoulder + Vec3::new(0.0, 0.0, -1.0);
+        let moved = protracted(shoulder, out, 0.55);
+        assert!(((moved - shoulder).length() - MAX_PROTRACTION).abs() < 1e-5);
+    }
 
     #[test]
     fn blades_behind_long_guns_but_not_pistols_or_in_a_sprint() {

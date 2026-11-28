@@ -559,7 +559,7 @@ KITS = {
             # A modelled combat shirt and boots (tools/blender_wardrobe.py),
             # and the first-person arms' gloves with fewer triangles
             # (tools/blender_hilo.py), baked from their high-detail sources.
-            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}, "boots": {"faces": 1150},
+            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.45}, "boots": {"faces": 1150},
                      "gloves": True, "glove_ratio": 0.09, "glove_tuck": 0.005},
             "body_decimate": 0.32,
             # A close crop under the helmet and stubble on bare faces (paint_hair).
@@ -569,7 +569,7 @@ KITS = {
                 "glasses": 0,
                 "balaclava": 0,
                 "gaiter": 0,
-                "cover_decimate": 0.4,
+                "cover_decimate": 0.75,
                 "plate_carrier": [1.1, 1.4],
                 "belt": 0.99,
                 "drop_holster": 0,

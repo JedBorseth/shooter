@@ -451,6 +451,9 @@ const VAULT_PALM: Vec3 = Vec3::new(0.0, -0.04, -0.06);
 /// Two-bone IK for an arm, as the character's poser solves it: the elbow and
 /// the wrist for a shoulder at `root` reaching for `target`, bending toward
 /// `pole`.
+/// Shoulder to wrist, straight.
+const ARM_LENGTH: f32 = poses::UPPER_ARM + poses::FOREARM;
+
 fn solve_arm(root: Vec3, target: Vec3, pole: Vec3) -> (Vec3, Vec3) {
     let (upper, lower) = (poses::UPPER_ARM, poses::FOREARM);
     let to_target = target - root;
@@ -579,25 +582,37 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     };
     let targets = carry::hand_targets(weapon, &grips, support);
     let pole = |p: Vec3| weapon.1 + weapon.0 * p;
-    let arm = |(wrist_target, hand): (Vec3, Mat3), side: usize, hint: Vec3| {
-        let (elbow, wrist) = solve_arm(shoulders[side], wrist_target, pole(hint));
+    let arm = |(wrist_target, hand): (Vec3, Mat3), shoulder: Vec3, side: usize, hint: Vec3| {
+        let (elbow, wrist) = solve_arm(shoulder, wrist_target, pole(hint));
         // The forearm reaches on past the wrist to the middle of the hand.
         (elbow, wrist + hand * poses::HAND_MIDDLE[side])
     };
     let [right_target, left_target] = targets;
-    let (left_elbow, left_hand) = match activity.throw {
+    // Holding a weapon, the support shoulder comes forward toward a grip the
+    // arm cannot reach (as the drawn soldier's collarbone turns).
+    let holding = activity.weapon.is_some();
+    let protract = |target: Vec3, arm: f32| {
+        if holding {
+            carry::protracted(shoulders[0], target, arm)
+        } else {
+            shoulders[0]
+        }
+    };
+    let (left_shoulder, left_elbow, left_hand) = match activity.throw {
         // Throwing: the support hand carries the grenade, which is where
         // the forearm ends.
         Some(p) => {
             let blend = action::throw_hand_blend(p);
             let grenade = action::third_person_grenade(eyes, pitch, p);
             let (wrist_target, hand) = left_target;
-            let (elbow, wrist) = solve_arm(
-                shoulders[0],
-                wrist_target.lerp(grenade, blend),
-                pole(carry::LEFT_POLE),
-            );
-            (elbow, wrist + hand * poses::HAND_MIDDLE[0] * (1.0 - blend))
+            let target = wrist_target.lerp(grenade, blend);
+            let shoulder = protract(target, ARM_LENGTH);
+            let (elbow, wrist) = solve_arm(shoulder, target, pole(carry::LEFT_POLE));
+            (
+                shoulder,
+                elbow,
+                wrist + hand * poses::HAND_MIDDLE[0] * (1.0 - blend),
+            )
         }
         None => match vault_progress(activity) {
             // Vaulting: the support hand plants on the top.
@@ -606,14 +621,20 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
                 let (wrist_target, hand) = left_target;
                 let plant = action::vault_plant(p);
                 let pole = pole(carry::LEFT_POLE).lerp(VAULT_ELBOW, blend);
-                let (elbow, wrist) = solve_arm(shoulders[0], wrist_target.lerp(plant, blend), pole);
+                let target = wrist_target.lerp(plant, blend);
+                let shoulder = protract(target, ARM_LENGTH);
+                let (elbow, wrist) = solve_arm(shoulder, target, pole);
                 let middle = (hand * poses::HAND_MIDDLE[0]).lerp(VAULT_PALM, blend);
-                (elbow, wrist + middle)
+                (shoulder, elbow, wrist + middle)
             }
-            None => arm(left_target, 0, carry::LEFT_POLE),
+            None => {
+                let shoulder = protract(left_target.0, ARM_LENGTH);
+                let (elbow, hand) = arm(left_target, shoulder, 0, carry::LEFT_POLE);
+                (shoulder, elbow, hand)
+            }
         },
     };
-    let (right_elbow, right_hand) = arm(right_target, 1, carry::RIGHT_POLE);
+    let (right_elbow, right_hand) = arm(right_target, shoulders[1], 1, carry::RIGHT_POLE);
 
     let (s, c) = fmath::sin_cos(pose.yaw);
     let lie = Mat3::from_axis_angle(Vec3::X, -tilt);
@@ -644,7 +665,7 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
             spine_joint.lerp(chest, 0.6),
             STOMACH_RADIUS,
         ),
-        shape(HitZone::Arm, shoulders[0], left_elbow, UPPER_ARM_RADIUS),
+        shape(HitZone::Arm, left_shoulder, left_elbow, UPPER_ARM_RADIUS),
         shape(HitZone::Arm, left_elbow, left_hand, FOREARM_RADIUS),
         shape(HitZone::Arm, shoulders[1], right_elbow, UPPER_ARM_RADIUS),
         shape(HitZone::Arm, right_elbow, right_hand, FOREARM_RADIUS),

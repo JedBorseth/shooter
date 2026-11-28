@@ -178,9 +178,10 @@ class Body:
         self.tree = BVHTree.FromPolygons(verts, polys)
         self.verts = np.array([tuple(v) for v in verts])
 
-    def surface(self, origin: Vector, direction: Vector, fallback: Vector | None = None) -> Vector:
-        """The first surface hit casting from `origin` along `direction`."""
-        hit, *_ = self.tree.ray_cast(origin, direction.normalized(), 2.0)
+    def surface(self, origin: Vector, direction: Vector, fallback: Vector | None = None, distance: float = 2.0) -> Vector:
+        """The first surface hit casting from `origin` along `direction`,
+        within `distance`."""
+        hit, *_ = self.tree.ray_cast(origin, direction.normalized(), distance)
         if hit is None:
             return fallback if fallback is not None else origin
         return hit
@@ -201,7 +202,9 @@ class Body:
             t = start + arc * i / segments
             d = u * math.cos(t) + v * math.sin(t)
             if outward:
-                hit = self.surface(centre, d, centre + d * min(0.1, reach * 0.5))
+                # No further than a thick thigh's radius: past a gap in the
+                # cloth (between the legs) the ray would find the other limb.
+                hit = self.surface(centre, d, centre + d * min(0.085, reach * 0.5), distance=0.11)
             else:
                 far = centre + d * reach
                 hit = self.surface(far, -d, centre + d * min(0.1, reach * 0.5))
@@ -495,6 +498,28 @@ def face_cover(pieces: list, kind: str, group: int) -> bpy.types.Object:
     disp.strength = 0.0045
     disp.mid_level = 0.0
     apply_modifiers(obj)
+    # Smooth each open edge along itself: cut from the face's triangles, it
+    # steps in a sawtooth over the nose and cheeks. Each boundary vertex moves
+    # toward the middle of its two boundary neighbours (and the ring inside
+    # follows half as far, so the edge does not fold).
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    for _ in range(12):
+        moves = {}
+        for v in bm.verts:
+            if not v.is_boundary:
+                continue
+            nb = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+            if len(nb) == 2:
+                moves[v] = ((nb[0].co + nb[1].co) / 2 - v.co) * 0.5
+        for v, d in moves.items():
+            v.co += d
+            for e in v.link_edges:
+                w = e.other_vert(v)
+                if not w.is_boundary:
+                    w.co += d * 0.25
+    bm.to_mesh(obj.data)
+    bm.free()
     # Tuck the open edges in to the skin, so no gap shows at the eyes or neck.
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -811,7 +836,7 @@ def shell_on_limb(body: Body, name: str, centre: Vector, axis: Vector, front: Ve
             d = u * math.cos(ang) + v * math.sin(ang)
             origin = centre + a * h
             # From the limb's axis out: the first surface is the limb's own.
-            hit = body.surface(origin, d, origin + d * 0.05)
+            hit = body.surface(origin, d, origin + d * 0.05, distance=0.11)
             # The top edge hugs the limb: it is where the shell would stand
             # off as the joint above it bends.
             lift = standoff * (1 - 0.6 * smoothstep(0.5, 1.0, hn)) + dome * (1 - cn * cn) * (1 - hn * hn)
