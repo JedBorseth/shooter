@@ -11,11 +11,11 @@
 shader_type spatial;
 render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled, skip_vertex_transform;
 
-uniform vec4 color : source_color = vec4(1.0, 0.42, 0.1, 1.0);
-uniform vec4 core_color : source_color = vec4(1.0, 0.86, 0.62, 1.0);
+uniform vec4 color : source_color = vec4(1.0, 0.36, 0.06, 1.0);
+uniform vec4 core_color : source_color = vec4(1.0, 0.72, 0.42, 1.0);
 /// The core's brightness, and the glow's at its middle.
-uniform float energy = 14.0;
-uniform float glow_energy = 2.4;
+uniform float energy = 9.0;
+uniform float glow_energy = 3.2;
 /// The glow's width, in core widths.
 uniform float glow_width = 4.0;
 uniform float min_pixels = 3.0;
@@ -53,6 +53,7 @@ void fragment() {
 	// UV.y is 0 at the head and 1 at the tail.
 	float along = 1.0 - smoothstep(1.0 - tail_fade, 1.0, UV.y);
 	float head = smoothstep(0.0, 0.03, UV.y) * (1.0 + 0.8 * smoothstep(0.2, 0.0, UV.y));
-	float light = along * head * mix(1.0, thin, 0.5);
+	// Far away it dims only a little: a tracer at range still reads.
+	float light = along * head * mix(1.0, thin, 0.25);
 	ALBEDO = (core_color.rgb * core * energy + color.rgb * glow * glow_energy) * light;
 }

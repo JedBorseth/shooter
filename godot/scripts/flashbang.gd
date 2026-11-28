@@ -80,7 +80,7 @@ func _fade() -> void:
 	var halo := 1.0 - _age / HALO_TIME
 	_halo.visible = halo > 0.0
 	if _halo.visible:
-		_halo_material.albedo_color = Color(2.6, 2.6, 2.75) * halo * halo
+		_halo_material.albedo_color = Color(2.0, 2.0, 2.1) * halo * halo
 		_halo.scale = Vector3.ONE * (0.7 + 0.5 * (1.0 - halo))
 	var light := 1.0 - _age / LIGHT_TIME
 	_light.visible = light > 0.0

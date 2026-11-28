@@ -58,6 +58,12 @@ void fragment() {
 	// The atlas holds linear heat; lifted, the thin gas round the core
 	// shows as well as the white-hot middle.
 	float heat = pow(texture(flipbook, (vec2(column, row) + cell) * 0.25).r, 0.6);
+	if (shape == 0) {
+		// A soft, round hot core and a faint halo under the petals, so the
+		// flash reads as a layered burst of gas rather than a drawn star.
+		float r = length(cell - 0.5) * 2.0;
+		heat = max(heat, exp(-r * r * 9.0) * 0.75 + exp(-r * r * 2.5) * 0.12);
+	}
 	vec3 tint = mix(color.rgb, core_color.rgb, smoothstep(0.45, 0.95, heat));
 	ALBEDO = tint * energy * heat * 3.2;
 }

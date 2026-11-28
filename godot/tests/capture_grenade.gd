@@ -104,7 +104,9 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 		await physics_frame
 	await _sixtieths(10)
 	await _shot("flash_white")
-	# Through the fade, where the afterimage shows as the white thins.
+	# Through the fade, turned away as a blinded player does, so the
+	# afterimage of the pop shows over the new view as the white thins.
+	player.set_look(_yaw + 0.7, -0.1)
 	for moment: int in [60, 90, 120, 160]:
 		await _sixtieths(30 if moment != 160 else 40)
 		await _shot("flash_fade_%03d" % moment)

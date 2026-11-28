@@ -1,7 +1,7 @@
-// A bullet impact's dust puff: a camera-facing particle playing the smoke
-// flipbook (`assets/textures/effects/smoke_4x4.png`, Unity Labs' CC0
-// WispySmoke01) in the colour of the surface that was hit (the particle's
-// colour). Lit by the scene per vertex, with normals tipped from the camera
+// A bullet impact's dust puff (or a hit's blood mist): a camera-facing
+// particle playing the smoke flipbook (`assets/textures/effects/smoke_4x4.png`,
+// Unity Labs' CC0 WispySmoke01; the mist uses its own single frame) in the
+// colour of the surface that was hit (the particle's colour). Lit by the scene per vertex, with normals tipped from the camera
 // toward the sky: a flat billboard's normal faces the camera, so a puff seen
 // from below (a wall above the player) or against the light went charcoal
 // grey, where real dust scatters the sky and sun and stays pale.

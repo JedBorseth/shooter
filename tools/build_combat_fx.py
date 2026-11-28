@@ -253,8 +253,8 @@ def hole_maps(kind: str, index: int, size: int = 256):
         scuff = np.clip((dent_r + 0.06 - rr) / 0.05, 0, 1)
         soot = np.exp(-((r / 0.45) ** 2)) * (0.6 + 0.4 * grain)
         # Paint chipped back to bright bare steel round a punched hole.
-        bare = 0.62 + 0.15 * fine
-        colour = np.stack([bare, bare * 1.0, bare * 1.02], axis=2)
+        bare = 0.6 + 0.15 * fine
+        colour = np.stack([bare, bare * 0.99, bare * 0.97], axis=2)
         colour = colour * (1 - core[..., None] * 0.95)
         colour = colour * (1 - soot[..., None] * 0.75 * (1 - scuff[..., None]))
         alpha = np.maximum.reduce([scuff, soot * 0.7])
@@ -262,7 +262,7 @@ def hole_maps(kind: str, index: int, size: int = 256):
         # Freshly torn steel is bright but not a mirror: rough enough that
         # it does not throw back a blue patch of sky.
         rough = 0.55 + 0.2 * fine + soot * 0.25
-        metal = scuff * (1 - core) * 0.75
+        metal = scuff * (1 - core) * 0.45
     elif kind == "wood":
         # Splintered along the grain (the decal's X axis): a torn slot of
         # pale fibres and dark end grain.
@@ -437,7 +437,7 @@ def scorch(size: int = 512) -> None:
     soot = np.clip(np.maximum(body, streaks * 0.12) + (noise - 0.5) * 0.45, 0, 1)
     # Patches of the ground show through toward the edge.
     soot *= np.clip(0.45 + patchy * 0.9 + body * 0.4, 0, 1)
-    soot = np.minimum(soot, 0.9)
+    soot = np.minimum(soot, 0.95)
     # Fragment pits: small dark dents, denser toward the centre.
     pits = np.zeros_like(r)
     for _ in range(90):
@@ -454,7 +454,7 @@ def scorch(size: int = 512) -> None:
     shade = 0.05 + 0.07 * grain + 0.05 * (1 - body)
     soot_rgb = np.stack([shade * 1.08, shade, shade * 0.9], axis=2)
     dirt_rgb = np.array([0.2, 0.15, 0.1])[None, None, :] * (0.7 + 0.3 * grain[..., None])
-    cover = np.clip(soot * 1.05 + dirt + pits, 0, 1)
+    cover = np.clip(soot * 1.3 + dirt + pits, 0, 1)
     mix_dirt = np.where(cover > 0, dirt / np.maximum(cover, 1e-4), 0)[..., None]
     colour = soot_rgb * (1 - mix_dirt) + dirt_rgb * mix_dirt
     colour *= (1 - 0.6 * pits)[..., None]

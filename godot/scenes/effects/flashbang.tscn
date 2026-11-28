@@ -47,7 +47,7 @@ proximity_fade_distance = 1.5
 
 [sub_resource type="QuadMesh" id="Mesh_halo"]
 material = SubResource("Mat_halo")
-size = Vector2(6, 6)
+size = Vector2(4.5, 4.5)
 
 [sub_resource type="ParticleProcessMaterial" id="Process_sparks"]
 particle_flag_align_y = true

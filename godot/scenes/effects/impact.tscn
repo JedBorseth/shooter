@@ -74,8 +74,8 @@ size = Vector2(0.4, 0.4)
 [sub_resource type="ShaderMaterial" id="Process_debris"]
 resource_local_to_scene = true
 shader = ExtResource("6_debris")
-shader_parameter/scale_min = 0.35
-shader_parameter/scale_max = 0.8
+shader_parameter/scale_min = 0.5
+shader_parameter/scale_max = 1.1
 shader_parameter/color_jitter = 0.22
 
 [sub_resource type="StandardMaterial3D" id="Mat_debris"]
@@ -151,20 +151,15 @@ scale_min = 0.8
 scale_max = 1.3
 scale_curve = SubResource("Texture_mist_grow")
 
-[sub_resource type="StandardMaterial3D" id="Mat_mist"]
-transparency = 1
-shading_mode = 2
-vertex_color_use_as_albedo = true
-albedo_texture = ExtResource("4_mist")
-roughness = 0.6
-billboard_mode = 3
-particles_anim_h_frames = 1
-particles_anim_v_frames = 1
-particles_anim_loop = false
+[sub_resource type="ShaderMaterial" id="Mat_mist"]
+shader = ExtResource("7_dust")
+shader_parameter/flipbook = ExtResource("4_mist")
+shader_parameter/frames_across = 1
+shader_parameter/frames_down = 1
 
 [sub_resource type="QuadMesh" id="Mesh_mist"]
 material = SubResource("Mat_mist")
-size = Vector2(0.55, 0.55)
+size = Vector2(0.65, 0.65)
 
 [node name="Impact" type="Node3D"]
 script = ExtResource("1_script")
