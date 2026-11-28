@@ -86,7 +86,7 @@ func _loading() -> void:
 		screen.set("mode", shot[0])
 		screen.set("team", shot[1])
 		screen.set("progress", 0.45)
-		screen.set("status", "Connecting to Local match  ·  0:02")
+		screen.set("status", "Joining the local match  ·  0:02")
 		_layer.add_child(screen)
 		await _seconds(0.8)
 		await _shot(shot[2])

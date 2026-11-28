@@ -1,7 +1,7 @@
 extends Control
 ## The items for one Create-a-Class slot, as Black Ops 3's item select shows
 ## them: the slot's name in small caps, a grid of cards (`loadout_tile.gd`:
-## the item's art, its name, a green tick on the chosen ones, a grey lock and
+## the item's art, its name, a yellow tick on the chosen ones, a grey lock and
 ## what unlocks it while locked), and under it the focused item's detail: its
 ## name in caps on a light label plate, what it does, why it is greyed out,
 ## a scorestreak's cost, and for a weapon its stat bars, with the difference

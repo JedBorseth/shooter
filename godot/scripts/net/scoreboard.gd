@@ -30,9 +30,12 @@ const WIDTH := 1290.0
 ## Room for the name, left of the number columns.
 const NAME_W := 290.0
 const HEADER_H := 38.0
-## Behind the board's gaps and seams: dark enough that the scene never prints
-## a bright stripe through it.
+## Behind the board's rows: dark enough that the scene never prints a bright
+## stripe through them.
 const SEAM := Color(0, 0, 0, 0.7)
+## The gaps between the board's blocks (under the header, between the teams,
+## beside each team block): near solid, so no scene edge shows through them.
+const GAP_FILL := Color(0.01, 0.015, 0.02, 0.94)
 const TEAM_W := 250.0
 const ROW_H := 31.0
 const ROW_PITCH := 32.0
@@ -129,7 +132,7 @@ func _draw() -> void:
 	columns = _columns(headings)
 	_draw_header(headings, columns)
 	# The gap under the header: dark, never the scene.
-	draw_rect(Rect2(_left, top + HEADER_H, _width, 2.0), _a(SEAM))
+	draw_rect(Rect2(_left, top + HEADER_H, _width, 2.0), _a(GAP_FILL))
 	var y := top + HEADER_H + 2.0
 	var row_index := 0
 	for s in sections.size():
@@ -138,7 +141,7 @@ func _draw() -> void:
 		if s > 0:
 			# The seam between the teams: dark, so the scene never shows a
 			# bright stripe through the board.
-			draw_rect(Rect2(_left, y - 6.0, _width, 6.0), _a(SEAM))
+			draw_rect(Rect2(_left, y - 6.0, _width, 6.0), _a(GAP_FILL))
 		var block_h := maxf(rows.size() * ROW_PITCH, BLOCK_MIN)
 		if ffa:
 			block_h = rows.size() * ROW_PITCH
@@ -146,6 +149,8 @@ func _draw() -> void:
 		# seams between rows are dark rather than the scene.
 		draw_rect(Rect2(_left, y, _width, block_h), _a(SEAM))
 		if not ffa:
+			draw_rect(Rect2(_left + TEAM_W - 4.0, y, 4.0, block_h), _a(GAP_FILL))
+			draw_rect(Rect2(_left, y + block_h - 1.0, TEAM_W - 4.0, 1.0), _a(GAP_FILL))
 			_draw_team_block(section, Rect2(_left, y, TEAM_W - 4.0, block_h - 1.0))
 		var rows_left := _left + (0.0 if ffa else TEAM_W)
 		for i in rows.size():
