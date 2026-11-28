@@ -84,7 +84,7 @@ func _draw() -> void:
 		var baseline := centre.y + 74.0
 		draw_rect(
 			Rect2(centre.x - width / 2.0 - 10.0, baseline - 26.0, width + 20.0, 34.0),
-			Color(0, 0, 0, 0.55)
+			Color(0, 0, 0, 0.64)
 		)
 		Paint.prompt(self, warning, centre.x, baseline, 18, blink, false)
 	if not prompt.is_empty():

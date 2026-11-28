@@ -251,7 +251,7 @@ func _draw_spectating(ui: float) -> void:
 		Rect2(
 			centre_x - label_w / 2.0 - 12.0 * ui, top - 18.0 * ui, label_w + 24.0 * ui, 28.0 * ui
 		),
-		Color(0, 0, 0, 0.58)
+		Color(0, 0, 0, 0.72)
 	)
 	Paint.text_centred(
 		_rows,
