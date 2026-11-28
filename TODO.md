@@ -47,7 +47,6 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - #396: the RL-4's launch and rocket flight (it fires with the M870's shot).
 - #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
 - #276: Search and Destroy's charge beeps, its own explosion, and the planted sting.
-- #288: Gun Game's weapon-up and set-back stings, and halftime and overtime stings.
 - #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
 - #403 (a sting for a challenge completed mid-match): close; challenges were cut.
 
