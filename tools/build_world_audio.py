@@ -2,22 +2,14 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy>=2", "scipy>=1.14", "soundfile>=0.12"]
 # ///
-"""Builds the footstep sets, glass impacts, and ambience loops.
+"""Builds the glass impacts, bullet sounds, player feedback, and ambience.
 
-``footsteps`` adds the surfaces the original four sets (concrete, wood, metal,
-dirt) did not cover, into godot/assets/audio/footsteps/ and impacts/:
+Footsteps, the kit and cloth under them, being hit, and rounds into a body
+are built from real recordings by tools/build_steps_and_hits.py.
 
-- ``grass_1..5``: Kenney's ``footstep_grass`` (Impact Sounds, CC0).
-- ``carpet_1..3``: Kenney's ``footstep_carpet`` (the pack repeats two of its
-  five takes, so three are distinct).
-- ``gravel_1..4`` and ``tile_1..4``: TinyWorlds' "Different steps on wood,
-  stone, leaves, gravel and mud" (CC0) has one take of each, so the other
-  takes are resampled (pitch) and tilted (tone) copies. Tile also borrows two
-  of Kenney's concrete steps, brightened for a hard heel click.
-- ``impacts/glass_1..3``: Kenney's ``impactGlass_light``.
-
-Every step is mono, starts at its first sound, fades out, and matches the
-loudness of the existing concrete set, so no surface is louder than another.
+``glass`` writes ``impacts/glass_1..3`` from Kenney's ``impactGlass_light``
+(Impact Sounds, CC0), mono, trimmed, and matched to the concrete impacts'
+loudness.
 
 ``ambience`` synthesises the loops in godot/assets/audio/ambience/ (seeded, so
 a rebuild writes the same files). Each is built in the frequency domain or
@@ -28,7 +20,7 @@ from events placed modulo the loop length, so it repeats without a seam:
 - ``hum``: an air conditioner (fan blade tone, airflow, compressor), mono.
 - ``buzz``: a lamp or transformer's 120 Hz buzz with a faint crackle, mono.
 
-    uv run tools/build_world_audio.py footsteps --kenney "<path>/Impact Sounds"
+    uv run tools/build_world_audio.py glass --kenney "<path>/Impact Sounds"
     uv run tools/build_world_audio.py ambience
     uv run tools/build_world_audio.py bullets
     uv run tools/build_world_audio.py player
@@ -39,13 +31,12 @@ from events placed modulo the loop length, so it repeats without a seam:
 supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
 Doppler-swept whistle), ricochets, and impact takes 4-8 for every surface,
 layered over the recorded takes 1-3 (debris grains, a ring for metal and tile,
-a short reflection tail), plus new grass, tile, gravel, carpet, and flesh sets.
+a short reflection tail), plus new grass, tile, gravel, and carpet sets.
 
 ``player`` synthesizes the feedback and body sounds, seeded: hit, headshot,
 and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
-being hit, a heartbeat, breathing (normal and hurt), a death fall,
-a jump's push-off, a mantle's hands on the ledge, and the gear and cloth
-layers under footsteps.
+a heartbeat, breathing (normal and hurt), a death fall, a jump's push-off,
+and a mantle's hands on the ledge.
 
 ``stings`` synthesizes the match stings (start, win, loss, draw, round start,
 round win and loss, the time warning, the hardpoint call: drums, a riser, and
@@ -54,7 +45,7 @@ gusts, loose metal rattling, distant explosions).
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
-The TinyWorlds pack is downloaded into ~/.cache/shooter-world-audio. Then run
+Then run
 ``godot --headless --path godot --import`` to import the new files.
 """
 
@@ -63,8 +54,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import urllib.request
-import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -73,26 +62,13 @@ from scipy import signal
 
 REPO = Path(__file__).resolve().parent.parent
 AUDIO = REPO / "godot/assets/audio"
-FOOTSTEPS = AUDIO / "footsteps"
 IMPACTS = AUDIO / "impacts"
 AMBIENCE = AUDIO / "ambience"
-CACHE = Path.home() / ".cache/shooter-world-audio"
-STEPS_URL = "https://opengameart.org/sites/default/files/%5Bkdd%5DDifferentSteps_0.zip"
 STEP_RATE = 44_100
 RATE = 48_000
 
 
-# --- Footsteps --------------------------------------------------------------
-
-
-def fetch_steps() -> zipfile.ZipFile:
-    path = CACHE / "different_steps.zip"
-    if not path.exists():
-        CACHE.mkdir(parents=True, exist_ok=True)
-        request = urllib.request.Request(STEPS_URL, headers={"User-Agent": "shooter-asset-pipeline"})
-        with urllib.request.urlopen(request, timeout=120) as response:
-            path.write_bytes(response.read())
-    return zipfile.ZipFile(path)
+# --- Glass ------------------------------------------------------------------
 
 
 def read_mono(data: bytes | Path) -> np.ndarray:
@@ -130,63 +106,22 @@ def match(x: np.ndarray, target_db: float) -> np.ndarray:
     return x / peak * 0.97 if peak > 0.97 else x
 
 
-def pitched(x: np.ndarray, ratio: float) -> np.ndarray:
-    """Played `ratio` times faster (higher and shorter), by resampling."""
-    up, down = int(round(1000 / ratio)), 1000
-    return signal.resample_poly(x, up, down)
-
-
-def tilted(x: np.ndarray, high_db: float, corner_hz: float = 2_000.0) -> np.ndarray:
-    """A first-order shelf: `high_db` above `corner_hz`."""
-    sos = signal.butter(1, corner_hz, "high", fs=STEP_RATE, output="sos")
-    return x + (10 ** (high_db / 20) - 1) * signal.sosfilt(sos, x)
-
-
 def write_step(path: Path, x: np.ndarray) -> None:
     sf.write(path, x.astype(np.float32), STEP_RATE, format="OGG", subtype="VORBIS")
     print(f"  {path.relative_to(REPO)}")
 
 
-def footsteps(kenney: Path) -> None:
+def glass(kenney: Path) -> None:
     audio = kenney / "Audio" if (kenney / "Audio").is_dir() else kenney
-    target = np.mean([rms_db(read_mono(p)) for p in sorted(FOOTSTEPS.glob("concrete_*.ogg"))])
-    print(f"footsteps at {target:.1f} dB (the concrete set)")
-
-    def kenney_takes(stem: str) -> list[np.ndarray]:
-        seen, takes = set(), []
-        for path in sorted(audio.glob(f"{stem}_*.ogg")):
-            digest = hashlib.sha1(path.read_bytes()).hexdigest()
-            if digest not in seen:
-                seen.add(digest)
-                takes.append(read_mono(path))
-        assert takes, f"no {stem}_*.ogg in {audio}"
-        return takes
-
-    for i, x in enumerate(kenney_takes("footstep_grass")):
-        write_step(FOOTSTEPS / f"grass_{i + 1}.ogg", match(trim(x, 0.5), target - 1.0))
-    for i, x in enumerate(kenney_takes("footstep_carpet")):
-        write_step(FOOTSTEPS / f"carpet_{i + 1}.ogg", match(trim(x, 0.25), target - 3.0))
-
-    pack = fetch_steps()
-    gravel = read_mono(pack.read("gravel.ogg"))
-    stone = read_mono(pack.read("stone01.ogg"))
-    for i, (ratio, tone) in enumerate(((1.0, 0.0), (0.93, -2.0), (1.07, 1.5), (1.14, -1.0))):
-        write_step(
-            FOOTSTEPS / f"gravel_{i + 1}.ogg",
-            match(trim(tilted(pitched(gravel, ratio), tone), 0.45), target),
-        )
-    concrete = kenney_takes("footstep_concrete")
-    tile = [
-        tilted(stone, 2.0),
-        tilted(pitched(stone, 1.08), 3.0),
-        tilted(pitched(concrete[1], 1.12), 6.0),
-        tilted(pitched(concrete[2], 1.18), 7.0),
-    ]
-    for i, x in enumerate(tile):
-        write_step(FOOTSTEPS / f"tile_{i + 1}.ogg", match(trim(x, 0.3), target))
-
+    seen, takes = set(), []
+    for path in sorted(audio.glob("impactGlass_light_*.ogg")):
+        digest = hashlib.sha1(path.read_bytes()).hexdigest()
+        if digest not in seen:
+            seen.add(digest)
+            takes.append(read_mono(path))
+    assert takes, f"no impactGlass_light_*.ogg in {audio}"
     impact_target = np.mean([rms_db(read_mono(p)) for p in sorted(IMPACTS.glob("concrete_*.ogg"))])
-    for i, x in enumerate(kenney_takes("impactGlass_light")[:3]):
+    for i, x in enumerate(takes[:3]):
         write_step(IMPACTS / f"glass_{i + 1}.ogg", match(trim(x, 0.4), impact_target))
 
 
@@ -508,28 +443,6 @@ def modal(rng: np.random.Generator, n: int, freqs: list[float], tau: float) -> n
     return out
 
 
-def flesh(rng: np.random.Generator) -> np.ndarray:
-    """A round into a body: a dull wet thump, a slap at the skin, and a short
-    squelch, with no ring."""
-    n = int(0.28 * RATE)
-    t = np.arange(n) / RATE
-    f = rng.uniform(80, 100) * (1 + 0.8 * np.exp(-t / 0.012))
-    thump = np.sin(2 * np.pi * np.cumsum(f) / RATE) * env_decay(n, rng.uniform(0.035, 0.05))
-    body = lowpass(rng.standard_normal(n), 320) * env_decay(n, 0.04)
-    slap = bandpass(rng.standard_normal(n), 1_400, 3_200) * env_decay(n, 0.0025)
-    squelch = bandpass(rng.standard_normal(n), 500, 1_300) * env_decay(n, 0.022)
-    squelch *= 1 + 0.6 * np.sin(2 * np.pi * rng.uniform(30, 50) * t)
-    out = (
-        1.0 * normalized(thump, 1)
-        + 0.7 * normalized(body, 1)
-        + 0.6 * normalized(slap, 1)
-        + 0.4 * normalized(squelch, 1)
-    )
-    fade = int(0.04 * RATE)
-    out[-fade:] *= np.linspace(1, 0, fade)
-    return normalized(out, 0.9)
-
-
 def read48(path: Path) -> np.ndarray:
     x, rate = sf.read(path)
     if x.ndim > 1:
@@ -594,8 +507,6 @@ def impact_layers(surface: str, base: np.ndarray | None, rng: np.random.Generato
     elif surface == "glass":
         hit += 0.8 * normalized(grains(rng, n, 35, 0.35, 3_000, 12_000, 0.006), 1)
         hit += 0.3 * normalized(modal(rng, n, [3_100, 4_700, 6_900], 0.05), 1)
-    elif surface == "flesh":
-        hit = flesh(rng)
     # Trim to where it has died away.
     level = np.abs(hit)
     alive = np.flatnonzero(level > level.max() * 10 ** (-50 / 20))
@@ -622,7 +533,6 @@ IMPACT_BASE = {
     "gravel": "dirt",
     "carpet": "dirt",
     "glass": "glass",
-    "flesh": None,
 }
 
 
@@ -652,8 +562,6 @@ def bullets() -> None:
         bases = [read48(IMPACTS / f"{base_key}_{k}.ogg") for k in (1, 2, 3)] if base_key else []
         # Sets that are new start their numbering at 1; the old ones keep 1-3.
         first = 4 if base_key == surface else 1
-        if surface == "flesh":
-            first = 1
         for i in range(first, IMPACT_TAKES + 1):
             rng = np.random.default_rng(sum(map(ord, surface)) * 31 + i)
             base = bases[i % len(bases)] if bases else None
@@ -721,23 +629,6 @@ def kill_marker(rng: np.random.Generator) -> np.ndarray:
     fade = int(0.05 * RATE)
     out[-fade:] *= np.linspace(1, 0, fade)
     return normalized(out, 0.9)
-
-
-def hit_taken(rng: np.random.Generator) -> np.ndarray:
-    """Being hit: a round into your own body, heard from inside. A short, soft
-    blunt thud and the kit jolted. No sub-bass swell, wet flesh layer, or
-    voice, so it says "you were hit" without covering the fight."""
-    n = int(0.22 * RATE)
-    t = np.arange(n) / RATE
-    f = rng.uniform(85, 105) * (1 + 0.5 * np.exp(-t / 0.01))
-    thump = np.sin(2 * np.pi * np.cumsum(f) / RATE) * env_decay(n, 0.045)
-    thump *= 1 - env_decay(n, 0.003)
-    body = lowpass(rng.standard_normal(n), 400) * env_decay(n, 0.03)
-    out = normalized(thump, 1) + 0.5 * normalized(body, 1)
-    out += 0.2 * normalized(grains(rng, n, 4, 0.06, 2_000, 5_000, 0.006), 1)
-    fade = int(0.05 * RATE)
-    out[-fade:] *= np.linspace(1, 0, fade)
-    return normalized(out, 0.8)
 
 
 def heartbeat(rng: np.random.Generator) -> np.ndarray:
@@ -824,50 +715,22 @@ def mantle_sound(rng: np.random.Generator) -> np.ndarray:
     return normalized(out, 0.8)
 
 
-def step_gear(rng: np.random.Generator) -> np.ndarray:
-    """What rides on a soldier with every step: magazines and buckles
-    knocking (2-5 kHz ticks 10-40 ms apart) and a sling slapping."""
-    n = int(0.16 * RATE)
-    out = np.zeros(n)
-    at = 0.0
-    for _ in range(int(rng.integers(2, 5))):
-        a = int(at * RATE)
-        if a >= n:
-            break
-        out[a:] += rng.uniform(0.4, 1) * modal(rng, n - a, [rng.uniform(2_000, 5_000)], 0.012)
-        at += rng.uniform(0.01, 0.04)
-    out += 0.3 * normalized(bandpass(rng.standard_normal(n), 200, 1_200) * env_decay(n, 0.02), 1)
-    return normalized(out, 0.8)
-
-
-def step_cloth(rng: np.random.Generator) -> np.ndarray:
-    """Trousers and jacket swishing with a stride."""
-    n = int(rng.uniform(0.18, 0.26) * RATE)
-    t = np.linspace(0, 1, n)
-    x = bandpass(rng.standard_normal(n), 300, 3_500) * np.sin(np.pi * t) ** 2
-    x *= 0.5 + 0.5 * np.abs(lowpass(rng.standard_normal(n), 40)) / 0.05
-    return normalized(x, 0.7)
-
-
 def write_wav(path: Path, x: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(path, np.clip(x, -1, 1).astype(np.float32), RATE, subtype="PCM_16")
 
 
 def player() -> None:
-    """Hit, headshot, and kill markers (audio/ui/), and being hit, heartbeat,
-    breathing, death, jump, mantle, and step layers (audio/player/)."""
+    """Hit, headshot, and kill markers (audio/ui/), and heartbeat, breathing,
+    death, jump, and mantle (audio/player/)."""
     makers = (
         (UI, "hit", hit_marker, 4, True),
         (UI, "hit_head", head_marker, 3, True),
         (UI, "kill", kill_marker, 3, True),
-        (PLAYER, "hit_taken", hit_taken, 4, False),
         (PLAYER, "heartbeat", heartbeat, 2, False),
         (PLAYER, "death", death_sound, 2, False),
         (PLAYER, "jump", push_off, 4, False),
         (PLAYER, "mantle", mantle_sound, 3, False),
-        (PLAYER, "step_gear", step_gear, 6, False),
-        (PLAYER, "step_cloth", step_cloth, 6, False),
     )
     for folder, name, make, takes, wav in makers:
         for i in range(1, takes + 1):
@@ -1113,7 +976,7 @@ def mode_stings() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    steps = sub.add_parser("footsteps")
+    steps = sub.add_parser("glass", help="glass impacts from Kenney's Impact Sounds")
     steps.add_argument(
         "--kenney",
         type=Path,
@@ -1126,8 +989,8 @@ def main() -> None:
     sub.add_parser("stings", help="match stings and world one-shots")
     sub.add_parser("mode-stings", help="Gun Game, halftime, and overtime stings")
     args = parser.parse_args()
-    if args.command == "footsteps":
-        footsteps(args.kenney)
+    if args.command == "glass":
+        glass(args.kenney)
     elif args.command == "bullets":
         bullets()
     elif args.command == "player":
