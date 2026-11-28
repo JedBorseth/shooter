@@ -489,7 +489,7 @@ def ground():
     # dark lines on a 4.5 m grid (a multiply stain, out of the bake).
     for side in SIDES:
         for x0, x1, z0, z1 in ((-13.0, 1.5, -27.0, -22.0), (-9.0, 9.0, -22.0, -13.0), (-41.0, -6.0, -36.0, -27.0),
-                               (-21.0, -17.0, -27.0, -2.0)):
+                               (-21.0, -17.0, -27.0, -2.0), (-13.0, 0.0, -13.0, 13.0), (-13.0, -9.0, 13.0, 14.0)):
             joints(x0, x1, z0, z1, side.m)
     # Under the rack: a paved band along the bays (both halves at once: it
     # crosses the centre).
@@ -1566,7 +1566,7 @@ def weathering(side: Side):
                                 (-36.3, -24.6, 0.55, "road", STREET, 0.5), (-35.8, 17.9, 0.42, "road", STREET, 0.55),
                                 (-27.0, -32.5, 0.75, "quay", STREET, 0.45), (-14.5, -29.9, 0.5, "quay", STREET, 0.4),
                                 (-6.0, -16.4, 0.5, "slab", STREET, 0.45), (5.2, -31.5, 0.6, "slab_old", WALK, 0.55),
-                                (-27.0, 14.6, 0.5, "floor_epoxy_grey", WALK, 0.45),
+                                (-25.9, 15.95, 0.28, "floor_epoxy_grey", WALK, 0.35),
                                 (-30.8, 7.3, 0.32, "floor_epoxy_grey", WALK, 0.4)):
         stain(x, z, r, look, m, y=y, w=w, stretch=rng.uniform(0.9, 1.4), yaw=rng.uniform(0, PI))
     # Under the loading tankers in the rack's bays (both halves: the bay band
@@ -1604,7 +1604,20 @@ def weathering(side: Side):
             if abs(a - PI / 2) < 0.45:
                 continue
             tank_streak(x, z, TANK_R, a, TANK_H - 0.25, rng.uniform(1.2, 4.0), rng.uniform(0.25, 0.5), side.tank,
-                        m, w=rng.uniform(0.5, 0.7), seed=i)
+                        m, w=rng.uniform(0.6, 0.85), seed=i)
+        # Rust run from the shell's course welds and the wind girder, and
+        # grey-green weathering run from the roof edge between them.
+        for k in range(10):
+            a = -PI + rng.uniform(0, 2 * PI)
+            if abs(a - PI / 2) < 0.45:
+                continue
+            y = rng.choice((0.35 + 2.4 * 3, 0.35 + 2.4 * 2, TANK_H * 0.72))
+            tank_streak(x, z, TANK_R, a, y, rng.uniform(0.6, 1.8), rng.uniform(0.12, 0.25), side.tank, m,
+                        w=rng.uniform(0.45, 0.75), seed=i * 31 + k)
+        for k in range(6):
+            a = -PI + rng.uniform(0, 2 * PI)
+            tank_streak(x, z, TANK_R, a, TANK_H - 0.15, rng.uniform(2.5, 6.0), rng.uniform(0.4, 0.9), side.tank, m,
+                        color=(0.45, 0.46, 0.4), w=rng.uniform(0.25, 0.4), seed=i * 53 + k)
     # The quay face: a weed-black tide line, a paler wet band over it, and
     # rust run from the bollards and down behind the ladders.
     band((-42.0, -37.6), (-4.0, -37.6), PI, SEA - 0.6, SEA + 0.7, "quay_edge", m, color=WEED, w=0.88, fade=0.45,

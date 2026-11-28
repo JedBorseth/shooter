@@ -39,7 +39,7 @@ def _g(color, glow):
 LOOKS: dict[str, dict] = {
     **W.SLAMCITY_LOOKS,
     # Ground: the terminal's slabs, the quay's apron, the bund's gravel.
-    "slab": _t("concrete_floor", 4.0, (0.74, 0.75, 0.75), grime=0.0),
+    "slab": _t("concrete_floor", 4.0, (0.68, 0.7, 0.72), grime=0.0),
     "slab_old": _t("concrete_stained", 4.0, (0.7, 0.7, 0.69), grime=0.0),
     "quay": _t("concrete_stained", 4.0, (0.8, 0.78, 0.74), grime=0.0),
     "quay_edge": _t("concrete_smooth", 2.0, (0.72, 0.71, 0.68), grime=0.2),
@@ -60,7 +60,7 @@ LOOKS: dict[str, dict] = {
     # Plant: tanks, pipes, steel.
     # Storage tanks: plain paint (the shared smudge map breaks it up); the
     # model shades each shell plate a little apart and grimes the foot.
-    "tank_white": _p((0.85, 0.85, 0.83), 0.55),
+    "tank_white": _p((0.78, 0.78, 0.76), 0.6),
     "tank_silver": _p((0.74, 0.76, 0.77), 0.42, 1),
     "tank_roof": _t("painted_metal", 2.0, (0.62, 0.62, 0.6), metal=0.3, grime=0.0),
     "steel_red": _t("painted_metal", 2.0, (0.6, 0.12, 0.08), metal=0.3, rough=0.8, grime=0.2),
@@ -84,7 +84,7 @@ LOOKS: dict[str, dict] = {
     # Antifouling red below the waterline band: paint, its rust and weed are
     # stains and streaks laid over it (layout `basin`).
     "hull_red": _t("painted_metal", 4.0, (0.42, 0.11, 0.08), metal=0.3, grime=0.0),
-    "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.2, rough=1.25, grime=0.0),
+    "hull_black": _t("painted_metal", 4.0, (0.11, 0.12, 0.13), metal=0.2, rough=1.7, grime=0.0),
     "ship_white": _t("painted_metal", 3.0, (0.86, 0.86, 0.84), metal=0.3, grime=0.0),
     "deck_green": _t("painted_metal", 3.0, (0.3, 0.42, 0.34), metal=0.3, grime=0.0),
     # Paint and signs.
@@ -805,22 +805,34 @@ def pipe_rack(b: Model, length=12.0, bays=2, height=4.6, width=2.6, pipes=None):
 
 @model
 def pump_unit(b: Model, look="steel_blue", length=2.6):
-    """A horizontal pump set on a skid: motor, coupling guard, volute, and its
-    suction and discharge pipes. Length along z."""
+    """A horizontal pump set on a skid: a finned motor with its fan cowl and
+    terminal box, the coupling guard, the volute casing on its feet, and
+    flanged suction and discharge pipes. Length along z."""
     hl = length / 2
     b.box(-0.55, 0.55, 0.0, 0.25, -hl, hl, "steel_dark", bevel=0.02)
-    b.cyl("z", -hl + 0.1, -0.1, (0.0, 0.75), 0.42, look, sides=16)
-    for k in range(8):
-        z = -hl + 0.2 + k * (hl - 0.4) / 7
-        b.cyl("z", z - 0.02, z + 0.02, (0.0, 0.75), 0.46, look, sides=16, detail=True)
-    b.box(-0.35, 0.35, 0.25, 0.4, -hl + 0.2, -0.2, look)
-    b.box(-0.22, 0.22, 0.5, 0.95, -0.1, 0.35, "safety_yellow", bevel=0.02)
-    b.cyl("x", -0.3, 0.3, (0.75, 0.75), 0.45, look, sides=16)
-    b.cyl("y", 1.15, 2.2, (0.0, 0.75), 0.16, "pipe_grey", sides=10)
-    b.cyl("y", 2.2, 2.32, (0.0, 0.75), 0.24, "steel_grey", sides=10, detail=True)
-    b.cyl("z", 0.95, hl, (0.0, 0.75), 0.2, "pipe_grey", sides=10)
-    b.cyl("z", hl - 0.05, hl + 0.05, (0.0, 0.75), 0.28, "steel_grey", sides=10, detail=True)
-    b.box(-0.3, 0.3, 0.9, 1.4, -hl + 0.3, -hl + 0.7, "steel_grey", detail=True)
+    for z0, z1 in ((-hl + 0.15, -hl + 0.3), (-0.35, -0.2)):
+        b.box(-0.38, 0.38, 0.25, 0.42, z0, z1, look)
+    b.cyl("z", -hl + 0.1, -0.15, (0.0, 0.75), 0.4, look, sides=28)
+    for k in range(14):
+        a = 2 * PI * k / 14
+        b.box(math.cos(a) * 0.42 - 0.015, math.cos(a) * 0.42 + 0.015, 0.75 + math.sin(a) * 0.42 - 0.015,
+              0.75 + math.sin(a) * 0.42 + 0.015, -hl + 0.3, -0.25, look, detail=True)
+    b.cyl("z", -hl - 0.05, -hl + 0.12, (0.0, 0.75), 0.37, look, sides=28)
+    disc(b, (0.0, 0.75, -hl - 0.06), (0.0, 0.0, -1.0), 0.3, 0.01, "steel_dark", sides=20, detail=True)
+    b.box(-0.18, 0.18, 1.12, 1.32, -0.9, -0.55, look, bevel=0.02)
+    b.box(-0.22, 0.22, 0.5, 0.95, -0.15, 0.35, "safety_yellow", bevel=0.02)
+    for k in range(4):
+        z = -0.1 + k * 0.12
+        b.box(-0.225, 0.225, 0.58, 0.88, z, z + 0.02, "steel_dark", detail=True)
+    # The volute: a spiral casing (a short fat drum) on feet, its eye facing +z.
+    b.cyl("z", 0.38, 0.78, (0.0, 0.75), 0.46, look, sides=28)
+    b.cyl("z", 0.4, 0.76, (0.0, 0.75), 0.49, look, sides=28, detail=True)
+    for x in (-0.3, 0.3):
+        b.box(x - 0.08, x + 0.08, 0.25, 0.4, 0.45, 0.7, look)
+    flanged(b, (0.0, 1.15, 0.58), (0.0, 2.2, 0.58), 0.15, "pipe_grey", flanges=(0.08, 0.92))
+    b.cyl("y", 2.2, 2.32, (0.0, 0.58), 0.24, "steel_grey", sides=14, detail=True)
+    flanged(b, (0.0, 0.75, 0.78), (0.0, 0.75, hl + 0.02), 0.19, "pipe_grey", flanges=(0.1, 0.95))
+    gauge(b, (0.2, 1.5, 0.58), (1.0, 0.0, 0.0))
 
 
 @model
@@ -1175,8 +1187,9 @@ def lifebuoy_post(b: Model):
     lifebuoy and its line."""
     b.box(-0.04, 0.04, 0.0, 1.7, -0.04, 0.04, "steel_galv")
     b.box(-0.4, 0.4, 0.9, 1.75, -0.08, -0.04, "hazard_red", bevel=0.01)
-    ring = [(math.cos(2 * PI * i / 20) * 0.3, 1.32 + math.sin(2 * PI * i / 20) * 0.3, 0.02) for i in range(21)]
-    b.tube(ring, 0.06, "boat_orange", sides=8, detail=False)
+    ring = [(math.cos(2 * PI * i / 28) * 0.29, 1.32 + math.sin(2 * PI * i / 28) * 0.29, 0.03) for i in range(29)]
+    b.tube(ring, 0.085, "boat_orange", sides=12, detail=False)
+    b.tube([(0.0, 1.03, 0.11), (0.06, 0.95, 0.1), (0.0, 0.92, -0.03)], 0.012, "rope_tan", sides=4, detail=True)
     for k in range(4):
         a = PI / 4 + k * PI / 2
         b.box(math.cos(a) * 0.3 - 0.03, math.cos(a) * 0.3 + 0.03, 1.32 + math.sin(a) * 0.3 - 0.065,
@@ -1540,9 +1553,21 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
         ax, ay = hl - 6.0, free - 1.6
         az = s * (hb * 0.86 + 0.05)
         b.box(ax - 0.8, ax + 0.8, ay - 0.9, ay + 0.6, *sorted((az, az - s * 0.25)), "trim_black", detail=True)
-        b.hull([(ax - 0.15, ay + 0.5, az), (ax + 0.15, ay + 0.5, az), (ax - 0.12, ay - 0.6, az),
-                (ax + 0.12, ay - 0.6, az), (ax - 0.7, ay - 0.75, az + s * 0.12), (ax + 0.7, ay - 0.75, az + s * 0.12),
-                (ax, ay - 0.95, az + s * 0.2), (ax, ay + 0.5, az + s * 0.18)], "steel_dark", detail=True)
+        # A stockless anchor in the pocket: the shank, the crown with its
+        # two flukes, and the chain into the hawse pipe.
+        sh = 0.11
+        b.tube([(ax, ay + 0.45, az + s * 0.12), (ax, ay - 0.55, az + s * 0.16)], sh, "steel_dark", sides=8,
+               detail=False)
+        b.hull([(ax - 0.25, ay - 0.5, az + s * 0.08), (ax + 0.25, ay - 0.5, az + s * 0.08),
+                (ax - 0.25, ay - 0.7, az + s * 0.1), (ax + 0.25, ay - 0.7, az + s * 0.1),
+                (ax - 0.25, ay - 0.6, az + s * 0.3), (ax + 0.25, ay - 0.6, az + s * 0.3)], "steel_dark")
+        for sx in (-1, 1):
+            b.hull([(ax + sx * 0.2, ay - 0.55, az + s * 0.1), (ax + sx * 0.2, ay - 0.7, az + s * 0.28),
+                    (ax + sx * 0.62, ay - 0.15, az + s * 0.16), (ax + sx * 0.52, ay - 0.1, az + s * 0.26),
+                    (ax + sx * 0.35, ay - 0.65, az + s * 0.2)], "steel_dark")
+        for k in range(6):
+            yk = ay + 0.55 + k * 0.13
+            b.cyl("y", yk, yk + 0.1, (ax, az + s * 0.08), 0.06, "steel_dark", sides=6, detail=True)
     # Deck: the cargo lines on supports, a raised catwalk with rails down the
     # middle, tank hatches either side, the manifold and its hose crane, the
     # vent riser, fire monitors, mooring winches, and the forecastle's kit.
@@ -1625,6 +1650,19 @@ def tanker_ship(b: Model, length=120.0, beam=18.0):
         for j in range(n):
             zc = -half + 0.5 + (j + 0.5) * (half * 2 - 1.0) / n
             b.box(front, front + 0.02, y0 + 1.0, y0 + 2.0, zc - 0.45, zc + 0.45, "window_dark", detail=False)
+            # Rust weeping from the window's lower corners down the white
+            # front.
+            for dz in (-0.42, 0.42):
+                if (j + k + (dz > 0)) % 3:
+                    continue
+                ln = 0.5 + ((j * 7 + k * 3) % 5) * 0.15
+                xf = front + 0.004
+                zs = zc + dz
+                verts = [(xf, y0 + 1.0, zs + 0.06), (xf, y0 + 1.0, zs - 0.06), (xf, y0 + 1.0 - ln, zs - 0.09),
+                         (xf, y0 + 1.0 - ln, zs + 0.09)]
+                mix = [(0.45, 0.24, 0.12, 0.6, 1.1)] * 2 + [(0.45, 0.24, 0.12, 0.0, 1.0)] * 2
+                b._add({"kind": "shaded", "look": "ship_white", "verts": verts, "faces": [(0, 1, 2, 3)],
+                        "mix": mix}, True)
         n = int((front - xa - 1.0) / 1.8)
         for j in range(n):
             xc = xa + 0.5 + (j + 0.5) * (front - xa - 1.0) / n
