@@ -1,15 +1,21 @@
-// The Testing Area's sky: its sky image, with the country beyond the range's
-// walls laid round the horizon. The country is a strip rendered in Blender
-// (tools/build_horizon.py): fields, hedgerows, woods, and farms on hills that
-// rise toward a far ridge, all from real tree meshes lit by the same sun. A
-// second image holds each pixel's distance, so the land fades into the
-// map's haze as far as it really stands. Drawing it in the sky costs two
-// texture reads on the sky's own pixels near the horizon and nothing else;
-// it sits far enough away (110 m and more) that the missing parallax does
-// not show inside the range.
+// A day sky with a rendered horizon: the map's sky image, with the country
+// beyond its walls laid round the horizon. The country is a strip rendered in
+// Blender (tools/build_horizon.py): the Testing Area's fields, hedgerows,
+// woods, and farms, or Breakwater's harbour (port, ships, far shores), all
+// real meshes lit by the same sun. A second image holds each pixel's
+// distance, so the land fades into haze as far as it really stands. Drawing
+// it in the sky costs two texture reads on the sky's own pixels near the
+// horizon and nothing else; it sits far enough away (110 m and more) that the
+// missing parallax does not show inside the map. The Testing Area sets it in
+// its scene; Breakwater gets it from scripts/looks.gd.
 shader_type sky;
 
 uniform sampler2D panorama : source_color, filter_linear, hint_default_black;
+// The same sky image read through its mipmaps, for the haze colour: a sky
+// whose horizon row carries stitching streaks (Breakwater's) would otherwise
+// paint them down over the land. Unset, the haze is read from `panorama`.
+uniform sampler2D haze_sky : source_color, filter_linear_mipmap, hint_default_black;
+uniform bool blur_haze = false;
 uniform float energy = 1.0;
 // The strip: land premultiplied by coverage (RGB) and coverage (A), and the
 // land's distance as a fraction of `depth_range` metres.
@@ -68,7 +74,9 @@ void sky() {
 		vec4 land = textureGrad(horizon, uv, dx, dy);
 		float dist = textureGrad(horizon_depth, uv, dx, dy).r * depth_range;
 		// The haze colour: the sky image just above the horizon.
-		vec3 haze = texture(panorama, vec2(SKY_COORDS.x, 0.49)).rgb * energy;
+		vec3 haze = blur_haze
+				? textureLod(haze_sky, vec2(SKY_COORDS.x, 0.475), 5.0).rgb * energy
+				: texture(panorama, vec2(SKY_COORDS.x, 0.49)).rgb * energy;
 		float fog = 1.0 - exp(-haze_density * max(dist - haze_start, 0.0) * 1.4);
 		col = col * (1.0 - land.a) + mix(land.rgb * land_light, haze * land.a, fog);
 	}
