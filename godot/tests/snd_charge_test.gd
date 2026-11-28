@@ -45,6 +45,13 @@ func _run() -> void:
 	_check(sites.size() == 2, "Breakwater has two charge sites, got %d" % sites.size())
 	if sites.size() < 2:
 		return _finish()
+	# Site A is in the pump house's east room, B on the open quay: the charge
+	# going off at A plays the indoor explosion, at B the outdoor one.
+	var snd_view := load("res://scripts/net/snd_view.gd") as GDScript
+	var boom_a := snd_view.call(&"explosion_at", self, sites[0] + Vector3.UP * 0.5) as AudioStream
+	var boom_b := snd_view.call(&"explosion_at", self, sites[1] + Vector3.UP * 0.5) as AudioStream
+	_check(boom_a.resource_path.ends_with("_indoor.ogg"), "site A's charge booms in the pump house")
+	_check(not boom_b.resource_path.ends_with("_indoor.ogg"), "site B's charge rolls off outdoors")
 
 	# --- Round 1 ------------------------------------------------------------------
 	_check(

@@ -155,12 +155,15 @@ column, and ground skirt. The screen rattles out to about 50 m, hardest
 within 3 m. It rumbles a controller out to 50 m and rings in the ears inside
 18 m, twice a frag's reach. Clients draw it when the charge's status
 turns from planted to detonated, so nobody joining later sees it go off.
-It plays the charge's own explosion sound (`snd_view.gd`).
+It plays the charge's own explosion sound (`snd_view.gd`): at site A, inside
+the pump house, the indoor version, which booms in the room; at site B, on
+the quay, the outdoor one, which rolls off across the docks.
 
 ## Sound
 
 A sting when the charge is planted, its beep speeding up as the fuse runs
-down, and a close explosion: see [audio.md](audio.md).
+down, and a close explosion, indoors or out by where the charge is: see
+[audio.md](audio.md).
 
 ## On screen
 

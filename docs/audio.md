@@ -155,15 +155,32 @@ The Testing Area's training sentry fires a light machine gun's rounds
 
 The launcher is Black Ops 2's RPG, and it sounds like one: three real RPG
 firings (klangfabrik's, recorded outside at medium range), each with a
-rocket motor's ignition from US Government footage laid under it, written
-whole as `weapons/rl4/snap_N` (so the game plays them as whole shots). Its
-`mid` and `far` takes are the same firings band-limited as heard down range,
-so other players' launches far off are a launcher, not the M870 that lent
-its shot before. The view scene still names the M870 in `sound_from` for
-the handling and the last-round ring. Every rocket in flight carries a
-motor loop (`equipment/rocket_flight`, the rocket's roar with its fade
-evened out) on `scenes/equipment/rocket.tscn`'s `Motor`, 6 m unit size.
-Nothing is synthesized; the shared processing is `tools/recorded_audio.py`.
+rocket motor's ignition from US Government footage laid under it. It is
+layered like the other guns, so a launch sounds like where it is fired:
+
+| Layer | What it is |
+| --- | --- |
+| `snap` | The dry launch: the firing's first 0.14 s (the blast as the rocket leaves the tube, the motor lighting), fading out by 0.26 s. |
+| `tail` | Outdoors: the rest of the same firing, its roar rolling away, fading in as the snap fades out. Snap and tail together are the whole recording again; the view scene plays both at the same level (`tail_db = 2.0`, as `snap_db`). |
+| `tail_indoor` | Indoors: the snap through a real small room ([Indoor rooms](#indoor-rooms-a-real-impulse-response)), 3 dB over the snap's own energy above 150 Hz, in place of the outdoor roar. |
+
+Outdoors a launch is the old whole shot to the sample when the snap and
+tail come from the same firing; the game picks each layer's take on its
+own, and a snap from one firing over another's tail is within 0.25 LU of
+the old shot (0.8 dB at its loudest moment; the three firings' lows differ
+by up to 4 dB, as before). Indoors
+the blast is the same, about 2 dB louder at its peak (the room piling onto
+it), heavier below 500 Hz, and it dies in the room by about 0.7 s instead
+of roaring on for 1.5 s. Your own launch cross-fades the two tails by
+`acoustics::listener_indoors()`; another player's picks the room when they
+fire inside an indoor reverb zone (`gunfire.rs`). Its `mid` and `far` takes
+are the same firings band-limited as heard down range, so other players'
+launches far off are a launcher, not the M870 that lent its shot before.
+The view scene still names the M870 in `sound_from` for the handling and
+the last-round ring. Every rocket in flight carries a motor loop
+(`equipment/rocket_flight`, the rocket's roar with its fade evened out) on
+`scenes/equipment/rocket.tscn`'s `Motor`, 6 m unit size. Nothing is
+synthesized; the shared processing is `tools/recorded_audio.py`.
 
 ## Weapon handling (foley)
 
@@ -315,6 +332,32 @@ All in `acoustics.rs`, judged from where the listener (the current camera) is.
   further than 1.5 m, plays 1.5 dB quieter through the behind bus (highs above
   2.2 kHz at 0.42), so a step behind you sounds different from one ahead.
 
+### Indoor rooms: a real impulse response
+
+The RL-4's indoor tail and the charge's indoor explosion are those sounds
+fired through a real room: a recorded impulse response (convolution, not
+a synthetic reverb), `recorded_audio.ROOM_IR`, fetched by the build from
+its pinned URL and SHA-256 like every other source. It is OpenAIR's
+Hoffmann Lime Kiln at Langcliffe (Audiolab, University of York), position
+1 (`ir_p1.wav`, 3.8 m from the source, B-format), released in the public
+domain: a brick and stone industrial chamber from 1873 with T20 of 0.9 s at
+250 Hz, 0.6 s at 1 kHz, and 0.34 s at 4 kHz (measured from the file). That
+is a small hard room like Breakwater's pump house, control house, workshop,
+and meter shed (zones with room size 0.35 to 0.55). The other OpenAIR rooms
+on hand were wrong for it: Genesis 6's live room is a treated studio
+(0.2 s), Spring Lane is a 6000 m³ atrium, the Falkland bottle dungeon rings
+at 196 Hz, and the University of York stairway (1.0 s, brighter) is CC
+BY-SA.
+
+`recorded_audio.room_ir` decodes the B-format to two cardioids facing left
+and right, starts it at the direct sound's arrival, takes the direct sound
+out (the dry sound plays as itself), cuts the kiln's boom below 150 Hz, and
+ends it at the recording's noise floor (0.95 s). `through_room` sets the
+room's level as its energy over the dry sound's above 150 Hz, so a sound's
+sub-bass does not decide how loud its room is. This is the indoor half of
+today's two-way split (`tail` and `tail_indoor`); a finer split by space
+can give each space its own response in the same files' place.
+
 ## The player and feedback
 
 `PlayerSounds` (`player_sounds.rs`, local player only) plays:
@@ -456,6 +499,23 @@ as Call of Duty's bomb ticks faster to the end), heard by everyone within
 45 m on the Effects bus; and a close explosion when it goes off (a falling
 thump, a roar, and debris), heard across the map, over the frag's blast. A
 defuse has no sting of its own: it ends the round, whose sting plays.
+
+The explosion has an indoor version, `world/charge_explosion_indoor.ogg`:
+its first 0.3 s (fading out by 0.6 s) with the [real room](#indoor-rooms-a-real-impulse-response)'s
+answer 2 dB over it, in place of the long roar and rumble outside, driven
+into the same soft clipping as the outdoor blast so its peak is as loud
+(within 0.1 LU, 400 ms momentary). `snd_view.gd` plays it when the charge
+goes off inside an indoor reverb zone (`explosion_at`: the smallest zone
+around the point, and only an enclosed one, by `ReverbZone.is_indoor`, as
+`acoustics::is_indoors_at` decides), so site A in the pump house booms in
+the room and site B on the quay rolls off outdoors. A listener inside the
+same room also gets the Effects bus's own room reverb on top. Measured with
+the engine's reverb recorded at the pump room's settings, that adds about
+1 dB to the room at 0.5 s, and the sound takes 0.75 s instead of 0.67 s
+to fall 30 dB, all well under the blast; so the baked room is set 1 dB lighter than the
+RL-4's (whose Weapons bus has no engine reverb) instead of turning the
+engine's reverb off for it, and a listener outside, through the door, still
+hears the room.
 
 ## Reviewing sound without listening
 

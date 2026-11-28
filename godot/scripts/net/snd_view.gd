@@ -19,7 +19,10 @@ extends Node3D
 ## - Sounds: a sting for a plant (a defuse ends the round, whose own sting
 ##   says so); the planted charge beeps
 ##   from where it stands, once a second and faster as the fuse runs down
-##   (every 0.12 s at the end); and it goes off with a close explosion.
+##   (every 0.12 s at the end); and it goes off with a close explosion, its
+##   indoor version when the charge is inside a room (an indoor reverb zone),
+##   so site A in the pump house booms in the room instead of rolling off
+##   outdoors.
 ##
 ## The server decides everything; this only draws `NetClient.charge_info()`
 ## and reacts to `NetClient.charge_changed`.
@@ -47,6 +50,10 @@ const BLINK_RATE := 1.0
 ## `tools/build_world_audio.py charge`.
 const BEEP_SOUND := preload("res://assets/audio/world/charge_beep.ogg")
 const EXPLOSION_SOUND := preload("res://assets/audio/world/charge_explosion.ogg")
+## The same blast through a real room's impulse response, for a charge inside.
+const EXPLOSION_INDOOR_SOUND := preload("res://assets/audio/world/charge_explosion_indoor.ogg")
+## `ReverbZone::GROUP` in acoustics.rs.
+const REVERB_ZONES := &"reverb_zones"
 const PLANTED_STING := preload("res://assets/audio/ui/charge_planted.ogg")
 ## Seconds between beeps: the fuse left divided by this, between the limits.
 const BEEP_SPREAD := 25.0
@@ -207,6 +214,7 @@ func _on_charge_changed() -> void:
 			"detonated":
 				if info.has_position:
 					_boom.global_position = info.position + Vector3.UP * 0.5
+					_boom.stream = explosion_at(get_tree(), _boom.global_position)
 					_boom.play()
 			"planted":
 				_play_sting(PLANTED_STING)
@@ -227,6 +235,28 @@ func _on_charge_changed() -> void:
 		_say("YOU HAVE THE CHARGE", CHARGE)
 	_last_status = status
 	_last_carrier = carrier
+
+
+## The charge's explosion for a blast at `point`: the indoor one inside an
+## indoor reverb zone, by the rule the rest of the sound uses
+## (`acoustics::is_indoors_at`: the smallest zone around the point, and only
+## an enclosed one, not an outdoor reflection zone).
+static func explosion_at(tree: SceneTree, point: Vector3) -> AudioStream:
+	return EXPLOSION_INDOOR_SOUND if indoors_at(tree, point) else EXPLOSION_SOUND
+
+
+static func indoors_at(tree: SceneTree, point: Vector3) -> bool:
+	var room: ReverbZone = null
+	var room_volume := INF
+	for node: Node in tree.get_nodes_in_group(REVERB_ZONES):
+		var zone := node as ReverbZone
+		if zone == null or not zone.contains(point):
+			continue
+		var volume := zone.size.x * zone.size.y * zone.size.z
+		if volume < room_volume:
+			room = zone
+			room_volume = volume
+	return room != null and room.is_indoor()
 
 
 func _play_sting(stream: AudioStream) -> void:

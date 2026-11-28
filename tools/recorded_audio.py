@@ -8,6 +8,10 @@ loudness), and writes the files and the listening clips. Nothing is
 synthesized: every sample comes from a real recording. It follows
 ``tools/build_gunshots.py`` and the movement sounds' builder.
 
+Indoor sounds are fired through a real room: ``ROOM_IR``, a recorded impulse
+response (public domain, from the OpenAIR library), by convolution
+(``room_ir``, ``through_room``).
+
 Freesound sources use the sound's high-quality preview (lossy Ogg, no account
 needed). If the original has been downloaded from Freesound (named
 ``<id>__<user>__<title>.<ext>``), pass its folder as ``originals`` and the
@@ -53,6 +57,42 @@ def freesound(sid: int, user: str, title: str, preview: str, sha256: str) -> Sou
     return Source(
         user, title, preview, sha256, f"https://freesound.org/s/{sid}/", freesound=sid
     )
+
+
+# The OpenAIR impulse-response library's files, from its current host
+# (openairlib.net itself answers only over IPv6). Its pages carry each space's
+# licence.
+OPENAIR = "https://webfiles.york.ac.uk/OPENAIR/IRs"
+
+
+def openair(
+    space: str, file: str, user: str, title: str, page_id: int, sha256: str, license: str
+) -> Source:
+    return Source(
+        user,
+        title,
+        f"{OPENAIR}/{space}/{file}",
+        sha256,
+        f"https://www.openair.hosted.york.ac.uk/?page_id={page_id}",
+        license=license,
+    )
+
+
+# The room every indoor sound is put through: a real impulse response of the
+# Hoffmann lime kiln at Langcliffe (1873, brick and stone, vaulted), measured
+# 3.8 m from the source, B-format. Reverberation (T20) 0.9 s at 250 Hz,
+# 0.6 s at 1 kHz, 0.34 s at 4 kHz: a small, hard, industrial room, like the
+# pump house, control house, and workshop rooms on Breakwater. OpenAIR
+# publishes it in the public domain.
+ROOM_IR = openair(
+    "hoffmann-lime-kiln-langcliffeuk",
+    "b-format/ir_p1.wav",
+    "Audiolab, University of York (Hashim Riaz, Jack Smith, Juan Garcia, Pau Rosell)",
+    "Hoffmann Lime Kiln, Langcliffe: ir_p1 (B-format)",
+    518,
+    "d14e336c04811c4d951899999e3948a04dcebd57db0cc4e6abd12c5579642a51",
+    "Public Domain",
+)
 
 
 @dataclass(frozen=True)
@@ -255,9 +295,11 @@ def limit(
     release: float = 0.06,
 ) -> np.ndarray:
     """Look-ahead peak limiter: the gain falls before a peak arrives and
-    recovers over ``release``."""
+    recovers over ``release``. Stereo (samples, 2) is limited linked, by the
+    louder channel."""
     ceiling = 10 ** (ceiling_db / 20)
-    need = np.minimum(1.0, ceiling / np.maximum(np.abs(x), 1e-9))
+    level = np.abs(x).max(axis=1) if x.ndim == 2 else np.abs(x)
+    need = np.minimum(1.0, ceiling / np.maximum(level, 1e-9))
     k = int(lookahead * RATE)
     ahead = np.lib.stride_tricks.sliding_window_view(
         np.concatenate([need, np.ones(k)]), k + 1
@@ -269,7 +311,7 @@ def limit(
     for i, v in enumerate(ahead.tolist()):
         g = a * g + (1 - a) * v if v < g else r * g + (1 - r) * v
         gain[i] = min(g, v)
-    return x * gain
+    return x * (gain[:, None] if x.ndim == 2 else gain)
 
 
 def flattened(x: np.ndarray, window: float) -> np.ndarray:
@@ -279,6 +321,70 @@ def flattened(x: np.ndarray, window: float) -> np.ndarray:
     power = signal.oaconvolve(x**2, np.hanning(n) / np.hanning(n).sum(), mode="same")
     rms = np.sqrt(np.maximum(power, 1e-12))
     return x / np.maximum(rms, rms.max() * 1e-3)
+
+
+# --- Rooms ----------------------------------------------------------------------
+
+
+# Below this the kiln's answer is cut (its boom), Hz.
+ROOM_LOW_CUT = 150.0
+
+
+def room_ir(
+    cache: Path = CACHE, low_cut: float = ROOM_LOW_CUT, seconds: float = 0.95
+) -> np.ndarray:
+    """``ROOM_IR``'s answer without its direct sound, stereo (samples, 2).
+
+    The B-format recording is decoded to two cardioids facing left and right,
+    starts at the direct sound's arrival (so the room lines up with the dry
+    sound it is added to), and has the direct sound itself (its first 2.5 ms)
+    taken out: the dry sound plays on its own. Below ``low_cut`` the kiln's
+    boom is cut, and the response ends where it reaches the recording's noise
+    floor (about 60 dB down), faded over its last 0.3 s.
+    """
+    raw = fetch("room_ir", {"room_ir": ROOM_IR}, cache, None)
+    # FuMa B-format: W carries the omni at -3 dB; Y is the left-right figure 8.
+    w, y = raw[:, 0] * np.sqrt(2), raw[:, 2]
+    start = int(np.argmax(np.abs(w) > 0.25 * np.abs(w).max()))
+    n = int(seconds * RATE)
+    keep = np.ones(n)
+    gone, back = int(0.0025 * RATE), int(0.004 * RATE)
+    keep[:gone] = 0.0
+    keep[gone:back] = np.linspace(0.0, 1.0, back - gone)
+    fade = int(0.3 * RATE)
+    keep[-fade:] *= np.linspace(1.0, 0.0, fade) ** 2
+    sides = []
+    for cardioid in (0.5 * (w + y), 0.5 * (w - y)):
+        sides.append(band(cardioid, low_cut, 0.0)[start : start + n] * keep)
+    return np.stack(sides, axis=1)
+
+
+def through_room(
+    x: np.ndarray, ir: np.ndarray, room_db: float, low_cut: float = ROOM_LOW_CUT
+) -> np.ndarray:
+    """The room's answer to ``x`` (mono, or stereo with one channel per side
+    of ``ir``), stereo, with no dry sound. Its energy is set ``room_db`` over
+    the dry sound's above ``low_cut`` (the band the room answers in), so a
+    sound's sub-bass does not decide how loud its room is."""
+    dry = np.stack([x, x], axis=1) if x.ndim == 1 else x
+    wet = np.stack(
+        [signal.oaconvolve(dry[:, c], ir[:, c]) for c in range(2)], axis=1
+    )
+    heard = sum(np.sum(band(dry[:, c], low_cut, 0.0) ** 2) for c in range(2))
+    gain = np.sqrt(heard / max(np.sum(wet**2), 1e-12) * 10 ** (room_db / 10))
+    return wet * gain
+
+
+def crossfade_split(x: np.ndarray, hold: float, fade: float) -> tuple[np.ndarray, np.ndarray]:
+    """Splits ``x`` in time into its head (whole for ``hold`` seconds, then
+    fading out over ``fade``) and the rest (fading in as the head fades out).
+    Played together from the same moment they add back to ``x`` exactly."""
+    t = np.arange(len(x)) / RATE
+    head = 0.5 + 0.5 * np.cos(np.pi * np.clip((t - hold) / fade, 0.0, 1.0))
+    if x.ndim == 2:
+        head = head[:, None]
+    end = min(int((hold + fade) * RATE) + 1, len(x))
+    return (x * head)[:end], x * (1.0 - head)
 
 
 def cut_audio(cut: Cut, recordings: dict[str, np.ndarray]) -> np.ndarray:
