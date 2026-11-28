@@ -476,8 +476,8 @@ def basin(side: Side):
             t3(x, y, zz, m) for x, y, zz in ((-4.0 - r, SEA - 1.0, z - r), (-4.0 + r, SEA - 1.0, z - r),
                                              (-4.0 + r * 0.8, SEA - 1.0, z + r), (-4.0 - r, SEA - 1.0, z + r),
                                              (-4.0, SEA + r * 0.9, z), (-4.0 + r * 0.5, SEA + r * 0.6, z - r * 0.5))]})
-    # East of the basin the mole runs on: the next berth's concrete apron.
-    deco(-4.0, 60.0, SEA - 1.0, STREET, -120.0, -37.0, "quay", m, faces="top", chunk="far")
+    # East of the basin the land runs on: Red's twin of the main tank farm
+    # (`backdrops`).
     # Fenders hung on the face, bollards along the edge, and ladders down.
     for x in range(-40, -6, 5):
         place("fender", x + 0.5, STREET, -37.6, PI, m)
@@ -1098,25 +1098,200 @@ def rack_corners(side: Side):
 
 
 # --- Backdrops beyond the boundary ---------------------------------------------------------------
+# The far chunk casts no shadows (it is too big for lightmap texels and takes
+# the probes' light), so far things get a fake sun shadow: a multiply stain on
+# the ground, swept north by the sun (43 degrees up, due south).
+SUN_RUN = 1.07  # ground shadow length per metre of height
+SHADE = (0.3, 0.33, 0.4)
+
+
+def _far_stain(outer, inner, m, w, color=SHADE, y=STREET + 0.03):
+    """A flat multiply stain in the far chunk: full weight inside `inner`,
+    fading to nothing at `outer` (two rings of (x, z), same count)."""
+    n = len(outer)
+    cx = sum(p[0] for p in inner) / n
+    cz = sum(p[1] for p in inner) / n
+    verts = [(cx, y, cz)] + [(x, y, z) for x, z in inner] + [(x, y, z) for x, z in outer]
+    mix = [(*color, w, 1.0)] * (n + 1) + [(*color, 0.0, 1.0)] * n
+    faces = [(0, 1 + k, 1 + (k + 1) % n) for k in range(n)]
+    faces += [(1 + k, 1 + (k + 1) % n, 1 + n + (k + 1) % n, 1 + n + k) for k in range(n)]
+    shaded("stain_mul", verts, faces, mix, (0.0, 1.0, 0.0), m, chunk="far")
+
+
+def far_shadow_box(x0, x1, z0, z1, h, m, w=0.6, soft=1.2):
+    """The sun's shadow of a far block on the ground north of it."""
+    run = SUN_RUN * h
+    if not m:
+        za, zb = z0 - run, z0 + 0.5
+    else:  # Red's half is turned: its north is Blue's +z
+        za, zb = z1 - 0.5, z1 + run
+    outer = [(x0 - soft, za - soft), (x1 + soft, za - soft), (x1 + soft, zb), (x0 - soft, zb)]
+    inner = [(x0, za), (x1, za), (x1, zb), (x0, zb)]
+    _far_stain(outer, inner, m, w)
+
+
+def far_shadow_round(x, z, r, h, m, w=0.6, soft=1.5, n=12):
+    """The sun's shadow of a far tank: its base swept north by the sun, as a
+    capsule (the half under the tank is hidden)."""
+    run = (SUN_RUN * h) * (-1.0 if not m else 1.0)
+    outer, inner = [], []
+    for k in range(n + 1):
+        a = PI * k / n
+        # The half-disc at the base on the sunny side, then the swept half.
+        c, sn = math.cos(a), math.sin(a) * (1.0 if not m else -1.0)
+        inner.append((x + r * c, z + r * sn))
+        outer.append((x + (r + soft) * c, z + (r + soft) * sn))
+    for k in range(n + 1):
+        a = PI + PI * k / n
+        c, sn = math.cos(a), math.sin(a) * (1.0 if not m else -1.0)
+        inner.append((x + r * c, z + run + r * sn))
+        outer.append((x + (r + soft) * c, z + run + (r + soft) * sn))
+    _far_stain(outer, inner, m, w)
+
+
+def far_ground(x0, x1, z0, z1, look, m, y=STREET):
+    deco(x0, x1, y - 0.1, y, z0, z1, look, m, faces="top", chunk="far")
+
+
+def far_shed(x0, x1, z0, z1, h, look, m, doors="", windows="", roof="roof_sheet"):
+    """A building beyond the boundary: walls in `look`, a roof sheet with a
+    fascia, roller doors on the faces named in `doors` (N, S, W, E), a row of
+    office windows on those in `windows`, and its sun shadow."""
+    box(x0, x1, STREET, h, z0, z1, look, None, m, chunk="far")
+    box(x0 - 0.25, x1 + 0.25, h, h + 0.35, z0 - 0.25, z1 + 0.25, roof, None, m, chunk="far")
+    box(x0 - 0.3, x1 + 0.3, h - 0.25, h, z0 - 0.3, z1 + 0.3, "steel_grey", None, m, chunk="far")
+    box(x0 - 0.15, x1 + 0.15, STREET, 0.5, z0 - 0.15, z1 + 0.15, "quay_edge", None, m, chunk="far")
+    for face in doors:
+        a0, a1 = (x0, x1) if face in "NS" else (z0, z1)
+        n = max(1, int((a1 - a0) / 9.0))
+        for k in range(n):
+            c = a0 + (k + 0.5) * (a1 - a0) / n
+            dw = min(4.0, (a1 - a0) / n - 1.5)
+            dh = min(4.5, h - 1.2)
+            if face == "N":
+                box(c - dw / 2, c + dw / 2, 0.0, dh, z0 - 0.06, z0, "door_steel", None, m, chunk="far")
+                box(c - dw / 2 - 0.2, c + dw / 2 + 0.2, dh, dh + 0.45, z0 - 0.3, z0, "steel_grey", None, m,
+                    chunk="far")
+            elif face == "S":
+                box(c - dw / 2, c + dw / 2, 0.0, dh, z1, z1 + 0.06, "door_steel", None, m, chunk="far")
+                box(c - dw / 2 - 0.2, c + dw / 2 + 0.2, dh, dh + 0.45, z1, z1 + 0.3, "steel_grey", None, m,
+                    chunk="far")
+            elif face == "W":
+                box(x0 - 0.06, x0, 0.0, dh, c - dw / 2, c + dw / 2, "door_steel", None, m, chunk="far")
+                box(x0 - 0.3, x0, dh, dh + 0.45, c - dw / 2 - 0.2, c + dw / 2 + 0.2, "steel_grey", None, m,
+                    chunk="far")
+            else:
+                box(x1, x1 + 0.06, 0.0, dh, c - dw / 2, c + dw / 2, "door_steel", None, m, chunk="far")
+                box(x1, x1 + 0.3, dh, dh + 0.45, c - dw / 2 - 0.2, c + dw / 2 + 0.2, "steel_grey", None, m,
+                    chunk="far")
+    for face in windows:
+        a0, a1 = (x0, x1) if face in "NS" else (z0, z1)
+        n = max(1, int((a1 - a0) / 2.8))
+        for k in range(n):
+            c = a0 + (k + 0.5) * (a1 - a0) / n
+            for y0 in [1.0 + 3.2 * j for j in range(max(1, int((h - 1.0) / 3.2)))]:
+                if face in "NS":
+                    zf = z0 - 0.02 if face == "N" else z1 + 0.02
+                    K.pane(c - 0.7, c + 0.7, y0, y0 + 1.4, zf, "x", -1 if face == "N" else 1, m,
+                           look="window_office")
+                else:
+                    xf = x0 - 0.02 if face == "W" else x1 + 0.02
+                    K.pane(c - 0.7, c + 0.7, y0, y0 + 1.4, xf, "z", -1 if face == "W" else 1, m,
+                           look="window_office")
+    far_shadow_box(x0, x1, z0, z1, h, m)
+
+
 def backdrops(side: Side):
     m = side.m
-    # West of the gate: the access road and dry ground, a fence line, sheds.
-    deco(-160.0, -42.0, -0.1, STREET, -37.6, 160.0, "quay", m, faces="top", chunk="far")
-    deco(-80.0, -42.0, STREET, 0.01, -3.0, 7.0, "road", m, faces="top", chunk="far")
-    for x, z, w, d, h, look in ((-52.0, -20.0, 14.0, 9.0, 6.0, "clad_green"), (-58.0, 18.0, 18.0, 10.0, 7.5,
-                                                                                 "clad_cream"),
-                                (-49.0, 28.0, 8.0, 6.0, 4.0, "block_grey")):
-        box(x - w / 2, x + w / 2, STREET, h, z - d / 2, z + d / 2, look, None, m, chunk="far")
-        box(x - w / 2 - 0.2, x + w / 2 + 0.2, h, h + 0.3, z - d / 2 - 0.2, z + d / 2 + 0.2, "roof_sheet", None, m,
-            chunk="far")
-    # South of the tank farm: the main tank farm, far bigger tanks.
-    deco(-160.0, 4.0, -0.1, STREET, 37.0, 160.0, "slab_old", m, faces="top", chunk="far")
-    for x, z, r, h in ((-30.0, 62.0, 14.0, 16.0), (2.0, 66.0, 16.0, 18.0), (-62.0, 70.0, 12.0, 14.0),
-                       (-8.0, 100.0, 18.0, 20.0), (-48.0, 105.0, 15.0, 15.0)):
-        place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h, look="tank_white" if (x + z) % 3 else
-              "tank_silver")
-    # A bund wall in front of them, and the pipe bridge into the farm.
-    box(-60.0, 4.0, STREET, 1.6, 42.0, 42.6, "quay_edge", None, m, chunk="far")
+    # The land beyond the boundary is laid in parts that never overlap: the
+    # landside west of the gate (x -160..-42, z -36.6..37) and the main tank
+    # farm south of the map (x -160..4, z 37..160); Red's are their twins, so
+    # the farm's twin runs on east of Blue's basin.
+    # --- West of the gate: the access road, a lorry park, offices, verges.
+    far_ground(-160.0, -42.0, -36.6, 37.0, "grass_dry", m, y=STREET - 0.03)
+    far_ground(-160.0, -42.0, -3.0, 7.0, "road", m)  # the access road
+    far_ground(-160.0, -42.0, 7.0, 8.5, "slab", m)  # its footway
+    far_ground(-118.0, -46.0, -31.0, -3.0, "road", m)  # the lorry park
+    far_ground(-150.0, -122.0, -31.0, -3.0, "slab_old", m)  # the depot yard
+    far_ground(-104.0, -54.0, 12.0, 30.0, "road", m)  # the car park
+    far_ground(-160.0, -42.0, -36.6, -31.0, "quay", m)  # the quay's apron
+    for x in range(-156, -46, 6):
+        far_ground(x, x + 3.0, 1.94, 2.06, "paint_white", m, y=STREET + 0.006)
+    for z in (-2.7, 6.7):
+        far_ground(-160.0, -42.0, z - 0.06, z + 0.06, "paint_white", m, y=STREET + 0.006)
+    for k in range(10):
+        x = -114.0 + k * 6.5
+        far_ground(x - 0.06, x + 0.06, -26.0, -8.0, "paint_yellow", m, y=STREET + 0.006)
+    for k in range(13):
+        x = -100.0 + k * 3.5
+        far_ground(x - 0.05, x + 0.05, 14.0, 19.0, "paint_white", m, y=STREET + 0.006)
+        far_ground(x - 0.05, x + 0.05, 23.0, 28.0, "paint_white", m, y=STREET + 0.006)
+    # Lorries waiting in the park, one leaving.
+    for k, (x, z, yaw) in enumerate(((-110.75, -17.0, 0.0), (-97.75, -17.5, 0.0), (-91.25, -16.8, 0.04),
+                                     (-71.75, -17.0, 0.0), (-62.0, -0.5, -PI / 2))):
+        place("tanker_truck", x, STREET, z, yaw, m, chunk="far", livery=(k + (1 if m else 0)) % 3)
+    # Cars in the car park.
+    for k, (x, z) in enumerate(((-98.25, 16.5), (-94.75, 16.5), (-84.25, 16.5), (-77.25, 16.5),
+                                (-91.25, 25.5), (-80.75, 25.5), (-66.75, 25.5), (-59.75, 16.5))):
+        place("sedan", x, STREET, z, PI if z > 20 else 0.0, m, chunk="far", color=(k * 3 + (2 if m else 0)) % 5)
+    # Buildings: the depot's workshop, the terminal office, a canteen, the
+    # weighbridge hut, and the fire station by the road.
+    far_shed(-148.0, -126.0, -30.0, -12.0, 9.0, "clad_green" if not m else "clad_blue", m, doors="E")
+    far_shed(-112.0, -88.0, 32.0, 36.5, 7.0, side.block, m, windows="N")
+    far_shed(-58.0, -46.0, 13.0, 23.0, 4.2, "clad_cream", m, windows="NW")
+    far_shed(-70.0, -64.0, -34.0, -31.0, 3.2, "block_grey", m, windows="S")
+    far_shed(-140.0, -124.0, 12.0, 26.0, 6.5, "clad_red" if not m else "clad_green", m, doors="N", windows="E")
+    # Light masts along the road and in the park, a fence along the verge.
+    for x in (-60.0, -90.0, -120.0, -150.0):
+        place("light_mast", x, STREET, -3.6, 0.0, m, chunk="far")
+    for x in (-80.0, -110.0):
+        place("light_mast", x, STREET, 8.0, 0.0, m, chunk="far")
+    # The quay face along the basin, west of the map, and its coping.
+    deco(-160.0, -42.0, SEA - 3.0, STREET, -37.6, -36.6, "quay_edge", m, chunk="far")
+    deco(-160.0, -42.0, STREET, 0.2, -36.95, -36.6, "safety_yellow", m, bevel=0.02, chunk="far")
+    for x in range(-155, -45, 10):
+        place("bollard", x, STREET, -36.3, 0.0, m, chunk="far")
+    # --- South of the tank farm: the main tank farm, bunded compounds with
+    # gravel floors, roads and pipe tracks between them.
+    far_ground(-160.0, 4.0, 37.0, 160.0, "grass_dry", m, y=STREET - 0.03)
+    far_ground(-160.0, 4.0, 38.0, 46.0, "road", m)
+    far_ground(-6.0, 4.0, 46.0, 160.0, "road", m)
+    far_ground(-48.0, -40.0, 46.0, 160.0, "road", m)
+    far_ground(-86.0, -78.0, 46.0, 160.0, "road", m)
+    far_ground(-160.0, -6.0, 88.0, 96.0, "road", m)
+    for x0, x1, z0, z1, tanks in ((-40.0, -6.0, 46.0, 88.0, ((-23.0, 67.0, 13.0, 16.0),)),
+                                  (-78.0, -48.0, 46.0, 88.0, ((-63.0, 67.0, 11.0, 14.0),)),
+                                  (-40.0, -6.0, 96.0, 150.0, ((-23.0, 122.0, 13.0, 18.0),)),
+                                  (-78.0, -48.0, 96.0, 150.0, ((-63.0, 122.0, 11.0, 15.0),)),
+                                  (-140.0, -86.0, 46.0, 88.0, ((-126.0, 67.0, 10.0, 13.0), (-99.5, 67.0, 10.0,
+                                                                                            14.0)))):
+        far_ground(x0 + 0.4, x1 - 0.4, z0 + 0.4, z1 - 0.4, "bund_gravel", m)
+        for a0, a1, b0, b1 in ((x0, x1, z0, z0 + 0.4), (x0, x1, z1 - 0.4, z1), (x0, x0 + 0.4, z0, z1),
+                               (x1 - 0.4, x1, z0, z1)):
+            box(a0, a1, STREET, 1.4, b0, b1, "quay_edge", None, m, chunk="far")
+        far_shadow_box(x0, x1, z0, z0 + 0.4, 1.4, m, w=0.45, soft=0.5)
+        for x, z, r, h in tanks:
+            place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h,
+                  look="tank_white" if (round(x + z) // 3) % 3 else "tank_silver")
+            far_shadow_round(x, z, r, h + r * 0.15, m)
+    # Pipe tracks: three lines on sleepers along the roads.
+    for (a, b, fixed, axis) in ((-160.0, -6.0, 43.6, "x"), (-160.0, -6.0, 89.0, "x"), (46.0, 160.0, -47.2, "z")):
+        for k, (off, r, look) in enumerate(((0.0, 0.3, "pipe_grey"), (0.7, 0.22, "pipe_green"),
+                                            (1.3, 0.18, "pipe_brown"))):
+            if axis == "x":
+                cyl(0.45 + r, a, b, fixed + off, r, look, m, sides=10, axis="x")
+            else:
+                cyl(fixed + off, a, b, 0.45 + r, r, look, m, sides=10, axis="z")
+            PARTS[-1]["chunk"] = "far"
+        n = int((b - a) / 6.0)
+        for k in range(n):
+            t = a + (k + 0.5) * (b - a) / n
+            if axis == "x":
+                box(t - 0.25, t + 0.25, STREET, 0.45, fixed - 0.4, fixed + 1.7, "quay_edge", None, m, chunk="far")
+            else:
+                box(fixed - 0.4, fixed + 1.7, STREET, 0.45, t - 0.25, t + 0.25, "quay_edge", None, m, chunk="far")
+    for x, z in ((-44.0, 50.0), (-44.0, 92.0), (-82.0, 92.0), (-2.0, 60.0), (-2.0, 120.0), (-120.0, 42.0)):
+        place("light_mast", x, STREET, z, 0.0, m, chunk="far")
 
 
 def dressing(side: Side):

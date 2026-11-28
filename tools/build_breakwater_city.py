@@ -82,6 +82,11 @@ class Materials(B.Materials):
                 '[gd_resource type="ShaderMaterial" format=3]', "",
                 '[ext_resource type="Shader" path="res://shaders/stain_mul.gdshader" id="1_shader"]', "",
                 "[resource]", "render_priority = 1", 'shader = ExtResource("1_shader")']) + "\n"
+        if spec.get("special") == "alu":
+            return "\n".join([
+                '[gd_resource type="ShaderMaterial" format=3]', "",
+                '[ext_resource type="Shader" path="res://shaders/polished_alu.gdshader" id="1_shader"]', "",
+                "[resource]", 'shader = ExtResource("1_shader")']) + "\n"
         if spec.get("special") == "sea_shore":
             return "\n".join([
                 '[gd_resource type="ShaderMaterial" format=3]', "",

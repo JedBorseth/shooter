@@ -91,10 +91,10 @@ LOOKS: dict[str, dict] = {
     "deck_green": _t("painted_metal", 3.0, (0.3, 0.42, 0.34), metal=0.3, grime=0.0),
     # Paint and signs.
     "hazard_red": _p((0.75, 0.1, 0.06), 0.6),
-    # Road tanker: a polished aluminium barrel (plain metal, smudged by the
-    # shared wear map, so no texture seams round its curves), amber lenses,
-    # and the orange ADR plates.
-    "tank_alu": _p((0.62, 0.63, 0.64), 0.3, 1),
+    # Road tanker: a polished aluminium barrel (shaders/polished_alu.gdshader:
+    # sky above the horizon, ground below, streaks and road film), amber
+    # lenses, and the orange ADR plates.
+    "tank_alu": {"special": "alu"},
     # Steel window frames in the buildings' open windows (their glass shot out).
     "window_steel": _p((0.3, 0.31, 0.32), 0.45, 1),
     # Control-room kit: monitor screens (dim, a process display), keys.
@@ -481,6 +481,58 @@ def fuel_bowser(b: Model):
 
 
 # --- Plant ------------------------------------------------------------------------------------
+def _basis(d):
+    """Two unit vectors perpendicular to the unit vector d."""
+    ax = (0.0, 1.0, 0.0) if abs(d[1]) < 0.9 else (1.0, 0.0, 0.0)
+    u = (d[1] * ax[2] - d[2] * ax[1], d[2] * ax[0] - d[0] * ax[2], d[0] * ax[1] - d[1] * ax[0])
+    n = math.sqrt(sum(c * c for c in u))
+    u = tuple(c / n for c in u)
+    v = (d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0])
+    return u, v
+
+
+def disc(b: Model, c, d, r, thick, look, sides=14, detail=False):
+    """A disc (a flange, a manway cover) centred at c, its face normal d."""
+    u, v = _basis(d)
+    pts = []
+    for off in (-thick / 2, thick / 2):
+        for i in range(sides):
+            t = 2 * PI * i / sides
+            pts.append(tuple(c[j] + d[j] * off + (u[j] * math.cos(t) + v[j] * math.sin(t)) * r for j in range(3)))
+    b.hull(pts, look, detail)
+
+
+def flanged(b: Model, a, e, r, look, flanges=(0.25, 0.75), bolts=True):
+    """A pipe from a to e with bolted flanges at the fractions `flanges`."""
+    b.tube([a, e], r, look, sides=12, detail=False)
+    length = math.dist(a, e)
+    d = tuple((e[j] - a[j]) / length for j in range(3))
+    u, v = _basis(d)
+    for f in flanges:
+        c = tuple(a[j] + (e[j] - a[j]) * f for j in range(3))
+        disc(b, c, d, r * 1.65, 0.05, look, sides=16)
+        if bolts:
+            for i in range(8):
+                t = 2 * PI * (i + 0.5) / 8
+                p = tuple(c[j] + (u[j] * math.cos(t) + v[j] * math.sin(t)) * r * 1.42 for j in range(3))
+                disc(b, p, d, 0.018, 0.09, "steel_dark", sides=6, detail=True)
+
+
+def handwheel(b: Model, c, d, r, look="valve_red"):
+    """A valve handwheel: a rim and three spokes round centre c, axis d."""
+    u, v = _basis(d)
+    rim = []
+    for i in range(17):
+        t = 2 * PI * i / 16
+        rim.append(tuple(c[j] + (u[j] * math.cos(t) + v[j] * math.sin(t)) * r for j in range(3)))
+    b.tube(rim, r * 0.1, look, sides=5, detail=True)
+    for i in range(3):
+        t = 2 * PI * i / 3
+        b.tube([c, tuple(c[j] + (u[j] * math.cos(t) + v[j] * math.sin(t)) * r for j in range(3))], r * 0.06,
+               look, sides=4, detail=True)
+    disc(b, c, d, r * 0.18, r * 0.25, look, sides=8, detail=True)
+
+
 @model
 def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
     """A vertical storage tank: a welded shell in courses, a low cone roof with
@@ -544,14 +596,77 @@ def storage_tank(b: Model, r=4.6, h=11.0, look="tank_white", stair_from=0.0):
                     (math.cos(t) * (rr + 0.28), y - 0.02, math.sin(t) * (rr + 0.28))], 0.035, "steel_dark", sides=5,
                    detail=False)
     b.tube(helix, 0.07, "steel_dark", sides=6, detail=False)
-    # Nozzles and valves at the foot, facing +z.
+    # Vertical welds between the plates, staggered course to course (plates
+    # about 2.4 m by 7 m), and the bottom's anchor chairs round the foot.
+    courses = [0.35 + k * 2.4 for k in range(int(h / 2.4) + 1)] + [h]
+    nseam = max(3, round(2 * PI * r / 7.0))
+    for k in range(len(courses) - 1):
+        y0, y1 = courses[k] + 0.03, min(courses[k + 1], h - 0.12) - 0.03
+        if y1 <= y0:
+            continue
+        for i in range(nseam):
+            t = 2 * PI * (i + 0.5 * (k % 2)) / nseam + 0.21
+            c, s = math.cos(t), math.sin(t)
+            b.tube([(c * (r + 0.004), y0, s * (r + 0.004)), (c * (r + 0.004), y1, s * (r + 0.004))], 0.011, look,
+                   sides=4, detail=True)
+    for i in range(20):
+        t = 2 * PI * (i + 0.5) / 20
+        c, s = math.cos(t), math.sin(t)
+        for dw in (-0.09, 0.09):
+            px, pz = c * (r + 0.09) - s * dw, s * (r + 0.09) + c * dw
+            b.hull([(px - s * 0.012 - c * 0.09, 0.35, pz + c * 0.012 - s * 0.09),
+                    (px + s * 0.012 - c * 0.09, 0.35, pz - c * 0.012 - s * 0.09),
+                    (px - s * 0.012 + c * 0.09, 0.35, pz + c * 0.012 + s * 0.09),
+                    (px + s * 0.012 + c * 0.09, 0.35, pz - c * 0.012 + s * 0.09),
+                    (px - s * 0.012 - c * 0.09, 0.75, pz + c * 0.012 - s * 0.09),
+                    (px + s * 0.012 - c * 0.09, 0.75, pz - c * 0.012 - s * 0.09)], "steel_grey", detail=True)
+        disc(b, (c * (r + 0.13), 0.77, s * (r + 0.13)), (0.0, 1.0, 0.0), 0.1, 0.04, "steel_grey", sides=6,
+             detail=True)
+        disc(b, (c * (r + 0.13), 0.82, s * (r + 0.13)), (0.0, 1.0, 0.0), 0.03, 0.08, "steel_dark", sides=6,
+             detail=True)
+    # Roof fittings: radial seams, a breather valve, a gauge hatch, a manhole,
+    # and the landing at the stair head.
+    for i in range(16):
+        t = 2 * PI * (i + 0.25) / 16
+        b.tube([(math.cos(t) * (r - 0.05), h + 0.012, math.sin(t) * (r - 0.05)),
+                (math.cos(t) * 0.4, h + r * 0.18 * (1 - 0.4 / r) + 0.012, math.sin(t) * 0.4)], 0.012, "tank_roof",
+               sides=4, detail=True)
+    top = h + r * 0.18
+    b.cyl("y", top - 0.1, top + 0.45, (0.0, 0.0), 0.16, "steel_grey", sides=12)
+    b.cyl("y", top + 0.45, top + 0.6, (0.0, 0.0), 0.3, "steel_grey", sides=14)
+    b.cyl("y", top + 0.6, top + 0.66, (0.0, 0.0), 0.2, "steel_dark", sides=12, detail=True)
+    for px, pz, rr2 in ((r * 0.45, r * 0.2, 0.32), (-r * 0.4, -r * 0.35, 0.22)):
+        yb = h + r * 0.18 * (1 - math.hypot(px, pz) / r)
+        b.cyl("y", yb - 0.1, yb + 0.25, (px, pz), rr2, "tank_roof", sides=14)
+        b.cyl("y", yb + 0.25, yb + 0.3, (px, pz), rr2 + 0.06, "steel_grey", sides=14, detail=True)
+    # Foam chambers high on the shell, each fed by a red riser to the ground.
+    for a in (PI * 0.25, PI * 1.25):
+        c, s = math.cos(a), math.sin(a)
+        cx, cz = c * (r + 0.32), s * (r + 0.32)
+        b.cyl("y", h - 1.35, h - 0.45, (cx, cz), 0.26, "pipe_red", sides=12)
+        b.cyl("y", h - 0.45, h - 0.4, (cx, cz), 0.3, "pipe_red", sides=12, detail=True)
+        b.tube([(c * (r + 0.02), h - 0.75, s * (r + 0.02)), (cx, h - 0.75, cz)], 0.1, "pipe_red", sides=8,
+               detail=False)
+        b.tube([(cx, h - 1.35, cz), (cx, 0.9, cz), (c * (r + 0.9), 0.9, s * (r + 0.9)),
+                (c * (r + 0.9), 0.0, s * (r + 0.9))], 0.07, "pipe_red", sides=8, detail=False)
+        for y in (2.0, 4.6, 7.2, 9.4):
+            if y < h - 1.4:
+                b.tube([(c * (r + 0.01), y, s * (r + 0.01)), (cx, y, cz)], 0.02, "steel_dark", sides=4, detail=True)
+    # Nozzles at the foot, facing +z: flanged pipe stubs, gate valves with
+    # handwheels, and the lines on to the ground.
     for a in (-0.35, 0.0, 0.35):
         c, s = math.cos(PI / 2 + a), math.sin(PI / 2 + a)
-        b.tube([(c * (r - 0.1), 0.9, s * (r - 0.1)), (c * (r + 1.0), 0.9, s * (r + 1.0))], 0.16, "pipe_grey",
-               sides=10, detail=False)
-        b.cyl("y", 0.65, 1.15, (c * (r + 0.7), s * (r + 0.7)), 0.24, "valve_red", sides=10, detail=True)
-        b.cyl("y", 1.15, 1.5, (c * (r + 0.7), s * (r + 0.7)), 0.04, "steel_dark", sides=5, detail=True)
-        b.cyl("y", 1.5, 1.53, (c * (r + 0.7), s * (r + 0.7)), 0.18, "valve_red", sides=10, detail=True)
+        flanged(b, (c * (r - 0.1), 0.9, s * (r - 0.1)), (c * (r + 0.95), 0.9, s * (r + 0.95)), 0.16, "pipe_grey",
+                flanges=(0.2, 0.47, 0.73, 0.98))
+        vx, vz = c * (r + 0.6), s * (r + 0.6)
+        disc(b, (vx, 0.9, vz), (c, 0.0, s), 0.27, 0.3, "valve_red", sides=12)
+        b.cyl("y", 0.9, 1.55, (vx, vz), 0.06, "steel_dark", sides=8, detail=True)
+        b.cyl("y", 1.2, 1.45, (vx, vz), 0.11, "valve_red", sides=10, detail=True)
+        handwheel(b, (vx, 1.62, vz), (0.0, 1.0, 0.0), 0.24)
+        b.tube([(c * (r + 0.95), 0.9, s * (r + 0.95)), (c * (r + 1.1), 0.9, s * (r + 1.1)),
+                (c * (r + 1.1), 0.1, s * (r + 1.1))], 0.16, "pipe_grey", sides=12, detail=False)
+        b.box(c * (r + 1.1) - 0.22, c * (r + 1.1) + 0.22, 0.0, 0.1, s * (r + 1.1) - 0.22, s * (r + 1.1) + 0.22,
+              "quay_edge", bevel=0.02)
     # Manway and the level gauge board.
     b.cyl("x", r - 0.1, r + 0.25, (1.4, 0.0), 0.35, look, sides=14)
     b.cyl("x", r + 0.25, r + 0.3, (1.4, 0.0), 0.42, "steel_grey", sides=14, detail=True)
