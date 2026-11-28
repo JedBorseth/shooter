@@ -201,6 +201,10 @@ impl ReverbZone {
         self.size.x * self.size.y * self.size.z
     }
 
+    /// True for an enclosed room, false for an outdoor reflection zone
+    /// (`is_indoor_zone_params`). Exposed so scripts pick indoor sounds by
+    /// the same rule.
+    #[func]
     pub fn is_indoor(&self) -> bool {
         is_indoor_zone_params(self.outdoor, self.wet)
     }

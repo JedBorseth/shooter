@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["numpy>=2", "scipy>=1.14", "soundfile>=0.12"]
+# dependencies = ["numpy>=2", "scipy>=1.14", "soundfile>=0.12", "pyloudnorm>=0.1.1"]
 # ///
 """Builds the glass impacts, bullet sounds, player feedback, and ambience.
 
@@ -49,7 +49,9 @@ gusts, loose metal rattling, distant explosions).
 electronic chirp; the client repeats it faster as the fuse runs down), its
 explosion up close (a deep thump, a roar, and falling debris), and the
 planted sting (a defuse ends the round, so the round's sting covers it). It writes only those files, so the other stings
-stay as they are.
+stay as they are. The explosion also gets an indoor version: its first
+0.3 s through a real room's impulse response (``recorded_audio.ROOM_IR``,
+public domain, fetched by pinned hash into ~/.cache/shooter-recorded-audio).
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
@@ -65,6 +67,7 @@ import io
 from pathlib import Path
 
 import numpy as np
+import recorded_audio
 import soundfile as sf
 from scipy import signal
 
@@ -991,14 +994,45 @@ def charge_sting(kind: str) -> np.ndarray:
     return normalized(stereo, 0.8)
 
 
+# The charge going off indoors: the explosion's first CHARGE_HOLD seconds,
+# fading out over CHARGE_FADE, with a real room's answer (recorded_audio.ROOM_IR)
+# CHARGE_ROOM_DB over that early part's energy above the room's low cut, in
+# place of the outdoor roll-off. 1 dB lighter than the RL-4's room (whose
+# Weapons bus has no engine reverb): a listener in the same room also gets
+# the Effects bus's room reverb, which adds about 1 dB to the room at 0.5 s
+# and draws its last 30 dB out by about 0.1 s (see docs/audio.md).
+CHARGE_HOLD = 0.3
+CHARGE_FADE = 0.3
+CHARGE_ROOM_DB = 2.0
+CHARGE_DRIVE = 1.5
+
+
+def charge_explosion_indoor(outdoor: np.ndarray, ir: np.ndarray) -> np.ndarray:
+    """The charge going off in a room: the same blast, the room in place of
+    the long roar and rumble outside. The room's first reflections pile onto
+    the thump, so the sum is driven into the same soft clipping as the
+    outdoor blast (``charge_explosion``) rather than turned down: the blast
+    stays as loud as outside (CHARGE_DRIVE)."""
+    early, _ = recorded_audio.crossfade_split(outdoor, CHARGE_HOLD, CHARGE_FADE)
+    out = recorded_audio.through_room(early, ir, CHARGE_ROOM_DB)
+    out[: len(early)] += early
+    fade = int(0.05 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)[:, None]
+    return normalized(np.tanh(CHARGE_DRIVE * out), 0.9)
+
+
 def charge_audio() -> None:
     """Search and Destroy's charge: the audio/ui/charge_planted.ogg sting,
-    and audio/world/charge_beep.ogg and charge_explosion.ogg."""
+    and audio/world/charge_beep.ogg, charge_explosion.ogg, and
+    charge_explosion_indoor.ogg."""
     write_ogg(UI / "charge_planted.ogg", charge_sting("charge_planted"))
     WORLD.mkdir(parents=True, exist_ok=True)
     write_ogg(WORLD / "charge_beep.ogg", charge_beep())
-    write_ogg(WORLD / "charge_explosion.ogg", charge_explosion(np.random.default_rng(4512)))
-    print("  audio/ui: charge sting; audio/world: charge beep and explosion")
+    explosion = charge_explosion(np.random.default_rng(4512))
+    write_ogg(WORLD / "charge_explosion.ogg", explosion)
+    indoor = charge_explosion_indoor(explosion, recorded_audio.room_ir())
+    write_ogg(WORLD / "charge_explosion_indoor.ogg", indoor)
+    print("  audio/ui: charge sting; audio/world: charge beep and explosion, outdoors and in")
 
 
 def stings_and_world() -> None:

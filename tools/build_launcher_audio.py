@@ -8,12 +8,20 @@ The RL-4 fired with the M870's shot until now. Black Ops 2's RPG is the
 reference: a hard, hollow pop as the rocket leaves the tube with the motor
 lighting a beat later, and the rocket's motor roaring past in flight. Both
 come from CC0 recordings processed in code with `tools/recorded_audio.py`;
-nothing is synthesized.
+nothing is synthesized. Indoors, the launch rings in a real room: a public
+domain impulse response (convolution, no synthetic reverb).
 
-- ``weapons/rl4/snap_N``: the launch, whole (the game plays a gun with no
-  ``tail`` as whole shots): a real RPG firing with a rocket motor's ignition
-  under it. Takes are set to the AK-47's file loudness; the RL-4's view
-  scene plays them 4 dB over the AK.
+- ``weapons/rl4/snap_N``, ``tail_N``, ``tail_indoor_N``: the launch, layered
+  like the other guns so it sounds like where it is fired. Each take starts
+  as a real RPG firing with a rocket motor's ignition under it, set to the
+  AK-47's file loudness (the RL-4's view scene plays it 4 dB over the AK).
+  ``snap`` is its first 0.14 s (the blast as the rocket leaves the tube),
+  fading out by 0.26 s; ``tail`` is the rest of the same firing, its roar
+  rolling away outdoors, fading in as the snap fades out, so snap and tail
+  together are the whole recording again. ``tail_indoor`` is the snap fired
+  through a real small room (``recorded_audio.ROOM_IR``, a brick lime kiln),
+  3 dB over the snap's own energy above 150 Hz, in place of the outdoor
+  roar.
 - ``weapons/rl4/mid_N``, ``far_N``: the same firings as heard down range,
   for other players' launches far off (in place of the M870's).
 - ``equipment/rocket_flight``: the rocket's motor in flight (loop), on every
@@ -40,13 +48,17 @@ from recorded_audio import (
     Source,
     alone_clip,
     build_sounds,
+    crossfade_split,
     faded,
     fetch_all,
     freesound,
     mixdown,
-    read48,
     repeat_loop,
+    room_ir,
+    silence,
+    through_room,
     write_mp3,
+    write_ogg,
     write_sounds,
 )
 
@@ -87,12 +99,13 @@ def down_range(i: int, lp: float, seconds: float) -> tuple[Cut, ...]:
 
 
 SOUNDS: dict[str, Sound] = {
-    "snap": Sound(
-        "weapons/rl4/snap",
+    # The whole launch, before it is split into its layers (``layered``).
+    "launch": Sound(
+        "weapons/rl4/launch",
         tuple(launch(i) for i in range(3)),
         lufs=-29.0,
         squash_db=-12.0,
-        what="RL-4 launch, first person (whole shot)",
+        what="RL-4 launch, first person, whole",
     ),
     "mid": Sound(
         "weapons/rl4/mid",
@@ -117,24 +130,67 @@ SOUNDS: dict[str, Sound] = {
     ),
 }
 
+# The snap: the launch's first HOLD seconds, fading out over FADE. The room
+# indoors: its energy ROOM_DB over the snap's (past the critical distance of
+# a small hard room, the room is louder than the blast itself).
+HOLD = 0.14
+FADE = 0.12
+ROOM_DB = 3.0
 
-def clips(out: Path, built: dict[str, list[np.ndarray]]) -> None:
-    """Each sound alone; then the M870 stand-in against the new launch; then
-    a launch as the shooter hears it, the rocket flying off."""
+
+def layered(whole: list[np.ndarray], ir: np.ndarray) -> dict[str, list[np.ndarray]]:
+    """The launch's layers, take by take: ``snap`` and ``tail`` add back to
+    the whole take; ``tail_indoor`` is the snap's room."""
+    layers: dict[str, list[np.ndarray]] = {"snap": [], "tail": [], "tail_indoor": []}
+    for x in whole:
+        snap, tail = crossfade_split(x, HOLD, FADE)
+        layers["snap"].append(snap)
+        layers["tail"].append(tail)
+        layers["tail_indoor"].append(through_room(snap, ir, ROOM_DB))
+    return layers
+
+
+def write_layers(layers: dict[str, list[np.ndarray]]) -> None:
+    for name, takes in layers.items():
+        for i, x in enumerate(takes, 1):
+            write_ogg(AUDIO / f"weapons/rl4/{name}_{i}.ogg", x)
+        print(f"  weapons/rl4/{name}: {len(takes)} take(s)")
+
+
+def together(*parts: np.ndarray) -> np.ndarray:
+    """Layers played from the same moment, as stereo."""
+    stereo = [np.stack([x, x], axis=1) if x.ndim == 1 else x for x in parts]
+    out = np.zeros((max(len(x) for x in stereo), 2))
+    for x in stereo:
+        out[: len(x)] += x
+    return out
+
+
+def clips(out: Path, built: dict[str, list[np.ndarray]], layers: dict[str, list[np.ndarray]]) -> None:
+    """Each sound alone; then three launches each way, loudness-matched:
+    today's whole shot, the layers outdoors (snap and tail), and indoors
+    (snap and the room). The game picks each layer's take on its own, so
+    the second and third launches pair one take's snap with another's tail."""
     for name, takes in built.items():
         sound = SOUNDS[name]
         clip = alone_clip(takes, sound.lufs, 5.0 if sound.loop else 0.0)
         write_mp3(out / "alone" / f"rl4_{name}.mp3", clip, -18.0)
-    old = [read48(f).mean(1) for f in sorted((AUDIO / "weapons/m870").glob("snap_[0-9].*"))
-           if f.suffix != ".import"][:3]
-    before = alone_clip(old, -29.0) if old else np.zeros(1)
-    after = alone_clip(built["snap"], -29.0)
-    write_mp3(out / "in_context" / "rl4_before_after.mp3", np.concatenate([before, np.zeros(48_000), after]), -18.0)
+    pairs = ((0, 0), (1, 2), (2, 1))
+    gap = silence(0.8)
+    gap = np.stack([gap, gap], axis=1)
+    for name, launches in (
+        ("rl4_1_today_whole", [together(built["launch"][s]) for s, _ in pairs]),
+        ("rl4_2_outdoor", [together(layers["snap"][s], layers["tail"][t]) for s, t in pairs]),
+        ("rl4_3_indoor", [together(layers["snap"][s], layers["tail_indoor"][t]) for s, t in pairs]),
+    ):
+        x = np.concatenate([part for launch in launches for part in (launch, gap)])
+        write_mp3(out / f"{name}.mp3", x, -18.0)
     flight = faded(repeat_loop(built["rocket_flight"][0], 1.6), 0.05, 1.2)
     events = []
     for k in range(3):
         t = k * 3.2
-        events += [(t, built["snap"][k]), (t + 0.08, flight * 10 ** (-6 / 20))]
+        launch = together(layers["snap"][k], layers["tail"][k]).mean(1)
+        events += [(t, launch), (t + 0.08, flight * 10 ** (-6 / 20))]
     write_mp3(out / "in_context" / "rl4_firing.mp3", mixdown(events, 1.0), -18.0)
 
 
@@ -151,10 +207,12 @@ def main() -> None:
             p.add_argument("out", type=Path)
     args = parser.parse_args()
     built = build_sounds(SOUNDS, fetch_all(SOURCES, args.cache, args.originals))
+    layers = layered(built["launch"], room_ir(args.cache))
     if args.command == "build":
-        write_sounds(SOUNDS, built)
+        write_sounds(SOUNDS, {k: takes for k, takes in built.items() if k != "launch"})
+        write_layers(layers)
     else:
-        clips(args.out, built)
+        clips(args.out, built, layers)
 
 
 if __name__ == "__main__":

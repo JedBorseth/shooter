@@ -12,6 +12,7 @@ weapon = "rl4"
 sound_from = "m870"
 grip_rake = 18.0
 fire_volume_db = -2.0
+tail_db = 2.0
 hip_position = Vector3(0.14, -0.075, -0.12)
 hip_rotation = Vector3(0, 4, 3)
 ads_position = Vector3(0, 0, -0.2)
