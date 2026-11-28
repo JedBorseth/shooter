@@ -4,7 +4,8 @@ extends Control
 ## team under its mark and its name on a light label plate with the head
 ## count, then a row per player on a see-through plate tinted with the team's
 ## colour (ours first; our own name in yellow), bots tagged, and a yellow
-## READY tag once a player is ready; Switch team under them. Shown only in a
+## READY tag once a player is ready (bots always are), NOT READY outlined
+## until then; Switch team under them. Shown only in a
 ## team mode's lobby; refreshed twice a second while shown.
 
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
@@ -74,7 +75,8 @@ func refresh() -> void:
 						{
 							"name": String(entry.name),
 							"bot": bool(entry.bot),
-							"ready": bool(entry.get("ready", false)),
+							# Bots are always ready (`Scoreboard.ready_count`).
+							"ready": bool(entry.bot) or bool(entry.get("ready", false)),
 							"me": bool(entry.me),
 						}
 					)
@@ -103,9 +105,12 @@ func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
 	var colour := TeamColours.of(ours)
 	var rows: Array = team.rows
 	MatchPaint.team_mark(self, Vector2(20, y + 18.0), 36.0, int(team.team), colour)
-	var plate_w := MatchPaint.label_plate(
-		self, Vector2(46, y + 4.0), "YOUR TEAM" if ours else "ENEMY", 28.0
-	)
+	# The side's name on a light plate in tracked caps, as on the scoreboard
+	# and the loading screen.
+	var label := "YOUR TEAM" if ours else "ENEMY"
+	var plate_w := Paint.text_width(Paint.LABEL, label, 19, 3.0) + 16.0
+	draw_rect(Rect2(46, y + 4.0, plate_w, 28.0), UiTheme.LABEL_BOX)
+	Paint.text(self, Paint.LABEL, label, Vector2(54, y + 25.0), 19, UiTheme.LABEL_INK, 3.0, false)
 	Paint.text(
 		self,
 		Paint.LABEL_LIGHT,
@@ -139,19 +144,24 @@ func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
 				UiTheme.TEXT_DIM,
 				1.2
 			)
-		elif row.ready:
-			var tag_w := Paint.text_width(Paint.LABEL, "READY", 13, 1.5) + 12.0
-			var tag := Rect2(WIDTH - tag_w - 8.0, y + (row_h - 19.0) / 2.0, tag_w, 19.0)
+		# READY on a yellow tag; a player still choosing, NOT READY outlined
+		# in grey, so every row says where it stands.
+		var word := "READY" if row.ready else "NOT READY"
+		var tag_w := Paint.text_width(Paint.LABEL, word, 13, 1.5) + 12.0
+		var tag := Rect2(WIDTH - tag_w - 8.0, y + (row_h - 19.0) / 2.0, tag_w, 19.0)
+		if row.ready:
 			draw_rect(tag, UiTheme.READY)
-			Paint.text(
-				self,
-				Paint.LABEL,
-				"READY",
-				Vector2(tag.position.x + 6.0, tag.position.y + 15.0),
-				13,
-				UiTheme.READY_INK,
-				1.5,
-				false
-			)
+		else:
+			draw_rect(tag.grow(-0.5), Color(UiTheme.TEXT_DIM, 0.7), false, 1.0)
+		Paint.text(
+			self,
+			Paint.LABEL,
+			word,
+			Vector2(tag.position.x + 6.0, tag.position.y + 15.0),
+			13,
+			UiTheme.READY_INK if row.ready else UiTheme.TEXT_DIM,
+			1.5,
+			false
+		)
 		y += pitch
 	return y

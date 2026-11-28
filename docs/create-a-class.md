@@ -178,16 +178,23 @@ secondary; one bot in four carries the RL-4 instead (`class::bot_class`).
 
 The match menu (L, or D-pad up; `godot/scripts/net/match_menu.gd`) fills the
 screen in Black Ops 3's frame: the game blurred and darkened behind it, as
-behind the pause menu, a header with the mode as its context and CHOOSE CLASS
-as its title, ten pips and "9 / 10" for the points top right, and the black
-footer band with key-cap prompts (`[L] Close`, `[ENTER] Equip`). The class
-list sits on the left (`godot/scripts/net/class_menu.gd`): five custom
+behind the pause menu, a header with the mode as its context and CREATE A CLASS
+as its title (our own plain words, as the editor's context already reads,
+rather than Black Ops 3's "Choose class"), ten pips and "9 / 10" for the
+points top right, and the black footer band with key-cap prompts (`[L] Close`,
+`[ENTER] Equip`). The class list sits on the left (`godot/scripts/net/class_menu.gd`): five custom
 classes, then the defaults, as in Black Ops 2, and under them the three
 scorestreak slots. Choosing one equips it from the next spawn (a yellow tick
 and an EQUIPPED tag mark it); focusing one shows its loadout in the middle
 (`loadout_grid.gd`) and its primary large on the right. The death screen's
 hint opens the same menu. In a team mode's lobby the two teams sit on the
-right with Switch Team, and Ready below (`lobby_teams.gd`).
+right with Switch Team, and Ready below (`lobby_teams.gd`). Every ready
+player carries a yellow READY tag, bots included (they are always ready), a
+player still choosing an outlined NOT READY tag, and
+the count above Ready counts the same way ("11 / 12 ready"), so the match
+starts when it is full. While the item list has focus, the slot being edited
+stays lit (a little softer) at full brightness while the rest of the grid
+dims, with an orange tab down its left edge (along the slant on a wildcard).
 
 A custom class opens in the editor. The header title becomes the class's
 name in caps; selecting it types a new name (up to 20 characters). The

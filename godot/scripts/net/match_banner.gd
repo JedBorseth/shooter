@@ -18,7 +18,7 @@ extends Control
 ##   our XP mark;
 ## - smaller calls (halftime, flag plays) on a smaller grey plate in the
 ##   result's slot (under the result while one shows);
-## - a prompt hint in the lower third ("[L] Choose class").
+## - a prompt hint in the lower third ("[L] Pick a class").
 ##
 ## Drawn at the 1600x900 design size and scaled to the screen.
 
@@ -294,7 +294,7 @@ func _draw_strip() -> void:
 			int(entry.get("team", 0)),
 			Color(team_colour, slide)
 		)
-		var score := str(roundi(float(entry.get("score", 0)) * count))
+		var score := MatchPaint.number(roundi(float(entry.get("score", 0)) * count))
 		var width := Paint.text_width(Paint.DISPLAY, score, 56, 56 * 0.06)
 		# Scores sit against the VS chip: ours right-aligned, theirs left.
 		var edge := 740.0 - width / 2.0 if side < 0.0 else 860.0 + width / 2.0
@@ -330,7 +330,7 @@ func _draw_bonus(centre: Vector2) -> void:
 	var alpha := clampf((_strip_age - 0.4) / 0.2, 0.0, 1.0) if not strip.is_empty() else 1.0
 	if alpha <= 0.0:
 		return
-	var value := "+" + _thousands(bonus)
+	var value := "+" + MatchPaint.number(bonus)
 	var label_w := Paint.text_width(Paint.LABEL, "MATCH XP", 15, 2.5)
 	var value_w := Paint.text_width(Paint.DISPLAY, value, 26)
 	var width := 14.0 + 30.0 + 14.0 + label_w + 16.0 + value_w + 18.0
@@ -349,13 +349,3 @@ func _draw_bonus(centre: Vector2) -> void:
 		26,
 		Color(UiTheme.LEVEL, alpha)
 	)
-
-
-## 1,500.
-static func _thousands(value: int) -> String:
-	var digits := str(absi(value))
-	var out := ""
-	while digits.length() > 3:
-		out = "," + digits.right(3) + out
-		digits = digits.left(digits.length() - 3)
-	return ("-" if value < 0 else "") + digits + out

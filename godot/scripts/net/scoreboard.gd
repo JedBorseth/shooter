@@ -75,17 +75,15 @@ var _goal_below := ""
 var _me_rect := Rect2()
 
 
-## "3 / 5 ready": the players (not bots) of `roster` ready for the match.
+## "11 / 12 ready": how many of `roster` are ready for the match. Bots are
+## always ready, so they count, as the lobby's READY tags show them; the match
+## starts when the count is full.
 static func ready_count(roster: Array) -> String:
-	var humans := 0
 	var ready := 0
 	for entry: Dictionary in roster:
-		if entry.bot:
-			continue
-		humans += 1
-		if entry.ready:
+		if entry.bot or entry.get("ready", false):
 			ready += 1
-	return "%d / %d ready" % [ready, humans]
+	return "%d / %d ready" % [ready, roster.size()]
 
 
 func _ready() -> void:

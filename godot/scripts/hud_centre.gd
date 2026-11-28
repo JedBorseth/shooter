@@ -31,6 +31,13 @@ var killer_colour := TeamColours.enemy
 ## The killer's team (0 or 1) for its mark on the death card, or -1.
 var killer_team := -1
 var killer_weapon := ""
+## The kill feed's name for what killed us ("Knife", "Frag", …), for kills
+## without a gun's silhouette.
+var killer_cause := ""
+## We killed ourselves (`killer` is our own name).
+var killer_self := false
+## The last damage we took was a fall: with no killer, the card says so.
+var fell := false
 var respawn_left := 0.0
 var respawn_total := 0.0
 ## The controls legend: [key, action] pairs, and how visible it is.
@@ -182,6 +189,9 @@ func _draw_death(at: Vector2) -> void:
 		"colour": killer_colour,
 		"team": killer_team,
 		"weapon": killer_weapon,
+		"cause": killer_cause,
+		"self": killer_self,
+		"fell": fell,
 		"left": respawn_left,
 		"total": respawn_total,
 		"age": _dead_for,

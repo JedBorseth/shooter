@@ -80,6 +80,10 @@ func _ready() -> void:
 	_player.scored.connect(_score_feed.add_award)
 	_score_feed.player = _player
 	_player.damaged.connect(_damage.on_damaged)
+	# Whether the last hurt was a fall, for the death card when no one killed us.
+	_player.damaged.connect(
+		func(_amount: float, _from: Vector3, fall: bool) -> void: _centre.fell = fall
+	)
 	_player.respawned.connect(_on_respawned)
 	_damage.player = _player
 	_scope.player = _player
@@ -128,12 +132,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		_controls_left = 0.0
 
 
-## Names who killed us on the death card, with their colour and weapon key
-## (match HUDs call this when the kill is reported).
-func set_killer(killer_name: String, colour: Color, weapon_key := "") -> void:
+## Names who killed us on the death card, with their colour, weapon key, and
+## the kill feed's name for what did it ("Knife", "Frag", …); `self_kill`
+## when we killed ourselves (match HUDs call this when the kill is reported).
+func set_killer(
+	killer_name: String, colour: Color, weapon_key := "", cause := "", self_kill := false
+) -> void:
 	_centre.killer = killer_name
 	_centre.killer_colour = colour
 	_centre.killer_weapon = weapon_key
+	_centre.killer_cause = cause
+	_centre.killer_self = self_kill
 
 
 ## Names the player we just killed on the "Killed" plate (match HUDs call
@@ -145,6 +154,7 @@ func show_victim(victim_name: String, colour: Color) -> void:
 func _on_respawned() -> void:
 	_controls_left = 0.0
 	set_killer("", TeamColours.enemy)
+	_centre.fell = false
 
 
 func _on_hit(killed: bool, headshot: bool) -> void:

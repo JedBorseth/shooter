@@ -3,7 +3,9 @@ extends Control
 ## out as Black Ops 3's loading screens are: the map's picture, softened and
 ## darkened, under a header with the map name in small orange caps and the
 ## mode in big squared caps beside a hexagon mark; for team modes a band
-## across the middle with each side's mark and name either side of "VS"; and
+## across the middle with each side's team mark and YOUR TEAM / ENEMY on light
+## plates either side of "VS" (as the lobby, scoreboard, and pause menu name
+## them); and
 ## a black band at the foot with a tip and a thin orange loading bar.
 ##
 ## The title screen shows it while a match's map loads, `net_status.gd` until
@@ -18,6 +20,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const HudPaint := preload("res://scripts/ui/hud_paint.gd")
 const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
 const TITLE_FONT: Font = preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 const LABEL_FONT: Font = preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
@@ -73,7 +76,8 @@ const OBJECTIVES := {
 const HEADER_HEIGHT := 112.0
 const FOOT_HEIGHT := 108.0
 const BAR_MARGIN := 64.0
-## How long the fade out takes once loading is done.
+## How long the bar takes to fill once loading is done, then the fade out.
+const FILL_OUT := 0.15
 const FADE_OUT := 0.3
 
 ## "tdm", "ctf", …: which mode, or "" when not known yet.
@@ -86,6 +90,12 @@ var map := "breakwater":
 	set(value):
 		map = value
 		_set_picture()
+		queue_redraw()
+## Our team (0 or 1), for the marks either side of "VS". A local match puts
+## its first human on team 0, so that is the default until a server says.
+var team := 0:
+	set(value):
+		team = value
 		queue_redraw()
 ## Loading progress from 0 to 1, or -1 to creep toward the end on its own.
 var progress := -1.0
@@ -130,11 +140,12 @@ func _gui_input(event: InputEvent) -> void:
 		cancel_requested.emit()
 
 
-## Fades the screen out and frees it.
+## Fills the bar, then fades the screen out and frees it.
 func finish() -> void:
 	progress = 1.0
 	var tween := create_tween()
-	tween.tween_property(self, "modulate:a", 0.0, FADE_OUT).set_delay(0.12)
+	tween.tween_property(self, "_shown", 1.0, FILL_OUT).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "modulate:a", 0.0, FADE_OUT)
 	tween.tween_callback(queue_free)
 
 
@@ -252,9 +263,12 @@ func _draw_versus(view: Rect2) -> void:
 		var ours := side < 0
 		var colour := TeamColours.of(ours)
 		var mark := Vector2(centre.x + side * 132.0, centre.y)
-		HudShapes.hexagon(self, mark, 30.0, Color(colour, 0.22), colour, 2.0, false)
-		HudShapes.hexagon(self, mark, 12.0, colour, Color.TRANSPARENT, 0.0, false)
-		var label := "ALLIES" if ours else "ENEMIES"
+		# The team's own mark on a dark hexagon, as the lobby and the
+		# scoreboard draw it.
+		HudShapes.hexagon(self, mark, 31.0, Color(UiTheme.INK, 0.85), Color.TRANSPARENT, 0.0, false)
+		var mark_team := team if ours else 1 - team
+		MatchPaint.team_mark(self, mark, 56.0, mark_team, colour)
+		var label := "YOUR TEAM" if ours else "ENEMY"
 		var width := HudPaint.text_width(LABEL_FONT, label, 19, 3.0) + 16.0
 		var plate_centre := centre.x + side * 270.0
 		var plate := Rect2(plate_centre - width / 2.0, centre.y - 14, width, 28)

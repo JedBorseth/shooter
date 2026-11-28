@@ -37,6 +37,18 @@ static func design_origin(view: Vector2) -> Vector2:
 	return (view - DESIGN * scale) / 2.0
 
 
+## A score or XP amount with a comma every three digits ("1,030"): every
+## number on the scoreboard, the result strip, the match report, and the
+## pause card goes through this, so they all read alike.
+static func number(value: int) -> String:
+	var digits := str(absi(value))
+	var out := ""
+	while digits.length() > 3:
+		out = "," + digits.right(3) + out
+		digits = digits.left(digits.length() - 3)
+	return ("-" if value < 0 else "") + digits + out
+
+
 ## A team's mark, centred on `centre`, `size` tall: team 0 three stacked
 ## arrowheads in a hexagon, team 1 a split diamond in a hexagon. Drawn in
 ## `colour` (faint as a watermark, solid as a badge).

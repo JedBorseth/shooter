@@ -1,6 +1,7 @@
 extends VBoxContainer
 ## Create-a-Class, inside the match menu (L, or D-pad up), laid out as Black
-## Ops 3's "Choose class" (our own art; `docs/create-a-class.md` has the rules):
+## Ops 3's class screen under our own title, CREATE A CLASS (our own art;
+## `docs/create-a-class.md` has the rules):
 ##
 ## - the class list on the left: the five custom classes, then the defaults,
 ##   each a dark plate, the focused one a solid orange plate with a pointer
@@ -164,6 +165,7 @@ func _process(delta: float) -> void:
 		_fade(_list_column, 1.0, 1.0)
 		_fade(_streak_box, 1.0, 1.0)
 		_fade(_picker, 1.0, 1.0)
+		_mark_editing("")
 		return
 	var focused := get_viewport().gui_get_focus_owner()
 	var in_items := focused != null and _picker.is_ancestor_of(focused)
@@ -172,6 +174,18 @@ func _process(delta: float) -> void:
 	_fade(_list_column, DIM if in_items else 1.0, step)
 	_fade(_streak_box, DIM if in_items else 1.0, step)
 	_fade(_picker, 1.0 if in_items else DIM, step)
+	_mark_editing(_slot if in_items and _editing >= 0 else "")
+
+
+## Marks `slot`'s tile in the grid as the one being edited ("" for none),
+## and keeps it at full brightness while the rest of the grid dims.
+func _mark_editing(slot: String) -> void:
+	var lift := 1.0 / maxf(_grid.modulate.r, 0.01)
+	for tile: Node in _grid.get_children():
+		if tile is LoadoutTile:
+			var editing: bool = slot != "" and tile == _grid.tile(slot)
+			tile.editing = editing
+			tile.modulate = Color(lift, lift, lift) if editing else Color.WHITE
 
 
 func _fade(node: CanvasItem, target: float, step: float) -> void:
