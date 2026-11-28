@@ -640,6 +640,13 @@ def quay(side: Side):
     place("light_mast", -33.0, STREET, -28.0, 0.0, m)
     clip(-33.4, -32.6, STREET, 14.0, -28.4, -27.6, "metal", m, sight=False)
     place("windsock", -7.0, 5.2, -36.4, 0.0, m)
+    # Life-ring stations by the ladders, IBC totes by the containers.
+    for x in (-35.2, -17.2):
+        place("lifebuoy_post", x, STREET, -35.85, 0.0, m)
+        blocker(x - 0.4, x + 0.4, STREET, 1.9, -35.95, -35.7, m)
+    for z in (-29.4, -30.5):
+        place("ibc", -8.0, STREET, z, PI / 2, m)
+    blocker(-8.55, -7.45, STREET, 1.21, -31.1, -28.8, m)
     for x in (-38.5, -11.0):
         place("cone", x, STREET, -28.6, 0.0, m)
 
@@ -1068,7 +1075,9 @@ def rack():
         # Hoses from the arms down to the tanker's hatches.
         # The meter booth beside the far bay.
         x, z = along(5.0, 6.6)
-        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET, 2.7, "clad_cream" if not m else "clad_blue", "metal", m)
+        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET + 0.15, 2.7, "clad_cream" if not m else "clad_blue", None, m)
+        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET, 2.7, None, "metal", m)
+        turned_box(x, z, 1.7, 1.3, RACK_YAW, STREET, STREET + 0.15, "quay_edge", None, m)
         turned_box(x, z, 1.75, 1.35, RACK_YAW, 2.7, 2.85, "roof_sheet", None, m)
         # Blue's stair onto the deck.
         rack_stair(m)
@@ -1079,6 +1088,13 @@ def rack():
                 clip(x - 0.25, x + 0.25, STREET, 8.0, z - 0.25, z + 0.25, "metal", m)
                 deco(x - 0.22, x + 0.22, STREET, 8.0, z - 0.22, z + 0.22, "steel_grey", m)
                 deco(x - 0.4, x + 0.4, STREET, 0.4, z - 0.4, z + 0.4, "quay_edge", m, bevel=0.03)
+    # Loading kit by each bay: a static earthing reel on the canopy column by
+    # the tanker's rear, a wheeled extinguisher by the front column.
+    for m in (False, True):
+        for u, v, model in ((-11.0, 5.45, "earthing_reel"), (-3.0, 5.4, "extinguisher_trolley")):
+            x, z = along(u, v)
+            place(model, x, STREET, z, -2.52, m)
+            clip(x - 0.25, x + 0.25, STREET, 1.4, z - 0.25, z + 0.25, "metal", m, sight=False)
     # The canopy: one roof over the whole rack, with its fascia and trusses.
     rack_box(-13.0, 13.0, -7.2, 7.2, 8.0, 8.3, "roof_sheet", "metal")
     SIGHT.pop()
@@ -1591,6 +1607,10 @@ def weathering(side: Side):
         x += rng.uniform(3.0, 11.0)
     for x in (-44.0, -24.0):
         streak(x, SEA + 7.2, -40.5, 0.0, 0.7, 4.2, "hull_black", m, w=0.65, seed=3)
+    # Scuffs on the hull where it rides against the quay's fenders.
+    for x in range(-40, -6, 5):
+        band((x - 0.2, -40.48), (x + 1.2, -40.48), 0.0, SEA - 0.1, SEA + 1.9, "hull_black", m,
+             color=(0.4, 0.38, 0.35), w=0.4, fade=0.5, seed=x, out=0.01, chunk="far")
     # Foam and churned water where the sea meets the quay, the hull, and the
     # rock revetment.
     shore((-42.0, -37.6), (-4.0, -37.6), (0.0, -1.0), 1.3, m)
