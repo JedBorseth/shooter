@@ -5,13 +5,15 @@ extends RefCounted
 ## killer's colour; then one card for the killer, the killer's colour down
 ## its left edge, the name in big condensed type, and on the right how they
 ## did it: the weapon's silhouette over its name, or for a kill without a gun
-## a drawn mark over its name (a knife as the kill feed draws it, grenades as
-## Create-a-Class's line icons, the charge). Killing yourself reads Yourself
-## (in your yellow) with what did it; a fatal fall reads Fall damage with a
-## falling mark, an unknown death Killed in action with a skull, both behind
-## an empty grey mark so the card keeps its shape. The respawn bar fills along the card's
-## bottom edge, with RESPAWN IN under the card in whole seconds. Calling
-## cards are cut (SCOPE.md), so the card is a plain name card.
+## a drawn mark over its name (a knife, grenades as Create-a-Class's line
+## icons, the charge), all in one fixed box so the card's width follows the
+## name only. Killing yourself reads Yourself in your yellow on your side's
+## colour, as the killcam's card shows you, with what did it; a fatal fall
+## reads Fall damage with a falling mark, an unknown death Unknown with a
+## skull, both captioned World behind a neutral grey mark. The respawn bar
+## fills along the card's bottom edge, with RESPAWN IN under the card in
+## whole seconds. Calling cards are cut (SCOPE.md), so the card is a plain
+## name card.
 ##
 ## Load it with `preload`; everything here is static.
 
@@ -30,7 +32,7 @@ const WORLD := -2
 ## in its place.
 const ICON_H := 26.0
 const ICON_MAX_W := 112.0
-const GLYPH_W := 60.0
+const GLYPH_W := 72.0
 ## Equipment drawn as Create-a-Class draws it: the same line icons.
 const EQUIPMENT_ICONS := {
 	"frag": preload("res://assets/ui/loadout/frag.svg"),
@@ -63,7 +65,7 @@ static func draw(item: CanvasItem, size: Vector2, at: Vector2, state: Dictionary
 	if killer == "":
 		# No one to name: a fall, or a death we were not told about. A grey
 		# side and an empty mark keep the card's shape.
-		killer = "Fall damage" if how.glyph == "fall" else "Killed in action"
+		killer = "Fall damage" if how.glyph == "fall" else "Unknown"
 		colour = UiTheme.TEXT_DIM
 		team = WORLD
 	elif bool(state.get("self", false)):
@@ -106,12 +108,11 @@ static func _killer_card(
 	var team := int(who[3])
 	var icon: Texture2D = how.icon
 	var name_w := Paint.text_width(Paint.LABEL, killer, 36, 0.5)
-	var right_w := GLYPH_W
+	# One fixed box for what did it, so the card's width follows the name only.
+	var right_w := ICON_MAX_W
 	var icon_h := ICON_H
 	if icon != null:
 		icon_h = minf(ICON_H, ICON_MAX_W * icon.get_height() / icon.get_width())
-		right_w = icon.get_width() * (icon_h / icon.get_height())
-	right_w = maxf(right_w, Paint.text_width(Paint.LABEL_LIGHT, String(how.name), 16))
 	# The killer's team mark before the name, as on the killcam's cards.
 	var mark_w := 40.0 if team >= 0 or team == WORLD else 0.0
 	var width := maxf(24.0 + mark_w + name_w + 32.0 + right_w + 18.0, MIN_W)
@@ -137,9 +138,9 @@ static func _killer_card(
 	if team >= 0:
 		MatchPaint.team_mark(item, mark, 30.0, team, Color(colour, alpha))
 	elif team == WORLD:
-		var ring := Shapes.hexagon_points(mark, 15.0, false)
-		ring.append(ring[0])
-		item.draw_polyline(ring, Color(colour, 0.8 * alpha), 1.5, true)
+		# A neutral mark: a grey hexagon with a dark one inside, no side.
+		Shapes.hexagon(item, mark, 15.0, Color(colour, 0.85 * alpha), Color.TRANSPARENT, 0.0, false)
+		Shapes.hexagon(item, mark, 7.0, Color(CARD_FILL, alpha), Color.TRANSPARENT, 0.0, false)
 	Paint.text(
 		item,
 		Paint.LABEL,
@@ -181,11 +182,12 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 	if icon != null:
 		var name := _weapon_name(weapon)
 		return {"key": weapon, "icon": icon, "glyph": "", "name": name if name != "" else cause}
-	var how := {"key": "", "icon": null, "glyph": "skull", "name": cause}
+	var how := {
+		"key": "", "icon": null, "glyph": "skull", "name": cause if cause != "" else "World"
+	}
 	if fell:
-		# The card's name says it: the mark alone.
 		how.glyph = "fall"
-		how.name = ""
+		how.name = "World"
 	elif lower.contains("knife") or lower.contains("melee"):
 		how.glyph = "knife"
 	elif lower.contains("frag") or lower.contains("grenade"):
@@ -205,30 +207,41 @@ static func how_killed(weapon: String, cause: String, fell: bool) -> Dictionary:
 static func cause_mark(item: CanvasItem, kind: String, at: Vector2, colour: Color) -> void:
 	match kind:
 		"knife":
-			# Blade pointing right, a guard, and the grip, as in the kill feed.
+			# A combat knife pointing right: a clip-point blade with a dark
+			# fuller, a guard, a ridged grip, and a pommel.
 			var blade := PackedVector2Array(
 				[
-					at + Vector2(-6, -6),
-					at + Vector2(20, -6),
-					at + Vector2(29, -1),
-					at + Vector2(19, 4),
-					at + Vector2(-6, 4),
+					at + Vector2(-4, -6),
+					at + Vector2(22, -6),
+					at + Vector2(28, -4),
+					at + Vector2(36, 1),
+					at + Vector2(24, 5),
+					at + Vector2(-4, 5),
 				]
 			)
 			item.draw_colored_polygon(blade, colour)
-			item.draw_rect(Rect2(at + Vector2(-11, -10), Vector2(5, 18)), colour)
-			item.draw_rect(Rect2(at + Vector2(-29, -5), Vector2(18, 8)), colour)
+			item.draw_line(
+				at + Vector2(0, -1), at + Vector2(20, -1), Color(0, 0, 0, 0.45 * colour.a), 1.5
+			)
+			item.draw_rect(Rect2(at + Vector2(-9, -11), Vector2(5, 21)), colour)
+			item.draw_rect(Rect2(at + Vector2(-30, -5), Vector2(21, 9)), colour)
+			var ridge := Color(0, 0, 0, 0.5 * colour.a)
+			for x: float in [-26.0, -21.0, -16.0]:
+				item.draw_rect(Rect2(at + Vector2(x, -5), Vector2(1.5, 9)), ridge)
+			item.draw_rect(Rect2(at + Vector2(-35, -6), Vector2(5, 11)), colour)
 		"frag", "flash", "smoke":
-			var side := ICON_H * 1.35
+			var side := ICON_H * 1.5
 			var box := Rect2(at - Vector2(side, side) / 2.0, Vector2(side, side))
 			item.draw_texture_rect(EQUIPMENT_ICONS[kind], box, false, colour)
 		"charge":
-			# A case with a dark timer window and a red lamp.
-			var case := Rect2(at + Vector2(-17, -9), Vector2(34, 20))
+			# A case with a handle, a dark timer window, and a red lamp.
+			var case := Rect2(at + Vector2(-22, -10), Vector2(44, 24))
 			item.draw_rect(case, colour)
-			item.draw_rect(Rect2(at + Vector2(-12, -5), Vector2(16, 9)), Color(0, 0, 0, 0.7))
-			item.draw_circle(at + Vector2(10, 0), 3.0, Color(UiTheme.HARM, colour.a))
-			item.draw_rect(Rect2(at + Vector2(-13, -13), Vector2(26, 3)), colour)
+			item.draw_rect(Rect2(at + Vector2(-16, -5), Vector2(22, 12)), Color(0, 0, 0, 0.7))
+			item.draw_circle(at + Vector2(13, 1), 3.5, Color(UiTheme.HARM, colour.a))
+			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(24, 3)), colour)
+			item.draw_rect(Rect2(at + Vector2(-12, -15), Vector2(3, 5)), colour)
+			item.draw_rect(Rect2(at + Vector2(9, -15), Vector2(3, 5)), colour)
 		"fall":
 			# Two chevrons pointing down over a ground line.
 			for dy: float in [-11.0, -2.0]:

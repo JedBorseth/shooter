@@ -101,7 +101,7 @@ func _deaths() -> void:
 		card.dead = true
 		card.killer = death[1]
 		var own: bool = death[5]
-		card.killer_colour = UiTheme.SELF if own else TeamColours.enemy
+		card.killer_colour = TeamColours.ally if own else TeamColours.enemy
 		card.killer_team = death[2]
 		card.killer_weapon = death[3]
 		card.killer_cause = death[4]

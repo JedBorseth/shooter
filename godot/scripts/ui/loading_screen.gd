@@ -199,9 +199,22 @@ func _draw_mode_mark(at: Vector2) -> void:
 	var ink := UiTheme.TEXT
 	match mode:
 		"tdm":
-			# Two crossed strokes.
-			for d: Vector2 in [Vector2(1, 1), Vector2(1, -1)]:
-				draw_line(at - d * 10.0, at + d * 10.0, ink, 4.0, true)
+			# Two chevrons pointing at each other: two sides meeting (an X
+			# here would read as a close button).
+			for side: float in [-1.0, 1.0]:
+				var tip := at + Vector2(-side * 2.0, 0)
+				draw_polyline(
+					PackedVector2Array(
+						[
+							tip + Vector2(side * 9.0, -10),
+							tip,
+							tip + Vector2(side * 9.0, 10),
+						]
+					),
+					ink,
+					3.5,
+					true
+				)
 		"dom":
 			for x: float in [-11.0, 0.0, 11.0]:
 				draw_circle(at + Vector2(x, 0), 4.0, ink)
