@@ -336,9 +336,15 @@ def hole_maps(kind: str, index: int, size: int = 256):
                 w = rng.uniform(0.002, 0.0032)
                 rungs = np.maximum(rungs, np.clip(1 - dist / w, 0, 1))
         lines = np.maximum(radial, rungs * 0.9)
+        # Inside the cone the glass is crushed, not frosted paint: dense short
+        # cracks and chips, more of them toward the hole, the glass between
+        # them still half clear.
+        micro = cracks(angle, r, rng, 40, (cone_r * 0.6, cone_r * 1.15), (0.004, 0.009))
+        rings_in = np.abs(np.sin(r / max(cone_r, 1e-3) * np.pi * rng.uniform(3.5, 5.5) + fine * 3.0))
+        chipped = np.clip((0.35 - rings_in) / 0.2, 0, 1) * np.clip(1 - r / cone_r, 0, 1)
         colour = np.stack([np.full_like(r, 0.92), np.full_like(r, 0.95), np.full_like(r, 0.96)], axis=2)
         colour = colour * (1 - core[..., None] * 0.9)
-        crushed = frost * (0.55 + 0.35 * fine)
+        crushed = frost * np.clip(0.18 + 0.22 * fine + 0.55 * micro + 0.35 * chipped, 0, 0.85)
         alpha = np.maximum.reduce([core, crushed, lines * 0.8]) * np.clip((0.98 - r) / 0.06, 0, 1)
         height = -core * 0.5 - frost * 0.1 + lines * 0.15
         rough = 0.06 + frost * 0.55 + lines * 0.1
