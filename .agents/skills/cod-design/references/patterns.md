@@ -147,6 +147,8 @@ scoreboard and the next match counting down.
 - Controller: sensitivity per axis, deadzones (inner and outer per stick),
   response curve (standard, linear, dynamic), aim assist on or off and its type,
   button layouts and stick layouts (default, tactical, southpaw), vibration.
+  Controller buttons change through presets (button layout, stick layout,
+  trigger flip); keyboard and mouse rebind freely (docs/settings.md).
 - Every menu works with a controller and a mouse.
 
 ## Controls

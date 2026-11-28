@@ -7,6 +7,7 @@ const TEST_PATH := "user://settings_test.cfg"
 const SETTINGS_SCRIPT := preload("res://scripts/settings.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
+const OptionRow := preload("res://scripts/ui/option_row.gd")
 
 var _failures: PackedStringArray = []
 
@@ -38,6 +39,7 @@ func _run() -> void:
 	_check_graphics(settings)
 	_check_bindings(settings)
 	_check_input_device(settings)
+	_check_controller_layouts(settings)
 	await _check_menu(settings)
 
 	settings.reset_to_defaults()
@@ -487,11 +489,23 @@ func _check_menu(settings: Node) -> void:
 	_check(settings.player_name == "Menu player", "player name edits apply")
 	tabs.current_tab = 1
 	_check(menu._bind_buttons[&"jump"].is_visible_in_tree(), "Keybinds lists the bindings")
+	_check(not menu._choices[&"button_layout"].is_visible_in_tree(), "keyboard: no pad layouts")
+	settings.set_setting(&"input_device", 1)
+	_check(tabs.get_tab_title(1) == "BUTTON LAYOUT", "with a controller the tab shows layouts")
+	_check(not menu._bind_buttons[&"jump"].is_visible_in_tree(), "and hides the key list")
+	_check(menu._choices[&"button_layout"].is_visible_in_tree(), "the button layout is offered")
+	var rb_row: OptionRow = menu._pad_map.rows[JOY_BUTTON_RIGHT_SHOULDER]
+	_check(rb_row.name_label.text.begins_with("Lethal"), "the map shows the lethal on RB")
+	settings.set_setting(&"trigger_flip", true)
+	_check(rb_row.name_label.text == "Fire", "and fire there once flipped")
+	settings.set_setting(&"trigger_flip", false)
+	settings.set_setting(&"input_device", 0)
+	_check(tabs.get_tab_title(1) == "KEYBINDS", "back on keyboard the tab is Keybinds")
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 16, "sixteen sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
-	_check(toggle_count == 13, "thirteen toggles, got %d" % toggle_count)
+	_check(toggle_count == 14, "fourteen toggles, got %d" % toggle_count)
 
 	# Drive a slider and a toggle like a player would.
 	var fov_slider: HSlider = menu._sliders[&"fov"]
@@ -658,6 +672,76 @@ func _check_input_device(settings: Node) -> void:
 	player.free()
 	settings.reset_to_defaults()
 	_check(_bound(&"jump") == KEY_SPACE, "reset puts Space back")
+
+
+## Button layouts, stick layouts, and the trigger flip move the controller half
+## of the actions, as Call of Duty's presets do, and keys stay where they were.
+func _check_controller_layouts(settings: Node) -> void:
+	settings.set_setting(&"input_device", settings.InputDevice.CONTROLLER)
+	_check(settings.key_label(&"crouch", true) == "pad:b", "Default: B crouches")
+	_check(settings.key_label(&"melee", true) == "pad:rs", "Default: the right stick click melees")
+	settings.set_setting(&"button_layout", 1)
+	_check(settings.key_label(&"crouch", true) == "pad:rs", "Tactical: the right stick crouches")
+	_check(settings.key_label(&"melee", true) == "pad:b", "Tactical: B melees")
+	_check(InputMap.action_has_event(&"melee", _joy(JOY_BUTTON_B)), "Tactical: B is bound to melee")
+	_check(
+		not InputMap.action_has_event(&"crouch", _joy(JOY_BUTTON_B)),
+		"Tactical: B no longer crouches"
+	)
+	settings.set_setting(&"button_layout", 2)
+	_check(settings.key_label(&"jump", true) == "pad:lb", "Bumper Jumper: LB jumps")
+	_check(settings.key_label(&"tactical", true) == "pad:a", "Bumper Jumper: A throws the tactical")
+	settings.set_setting(&"button_layout", 0)
+	settings.set_setting(&"trigger_flip", true)
+	_check(settings.key_label(&"fire", true) == "pad:rb", "Flipped: the right bumper fires")
+	_check(settings.key_label(&"lethal", true) == "pad:rt", "Flipped: the right trigger throws")
+	_check(InputMap.action_has_event(&"fire", _joy(JOY_BUTTON_RIGHT_SHOULDER)), "fire is on RB")
+	_check(not _has_joy_motion(&"fire"), "and off the trigger")
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"lethal"), settings.trigger_deadzone),
+		"the trigger deadzone follows the action on the trigger"
+	)
+	settings.set_setting(&"trigger_flip", false)
+	settings.set_setting(&"stick_layout", 1)
+	_check(_joy_axis(&"move_forward") == JOY_AXIS_RIGHT_Y, "Southpaw: the right stick walks")
+	_check(_joy_axis(&"look_right") == JOY_AXIS_LEFT_X, "Southpaw: the left stick looks")
+	_check(
+		settings.key_label(&"sprint", true) == "pad:rs", "Southpaw: sprint follows the walk stick"
+	)
+	settings.set_setting(&"stick_layout", 2)
+	_check(_joy_axis(&"move_forward") == JOY_AXIS_LEFT_Y, "Legacy: the left stick walks forward")
+	_check(_joy_axis(&"look_right") == JOY_AXIS_LEFT_X, "Legacy: the left stick turns")
+	_check(_joy_axis(&"move_right") == JOY_AXIS_RIGHT_X, "Legacy: the right stick strafes")
+	_check(_joy_axis(&"look_up") == JOY_AXIS_RIGHT_Y, "Legacy: the right stick looks up")
+	_check(settings.key_label(&"sprint", true) == "pad:ls", "Legacy: sprint stays on the left")
+	settings.set_setting(&"button_layout", 1)
+	settings.save_settings()
+	var fresh: Node = SETTINGS_SCRIPT.new()
+	fresh.path = TEST_PATH
+	fresh.load_settings()
+	_check(
+		fresh.button_layout == 1 and fresh.stick_layout == 2, "button and stick layouts round-trip"
+	)
+	fresh.free()
+	settings.set_setting(&"button_layout", 99)
+	_check(settings.button_layout == 0, "an unknown layout falls back to Default")
+	settings.set_setting(&"input_device", settings.InputDevice.KEYBOARD_MOUSE)
+	_check(_bound(&"crouch") == KEY_C, "keyboard keys ignore the controller layout")
+	_check(not InputMap.action_has_event(&"melee", _joy(JOY_BUTTON_B)), "and the pad stays locked")
+	settings.reset_to_defaults()
+	_check(settings.key_label(&"crouch", true) == "pad:b", "reset puts the Default layout back")
+	_check(_joy_axis(&"move_forward") == -1, "keyboard play: the sticks stay locked out")
+	settings.set_setting(&"input_device", settings.InputDevice.CONTROLLER)
+	_check(_joy_axis(&"move_forward") == JOY_AXIS_LEFT_Y, "reset puts the Default sticks back")
+	settings.reset_to_defaults()
+
+
+## The stick axis an action reads, or -1.
+func _joy_axis(action: StringName) -> int:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventJoypadMotion:
+			return (event as InputEventJoypadMotion).axis
+	return -1
 
 
 func _has_joy_motion(action: StringName) -> bool:

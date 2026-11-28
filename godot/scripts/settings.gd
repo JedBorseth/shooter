@@ -29,6 +29,7 @@ const InputNotice := preload("res://scripts/ui/input_notice.gd")
 const Captions := preload("res://scripts/ui/captions.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
+const ControllerLayouts := preload("res://scripts/controller_layouts.gd")
 
 ## Radians of view rotation per screen pixel at 1× sensitivity.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -94,7 +95,6 @@ const STICK_RESPONSES: Array[String] = ["Standard", "Linear", "Dynamic"]
 ## Actions the left stick and trigger deadzone settings set, with the
 ## project's own deadzones as the defaults.
 const MOVE_ACTIONS: Array[StringName] = [&"move_forward", &"move_back", &"move_left", &"move_right"]
-const TRIGGER_ACTIONS: Array[StringName] = [&"fire", &"aim"]
 ## Controller button images: Auto follows the connected controller.
 const BUTTON_PROMPTS: Array[String] = ["Auto", "Xbox", "PlayStation"]
 ## Actions that keep both devices' bindings whichever is chosen: a way back to
@@ -170,6 +170,9 @@ const DEFAULTS := {
 	&"aim_assist": true,
 	&"rumble": true,
 	&"button_prompts": 0,
+	&"button_layout": 0,
+	&"stick_layout": 0,
+	&"trigger_flip": false,
 	&"fov": 102.0,
 	&"camera_motion": true,
 	&"fullscreen": false,
@@ -211,6 +214,9 @@ const SECTIONS := {
 		&"aim_assist",
 		&"rumble",
 		&"button_prompts",
+		&"button_layout",
+		&"stick_layout",
+		&"trigger_flip",
 	],
 	"video":
 	[
@@ -314,6 +320,12 @@ var rumble: bool = DEFAULTS[&"rumble"]
 ## Which controller's button images prompts show: an index into
 ## BUTTON_PROMPTS (Auto, Xbox, PlayStation).
 var button_prompts: int = DEFAULTS[&"button_prompts"]
+## Controller layout: an index into `ControllerLayouts.BUTTON_LAYOUTS` and
+## into `ControllerLayouts.STICK_LAYOUTS`, and whether the bumpers and
+## triggers swap.
+var button_layout: int = DEFAULTS[&"button_layout"]
+var stick_layout: int = DEFAULTS[&"stick_layout"]
+var trigger_flip: bool = DEFAULTS[&"trigger_flip"]
 ## True when the controller was the last device used. Menus take both
 ## devices, and their key hints follow this; gameplay prompts follow
 ## `input_device`, the device that plays.
@@ -374,6 +386,9 @@ var key_bindings := {}
 ## unused device's were taken off the input map. Labels and rebinding read it.
 var _all_events: Dictionary[StringName, Array] = {}
 
+## The actions the controller layout puts on a trigger, which take the
+## trigger deadzone.
+var _trigger_actions: Array[StringName] = []
 var _dirty := false
 ## The controller used last, for Auto button prompts; -1 for none yet.
 var _joy_device := -1
@@ -640,6 +655,7 @@ func _rebuild_input_map() -> void:
 	for action: Variant in stored:
 		if REBINDABLE.has(action) and InputMap.has_action(action):
 			_set_binding(action, stored[action])
+	_trigger_actions = ControllerLayouts.apply(button_layout, stick_layout, trigger_flip)
 	_apply_deadzones()
 	_lock_input_device()
 
@@ -649,7 +665,7 @@ func _apply_deadzones() -> void:
 	for action: StringName in MOVE_ACTIONS:
 		if InputMap.has_action(action):
 			InputMap.action_set_deadzone(action, move_deadzone)
-	for action: StringName in TRIGGER_ACTIONS:
+	for action: StringName in _trigger_actions:
 		if InputMap.has_action(action):
 			InputMap.action_set_deadzone(action, trigger_deadzone)
 
@@ -797,7 +813,7 @@ func _apply(key: StringName) -> void:
 			AudioServer.set_bus_mute(bus, volume <= 0.0)
 		return
 	match key:
-		&"input_device":
+		&"input_device", &"button_layout", &"stick_layout", &"trigger_flip":
 			_rebuild_input_map()
 		&"button_prompts":
 			_update_glyphs()
@@ -908,7 +924,7 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 		TYPE_BOOL:
 			return value if value is bool else default
 		TYPE_INT:
-			return int(value) if number and int(value) in INT_OPTIONS[key] else default
+			return int(value) if number and int(value) in _int_options(key) else default
 		TYPE_FLOAT:
 			if not number or is_nan(float(value)):
 				return default
@@ -919,6 +935,16 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 				var text := String(value).strip_edges().left(16 if key == &"player_name" else 255)
 				return text if not text.is_empty() else default
 	return default
+
+
+## Allowed values of an int setting; the layouts allow one per preset.
+static func _int_options(key: StringName) -> Array:
+	match key:
+		&"button_layout":
+			return range(ControllerLayouts.BUTTON_LAYOUTS.size())
+		&"stick_layout":
+			return range(ControllerLayouts.STICK_LAYOUTS.size())
+	return INT_OPTIONS[key]
 
 
 func _on_node_added(node: Node) -> void:
