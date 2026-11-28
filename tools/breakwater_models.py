@@ -39,7 +39,7 @@ def _g(color, glow):
 LOOKS: dict[str, dict] = {
     **W.SLAMCITY_LOOKS,
     # Ground: the terminal's slabs, the quay's apron, the bund's gravel.
-    "slab": _t("concrete_floor", 4.0, (0.74, 0.75, 0.75), grime=0.0),
+    "slab": _t("concrete_floor", 4.0, (0.68, 0.7, 0.72), grime=0.0),
     "slab_old": _t("concrete_stained", 4.0, (0.7, 0.7, 0.69), grime=0.0),
     "quay": _t("concrete_stained", 4.0, (0.8, 0.78, 0.74), grime=0.0),
     "quay_edge": _t("concrete_smooth", 2.0, (0.72, 0.71, 0.68), grime=0.2),

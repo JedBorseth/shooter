@@ -489,7 +489,7 @@ def ground():
     # dark lines on a 4.5 m grid (a multiply stain, out of the bake).
     for side in SIDES:
         for x0, x1, z0, z1 in ((-13.0, 1.5, -27.0, -22.0), (-9.0, 9.0, -22.0, -13.0), (-41.0, -6.0, -36.0, -27.0),
-                               (-21.0, -17.0, -27.0, -2.0)):
+                               (-21.0, -17.0, -27.0, -2.0), (-13.0, 0.0, -13.0, 13.0), (-13.0, -9.0, 13.0, 14.0)):
             joints(x0, x1, z0, z1, side.m)
     # Under the rack: a paved band along the bays (both halves at once: it
     # crosses the centre).
