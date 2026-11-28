@@ -35,6 +35,9 @@ const GRAIN := 0.014
 const MODES: Array[Mode] = [Mode.MOMENTS, Mode.LITE, Mode.FULL]
 ## Sharpening strength where the lens reads the screen.
 const SHARPEN := 0.45
+## Sun shafts where the lens reads the screen (High), as a fraction of the
+## flare: open sky beside the sun streaks out past whatever covers it.
+const SHAFTS := 0.5
 ## How fast the suppression vignette lets go, per second.
 const SUPPRESSION_DECAY := 1.4
 ## Health, as a fraction, where the colour starts to drain and where it is gone.
@@ -112,6 +115,7 @@ func _use_shader(sun: bool) -> void:
 	_material.set_shader_parameter(&"dirt", LensDirt.texture())
 	if _mode == Mode.FULL:
 		_material.set_shader_parameter(&"sharpen", SHARPEN)
+		_material.set_shader_parameter(&"shafts", SHAFTS if _effects else 0.0)
 
 
 ## Closes the edges of the picture in for a moment: rounds passing close call

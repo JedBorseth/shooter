@@ -12,6 +12,9 @@ extends SceneTree
 ## CAPTURE_AUTO       Maximum number of authored viewpoints to pick (default 12).
 ## CAPTURE_TOP        Set to 1 to add an orthographic top.png.
 ## CAPTURE_PRESET     low, medium, or high (default high).
+## CAPTURE_SETTLE     Seconds to hold each view before saving, so eye
+##                    adaptation (scripts/eye_adaptation.gd) settles as it
+##                    would in play (default 0: 30 frames).
 
 const Benchmark := preload("res://tests/benchmark.gd")
 # MoveParams::eye_height(Standing) in rust/sim/src/movement.rs.
@@ -317,6 +320,10 @@ func _capture(camera: Camera3D, view: Dictionary) -> Error:
 	camera.global_position = Vector3(view.feet[0], view.feet[1] + STANDING_EYE_HEIGHT, view.feet[2])
 	camera.global_rotation = Vector3(deg_to_rad(view.pitch), deg_to_rad(-view.heading), 0.0)
 	for i in 30:
+		await process_frame
+	var settle := OS.get_environment("CAPTURE_SETTLE").to_float()
+	var until := Time.get_ticks_msec() + int(settle * 1000.0)
+	while Time.get_ticks_msec() < until:
 		await process_frame
 	await RenderingServer.frame_post_draw
 	var path := _out.path_join(view.name + ".png")

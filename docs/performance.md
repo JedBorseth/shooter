@@ -219,7 +219,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
 | Mipmap bias | 0 | −0.35 | −0.25 |
-| Lens (`scripts/lens.gd`) | only while rounds pass close or after death (vignette, 0.13 ms then) | vignette, film grain, sun flare | vignette, film grain, sun flare, sharpening |
+| Lens (`scripts/lens.gd`) | only while rounds pass close or after death (vignette, 0.13 ms then) | vignette, film grain, sun flare | vignette, film grain, sun flare and sun shafts, sharpening |
 | Close-up detail on world surfaces (`WORLD_DETAIL`) | off | off | on |
 | Soft gun smoke (`SOFT_SMOKE`) | off | off | on |
 | Wet surfaces and puddles (`WORLD_WET`, wet maps only) | dry | on | on |
@@ -228,7 +228,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 
 Contact shadows under characters, the colour grade and health colour drain, eye adaptation (`scripts/eye_adaptation.gd`, rays on the CPU), and the first-person key light (`scripts/viewmodel_light.gd`) run on every preset; none costs measurable GPU time. Lens dirt rides the bloom, so Low, with no glow, has none.
 
-The lens is a full-screen pass over the 3D picture, under the HUD. On Medium it blends a vignette and grain without reading the screen (about 0.13 ms; `shaders/lens_lite.gdshader`). On High it also sharpens with a contrast-adaptive filter, which needs a copy of the screen (about 0.5 ms). The "Lens effects" setting turns the vignette and grain off; sharpening follows the preset.
+The lens is a full-screen pass over the 3D picture, under the HUD. On Medium it blends a vignette and grain without reading the screen (about 0.13 ms; `shaders/lens_lite.gdshader`). On High it also sharpens with a contrast-adaptive filter, which needs a copy of the screen (about 0.5 ms). With the sun on screen, High also draws sun shafts: sixteen taps per pixel toward the sun on the copy it already has (within the benchmark's noise on the GTX 1060, measured from two views facing the sun). The "Lens effects" setting turns the vignette, grain, and shafts off; sharpening follows the preset.
 
 Motion blur is a separate setting, off by default (`scripts/motion_blur.gd`, a compositor effect that blurs along the renderer's motion vectors). It costs about 0.45 ms on Low and 0.75 ms on Medium, motion vectors included.
 

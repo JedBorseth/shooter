@@ -39,6 +39,20 @@ uniform float sun_azimuth = 0.0;
 // and the distance in metres before haze begins (0 = fog from the camera).
 uniform float haze_density = 0.0024;
 uniform float haze_start = 0.0;
+// Open water below the horizon, for a map whose strip leaves its sea clear
+// (Breakwater): lit the way shaders/sea.gdshader lights the map's own water
+// (a dark body that lightens at grazing angles, a Fresnel reflection of the
+// same sky, softened by the swell, and the sun's glitter), so the two meet
+// without a seam where the map's water plane ends.
+uniform bool far_sea = false;
+uniform float sea_level = -2.2;
+uniform vec3 sea_deep : source_color = vec3(0.03, 0.065, 0.06);
+uniform vec3 sea_grazing : source_color = vec3(0.07, 0.11, 0.1);
+// How far the swell blurs the reflected sky, as a mip level of `haze_sky`.
+uniform float sea_blur = 3.0;
+uniform float sea_glint = 1.0;
+// The haze over the water, as the map's own fog density.
+uniform float sea_haze_density = 0.0026;
 
 void sky() {
 	vec3 col = texture(panorama, SKY_COORDS).rgb * energy;
@@ -77,6 +91,28 @@ void sky() {
 		vec3 haze = blur_haze
 				? textureLod(haze_sky, vec2(SKY_COORDS.x, 0.475), 5.0).rgb * energy
 				: texture(panorama, vec2(SKY_COORDS.x, 0.49)).rgb * energy;
+		if (far_sea && dir.y < 0.0) {
+			float down = -dir.y;
+			float sea_dist = max(POSITION.y - sea_level, 0.3) / max(down, 0.0005);
+			// Waves tilt the facets, so the reflection never quite reaches a
+			// mirror's at grazing angles.
+			float fresnel = 0.02 + 0.62 * pow(1.0 - down, 5.0);
+			vec3 sky_seen = textureLod(haze_sky, vec2(SKY_COORDS.x, 1.0 - SKY_COORDS.y), sea_blur).rgb;
+			vec3 sky_light = textureLod(haze_sky, vec2(SKY_COORDS.x, 0.2), 8.0).rgb;
+			vec3 sea = mix(sea_grazing, sea_deep, down) * sky_light * energy;
+			if (LIGHT0_ENABLED) {
+				vec3 mirrored = vec3(dir.x, down, dir.z);
+				float sun_up = max(LIGHT0_DIRECTION.y, 0.0);
+				sea += mix(sea_grazing, sea_deep, down) * LIGHT0_COLOR * LIGHT0_ENERGY * sun_up * 0.3;
+				// The swell spreads the sun's reflection into a wide glare on
+				// the water toward it, with a brighter core.
+				float toward = max(dot(mirrored, LIGHT0_DIRECTION), 0.0);
+				float glitter = pow(toward, 3.0) * 0.9 + pow(toward, 160.0) * 0.6;
+				sea += LIGHT0_COLOR * LIGHT0_ENERGY * glitter * sea_glint;
+			}
+			sea = mix(sea, sky_seen * energy, fresnel);
+			col = mix(sea, haze, 1.0 - exp(-sea_haze_density * sea_dist));
+		}
 		float fog = 1.0 - exp(-haze_density * max(dist - haze_start, 0.0) * 1.4);
 		col = col * (1.0 - land.a) + mix(land.rgb * land_light, haze * land.a, fog);
 	}
