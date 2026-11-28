@@ -18,6 +18,13 @@ uniform float suppression : hint_range(0.0, 1.0) = 0.0;
 uniform float dead : hint_range(0.0, 1.0) = 0.0;
 // Changes every frame, so the grain does not sit still.
 uniform float tick = 0.0;
+#ifdef LENS_SUN
+// Sun shafts (High): how strongly open sky near the sun streaks out past the
+// edges that cover it (cranes, tank rims, canopy beams). 0 for none.
+uniform float shafts = 0.0;
+// Taps along each pixel's line toward the sun.
+const int SHAFT_TAPS = 16;
+#endif
 
 float hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -65,6 +72,27 @@ void fragment() {
 #ifdef LENS_SUN
 	// Screen, not add: the flare brightens toward white without clipping.
 	vec3 sun_light = clamp(lens_flare(SCREEN_UV, aspect), 0.0, 1.0);
+	if (shafts > 0.0) {
+		// March from the pixel toward the sun (at most 0.6 screen heights)
+		// and gather how much bright sky lies along the way: where something
+		// covers the sun, the gaps between it light up as rays. Jittered per
+		// pixel and frame, so few taps do not band.
+		vec2 to_sun = sun_uv - SCREEN_UV;
+		float reach = length(to_sun * vec2(aspect, 1.0));
+		vec2 step_uv = to_sun * min(1.0, 0.6 / max(reach, 0.0001)) / float(SHAFT_TAPS);
+		vec2 at = SCREEN_UV + step_uv * hash(FRAGCOORD.xy + vec2(tick * 13.0, tick * 7.0));
+		float gathered = 0.0;
+		float weight = 1.0;
+		for (int i = 0; i < SHAFT_TAPS; i++) {
+			vec3 seen = texture(screen_texture, at).rgb;
+			gathered += smoothstep(0.78, 0.97, dot(seen, vec3(0.2126, 0.7152, 0.0722))) * weight;
+			weight *= 0.94;
+			at += step_uv;
+		}
+		gathered /= float(SHAFT_TAPS);
+		sun_light += flare_tint * gathered * exp(-reach * 2.2) * shafts * flare;
+		sun_light = clamp(sun_light, 0.0, 1.0);
+	}
 	colour = 1.0 - (1.0 - colour) * (1.0 - sun_light);
 #endif
 

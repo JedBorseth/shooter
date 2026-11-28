@@ -35,7 +35,9 @@ const LUT_SIZE := 32
 ##          (shaders/day_sky.gdshader, strips from tools/build_horizon.py): the
 ##          map's sky image stays, and the shader's parameters come from here
 ##          (`horizon`, `horizon_depth` and its `depth_range` in metres,
-##          `land_light`, and `haze_density`, the haze the land fades into).
+##          `land_light`, and `haze_density`, the haze the land fades into;
+##          `far_sea` draws open water below the horizon from `sea_level`,
+##          for a strip that leaves its sea clear).
 ##          The sky's reflections and the lightmap still see the plain sky.
 ##   wetness  How wet the map's surfaces are, 0 dry to 1 soaked; from 0.5 up,
 ##            puddles collect on the ground (shaders/world.gdshader).
@@ -111,7 +113,7 @@ const MAPS := {
 			"tonemap_mode": Environment.TONE_MAPPER_ACES,
 			# The filmic curve the Testing Area uses: a real shoulder on
 			# sunlit concrete and white tanks, a toe that keeps shade dark.
-			"tonemap_white": 8.0,
+			"tonemap_white": 6.0,
 			"tonemap_exposure": 0.5,
 			# Sky light for what the lightmap does not light (soldiers, the
 			# first-person weapon, small props), so they keep fill in shade.
@@ -140,18 +142,18 @@ const MAPS := {
 		},
 		# A stronger key against the sky: crisp shadows with a real
 		# key-to-fill ratio (the baked bounce is unchanged).
-		"sun": {"light_energy": 4.0, "light_color": Color(1.0, 0.95, 0.87)},
+		"sun": {"light_energy": 4.0, "light_color": Color(1.0, 0.93, 0.82)},
 		"exposure": {"reference": 1.0, "darker": 0.5, "brighter": 1.0},
 		"grade":
 		{
 			"contrast": 1.28,
 			"pivot": 0.42,
 			"saturation": 1.14,
-			"shadows": Color(0.9, 0.97, 1.1),
-			"highlights": Color(1.03, 1.0, 0.96),
+			"shadows": Color(0.88, 0.96, 1.12),
+			"highlights": Color(1.05, 1.0, 0.93),
 			"balance": 0.5,
-			"toe": 0.04,
-			"lift": 0.25,
+			"toe": 0.0,
+			"lift": 0.45,
 		},
 		"flare": 1.0,
 		# The harbour beyond the walls: the mole's tank farms, container
@@ -165,6 +167,10 @@ const MAPS := {
 			"depth_range": 8000.0,
 			"land_light": 1.0,
 			"haze_density": 0.00022,
+			# The strip leaves its sea clear; the shader draws the open water
+			# the way the map's own sea.gdshader does, from its waterline.
+			"far_sea": true,
+			"sea_level": -2.2,
 		},
 	},
 }
@@ -237,9 +243,11 @@ static func _apply_sky(env: Environment, sky: Dictionary) -> void:
 	for key: String in ["horizon", "horizon_depth"]:
 		if sky.has(key):
 			material.set_shader_parameter(key, load(sky[key]))
-	for key: String in ["depth_range", "land_light", "haze_density"]:
+	for key: String in ["depth_range", "land_light", "haze_density", "sea_level"]:
 		if sky.has(key):
 			material.set_shader_parameter(key, float(sky[key]))
+	material.set_shader_parameter(&"far_sea", bool(sky.get("far_sea", false)))
+	material.set_shader_parameter(&"sea_haze_density", env.fog_density)
 	env.sky.sky_material = material
 
 

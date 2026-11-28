@@ -78,10 +78,9 @@ def is_mole(x: float, z: float) -> bool:
 def height(x: float, z: float) -> float:
     """Ground height in the map's frame; below SEA is water."""
     if is_mole(x, z):
-        # Quays a couple of metres over the water, slabs and yards a touch
-        # uneven.
-        edge = mole_halfwidth(x) - abs(z)
-        return 0.4 * n2(x, z, 60.0, 5.0) - 2.0 * smoothstep(12.0, 0.0, edge)
+        # The mole's top is its own mesh (mole_top): a radial grid cannot
+        # follow its straight quay edges without notches.
+        return SEA - 4.0
     side = -1.0 if z < 0 else 1.0
     inland = abs(z) - far_shore(x, side)
     if inland < 0.0:
@@ -164,6 +163,26 @@ class Batch:
             faces.append(self.bm.faces.new((bottom[i], bottom[j], top[j], top[i])))
         self._paint(faces, rgb)
 
+    def floor(self, corners: list[Vector], rgb) -> None:
+        """A flat quad facing up."""
+        face = self.bm.faces.new([self.bm.verts.new(c) for c in corners])
+        face.normal_update()
+        if face.normal.z < 0.0:
+            face.normal_flip()
+        self._paint([face], rgb)
+
+    def ribbon(self, points: list[Vector], z0: float, z1: float, rgb) -> None:
+        """A smooth vertical band along a polyline (Blender frame, on the
+        ground), from z0 to z1."""
+        low = [self.bm.verts.new(p + Vector((0, 0, z0))) for p in points]
+        high = [self.bm.verts.new(p + Vector((0, 0, z1))) for p in points]
+        faces = []
+        for i in range(len(points) - 1):
+            f = self.bm.faces.new((low[i], low[i + 1], high[i + 1], high[i]))
+            f.smooth = True
+            faces.append(f)
+        self._paint(faces, rgb)
+
     def gable(self, p: Vector, length: float, width: float, eaves: float, pitch: float, wall, roof, yaw: float) -> None:
         self.box(p, (length, width, eaves), wall, yaw)
         m = Matrix.Translation(p) @ Matrix.Rotation(yaw, 4, "Z")
@@ -188,8 +207,6 @@ class Batch:
         mesh = bpy.data.meshes.new(self.name)
         self.bm.to_mesh(mesh)
         self.bm.free()
-        for poly in mesh.polygons:
-            poly.use_smooth = False
         mesh.materials.append(material)
         obj = bpy.data.objects.new(self.name, mesh)
         bpy.context.scene.collection.objects.link(obj)
@@ -228,28 +245,18 @@ def paint_material(name: str, rough: float, metal: float = 0.0) -> bpy.types.Mat
 
 
 def water_material() -> bpy.types.Material:
+    """The sea is not rendered into the strip: a holdout leaves it clear
+    (alpha 0) while still hiding what lies under the waterline, and the sky
+    shader draws the far water itself (shaders/day_sky.gdshader, `far_sea`)
+    the way shaders/sea.gdshader draws the map's own, so the two meet without
+    a seam."""
     mat = bpy.data.materials.new("Water")
     mat.use_nodes = True
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
-    bsdf = nodes["Principled BSDF"]
-    # The map's sea: a dark harbour green-grey (shaders/sea.gdshader).
-    bsdf.inputs["Base Color"].default_value = (0.02, 0.035, 0.035, 1.0)
-    bsdf.inputs["Roughness"].default_value = 0.16
-    bsdf.inputs["IOR"].default_value = 1.33
-    # Wind chop: small waves stretched across the wind.
-    tex = nodes.new("ShaderNodeTexNoise")
-    tex.inputs["Scale"].default_value = 0.08
-    tex.inputs["Detail"].default_value = 10.0
-    coord = nodes.new("ShaderNodeTexCoord")
-    mapping = nodes.new("ShaderNodeMapping")
-    mapping.inputs["Scale"].default_value = (1.0, 2.5, 1.0)
-    links.new(coord.outputs["Object"], mapping.inputs["Vector"])
-    links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
-    bump = nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.45
-    bump.inputs["Distance"].default_value = 0.4
-    links.new(tex.outputs["Fac"], bump.inputs["Height"])
-    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    nodes.clear()
+    out = nodes.new("ShaderNodeOutputMaterial")
+    hold = nodes.new("ShaderNodeHoldout")
+    links.new(hold.outputs["Holdout"], out.inputs["Surface"])
     return mat
 
 
@@ -443,30 +450,56 @@ def refinery(b: Batch, rng: random.Random, x0: float, x1: float, z0: float, z1: 
     b.cyl(p + Vector((0, 0, 95.0)), 1.8, 3.0, (0.2, 0.2, 0.2), seg=10)
 
 
-def quay_walls(b: Batch, far: float) -> None:
-    """Vertical concrete faces along the mole's north and south edges, with a
-    dark tide band, so the quays meet the water in a clean line."""
+def mole_top(b: Batch, far: float) -> None:
+    """The mole east and west of the map: flat slabs and yards from quay edge
+    to quay edge, in strips coloured like concrete and asphalt."""
+    strips = 12
     for sign_x in (-1.0, 1.0):
         x = CLEAR
-        while x < far * 0.97:
-            step = 30.0
-            for side in (-1.0, 1.0):
-                a = Vector((sign_x * x, side * mole_halfwidth(sign_x * x)))
-                c = Vector((sign_x * (x + step), side * mole_halfwidth(sign_x * (x + step))))
-                if math.hypot(c.x, c.y) > far * 0.97:
-                    continue
-                mid = (a + c) * 0.5
-                d = G(c.x, c.y) - G(a.x, a.y)
-                yaw = math.atan2(d.y, d.x)
-                length = d.length + 0.6
-                b.box(G(mid.x, mid.y, SEA - 1.0), (length, 1.5, 1.6), (0.12, 0.12, 0.1), yaw)
-                b.box(G(mid.x, mid.y, SEA + 0.6), (length, 1.5, -SEA - 0.4), (0.4, 0.39, 0.36), yaw)
-                b.box(G(mid.x, mid.y, -0.1), (length, 1.9, 0.35), (0.48, 0.47, 0.44), yaw)
-            x += step
+        while x < far:
+            x1 = x + 8.0
+            hw0, hw1 = mole_halfwidth(sign_x * x), mole_halfwidth(sign_x * x1)
+            if math.hypot(x1, hw1) > far * 0.97:
+                break
+            for k in range(strips):
+                t0, t1 = -1.0 + 2.0 * k / strips, -1.0 + 2.0 * (k + 1) / strips
+                corners = [
+                    G(sign_x * x, t0 * hw0),
+                    G(sign_x * x1, t0 * hw1),
+                    G(sign_x * x1, t1 * hw1),
+                    G(sign_x * x, t1 * hw0),
+                ]
+                mid_x, mid_z = sign_x * (x + 4.0), (t0 + t1) * 0.5 * (hw0 + hw1) * 0.5
+                b.floor(corners, ground_colour(mid_x, mid_z, 0.0))
+            x = x1
+
+
+def quay_walls(b: Batch, far: float) -> None:
+    """Continuous concrete faces along the mole's north and south edges, with
+    a dark tide band and a coping, so the quays meet the water in one clean
+    line. Faces follow the edge every 8 m and share their normals with their
+    neighbours, so the wall does not break into facets."""
+    for sign_x in (-1.0, 1.0):
+        for side in (-1.0, 1.0):
+            line = []
+            x = CLEAR
+            while x < far:
+                p = Vector((sign_x * x, side * mole_halfwidth(sign_x * x)))
+                if p.length > far * 0.97:
+                    break
+                line.append(p)
+                x += 8.0
+            for y0, y1, rgb in (
+                (SEA - 1.0, SEA + 0.6, (0.1, 0.1, 0.085)),
+                (SEA + 0.6, -0.1, (0.4, 0.39, 0.36)),
+                (-0.1, 0.25, (0.5, 0.49, 0.46)),
+            ):
+                b.ribbon([G(p.x, p.y) for p in line], y0, y1, rgb)
 
 
 def port(rng: random.Random, far: float) -> Batch:
     b = Batch("Port")
+    mole_top(b, far)
     quay_walls(b, far)
     # West of the map: the terminal's main tank farm, sheds by the road, and
     # a second farm beyond.
@@ -594,6 +627,22 @@ def shores(rng: random.Random, far: float) -> Batch:
         else:
             b.gable(G(x, z, h - 0.5), rng.uniform(9, 16), rng.uniform(7, 10), rng.uniform(5, 8), 0.35, wall, roof, yaw)
         placed += 1
+    # Landmarks: a few tall blocks and towers over the low town, so it is
+    # not one even band.
+    for _ in range(40):
+        x = rng.uniform(-5000.0, 5000.0)
+        side = rng.choice([-1.0, 1.0])
+        z = side * (far_shore(x, side) + rng.uniform(60.0, 350.0))
+        if town(x, z) < 0.1 or math.hypot(x, z) > far * 0.97:
+            continue
+        h = height(x, z)
+        tall = rng.uniform(35.0, 85.0)
+        b.box(
+            G(x, z, h - 1.0),
+            (rng.uniform(18, 30), rng.uniform(16, 24), tall),
+            rng.choice(walls),
+            math.atan2(z, x) + rng.uniform(-0.3, 0.3),
+        )
     # Harbour cranes and a church tower on each shore.
     for side in (-1.0, 1.0):
         for k in range(3):
