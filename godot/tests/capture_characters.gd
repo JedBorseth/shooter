@@ -16,7 +16,7 @@ const MAP := "res://scenes/breakwater.tscn"
 ## Where the close-up sets stand a soldier: Breakwater's north yard, in sun,
 ## with open ground round it (the floor height is found by a ray).
 const STAGE := Vector3(3, 0, 16)
-const DISTANCES := [2.0, 10.0, 30.0, 60.0]
+const DISTANCES := [2.0, 10.0, 30.0]
 const TEAMS := ["ally", "enemy"]
 
 var _out := OS.get_environment("CAPTURE_DIR")
@@ -160,7 +160,7 @@ func _lineups() -> void:
 	var scene := await _open(MAP)
 	await _frames(10)
 	# Sun: across the north yard, looking east.
-	await _lineup(scene, "sun", Vector3(-6.0, 0, 18.5), Vector3(1, 0, 0), [2.0, 6.0, 12.0])
+	await _lineup(scene, "sun", Vector3(-6.0, 0, 18.5), Vector3(1, 0, 0), [2.0, 6.0, 10.0])
 	# Shade: the north quay; indoors: the control house's upper floor (a
 	# benchmark viewpoint).
 	await _lineup(scene, "shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0), DISTANCES)

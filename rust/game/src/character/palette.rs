@@ -82,26 +82,27 @@ fn role_index(role: &str) -> Option<usize> {
 pub fn colour(team: Team, role: &str) -> Color {
     let rgb = |r, g, b| Color::from_rgb(r, g, b);
     match (team, role) {
-        // Allies: tan combat shirt and trousers, coyote and ranger-green kit.
+        // Allies: tan combat shirt and trousers, a darker coyote carrier and
+        // ranger-green webbing, so the kit reads apart from the shirt.
         (Team::Allies, "uniform") => rgb(0.6, 0.53, 0.4),
         (Team::Allies, "pants") => rgb(0.5, 0.45, 0.34),
         (Team::Allies, "gloves") => rgb(0.24, 0.21, 0.17),
         (Team::Allies, "boots") => rgb(0.46, 0.38, 0.28),
         (Team::Allies, "mask") => rgb(0.5, 0.46, 0.36),
         (Team::Allies, "helmet") => rgb(0.52, 0.46, 0.34),
-        (Team::Allies, "vest") => rgb(0.45, 0.4, 0.29),
-        (Team::Allies, "webbing") => rgb(0.4, 0.4, 0.3),
+        (Team::Allies, "vest") => rgb(0.43, 0.375, 0.27),
+        (Team::Allies, "webbing") => rgb(0.34, 0.355, 0.265),
         (Team::Allies, "accent") => rgb(0.16, 0.56, 1.0),
         // Enemies: charcoal shirt and trousers, near-black kit, and a lighter
         // helmet so the head reads apart from the body.
-        (Team::Enemies, "uniform") => rgb(0.22, 0.23, 0.24),
-        (Team::Enemies, "pants") => rgb(0.2, 0.21, 0.22),
-        (Team::Enemies, "gloves") => rgb(0.15, 0.15, 0.15),
-        (Team::Enemies, "boots") => rgb(0.14, 0.13, 0.12),
-        (Team::Enemies, "mask") => rgb(0.17, 0.17, 0.18),
+        (Team::Enemies, "uniform") => rgb(0.255, 0.265, 0.275),
+        (Team::Enemies, "pants") => rgb(0.215, 0.225, 0.235),
+        (Team::Enemies, "gloves") => rgb(0.17, 0.17, 0.17),
+        (Team::Enemies, "boots") => rgb(0.165, 0.155, 0.145),
+        (Team::Enemies, "mask") => rgb(0.2, 0.2, 0.21),
         (Team::Enemies, "helmet") => rgb(0.225, 0.235, 0.225),
-        (Team::Enemies, "vest") => rgb(0.15, 0.155, 0.16),
-        (Team::Enemies, "webbing") => rgb(0.16, 0.165, 0.17),
+        (Team::Enemies, "vest") => rgb(0.175, 0.18, 0.185),
+        (Team::Enemies, "webbing") => rgb(0.19, 0.195, 0.2),
         (Team::Enemies, "accent") => rgb(1.0, 0.24, 0.1),
         // Untinted roles keep the atlas colour.
         _ => rgb(1.0, 1.0, 1.0),
@@ -238,6 +239,9 @@ pub fn material_for(name: &str, team: Team, viewmodel: bool) -> Option<Gd<Shader
     Kit::from_material_name(name).map(|kit| character_material(team, kit, viewmodel))
 }
 
+/// How deep the first-person arms' normal map is drawn (1 is as baked).
+const ARMS_NORMAL_STRENGTH: f32 = 2.2;
+
 /// Bit masks over [`ROLES`]: (tinted, emissive).
 fn role_masks() -> (i32, i32) {
     let mut tinted = 0;
@@ -268,6 +272,13 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
     m.set_shader_parameter("tinted_roles", &tinted.to_variant());
     m.set_shader_parameter("emissive_roles", &emissive.to_variant());
     m.set_shader_parameter("viewmodel", &viewmodel.to_variant());
+    if kit == Kit::Arms {
+        // The first-person gloves' baked relief (knuckle pads, flex ridges,
+        // seams) is a few tenths of a millimetre, a faint map at the
+        // distance the player sees it; drawn deeper so the gloves do not read
+        // as smooth clay.
+        m.set_shader_parameter("normal_strength", &ARMS_NORMAL_STRENGTH.to_variant());
+    }
     // A faint rim in the team's accent, so a dark silhouette still separates
     // from a dark background at night and indoors.
     let (rim, energy) = match team {

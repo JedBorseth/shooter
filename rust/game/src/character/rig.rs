@@ -1542,13 +1542,12 @@ impl SoldierRig {
             g.fit_to(id.def());
             if g.hold == Hold::Handguard && !g.foregrip {
                 // Mid-handguard rather than at the muzzle end of it, so the
-                // support elbow bends and drops under the weapon. The fitted
-                // support pose was fitted where the first-person hand holds,
-                // so here the hand keeps the hold's shape. (On a foregrip the
-                // hand stays on the foregrip, where its pose was fitted.)
+                // support elbow bends and drops under the weapon. The fingers
+                // keep the pose fitted where the first-person hand holds, 2 cm
+                // further forward on the same handguard, so they still wrap
+                // it; the seat is left out, as the palm rests on the section.
+                // (On a foregrip the hand stays where its pose was fitted.)
                 g.left.z += carry::SUPPORT_BACK;
-                g.fingers[1] = None;
-                g.spreads[1] = None;
                 g.seats[1] = Vector3::ZERO;
             }
             // The server poses the arm hit zones from the weapon file's grips

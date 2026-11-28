@@ -828,6 +828,21 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
     contrast = 0.08 if kind in ("shirt", "boot") else 0.18
     shade = math_node("ADD", 1.0 - contrast * 0.8, math_node("MULTIPLY", height, contrast))
     albedo = math_node("MULTIPLY", sep.outputs[0], shade)
+    if kind == "boot":
+        # Dirt worked into the boot, darkest at the welt and fading up the
+        # shaft, and pale dust right at the sole (rest-pose height in metres).
+        zs = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(coord, zs.inputs[0])
+        patch = nodes.new("ShaderNodeTexNoise")
+        patch.inputs["Scale"].default_value = 14.0
+        links.new(coord, patch.inputs["Vector"])
+        low = math_node("DIVIDE", math_node("SUBTRACT", 0.2, zs.outputs[2]), 0.2)
+        low = math_node("MINIMUM", math_node("MAXIMUM", low, 0.0), 1.0)
+        dirt = math_node("MULTIPLY", math_node("POWER", low, 1.5), math_node("ADD", 0.4, math_node("MULTIPLY", patch.outputs["Fac"], 0.9)))
+        albedo = math_node("MULTIPLY", albedo, math_node("SUBTRACT", 1.0, math_node("MULTIPLY", dirt, 0.22)))
+        sole = math_node("DIVIDE", math_node("SUBTRACT", 0.045, zs.outputs[2]), 0.045)
+        sole = math_node("MULTIPLY", math_node("MINIMUM", math_node("MAXIMUM", sole, 0.0), 1.0), patch.outputs["Fac"])
+        albedo = math_node("ADD", albedo, math_node("MULTIPLY", math_node("SUBTRACT", 0.55, albedo), math_node("MULTIPLY", sole, 0.5)))
     comb = nodes.new("ShaderNodeCombineColor")
     for i in range(3):
         links.new(albedo, comb.inputs[i])

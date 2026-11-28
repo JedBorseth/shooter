@@ -482,7 +482,13 @@ MATERIALS = {
     "sleeve": {"colour": GREY, "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.88},
     "uniform": {"use_diffuse": False, "use_bump": False, "colour": GREY,
                 "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.9},
-    "pants": {"use_diffuse": False, "colour": GREY, "detail": {"kind": "ripstop", "strength": 0.15, "distance": 0.0012}, "roughness": 0.9},
+    # Trousers: MakeHuman's own normal map is a fibre speckle that reads as
+    # towelling at this texel size; soft creases round the legs and dirt
+    # rising from the boots instead.
+    "pants": {"use_diffuse": False, "use_normal": False, "colour": GREY,
+              "detail": {"kind": "ripstop", "strength": 0.12, "distance": 0.0012, "fine": 0.25},
+              "folds": {"scale": 16.0, "stretch": 5.0, "strength": 0.55, "distance": 0.004},
+              "grime": {"up_to": 0.6, "strength": 0.32, "scale": 9.0}, "roughness": 0.9},
     "gloves": {"detail": {"kind": "grain", "scale": 700, "strength": 0.25, "distance": 0.001}, "roughness": 0.6},
     "boots": {"use_diffuse": False, "colour": GREY, "detail": {"kind": "grain", "scale": 500, "strength": 0.3, "distance": 0.001}, "roughness": 0.72},
     "skin": {"roughness": 0.5},
@@ -493,7 +499,8 @@ MATERIALS = {
     "strap": {"colour": GREY, "detail": {"kind": "strap", "strength": 0.4, "distance": 0.001}, "roughness": 0.66},
     "velcro": {"colour": (0.45, 0.45, 0.45), "detail": {"kind": "velcro", "strength": 0.4, "distance": 0.001}, "roughness": 0.95},
     "band": {"colour": GREY, "detail": {"kind": "strap", "strength": 0.3, "distance": 0.0008, "fade": 0.1}, "roughness": 0.6},
-    "knit": {"colour": GREY, "detail": {"kind": "knit", "strength": 0.2, "distance": 0.0008, "cavity": 0.12, "fade": 0.15}, "roughness": 0.95},
+    "knit": {"colour": GREY, "detail": {"kind": "knit", "strength": 0.12, "distance": 0.0008, "cavity": 0.1, "fade": 0.15, "fine": 0.3},
+             "roughness": 0.95},
     "plastic": {"colour": GREY, "detail": {"kind": "grit", "scale": 300, "strength": 0.15, "distance": 0.0006}, "roughness": 0.55},
     # Boot soles: near-black rubber with a lugged tread.
     "sole": {"colour": (0.04, 0.038, 0.036), "detail": {"kind": "lugs", "strength": 0.7, "distance": 0.0025, "cavity": 0.3, "fade": 0.1},
