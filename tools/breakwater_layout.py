@@ -202,6 +202,14 @@ def shell(*args, **kw):
     return K.shell(*args, **kw)
 
 
+def lamp_light(x, y, z, energy, rng, m):
+    """A ceiling batten's baked light: most of it thrown down in a wide cone,
+    so the floor under it pools brighter and the walls fall off with height,
+    and a weak unshadowed fill that lights the ceiling round the fitting."""
+    light(x, y, z, energy * 0.85, LAMP, rng, m, kind="spot", angle=78.0, size=0.5)
+    light(x, y + 0.1, z, energy * 0.3, LAMP, rng * 0.6, m, shadow=False)
+
+
 def lamp(x, z, yaw, m, y=STREET):
     """A yard lamp (off in the day: no light)."""
     place("yard_lamp", x, y, z, yaw, m)
@@ -721,7 +729,7 @@ def control_house(side: Side):
     # Inside, downstairs: the switch room (north) and the mess (south).
     for x, z, tint in ((-27.0, -20.0, LAMP), (-27.0, -8.0, LAMP)):
         place("batten", x, ceil, z, 0.0, m)
-        light(x, ceil - 0.3, z, 3.6, tint, 10.0, m)
+        lamp_light(x, ceil - 0.3, z, 3.6, 10.0, m)
     place("switch_panel", -27.0, WALK, -26.3, 0.0, m, length=4.0, look="steel_grey")
     blocker(-29.0, -25.0, WALK, 2.35, -26.65, -26.0, m)
     place("switch_panel", -32.3, WALK, -20.0, PI / 2, m, length=3.0, look="steel_grey")
@@ -736,7 +744,7 @@ def control_house(side: Side):
     # Upstairs: the control room (Blue) or the test lab (Red), and the office.
     for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
         place("batten", x, 7.4, z, 0.0, m)
-        light(x, 7.1, z, 3.2, LAMP, 10.0, m)
+        lamp_light(x, 7.1, z, 3.2, 10.0, m)
     if not m:
         place("console", -27.5, UPPER, -4.2, PI, m, length=6.0)
         place("console", -27.5, UPPER, -8.0, PI, m, length=4.0)
@@ -774,7 +782,7 @@ def meter_shed(side: Side):
     coping(x0, x1, z0, z1, 3.6, m, look="quay_edge")
     name_board(side.meter, x1 + 0.06, 3.0, -7.5, PI / 2, m, size=0.3)
     place("batten", -15.0, 3.2, -7.5, PI / 2, m)
-    light(-15.0, 2.9, -7.5, 2.8, LAMP, 8.0, m)
+    lamp_light(-15.0, 2.9, -7.5, 2.8, 8.0, m)
     if not m:
         place("meter_skid", -15.0, WALK, -11.0, PI / 2, m, length=2.4)
     else:
@@ -819,7 +827,7 @@ def pump_house(side: Side):
         coping(x0, x1, z0, z1, PUMP_TOP, m, look="quay_edge")
         for x in (x0 + 2.0, x1 - 2.0):
             place("batten", x, 4.8, (z0 + z1) / 2, PI / 2, m)
-            light(x, 4.5, (z0 + z1) / 2, 3.6, LAMP, 10.0, m)
+            lamp_light(x, 4.5, (z0 + z1) / 2, 3.6, 10.0, m)
     # Louvres high on the walls.
     for x in (-4.0, 0.0, 4.0, 7.0):
         zf = -27.0 if x < 1.5 else -22.0
@@ -925,7 +933,7 @@ def workshop(side: Side):
     blocker(-32.65, -32.2, WALK, 2.2, 12.8, 15.2, m, "wood")
     for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
         place("batten", x, ROOF_DECK - 0.25, z, 0.0, m)
-        light(x, ROOF_DECK - 0.55, z, 3.6, LAMP, 10.0, m)
+        lamp_light(x, ROOF_DECK - 0.55, z, 3.6, 10.0, m)
     extinguisher(-21.6, 8.0, -PI / 2, m)
 
 
@@ -944,7 +952,7 @@ def drum_store(side: Side):
     drums(-14.6, 11.2, PI / 2, 3, m, WALK)
     blocker(-15.4, -13.8, WALK, 1.1, 10.1, 12.3, m)
     place("batten", -17.0, 3.4, 10.0, 0.0, m)
-    light(-17.0, 3.1, 10.0, 3.0, LAMP, 8.0, m)
+    lamp_light(-17.0, 3.1, 10.0, 3.0, 8.0, m)
 
 
 def pump_shed(side: Side):
@@ -965,7 +973,7 @@ def pump_shed(side: Side):
     place("switch_panel", -20.6, WALK, 19.0, PI / 2, m, length=2.0)
     blocker(-20.65, -20.0, WALK, 2.35, 18.0, 20.0, m)
     place("batten", -15.0, 3.8, 17.5, PI / 2, m)
-    light(-15.0, 3.5, 17.5, 3.0, LAMP, 8.0, m)
+    lamp_light(-15.0, 3.5, 17.5, 3.0, 8.0, m)
     # The plinth wall between the rack and the shed's corner.
     solid(-13.0, -9.0, STREET, 1.0, 13.0, 14.0, "quay_edge", "concrete", m=m, bevel=0.03)
 
@@ -1119,7 +1127,7 @@ def rack():
         for v in (-3.0, 3.0):
             x, z = along(u + (3.0 if v > 0 else 0.0), v)
             place("canopy_flood", x, 7.98, z, RACK_YAW, False)
-            light(x, 7.25, z, 2.2, (1.0, 0.96, 0.9), 12.0, kind="spot", angle=70.0, size=0.4)
+            light(x, 7.25, z, 5.5, (1.0, 0.96, 0.9), 14.0, kind="spot", angle=70.0, size=0.4)
 
 
 def rack_corners(side: Side):
