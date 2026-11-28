@@ -1052,18 +1052,18 @@ mod tests {
 
     #[test]
     fn weapon_files_keep_hand_set_values_outside_the_fit() {
-        // The pistol's firing thumb and the AK-47's support hand are set by
-        // hand (`hand_tuning`); a re-bake rewrites `hands` but not them.
+        // The pistol's and the AK-47's firing thumbs are set by hand
+        // (`hand_tuning`); a re-bake rewrites `hands` but not them.
         let pistol = WeaponId::expect("m1911").def();
         let (right, _, _) = pistol.finger_poses();
         let right = right.expect("the pistol has fitted hands");
         assert_eq!(right.fingers[4], [60.0, 10.0, 15.0]);
         assert_eq!(right.spread.map(|s| s[4]), Some(70.0));
         let ak = WeaponId::expect("ak47").def();
-        let (_, _, left) = ak.finger_poses();
-        let left = left.expect("the AK-47 has fitted hands");
-        assert_eq!(left.seat, [0.0, -0.017, 0.0]);
-        assert_eq!(left.fingers[0], [20.0, 30.0, 60.0]);
+        let (right, _, _) = ak.finger_poses();
+        let right = right.expect("the AK-47 has fitted hands");
+        assert_eq!(right.fingers[4], [-20.0, 40.0, 45.0]);
+        assert_eq!(right.spread.map(|s| s[4]), Some(50.0));
         // A foregrip's fist is the fit's alone.
         let (_, _, grip) = WeaponId::expect("ak47+grip").def().finger_poses();
         assert_eq!(grip, ak.hands.and_then(|h| h.left_foregrip));

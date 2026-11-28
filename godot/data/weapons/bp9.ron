@@ -47,7 +47,7 @@
     // finger's spread, and the hand's seat off its marker (m). Re-run it
     // after moving the grips or changing the model.
     hands: Some((
-        right: (fingers: ((6.5, 63, 65), (16, 79, 49), (12, 75.5, 45.5), (80, 80, 45), (-7.5, 4.5, 4)), spread: Some((-4, 0.5, 3, 7, 35.5)), seat: (0, 0, 0)),
+        right: (fingers: ((7, 70.5, 58), (18, 79, 49.5), (16.5, 76, 51), (80, 80, 45), (-7.5, 3, 1)), spread: Some((-4, 0, 3, 7, 35)), seat: (0, 0, 0)),
         index_off: (4, 6, 4),
         left: (fingers: ((64, 96.5, 58), (62.5, 64.5, 60.5), (72, 74.5, 60.5), (81, 80, 51), (35.5, 51.5, 33)), spread: Some((2, 3, 5, 7.5, 45)), seat: (-0.005, 0, -0.01)),
     )),
