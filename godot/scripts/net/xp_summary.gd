@@ -105,10 +105,10 @@ func show_summary(summary: Dictionary) -> void:
 	var score := int(summary.get("score", 0))
 	var bonus := int(summary.get("bonus", 0))
 	var outcome := String(summary.get("outcome", "loss"))
-	_rows.add_child(_stat("Score", _number(score), UiTheme.TEXT))
+	_rows.add_child(_stat("Score", MatchPaint.number(score), UiTheme.TEXT))
 	var bonus_name := "Match bonus  ·  win" if outcome == "win" else "Match bonus"
-	_rows.add_child(_stat(bonus_name, "+" + _number(bonus), UiTheme.TEXT))
-	_rows.add_child(_stat("Total", "+" + _number(score + bonus), UiTheme.LEVEL))
+	_rows.add_child(_stat(bonus_name, "+" + MatchPaint.number(bonus), UiTheme.TEXT))
+	_rows.add_child(_stat("Total", "+" + MatchPaint.number(score + bonus), UiTheme.LEVEL))
 
 	var unlocks: Array = summary.get("unlocks", [])
 	if not unlocks.is_empty():
@@ -163,7 +163,8 @@ func _show_xp(xp: int) -> void:
 	var span := int(rank.level_span)
 	if span > 0:
 		_xp_label.text = (
-			"%s / %s XP to level %d" % [_number(int(rank.into_level)), _number(span), level + 1]
+			"%s / %s XP to level %d"
+			% [MatchPaint.number(int(rank.into_level)), MatchPaint.number(span), level + 1]
 		)
 	else:
 		_xp_label.text = "Top level"
@@ -260,13 +261,3 @@ func _label(text: String, colour: Color, size: int, font: Font) -> Label:
 	label.add_theme_font_size_override("font_size", size)
 	label.add_theme_color_override("font_color", colour)
 	return label
-
-
-## 12,345.
-static func _number(value: int) -> String:
-	var digits := str(absi(value))
-	var out := ""
-	while digits.length() > 3:
-		out = "," + digits.right(3) + out
-		digits = digits.left(digits.length() - 3)
-	return ("-" if value < 0 else "") + digits + out

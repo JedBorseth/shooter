@@ -74,7 +74,8 @@ func refresh() -> void:
 						{
 							"name": String(entry.name),
 							"bot": bool(entry.bot),
-							"ready": bool(entry.get("ready", false)),
+							# Bots are always ready (`Scoreboard.ready_count`).
+							"ready": bool(entry.bot) or bool(entry.get("ready", false)),
 							"me": bool(entry.me),
 						}
 					)
@@ -139,7 +140,7 @@ func _draw_team(team: Dictionary, y: float, pitch: float) -> float:
 				UiTheme.TEXT_DIM,
 				1.2
 			)
-		elif row.ready:
+		if row.ready:
 			var tag_w := Paint.text_width(Paint.LABEL, "READY", 13, 1.5) + 12.0
 			var tag := Rect2(WIDTH - tag_w - 8.0, y + (row_h - 19.0) / 2.0, tag_w, 19.0)
 			draw_rect(tag, UiTheme.READY)

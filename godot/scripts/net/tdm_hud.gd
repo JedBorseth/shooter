@@ -41,6 +41,7 @@ const MatchResults := preload("res://scripts/net/match_results.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const MatchMenu := preload("res://scripts/net/match_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
 
 const CALLOUT_SECONDS := 2.2
@@ -232,14 +233,14 @@ func _process(delta: float) -> void:
 				"[%s] %s  ·  %s"
 				% [
 					key,
-					"Weapon ladder and ready" if ladder else "Choose class and ready",
+					"Weapon ladder and ready" if ladder else "Pick a class and ready",
 					Scoreboard.ready_count(client.roster())
 				]
 			)
 		_menu.status = Scoreboard.ready_count(client.roster())
 	else:
 		if show_hint:
-			_overlay.hint = "[%s] Choose class for your next spawn" % key
+			_overlay.hint = "[%s] Pick a class for your next spawn" % key
 		if snd:
 			_menu.status = "Applies at once before a round starts, otherwise next round."
 		else:
@@ -412,19 +413,22 @@ func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	parts.append([client.name_of(victim), _name_colour(victim)])
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
-	if victim == me and killer != victim and killer >= 0:
-		_name_killer(killer, _team_colour(killer), key)
+	if victim == me and killer >= 0:
+		# Killing yourself names you, in your yellow, with what did it.
+		var colour := MenuStyle.UiTheme.SELF if killer == victim else _team_colour(killer)
+		_name_killer(killer, colour, key, weapon)
 	elif killer == me and victim != me:
 		_name_victim(client.name_of(victim), _team_colour(victim))
 
 
 ## Tells the shared HUD's death card who killed us.
-func _name_killer(killer: int, colour: Color, weapon_key: String) -> void:
+func _name_killer(killer: int, colour: Color, weapon_key: String, cause: String) -> void:
 	if player == null or not is_instance_valid(player):
 		return
 	var hud := player.get_parent().get_node_or_null("HUD")
 	if hud != null and hud.has_method("set_killer"):
-		hud.set_killer(client.name_of(killer), colour, weapon_key)
+		var me := killer == client.player_id()
+		hud.set_killer(client.name_of(killer), colour, weapon_key, cause, me)
 		# The killer's team, for the death card's team mark (none in FFA).
 		var centre := hud.get_node_or_null("Centre")
 		if centre != null:
@@ -591,7 +595,9 @@ func _refresh_board() -> void:
 			if entry.team != team:
 				continue
 			# Score, kills, and deaths first, then the mode's own columns.
-			var cells := [entry.name, str(entry.score), str(entry.kills), str(entry.deaths)]
+			var cells := [
+				entry.name, MatchPaint.number(entry.score), str(entry.kills), str(entry.deaths)
+			]
 			if ctf or snd:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("returns", 0)))
@@ -619,7 +625,7 @@ func _refresh_board() -> void:
 			. append(
 				{
 					"name": "Your team" if team == my_team else "Enemy",
-					"score": str(scores[team]) if scores.size() == 2 else "",
+					"score": MatchPaint.number(scores[team]) if scores.size() == 2 else "",
 					"colour": TeamColours.of(team == my_team),
 					"team": team,
 					"headings": headings,
@@ -664,7 +670,7 @@ func _refresh_ladder_board() -> void:
 					"cells":
 					[
 						entry.name,
-						weapon if ladder else str(entry.score),
+						weapon if ladder else MatchPaint.number(entry.score),
 						str(entry.kills),
 						str(entry.deaths),
 						"—" if entry.bot else str(entry.ping),

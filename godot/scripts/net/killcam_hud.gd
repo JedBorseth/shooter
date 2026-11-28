@@ -339,6 +339,9 @@ func _name_card(
 ) -> void:
 	var colour := _colour_of(id)
 	_canvas.draw_rect(rect, Color(0.06, 0.07, 0.08, 0.88 * alpha))
+	# A hairline round the plate, as on the loading screen's and the death
+	# screen's cards.
+	_canvas.draw_rect(rect.grow(-0.5), Color(1, 1, 1, 0.18 * alpha), false, 1.0)
 	var edge_x := rect.end.x - 4.0 if right_side else rect.position.x
 	_canvas.draw_rect(Rect2(edge_x, rect.position.y, 4, rect.size.y), Color(colour, alpha))
 	var mark_x := rect.end.x - 34.0 if right_side else rect.position.x + 34.0

@@ -12,6 +12,7 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const HudPaint := preload("res://scripts/ui/hud_paint.gd")
 const HudShapes := preload("res://scripts/ui/hud_shapes.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
+const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
 const CARD := Rect2(1040, 150, 496, 0)
 ## The map's picture across the card's top.
@@ -266,7 +267,12 @@ func _draw_scores(rect: Rect2) -> void:
 	for i in 2:
 		var ours := i == 0
 		var plate := Rect2(rect.position.x + (width + 12.0) * i, rect.position.y + 8, width, 112)
-		_score_plate(plate, "YOUR TEAM" if ours else "ENEMY", str(scores[i]), TeamColours.of(ours))
+		_score_plate(
+			plate,
+			"YOUR TEAM" if ours else "ENEMY",
+			MatchPaint.number(scores[i]),
+			TeamColours.of(ours)
+		)
 	var state := "TIED"
 	if scores[0] > scores[1]:
 		state = "LEADING"
@@ -278,7 +284,7 @@ func _draw_scores(rect: Rect2) -> void:
 ## Free-for-all: your score, on a plate in your colour, and your place.
 func _draw_own_score(rect: Rect2) -> void:
 	var plate := Rect2(rect.position + Vector2(0, 8), Vector2((rect.size.x - 12.0) / 2.0, 112))
-	_score_plate(plate, "YOUR SCORE", str(info.score), UiTheme.SELF)
+	_score_plate(plate, "YOUR SCORE", MatchPaint.number(info.score), UiTheme.SELF)
 	var x := plate.end.x + 24.0
 	HudPaint.text(
 		self, HudPaint.LABEL, "PLACE", Vector2(x, plate.position.y + 28), 15, UiTheme.TEXT_DIM, 2.0

@@ -1,7 +1,7 @@
 extends Control
 ## The match menu (L, or D-pad up), full screen in Black Ops 3's frame
 ## (`ScreenFrame`): the scene darkened from the left, the header with the
-## mode as its context and CHOOSE CLASS as its title (the class's name while
+## mode as its context and CREATE A CLASS as its title (the class's name while
 ## editing it), and the black footer band with Close. Inside it,
 ## Create-a-Class (`class_menu.gd`), or in Gun Game the weapon ladder; in a
 ## team mode's lobby the two teams on the right (`lobby_teams.gd`); and
@@ -51,7 +51,7 @@ func _ready() -> void:
 	add_child(backdrop)
 	_frame = ScreenFrame.new()
 	_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_frame.title = "Choose class"
+	_frame.title = "Create a class"
 	add_child(_frame)
 	class_menu = ClassMenu.new()
 	class_menu.client = client
@@ -102,7 +102,7 @@ func _process(_delta: float) -> void:
 	# While editing, the class name is the title, typed in place over the
 	# frame's (which keeps its bracket and context).
 	_frame.title = (
-		class_menu.title_text() if editing else ("Weapon ladder" if ladder else "Choose class")
+		class_menu.title_text() if editing else ("Weapon ladder" if ladder else "Create a class")
 	)
 	if editing:
 		_frame.context = "Create a class  ·  " + mode_name

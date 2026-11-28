@@ -17,8 +17,10 @@ extends Button
 ##   along its top.
 ##
 ## Tiles focus with orange rules along their top and bottom edges and a
-## lighter fill. The button keeps its `text` (what it is, as tests and screen
-## readers see it) but draws its own face.
+## lighter fill. The slot being edited while focus is in the item list keeps
+## that lit state, dimmed, with an orange tab down its left edge, as the
+## current item in a list (`UiTheme.current`). The button keeps its `text`
+## (what it is, as tests and screen readers see it) but draws its own face.
 
 enum Kind { ROW, WEAPON, SLOT, WILDCARD, CARD }
 
@@ -38,6 +40,8 @@ const GRENADE_ICONS := {
 }
 ## How far a wildcard's parallelogram leans.
 const SLANT := 12.0
+## How lit the slot being edited stays while focus is in the items.
+const EDITING_LIT := 0.6
 
 var kind := Kind.SLOT
 ## The name drawn on the face (the button's `text` may add a lock note).
@@ -65,6 +69,12 @@ var read_only := false
 var closed := false
 ## A slot this weapon has no use for: darker and blank.
 var blocked := false
+## The slot whose items the picker shows while focus is in the picker.
+var editing := false:
+	set(value):
+		if editing != value:
+			editing = value
+			queue_redraw()
 
 var _lit := 0.0
 
@@ -100,7 +110,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	# A quick flash as focus arrives, settling.
-	var target := 1.0 if _focused() else 0.0
+	var target := 1.0 if _focused() else (EDITING_LIT if editing else 0.0)
 	if not is_equal_approx(_lit, target):
 		_lit = move_toward(_lit, target, delta / 0.1)
 		queue_redraw()
@@ -236,6 +246,8 @@ func _draw_tile() -> void:
 		)
 	if _lit > 0.0:
 		Shapes.focus_rules(self, rect, Color(UiTheme.ACCENT, _lit), 3.0)
+	if editing and not has_focus():
+		draw_rect(Rect2(0, 0, 4, size.y), UiTheme.ACCENT)
 
 
 ## An empty slot's mark: a faint plus; on a picker card ("None"), a dash.
