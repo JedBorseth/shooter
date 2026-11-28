@@ -40,7 +40,7 @@
     // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
     unlock_level: 19,
     // Hands on the model: GripRight and GripLeft in rl4_view.tscn.
-    grips: Some((right: (0, -0.155, -0.06), left: (0, -0.1, -0.25), rake: 18, section: Some((centre: (0.0001, -0.0846), half: (0.0338, 0.0193))))),
+    grips: Some((right: (0, -0.155, -0.06), left: (0, -0.1, -0.25), rake: 18, section: Some((centre: (0.0000, -0.0851), half: (0.0340, 0.0189))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:
     // curl in degrees per joint (index, middle, ring, little, thumb), each
     // finger's spread, and the hand's seat off its marker (m). Re-run it

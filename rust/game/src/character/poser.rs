@@ -65,6 +65,7 @@ impl Bone {
     const RIGHT_FOOT: usize = 17;
     const LEFT_TOES: usize = 18;
     const RIGHT_TOES: usize = 19;
+    const LEFT_SHOULDER: usize = 20;
     const NAMES: [&'static str; BONES] = [
         "Hips",
         "Spine",
@@ -86,11 +87,12 @@ impl Bone {
         "RightFoot",
         "LeftToes",
         "RightToes",
+        "LeftShoulder",
     ];
 }
 
 /// Bones the poser resolves.
-const BONES: usize = 20;
+const BONES: usize = 21;
 /// Foot IK lowers the hips at most this far (m) so a foot can reach lower
 /// ground: the hit zones stand on flat ground, so the body keeps close to them.
 pub const MAX_PELVIS_DROP: f32 = 0.09;
@@ -1008,6 +1010,12 @@ impl SoldierPoser {
             );
             left_pole = left_pole.lerp(VAULT_ELBOW, plant);
         }
+        self.protract_support_shoulder(
+            skel,
+            bones,
+            left_target.origin,
+            weight * (1.0 - input.arm_loose[1].clamp(0.0, 1.0)),
+        );
         self.place_hand(
             skel,
             [
@@ -1486,6 +1494,42 @@ impl SoldierPoser {
     /// Two-bone IK for one arm: the wrist goes where the hand's palm meets
     /// `grip`, the hand takes `grip`'s basis.
     #[allow(clippy::too_many_arguments)]
+    /// Brings the support shoulder forward toward a wrist target the arm
+    /// cannot reach by turning the collarbone, as the arm hit zones do
+    /// (`carry::protracted`).
+    fn protract_support_shoulder(
+        &self,
+        skel: &mut Gd<Skeleton3D>,
+        bones: [i32; BONES],
+        wrist_target: Vector3,
+        weight: f32,
+    ) {
+        let [clavicle, upper, lower, hand] = [
+            Bone::LEFT_SHOULDER,
+            Bone::LEFT_UPPER_ARM,
+            Bone::LEFT_LOWER_ARM,
+            Bone::LEFT_HAND,
+        ]
+        .map(|b| bones[b]);
+        if clavicle < 0 || weight <= 0.0 {
+            return;
+        }
+        let at = |b: i32| skel.get_bone_global_pose(b).origin;
+        let (base, root) = (at(clavicle), at(upper));
+        let arm = root.distance_to(at(lower)) + at(lower).distance_to(at(hand));
+        let want = to_godot(carry::protracted(to_sim(root), to_sim(wrist_target), arm));
+        if want.distance_squared_to(root) < 1e-8 {
+            return;
+        }
+        let turn = ik::rotation_between(root - base, want - base);
+        apply_global_rotation(skel, clavicle, Quaternion::IDENTITY.slerp(turn, weight));
+        // The collarbone turns the shoulder along a sphere about its base;
+        // the arm then starts exactly where the hit zones put the shoulder.
+        let moved = skel.get_bone_global_pose(upper);
+        let to = root.lerp(want, weight);
+        skel.set_bone_global_pose(upper, Transform3D::new(moved.basis, to));
+    }
+
     fn place_hand(
         &self,
         skel: &mut Gd<Skeleton3D>,

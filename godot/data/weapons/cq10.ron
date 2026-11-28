@@ -43,7 +43,7 @@
     // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
     unlock_level: 28,
     // Hands on the model: GripRight and GripLeft in cq10_view.tscn.
-    grips: Some((right: (0, -0.1426, 0.0393), left: (0, -0.0994, -0.0924), rake: 12, section: Some((centre: (0.0000, -0.0785), half: (0.0174, 0.0139))))),
+    grips: Some((right: (0, -0.1426, 0.0393), left: (0, -0.0994, -0.0924), rake: 12, section: Some((centre: (-0.0027, -0.0952), half: (0.0203, 0.0295))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:
     // curl in degrees per joint (index, middle, ring, little, thumb), each
     // finger's spread, and the hand's seat off its marker (m). Re-run it
