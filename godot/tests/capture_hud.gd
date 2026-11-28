@@ -142,13 +142,21 @@ func _run() -> void:
 	await _shot("07_damaged")
 	await _seconds(1.0)
 	# An enemy calls a UAV: the notice under the minimap.
+	var foe := -1
 	for id in client.remote_ids():
 		if client.team_of(id) != client.team_of(me):
+			foe = id
 			_server.debug_give_streak(id, "uav")
 			_server.debug_use_streak(id, "uav")
 			break
 	await _seconds(0.8)
 	await _shot("07b_enemy_uav")
+	# A live frag ahead and to the right: the danger warning and its pointer
+	# (just before we die anyway, so its blast changes nothing after).
+	var aside := ahead.rotated(Vector3.UP, deg_to_rad(-35.0))
+	_server.debug_grenade(foe, "frag", feet + aside * 4.5 + Vector3.UP * 0.2, 2.0)
+	await _seconds(0.3)
+	await _shot("07c_grenade")
 
 	_server.debug_kill(me)
 	await _frames(2)

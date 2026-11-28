@@ -33,28 +33,65 @@ func _draw() -> void:
 	# Forward and right on the ground for this view (yaw 0 looks down -Z).
 	var forward := Vector2(-sin(yaw), -cos(yaw))
 	var right := Vector2(cos(yaw), -sin(yaw))
+	# One warning per side: grenades whose warnings would sit within 30 px
+	# of each other share one, the closest grenade's.
+	var shown: Array[Dictionary] = []
 	for at: Vector3 in player.danger_grenades():
 		var offset := Vector2(at.x - feet.x, at.z - feet.z)
 		var distance := Vector3(at - feet).length()
 		if distance > RANGE:
 			continue
-		var closeness := clampf(1.0 - distance / RANGE, 0.0, 1.0)
 		# Screen direction: up is ahead, right is right.
 		var direction := Vector2(offset.dot(right), -offset.dot(forward))
 		if direction.length() < 0.05:
 			direction = Vector2(0, 1)
 		direction = direction.normalized()
 		var spot := centre + direction * RING
-		var pulse := 0.5 + 0.5 * sin(_time * lerpf(6.0, 16.0, closeness))
-		var alpha := lerpf(0.65, 1.0, pulse)
-		var rim := Color(1, 1, 1, 0.5).lerp(UiTheme.HARM, closeness)
-		draw_circle(spot, 24.0, Color(0, 0, 0, 0.55 * alpha), true, -1.0, true)
-		draw_arc(spot, 24.0, 0.0, TAU, 40, Color(rim, 0.9 * alpha), 2.0, true)
-		Paint.grenade(self, spot, 26.0, Color(UiTheme.TEXT, alpha))
-		# The pointer, outside the disk, toward the grenade.
-		var tip := spot + direction * 38.0
-		var side := Vector2(-direction.y, direction.x) * 7.0
-		var base := spot + direction * 28.0
-		draw_colored_polygon(
-			PackedVector2Array([tip, base + side, base - side]), Color(UiTheme.HARM, alpha)
-		)
+		var merged := false
+		for other in shown:
+			if Vector2(other.spot).distance_to(spot) < 30.0:
+				merged = true
+				if distance < float(other.distance):
+					other.merge({"spot": spot, "direction": direction, "distance": distance}, true)
+		if not merged:
+			shown.append({"spot": spot, "direction": direction, "distance": distance})
+	# Every disk first, then every pointer, so no disk covers a pointer.
+	for entry in shown:
+		_draw_disk(entry)
+	for entry in shown:
+		_draw_pointer(entry)
+
+
+func _alpha(entry: Dictionary) -> float:
+	var closeness := clampf(1.0 - float(entry.distance) / RANGE, 0.0, 1.0)
+	var pulse := 0.5 + 0.5 * sin(_time * lerpf(6.0, 16.0, closeness))
+	return lerpf(0.65, 1.0, pulse)
+
+
+func _draw_disk(entry: Dictionary) -> void:
+	var spot: Vector2 = entry.spot
+	var alpha := _alpha(entry)
+	var closeness := clampf(1.0 - float(entry.distance) / RANGE, 0.0, 1.0)
+	var rim := Color(1, 1, 1, 0.5).lerp(UiTheme.HARM, closeness)
+	draw_circle(spot, 24.0, Color(0, 0, 0, 0.55 * alpha), true, -1.0, true)
+	draw_arc(spot, 24.0, 0.0, TAU, 40, Color(rim, 0.9 * alpha), 2.0, true)
+	Paint.grenade(self, spot, 26.0, Color(UiTheme.TEXT, alpha))
+
+
+## A long, narrow arrowhead outside the disk, pointing out toward the
+## grenade, so its direction reads at any angle.
+func _draw_pointer(entry: Dictionary) -> void:
+	var spot: Vector2 = entry.spot
+	var direction: Vector2 = entry.direction
+	var alpha := _alpha(entry)
+	var tip := spot + direction * 46.0
+	var base := spot + direction * 28.0
+	var side := Vector2(-direction.y, direction.x) * 5.5
+	var notch := spot + direction * 32.0
+	var arrow := PackedVector2Array([tip, base + side, notch, base - side])
+	# A dark shadow a pixel down, so the red holds over a bright wall.
+	var shadow := PackedVector2Array()
+	for point in arrow:
+		shadow.append(point + Vector2(0.0, 1.0))
+	draw_colored_polygon(shadow, Color(0, 0, 0, 0.5 * alpha))
+	draw_colored_polygon(arrow, Color(UiTheme.HARM, alpha))
