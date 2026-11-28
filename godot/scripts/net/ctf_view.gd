@@ -474,7 +474,7 @@ func _draw_status(at: Vector2, entry: Dictionary, ui: float) -> void:
 	var text: String = entry.text
 	var row_h := 26.0 * ui
 	var text_w := Paint.text_width(Paint.LABEL, text, int(16 * ui), 1.0)
-	Paint.fade(_overlay, Rect2(at, Vector2(text_w + 80.0 * ui, row_h)), Color(0, 0, 0, 0.55))
+	Marks.row_plate(_overlay, Rect2(at, Vector2(0.0, row_h)), at.x + 36.0 * ui + text_w, ui)
 	var square := Rect2(at + Vector2(2.0, 2.0) * ui, Vector2(22.0, 22.0) * ui)
 	_overlay.draw_rect(square, Color(colour, alpha))
 	_draw_flag_glyph(square.get_center() + Vector2(1.0, 0.0) * ui, Color(1, 1, 1, alpha), 0.62 * ui)

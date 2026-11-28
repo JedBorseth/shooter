@@ -437,7 +437,7 @@ func _draw_strip() -> void:
 	var clock_w := Paint.text_width(Paint.DISPLAY, clock, int(18 * ui))
 	var status_w := Paint.text_width(Paint.LABEL, status, int(15 * ui), 1.0)
 	var width := 34.0 * ui + clock_w + 14.0 * ui + status_w + 14.0 * ui
-	Paint.fade(_strip, Rect2(x, top, width + 40.0 * ui, row_h), Color(0, 0, 0, 0.55))
+	Marks.row_plate(_strip, Rect2(x, top, width, row_h), x + width - 14.0 * ui, ui)
 	var hex := Vector2(x + 15.0 * ui, top + row_h / 2.0)
 	Marks.badge(_strip, hex, {"fill": _hud_colour(holder), "glyph": "zone"}, 11.5 * ui, ui)
 	var baseline := top + row_h / 2.0 + 6.5 * ui

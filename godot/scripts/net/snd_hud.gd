@@ -191,7 +191,8 @@ func _draw_rows() -> void:
 func _draw_alive_row(at: Vector2, ours: bool, alive: int, ui: float) -> void:
 	var colour := TeamColours.of(ours)
 	var row_h := 26.0 * ui
-	Paint.fade(_rows, Rect2(at, Vector2(150.0, 26.0) * ui), Color(0, 0, 0, 0.55))
+	var words := Paint.text_width(Paint.LABEL, "ALIVE", int(15 * ui), 1.0)
+	Marks.row_plate(_rows, Rect2(at, Vector2(0.0, row_h)), at.x + 58.0 * ui + words, ui)
 	var square := Rect2(at + Vector2(2.0, 2.0) * ui, Vector2(22.0, 22.0) * ui)
 	_rows.draw_rect(square, colour if alive > 0 else Color(colour.darkened(0.5), 0.8))
 	# A figure: head and shoulders.

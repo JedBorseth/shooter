@@ -3,7 +3,7 @@ extends SceneTree
 ## process on Breakwater with bots (MODE picks the game: tdm by default, or
 ## dom, hardpoint, ctf, snd, gungame), and we join it and stage each HUD state
 ## through the server's debug hooks and the player's signals: a clean spawn
-## (looking at a dark wall and at the bright sky), the kill feed with score
+## (looking at a dark wall, at the bright sky, and turned round), the kill feed with score
 ## popups, a medal, a scorestreak earned, low ammo, being hit, the death
 ## card, (in Domination) capturing a flag, the scores after the bots have
 ## fought a while, and the clock's last seconds. Needs a GPU and a display (or Xvfb):
@@ -73,6 +73,10 @@ func _run() -> void:
 	player.set_look(yaw, 0.9)
 	await _frames(20)
 	await _shot("02_sky")
+	# Turned round: the objectives behind us hold at the screen's foot.
+	player.set_look(yaw + PI, -0.05)
+	await _frames(20)
+	await _shot("02b_turned")
 	player.set_look(yaw, -0.05)
 
 	# Kill feed lines, with one of ours, and the score popup merging.
@@ -132,6 +136,14 @@ func _run() -> void:
 	await _frames(8)
 	await _shot("07_damaged")
 	await _seconds(1.0)
+	# An enemy calls a UAV: the notice under the minimap.
+	for id in client.remote_ids():
+		if client.team_of(id) != client.team_of(me):
+			_server.debug_give_streak(id, "uav")
+			_server.debug_use_streak(id, "uav")
+			break
+	await _seconds(0.8)
+	await _shot("07b_enemy_uav")
 
 	_server.debug_kill(me)
 	await _frames(2)

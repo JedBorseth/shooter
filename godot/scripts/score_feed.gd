@@ -32,6 +32,8 @@ const MEDAL_PITCH := 118.0
 
 ## Layout is authored for a 900 px tall viewport and scaled from there.
 const BASE_HEIGHT := 900.0
+## The medals' centre height in their own slot (base pixels).
+const MEDAL_Y := 96.0
 ## Emblem radius in base pixels.
 const EMBLEM_R := 55.0
 
@@ -68,8 +70,25 @@ var _lines: Array[Dictionary] = []
 var _medals: Array[Dictionary] = []
 ## Your own score outside a match (`_update_own_score`).
 var _block: Control
+## The medals' centre height (base pixels): their slot at the top, or under a
+## match banner while one shows there.
+var _medal_y := MEDAL_Y
 
 @onready var _chime: AudioStreamPlayer = $MedalSound
+
+
+func _enter_tree() -> void:
+	# Objective markers keep off the medals (`objective_marks.gd`).
+	add_to_group(&"top_centre")
+
+
+## How far down the medals reach on screen (pixels; 0 with none up).
+func top_taken() -> float:
+	if _medals.is_empty():
+		return 0.0
+	var ui := get_viewport_rect().size.y / BASE_HEIGHT
+	var foot := Vector2(0.0, (_medal_y + EMBLEM_R + 40.0) * ui)
+	return (get_global_transform_with_canvas() * foot).y
 
 
 func add_award(points: int, label: String, medal: bool) -> void:
@@ -186,6 +205,14 @@ func _draw_points(ui: float) -> void:
 ## as others come and go.
 func _draw_medals(ui: float) -> void:
 	var count := _medals.size()
+	# Under a match banner while one shows in the medals' slot, so the call
+	# and the medal both read (both fire on a capture).
+	var target_y := MEDAL_Y
+	var banner := _banner_foot()
+	if banner > 0.0:
+		var local := get_global_transform_with_canvas().affine_inverse() * Vector2(0.0, banner)
+		target_y = maxf(MEDAL_Y, local.y / ui + EMBLEM_R + 12.0)
+	_medal_y = target_y if count == 0 else lerpf(_medal_y, target_y, 0.25)
 	for i in count:
 		var medal: Dictionary = _medals[i]
 		var target := size.x / 2.0 + (i - (count - 1) / 2.0) * MEDAL_PITCH * ui
@@ -193,7 +220,18 @@ func _draw_medals(ui: float) -> void:
 			# A new medal comes in from the right of its place.
 			medal.x = target + MEDAL_PITCH * 0.5 * ui
 		medal.x = lerpf(medal.x, target, 0.25)
-		_draw_medal(medal, Vector2(medal.x, 96.0 * ui), ui)
+		_draw_medal(medal, Vector2(medal.x, _medal_y * ui), ui)
+
+
+## The lowest foot of the match banners showing at the top (screen pixels;
+## 0 with none).
+func _banner_foot() -> float:
+	var foot := 0.0
+	for node in get_tree().get_nodes_in_group(&"top_centre"):
+		if node != self and node.has_method("top_taken"):
+			if (node as CanvasItem).is_visible_in_tree():
+				foot = maxf(foot, float(node.call("top_taken")))
+	return foot
 
 
 func _draw_medal(medal: Dictionary, at: Vector2, ui: float) -> void:

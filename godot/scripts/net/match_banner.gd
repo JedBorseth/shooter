@@ -73,6 +73,23 @@ var _shown_title := ""
 var _callout_age := 0.0
 var _shown_callout := ""
 var _strip_age := 0.0
+## The foot of the title and the call at the top (design units; 0 with
+## neither), for the medals and markers that keep clear of them.
+var _foot := 0.0
+
+
+func _enter_tree() -> void:
+	add_to_group(&"top_centre")
+
+
+## How far down the title and the call at the top reach on screen (pixels; 0
+## with neither showing).
+func top_taken() -> float:
+	if _foot <= 0.0:
+		return 0.0
+	var scale := MatchPaint.design_scale(size)
+	var origin := MatchPaint.design_origin(size)
+	return (get_global_transform_with_canvas() * (origin + Vector2(0.0, _foot * scale))).y
 
 
 func _process(delta: float) -> void:
@@ -89,6 +106,7 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	_foot = 0.0
 	# A held scoreboard on a layer above covers the mode's calls; its plates
 	# are see-through, so they would show through it.
 	if _under_board():
@@ -131,6 +149,7 @@ func _draw_title() -> void:
 		var alpha := clampf((_title_age - 0.37) / 0.15, 0.0, 1.0)
 		MatchPaint.reason_plate(self, Vector2(800, below), detail, alpha, colour)
 		below += 46.0
+	_foot = maxf(_foot, below)
 	if footnote != "":
 		var alpha := clampf((_title_age - 0.5) / 0.15, 0.0, 1.0)
 		var text := footnote.to_upper()
@@ -165,6 +184,7 @@ func _draw_callout() -> void:
 		Color(UiTheme.TEXT, alpha),
 		260.0
 	)
+	_foot = maxf(_foot, rect.end.y + (56.0 if callout_detail != "" else 10.0))
 	if callout_detail != "":
 		MatchPaint.reason_plate(
 			self,

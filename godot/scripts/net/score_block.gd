@@ -63,6 +63,7 @@ func _draw() -> void:
 	if clock != "":
 		_draw_clock(disk)
 	if mode != "":
+		_line_plate(disk.x + DISK_R + 12.0, disk.y - DISK_R - 7.0, mode.to_upper(), 15, 1.0)
 		Paint.text(
 			self,
 			Paint.LABEL,
@@ -81,6 +82,7 @@ func _draw() -> void:
 			self, Paint.LABEL, state, Vector2(disk.x, baseline), 16, UiTheme.TEXT, 1.5
 		)
 	if footer != "":
+		_line_plate(right_x + 2.0, baseline, footer, 14, 1.2)
 		Paint.text(
 			self,
 			Paint.LABEL,
@@ -91,6 +93,16 @@ func _draw() -> void:
 			1.2
 		)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## A faint plate hugging a small line of caps from `x` on `baseline`, fading
+## out past its end, so the line holds over a bright floor.
+func _line_plate(x: float, baseline: float, text: String, text_size: int, spacing: float) -> void:
+	var width := Paint.text_width(Paint.LABEL, text, text_size, spacing)
+	var rect := Rect2(x - 6.0, baseline - text_size - 1.0, width + 12.0, text_size + 7.0)
+	var colour := Color(0, 0, 0, 0.42)
+	draw_rect(rect, colour)
+	Paint.fade(self, Rect2(rect.end.x, rect.position.y, 18.0, rect.size.y), colour)
 
 
 ## The dark disk with a metal rim and our team's mark in it.
@@ -242,7 +254,8 @@ func _draw_rows(at: Vector2) -> void:
 		# The bar's own plate, beside the cell.
 		var barred: bool = row.get("bar", true)
 		var bars := Rect2(cell.end.x + 2.0, y, BARS_W if barred else 64.0, h)
-		Shapes.smooth_rect(self, bars, Color(0, 0, 0, 0.42))
+		# A label cell holds its word as darkly as the number holds its own.
+		Shapes.smooth_rect(self, bars, Color(0, 0, 0, 0.42 if barred else 0.66))
 		var left := bars.position.x + 8.0
 		var label: String = row.get("label", "")
 		if label != "" and not barred:
