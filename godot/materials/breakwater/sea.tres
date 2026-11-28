@@ -1,6 +1,18 @@
-[gd_resource type="ShaderMaterial" format=3 uid="uid://bfqswucijchh"]
+[gd_resource type="ShaderMaterial" format=3]
 
-[ext_resource type="Shader" uid="uid://bwjwrqk335gpn" path="res://shaders/sea.gdshader" id="1_shader"]
+[ext_resource type="Shader" path="res://shaders/sea.gdshader" id="1_shader"]
+
+[sub_resource type="FastNoiseLite" id="Noise1"]
+frequency = 0.012
+fractal_octaves = 4
+
+[sub_resource type="NoiseTexture2D" id="Wave1"]
+width = 512
+height = 512
+seamless = true
+as_normal_map = true
+bump_strength = 6.0
+noise = SubResource("Noise1")
 
 [sub_resource type="FastNoiseLite" id="Noise2"]
 frequency = 0.03
@@ -9,28 +21,12 @@ fractal_octaves = 4
 [sub_resource type="NoiseTexture2D" id="Wave2"]
 width = 256
 height = 256
+seamless = true
+as_normal_map = true
+bump_strength = 6.0
 noise = SubResource("Noise2")
-seamless = true
-as_normal_map = true
-bump_strength = 6.0
-
-[sub_resource type="FastNoiseLite" id="Noise1"]
-frequency = 0.012
-fractal_octaves = 4
-
-[sub_resource type="NoiseTexture2D" id="Wave1"]
-noise = SubResource("Noise1")
-seamless = true
-as_normal_map = true
-bump_strength = 6.0
 
 [resource]
-render_priority = 0
 shader = ExtResource("1_shader")
-shader_parameter/deep_color = Color(0.03, 0.065, 0.06, 1)
-shader_parameter/grazing_color = Color(0.07, 0.11, 0.1, 1)
 shader_parameter/swell = SubResource("Wave1")
 shader_parameter/chop = SubResource("Wave2")
-shader_parameter/swell_size = 34.0
-shader_parameter/chop_size = 7.0
-shader_parameter/strength = 0.55
