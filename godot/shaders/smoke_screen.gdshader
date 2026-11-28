@@ -20,7 +20,7 @@
 // cloud's rim (by their own density, so the edge breaks into wisps rather
 // than shrinking as a disc).
 shader_type spatial;
-render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, vertex_lighting, skip_vertex_transform;
+render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, vertex_lighting, skip_vertex_transform, diffuse_lambert_wrap;
 
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 tint : source_color = vec4(0.8, 0.8, 0.79, 1.0);
@@ -51,6 +51,7 @@ varying float world_y;
 varying float shade;
 varying float thick;
 varying float cut;
+varying vec2 corner_uv;
 
 void vertex() {
 	float size = length(MODEL_MATRIX[0].xyz) * size_scale;
@@ -98,6 +99,7 @@ void vertex() {
 	blend = smoothstep(0.7, 1.0, fract(time));
 	vec2 cell = vec2(1.0 / 8.0, 1.0 / 4.0);
 	vec2 base = UV;
+	corner_uv = base;
 	UV = (base + vec2(mod(frame, 8.0), loop * 2.0 + floor(frame / 8.0))) * cell;
 	next_uv = (base + vec2(mod(after, 8.0), loop * 2.0 + floor(after / 8.0))) * cell;
 }
@@ -114,5 +116,8 @@ void fragment() {
 	// The rim keeps only the denser parts of a billow, rescaled so they stay
 	// soft at their new edge.
 	float density = clamp((tex.a - cut) / max(1.0 - cut, 0.05), 0.0, 1.0);
-	ALPHA = density * opacity * thick * COLOR.a * ground;
+	// A billow grown large shows its frame's square edge where the cloud
+	// reaches it: fade every billow out toward the rim of its quad.
+	float rim = 1.0 - smoothstep(0.72, 1.0, length(corner_uv * 2.0 - 1.0));
+	ALPHA = density * opacity * thick * COLOR.a * ground * rim;
 }

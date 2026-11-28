@@ -7,10 +7,21 @@ extends SceneTree
 ## Needs a GPU and a display (or Xvfb); --fixed-fps 60 gives true timing:
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_grenade.gd
+##
+##   CAPTURE_MAP   breakwater (default: the north yard, throwing toward its
+##                 sunlit wall) or testing (the Testing Area, while it lasts).
+##   CAPTURE_SETS  comma list of model, hands, danger, third, tacticals,
+##                 throw (default: all). Breakwater's yard has room for
+##                 hands, danger, tacticals, and throw.
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const SMOKE := preload("res://scenes/equipment/smoke_cloud.tscn")
-const SPOT := Vector3(0, 0.05, 20)
+## Per map: the scene, where the player stands, and the way they face (the
+## yaw all the offsets below are turned by; 0 looks down -Z).
+const MAPS := {
+	"testing": ["res://scenes/main.tscn", Vector3(0, 0.05, 20), 0.0],
+	"breakwater": ["res://scenes/breakwater.tscn", Vector3(3, 0.05, 17.5), PI],
+}
 ## Physics time after the press for each frozen first-person shot, in
 ## sixtieths; the button is let go at `RELEASE`.
 const HAND_MOMENTS := [5, 10, 16, 30, 40, 44, 46, 48, 52, 58, 70]
@@ -23,6 +34,10 @@ const THROW_MOMENTS := [10, 24, 30, 36, 48, 70]
 const BLAST_MOMENTS := [1, 3, 6, 12, 24, 60, 120]
 
 var _out := OS.get_environment("CAPTURE_DIR")
+var _map := OS.get_environment("CAPTURE_MAP")
+var _sets := OS.get_environment("CAPTURE_SETS")
+var _spot := Vector3.ZERO
+var _yaw := 0.0
 
 
 func _initialize() -> void:
@@ -35,26 +50,48 @@ func _run() -> void:
 		quit(1)
 		return
 	DirAccess.make_dir_recursive_absolute(_out)
-	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	if not MAPS.has(_map):
+		_map = "breakwater"
+	_spot = MAPS[_map][1]
+	_yaw = MAPS[_map][2]
+	var main: Node = (load(MAPS[_map][0]) as PackedScene).instantiate()
 	root.add_child(main)
 	var player := main.get_node("Player") as FpsPlayer
-	main.get_node("Sentry").set("enabled", false)
+	var sentry := main.get_node_or_null("Sentry")
+	if sentry != null:
+		sentry.set("enabled", false)
 	await _sixtieths(60)
-	await _model(main)
-	await _hands(player)
-	await _danger(player)
-	await _third_person(main)
-	await _tacticals(main, player)
-	await _throw(main, player)
+	if _wants("model"):
+		await _model(main)
+	if _wants("hands"):
+		await _hands(player)
+	if _wants("danger"):
+		await _danger(player)
+	if _wants("third"):
+		await _third_person(main)
+	if _wants("tacticals"):
+		await _tacticals(main, player)
+	if _wants("throw"):
+		await _throw(main, player)
 	quit()
+
+
+func _wants(part: String) -> bool:
+	return _sets.is_empty() or part in _sets.split(",")
+
+
+## A point `offset` from where the player stands, turned with the way they
+## face.
+func _at(offset: Vector3) -> Vector3:
+	return _spot + offset.rotated(Vector3.UP, _yaw)
 
 
 ## A flashbang from the thrower's eyes, the flash seen from beside it, and a
 ## smoke cloud from outside and inside, and one started late (as a player
 ## who joined after it popped sees it).
 func _tacticals(main: Node, player: FpsPlayer) -> void:
-	player.teleport(SPOT, 0.0)
-	player.set_look(0.0, -0.8)
+	player.teleport(_at(Vector3.ZERO), _yaw)
+	player.set_look(_yaw, -0.8)
 	player.get_node("Camera").make_current()
 	await _sixtieths(20)
 	Input.action_press("tactical")
@@ -62,22 +99,24 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 	await _shot("tactical_hand")
 	Input.action_release("tactical")
 	await _sixtieths(20)
-	player.set_look(0.0, -0.2)
+	player.set_look(_yaw, -0.2)
 	while player.flash_level() <= 0.0:
 		await physics_frame
 	await _sixtieths(10)
 	await _shot("flash_white")
-	await _sixtieths(150)
-	await _shot("flash_fade")
+	# Through the fade, where the afterimage shows as the white thins.
+	for moment: int in [60, 90, 120, 160]:
+		await _sixtieths(30 if moment != 160 else 40)
+		await _shot("flash_fade_%03d" % moment)
 	await _sixtieths(120)
 	var camera := Camera3D.new()
 	camera.fov = 70.0
 	main.add_child(camera)
 	var pop := (load("res://scenes/equipment/flash_pop.tscn") as PackedScene).instantiate()
 	# Placed before entering the tree: blasts start their effect in `_ready`.
-	pop.position = SPOT + Vector3(0, 0, -6)
+	pop.position = _at(Vector3(0, 0, -6))
 	main.add_child(pop)
-	camera.look_at_from_position(SPOT + Vector3(5, 1.7, -2), SPOT + Vector3(0, 0.8, -6))
+	camera.look_at_from_position(_at(Vector3(5, 1.7, -2)), _at(Vector3(0, 0.8, -6)))
 	camera.make_current()
 	await _sixtieths(2)
 	await _shot("flash_pop")
@@ -86,17 +125,17 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 	await _sixtieths(60)
 	await _shot("flash_pop_90")
 	var smoke := SMOKE.instantiate()
-	smoke.position = SPOT + Vector3(0, 0, -8)
+	smoke.position = _at(Vector3(0, 0, -8))
 	main.add_child(smoke)
-	camera.look_at_from_position(SPOT + Vector3(0, 1.7, 4), SPOT + Vector3(0, 1.5, -8))
+	camera.look_at_from_position(_at(Vector3(0, 1.7, 4)), _at(Vector3(0, 1.5, -8)))
 	await _sixtieths(30)
 	await _shot("smoke_early")
 	await _sixtieths(150)
 	await _shot("smoke_full")
-	camera.global_position = SPOT + Vector3(0, 1.7, -8)
+	camera.global_position = _at(Vector3(0, 1.7, -8))
 	await _sixtieths(10)
 	await _shot("smoke_inside")
-	camera.global_position = SPOT + Vector3(0, 1.7, -2)
+	camera.global_position = _at(Vector3(0, 1.7, -2))
 	await _sixtieths(10)
 	await _shot("smoke_edge")
 	smoke.queue_free()
@@ -104,9 +143,9 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 	# from the snapshot, it should match `smoke_full`.
 	var late := SMOKE.instantiate()
 	late.set(&"start_age", 3.0)
-	late.position = SPOT + Vector3(0, 0, -8)
+	late.position = _at(Vector3(0, 0, -8))
 	main.add_child(late)
-	camera.look_at_from_position(SPOT + Vector3(0, 1.7, 4), SPOT + Vector3(0, 1.5, -8))
+	camera.look_at_from_position(_at(Vector3(0, 1.7, 4)), _at(Vector3(0, 1.5, -8)))
 	await _sixtieths(2)
 	await _shot("smoke_late")
 	late.queue_free()
@@ -117,8 +156,8 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 
 ## The first-person throw, frozen at moments from the press.
 func _hands(player: FpsPlayer) -> void:
-	player.teleport(SPOT, 0.0)
-	player.set_look(0.0, 0.05)
+	player.teleport(_at(Vector3.ZERO), _yaw)
+	player.set_look(_yaw, 0.05)
 	player.get_node("Camera").make_current()
 	player.restock_lethals()
 	await _sixtieths(40)
@@ -135,26 +174,26 @@ func _hands(player: FpsPlayer) -> void:
 		await _shot("hand_%02d" % moment)
 		Engine.time_scale = 1.0
 	# Out of the way before it goes off.
-	player.teleport(SPOT + Vector3(30, 0, 0), 0.0)
+	player.teleport(_at(Vector3(30, 0, 0)), 0.0)
 	await _sixtieths(200)
 
 
 ## A grenade at the player's feet: the danger indicator and the count.
 func _danger(player: FpsPlayer) -> void:
-	player.teleport(SPOT, 0.0)
-	player.set_look(0.0, 0.0)
+	player.teleport(_at(Vector3.ZERO), _yaw)
+	player.set_look(_yaw, 0.0)
 	player.restock_lethals()
 	await _sixtieths(20)
-	player.set_look(PI * 0.75, -1.3)
+	player.set_look(_yaw + PI * 0.75, -1.3)
 	await _sixtieths(5)
 	Input.action_press("lethal")
 	await _sixtieths(2)
 	Input.action_release("lethal")
 	await _sixtieths(60)
-	player.set_look(0.0, 0.0)
+	player.set_look(_yaw, 0.0)
 	await _sixtieths(20)
 	await _shot("danger")
-	player.teleport(SPOT + Vector3(30, 0, 0), 0.0)
+	player.teleport(_at(Vector3(30, 0, 0)), 0.0)
 	await _sixtieths(200)
 
 
@@ -202,7 +241,7 @@ func _third_person(main: Node) -> void:
 func _model(main: Node) -> void:
 	var grenade := (load("res://assets/equipment/frag/frag.glb") as PackedScene).instantiate()
 	main.add_child(grenade)
-	var floor_at := SPOT + Vector3(3, 0.032, 3)
+	var floor_at := _at(Vector3(3, 0.032, 3))
 	grenade.global_position = floor_at
 	var camera := Camera3D.new()
 	camera.fov = 40.0
@@ -220,8 +259,8 @@ func _model(main: Node) -> void:
 
 func _throw(main: Node, player: FpsPlayer) -> void:
 	player.restock_lethals()
-	player.teleport(SPOT, 0.0)
-	player.set_look(0.0, 0.05)
+	player.teleport(_at(Vector3.ZERO), _yaw)
+	player.set_look(_yaw, 0.05)
 	player.get_node("Camera").make_current()
 	await _sixtieths(30)
 	Input.action_press("lethal")
@@ -243,7 +282,7 @@ func _throw(main: Node, player: FpsPlayer) -> void:
 	var camera := Camera3D.new()
 	camera.fov = 70.0
 	main.add_child(camera)
-	camera.global_position = lies + Vector3(7.0, 1.7, 4.0)
+	camera.global_position = lies + Vector3(7.0, 1.7, 4.0).rotated(Vector3.UP, _yaw)
 	camera.look_at(lies + Vector3.UP * 0.8)
 	camera.make_current()
 	await _shot("rest")

@@ -4,7 +4,7 @@
 # ///
 """Build the combat effect textures in godot/assets/textures/effects/:
 
-    uv run tools/build_combat_fx.py
+    uv run tools/build_combat_fx.py [blood holes smoke explosion flame cloud scorch]
 
 Everything here is generated (original, CC0), from fixed seeds, so a rerun
 writes the same files:
@@ -227,16 +227,19 @@ def hole_maps(kind: str, index: int, size: int = 256):
         depth = np.clip(1 - rr / crater_r, 0, 1) ** 0.7
         crack = cracks(angle, r, rng, 5, (0.55, 0.85), (0.012, 0.025))
         soot = np.exp(-((r / 0.7) ** 2)) * (0.6 + 0.4 * grain)
-        # Exposed aggregate: a pale, coarse crater floor, darker toward the core.
-        # Grey broken concrete, darker and shadowed toward the core, with a
-        # dark lip where the crater wall falls away from the face.
+        # Freshly broken concrete or render: paler than the weathered face
+        # round it (a warm neutral, so it reads on tan render and grey
+        # concrete alike), coarse, falling into shadow toward the core, with
+        # a dark lip where the crater wall falls away from the face. The
+        # crater's outer part only half covers the wall, so the wall's own
+        # colour carries into it.
         lip = np.exp(-(((rr - crater_r * 0.92) / 0.035) ** 2))
-        shade = 0.58 + 0.16 * fine - 0.42 * depth - 0.07 * lip
-        colour = np.stack([shade, shade * 0.98, shade * 0.95], axis=2)
+        shade = 0.66 + 0.14 * fine - 0.36 * depth - 0.08 * lip
+        colour = np.stack([shade, shade * 0.96, shade * 0.9], axis=2)
         colour = colour * (1 - core[..., None] * 0.92)
         colour = colour * (1 - crack[..., None] * 0.5)
         colour = colour * (1 - soot[..., None] * 0.6 * (1 - crater[..., None]))
-        alpha = np.maximum.reduce([crater, crack * 0.85, soot * 0.7])
+        alpha = np.maximum.reduce([crater * (0.6 + 0.4 * depth ** 0.5), crack * 0.85, soot * 0.7, core])
         height = -depth * 1.0 - core * 0.6 + (fine - 0.5) * 0.25 * crater - crack * 0.15
         rough = np.full_like(r, 0.95)
         metal = np.zeros_like(r)
@@ -256,8 +259,10 @@ def hole_maps(kind: str, index: int, size: int = 256):
         colour = colour * (1 - soot[..., None] * 0.75 * (1 - scuff[..., None]))
         alpha = np.maximum.reduce([scuff, soot * 0.7])
         height = -dent ** 1.5 * 0.8 + rim * 0.35 - core * 0.6
-        rough = 0.35 + 0.25 * fine + soot * 0.3
-        metal = scuff * (1 - core)
+        # Freshly torn steel is bright but not a mirror: rough enough that
+        # it does not throw back a blue patch of sky.
+        rough = 0.55 + 0.2 * fine + soot * 0.25
+        metal = scuff * (1 - core) * 0.75
     elif kind == "wood":
         # Splintered along the grain (the decal's X axis): a torn slot of
         # pale fibres and dark end grain.
@@ -400,31 +405,39 @@ def explosion_flipbook() -> None:
 
 
 def scorch(size: int = 512) -> None:
-    """scorch_{albedo,orm}.png: what a frag leaves on the ground. Soot, black
-    at the centre and broken up at its edge; streaks of soot and of brown dirt
-    thrown out from it; and pits where fragments struck, scattered over the
-    whole mark."""
+    """scorch_{albedo,orm}.png: what a frag leaves on the ground. A soft,
+    irregular blotch of dark grey-brown soot (never pure black), densest at
+    the centre, its outline warped by noise and breaking up into patches at
+    its edge (no radial streaks: seen at a grazing angle, rays read as a
+    drawn starburst); broad, faint washes of brown dirt thrown out round it;
+    and pits where fragments struck, scattered over the whole mark."""
     rng = np.random.default_rng(55)
     x, y, r, angle = polar(size)
+    patchy = fbm(size, rng, 5, 4)
     streaks = np.zeros_like(r)
-    for _ in range(56):
+    for _ in range(14):
         a0 = rng.uniform(-np.pi, np.pi)
-        w = rng.uniform(0.02, 0.07)
-        reach = rng.uniform(0.5, 0.95)
+        w = rng.uniform(0.06, 0.16)
+        reach = rng.uniform(0.45, 0.85)
         d = np.abs(np.angle(np.exp(1j * (angle - a0))))
-        streaks = np.maximum(streaks, np.clip(1 - d / w, 0, 1) * np.clip(1 - r / reach, 0, 1))
-    # Dirt thrown out: broad, faint brown rays past the soot.
-    thrown = np.zeros_like(r)
-    for _ in range(18):
-        a0 = rng.uniform(-np.pi, np.pi)
-        w = rng.uniform(0.08, 0.2)
-        d = np.abs(np.angle(np.exp(1j * (angle - a0))))
-        ray = np.clip(1 - d / w, 0, 1) * np.clip((r - 0.25) / 0.2, 0, 1) * np.clip((0.98 - r) / 0.3, 0, 1)
-        thrown = np.maximum(thrown, ray * rng.uniform(0.6, 1.0))
+        smear = np.clip(1 - d / w, 0, 1) ** 1.6 * np.clip(1 - r / reach, 0, 1)
+        streaks = np.maximum(streaks, smear * rng.uniform(0.4, 0.8))
+    # Smears break up along their length like dabbed soot, not ruled lines.
+    streaks *= np.clip(patchy * 1.6 - 0.2, 0, 1)
+    # Dirt thrown out: a faint, patchy ring of brown dust past the soot
+    # (patches, not rays).
+    ring = np.clip((r - 0.2) / 0.2, 0, 1) * np.clip((0.95 - r) / 0.3, 0, 1)
+    thrown = ring * np.clip(fbm(size, rng, 7, 3) * 1.8 - 0.55, 0, 1) * 0.45
     noise = fbm(size, rng, 6, 4)
     grain = fbm(size, rng, 24, 3)
-    body = np.clip(1 - r / (0.42 + 0.22 * noise), 0, 1) ** 0.7
-    soot = np.clip(np.maximum(body, streaks * 0.75) + (noise - 0.5) * 0.45, 0, 1)
+    # Warp the blotch's outline so it is not a disc.
+    warp = fbm(size, rng, 3, 3)
+    wr = r * (0.8 + 0.5 * warp)
+    body = np.clip(1 - wr / (0.34 + 0.3 * noise), 0, 1) ** 1.2
+    soot = np.clip(np.maximum(body, streaks * 0.12) + (noise - 0.5) * 0.45, 0, 1)
+    # Patches of the ground show through toward the edge.
+    soot *= np.clip(0.45 + patchy * 0.9 + body * 0.4, 0, 1)
+    soot = np.minimum(soot, 0.9)
     # Fragment pits: small dark dents, denser toward the centre.
     pits = np.zeros_like(r)
     for _ in range(90):
@@ -438,10 +451,10 @@ def scorch(size: int = 512) -> None:
     edge = np.clip((0.97 - r) / 0.15, 0, 1)
     soot *= edge
     dirt *= edge
-    shade = 0.025 + 0.06 * grain * (1 - body)
-    soot_rgb = np.stack([shade * 1.05, shade, shade * 0.95], axis=2)
+    shade = 0.05 + 0.07 * grain + 0.05 * (1 - body)
+    soot_rgb = np.stack([shade * 1.08, shade, shade * 0.9], axis=2)
     dirt_rgb = np.array([0.2, 0.15, 0.1])[None, None, :] * (0.7 + 0.3 * grain[..., None])
-    cover = np.clip(soot * 1.2 + dirt + pits, 0, 1)
+    cover = np.clip(soot * 1.05 + dirt + pits, 0, 1)
     mix_dirt = np.where(cover > 0, dirt / np.maximum(cover, 1e-4), 0)[..., None]
     colour = soot_rgb * (1 - mix_dirt) + dirt_rgb * mix_dirt
     colour *= (1 - 0.6 * pits)[..., None]
@@ -496,19 +509,24 @@ def cloud_flipbook() -> None:
     print("cloud_8x4")
 
 
-def main() -> None:
+def main(parts: list[str]) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for i in range(4):
-        blood_splat(i)
-    blood_mist()
-    bullet_holes()
-    smoke_flipbook()
-    explosion_flipbook()
-    flame_flipbook()
-    cloud_flipbook()
-    scorch()
+    steps = {
+        "blood": lambda: ([blood_splat(i) for i in range(4)], blood_mist()),
+        "holes": bullet_holes,
+        "smoke": smoke_flipbook,
+        "explosion": explosion_flipbook,
+        "flame": flame_flipbook,
+        "cloud": cloud_flipbook,
+        "scorch": scorch,
+    }
+    for name, step in steps.items():
+        if not parts or name in parts:
+            step()
     print(f"wrote {OUT}")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])

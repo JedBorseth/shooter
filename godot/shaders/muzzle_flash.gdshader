@@ -20,12 +20,26 @@ uniform float energy = 3.0;
 uniform bool viewmodel = true;
 uniform int shape = 0;
 uniform sampler2D flipbook : hint_default_black, filter_linear, repeat_disable;
+/// How much bigger than its quad the first-person flash and plume draw
+/// (Call of Duty's first-person flashes are oversized next to the gun; the
+/// plume grows from the muzzle, not about its middle).
+uniform float viewmodel_size = 1.5;
 instance uniform float seed = 0.0;
 instance uniform float aimed = 0.0;
 
 void vertex() {
 	if (viewmodel) {
-		POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, VERTEX);
+		vec3 v = VERTEX;
+		if (shape == 0) {
+			v.xy *= viewmodel_size;
+		} else {
+			// The plume quad runs from the muzzle (its -X edge) down the
+			// barrel: grow it away from the muzzle.
+			float half_length = abs(VERTEX.x);
+			v.x = (VERTEX.x + half_length) * viewmodel_size - half_length;
+			v.y *= viewmodel_size;
+		}
+		POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, v);
 	} else if (shape == 0) {
 		float size = length(MODEL_MATRIX[0].xyz);
 		vec4 centre = VIEW_MATRIX * vec4(MODEL_MATRIX[3].xyz, 1.0);

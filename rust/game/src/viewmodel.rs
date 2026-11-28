@@ -3000,7 +3000,10 @@ impl ViewmodelRig {
 
         // Cases fly in the world, not with the view: thrown out to the
         // right, a little up and forward, so they clear the sight picture
-        // within a few frames instead of arcing up across it.
+        // within a few frames instead of arcing up across it. Handed to the
+        // world (`effects::viewmodel_to_world`) the speed grows by the ratio
+        // of the two fields of view (about 1.5), so this lands them 1.5 to
+        // 2.5 m to the right, as a rifle throws its brass.
         let rig = self.base().get_global_transform();
         let shell = &mut self.shells[index];
         shell.mesh.set_mesh(&mesh);
@@ -3008,8 +3011,8 @@ impl ViewmodelRig {
         shell.position = rig * start;
         shell.velocity = rig.basis
             * Vector3::new(
-                2.6 + rng::unit(seed, 1) * 0.6,
-                0.35 + rng::unit(seed, 2) * 0.4,
+                1.7 + rng::unit(seed, 1) * 0.5,
+                0.6 + rng::unit(seed, 2) * 0.45,
                 -0.05 + rng::signed(seed, 3) * 0.15,
             );
         shell.spin = Vector3::new(

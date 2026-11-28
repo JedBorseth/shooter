@@ -317,7 +317,9 @@ the predicted weapon state (`Action::Throwing`).
   takes 35%. A player killed with the pin out drops the grenade, live, at
   their feet.
 - **Flashbang.** Hurts no one. Whoever can see it is blinded and deafened: the
-  screen whites out, holds, and fades, and the ears ring, for 0.6 to 4 s by
+  screen whites out (fully, as in Call of Duty, unless it caught you from
+  well off to the side or behind), holds, and fades, leaving a soft
+  afterimage of the moment it went off, and the ears ring, for 0.6 to 4 s by
   how hard it hits (`equipment::flash_amount`): full strength out to about
   7 m, nothing at 20 m, and only about a third of it with the flash straight
   behind. A wall in between stops it. Tactical Mask halves it; bots are

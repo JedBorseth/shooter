@@ -1,31 +1,35 @@
 extends Node3D
 ## An explosion (a frag grenade's, or anything else's), built like a frag going
 ## off on dirt or concrete rather than a fuel fireball:
-## - a short orange core (a flipbook from its burning frames on, at a bounded
-##   brightness) that is gone in about half a second;
+## - a white-hot flash for a sixth of a second (the flipbook's first,
+##   colourless frames, burning white) under a short orange core (from its
+##   burning frames on, at a bounded brightness) that is gone in about half a
+##   second;
 ## - jets of dark dirt and dust thrown up out of the ground in a fan
 ##   (`shaders/dirt_burst.gdshader`, a Blender-rendered flipbook), tearing into
 ##   clumps and thinning;
-## - a brown-grey dust cloud that rises and lingers, and a ring of dust rolled
-##   out along the ground (billows from the smoke grenade's flipbook);
+## - a brown-grey column of dust and smoke that rises 3 to 6 m and hangs for
+##   about ten seconds, thinning as it drifts, and a ring of dust rolled out
+##   along the ground (billows from the smoke grenade's flipbook);
 ## - chips of rubble (`assets/effects/chip.glb`) thrown high, landing and
 ##   resting on the floor;
-## - a few short sparks and a flash of light for about a tenth of a second.
+## - a few short sparks and a flash of warm light that lights the ground and
+##   walls round it for about a fifth of a second.
 ## About 22 quads and 36 chips on High, fewer on Low and Medium (`DETAIL`).
 ## Pooled and placed by `CombatEffects.explosion` (`rust/game/src/effects.rs`),
 ## which also leaves the scorch mark and shakes the camera; the bang plays
 ## from whoever calls it.
 
 ## Seconds the flash takes to fade, and its peak energy.
-const FLASH_TIME := 0.14
-const FLASH_ENERGY := 6.0
+const FLASH_TIME := 0.22
+const FLASH_ENERGY := 18.0
 const CHIP_MODEL := "res://assets/effects/chip.glb"
 ## Per preset (Low, Medium, High): dirt jets, dust billows rising, dust
 ## billows rolled along the ground, and chips. The large, soft quads cost per
 ## pixel they cover, so Low draws fewer of them.
 const DETAIL := {
 	&"Dirt": [5, 6, 6],
-	&"Column": [4, 5, 5],
+	&"Column": [5, 6, 7],
 	&"Ring": [6, 7, 7],
 	&"Debris": [24, 30, 36],
 }
@@ -35,7 +39,8 @@ static var _chip: Mesh
 
 var _flash_left := 0.0
 
-@onready var _emitters: Array[GPUParticles3D] = [$Core, $Dirt, $Column, $Ring, $Debris, $Sparks]
+@onready
+var _emitters: Array[GPUParticles3D] = [$Fireball, $Core, $Dirt, $Column, $Ring, $Debris, $Sparks]
 @onready var _flash: OmniLight3D = $Flash
 
 
