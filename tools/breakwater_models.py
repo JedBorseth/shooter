@@ -993,6 +993,48 @@ def canopy_flood(b: Model):
 
 
 @model
+def workshop_shelf(b: Model):
+    """A workshop wall (back at z = -0.25, 2.4 m along x): an open steel shelf
+    unit with bins, boxes, paint tins and spools, and a pegboard of hand
+    tools above a bench-height shelf."""
+    rng = random.Random(23)
+    for x in (-1.2, -0.05):
+        for z in (-0.22, 0.18):
+            b.box(x - 0.02, x + 0.02, 0.0, 2.0, z - 0.02, z + 0.02, "steel_grey")
+    b.box(1.15, 1.19, 0.0, 2.0, -0.24, 0.2, "steel_grey")
+    for y in (0.08, 0.6, 1.1, 1.6, 2.0):
+        b.box(-1.2, -0.05, y - 0.03, y, -0.22, 0.2, "steel_grey")
+        if y < 1.9:
+            x = -1.15
+            while x < -0.15:
+                w = rng.uniform(0.18, 0.32)
+                kind = rng.random()
+                h = rng.uniform(0.15, 0.32)
+                if kind < 0.4:
+                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.16, rng.choice(["pipe_blue", "barrier_orange",
+                                                                            "steel_grey"]), bevel=0.01, detail=True)
+                elif kind < 0.7:
+                    b.box(x, x + w - 0.03, y, y + h, -0.18, 0.12, "paper_brown", detail=True)
+                else:
+                    for k in range(int(w / 0.1)):
+                        b.cyl("y", y, y + 0.14, (x + 0.05 + k * 0.1, 0.0), 0.045,
+                              rng.choice(["hazard_red", "steel_galv", "sign_blue"]), sides=10, detail=True)
+                x += w
+    # The pegboard with tools, over a shelf at bench height.
+    b.box(0.0, 1.15, 0.8, 0.84, -0.22, 0.12, "booth_wood")
+    b.box(0.0, 1.15, 1.0, 2.0, -0.25, -0.23, "plywood")
+    for k in range(12):
+        x = 0.1 + (k % 6) * 0.18
+        y = 1.2 + (k // 6) * 0.42
+        look = rng.choice(["trim_black", "hazard_red", "steel_galv", "pipe_yellow"])
+        b.box(x - 0.015, x + 0.015, y - 0.15, y + 0.12, -0.23, -0.2, "steel_galv", detail=True)
+        b.box(x - 0.025, x + 0.025, y - 0.15, y - 0.05, -0.23, -0.19, look, detail=True)
+    for k in range(4):
+        b.cyl("y", 0.84, 0.95, (0.15 + k * 0.28, -0.05), 0.05, rng.choice(["hazard_red", "steel_galv"]), sides=10,
+              detail=True)
+
+
+@model
 def ups_cabinet(b: Model, count=2):
     """UPS cabinets against a wall (their backs at z = -0.4, fronts at +z):
     tall grey cases with vent grilles, a status screen, and a warning label."""

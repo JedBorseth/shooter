@@ -929,7 +929,7 @@ def workshop(side: Side):
     else:
         place("foam_unit", -27.0, WALK, 16.25, 0.0, m)
     blocker(-28.5, -25.5, WALK, 2.5, 15.0, 17.5, m)
-    place("wall_shelf", -32.4, WALK, 14.0, PI / 2, m)
+    place("workshop_shelf", -32.4, WALK, 14.0, PI / 2, m)
     blocker(-32.65, -32.2, WALK, 2.2, 12.8, 15.2, m, "wood")
     for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
         place("batten", x, ROOF_DECK - 0.25, z, 0.0, m)
@@ -1630,8 +1630,8 @@ def weathering(side: Side):
     for x in (-44.0, -24.0):
         streak(x, SEA + 7.2, -40.5, 0.0, 0.7, 4.2, "hull_black", m, w=0.65, seed=3)
     # Scuffs on the hull where it rides against the quay's fenders.
-    for x in range(-40, -6, 5):
-        band((x - 0.2, -40.48), (x + 1.2, -40.48), 0.0, SEA - 0.1, SEA + 1.9, "hull_black", m,
+    for x in range(-40, -21, 5):
+        band((x - 0.2, -40.48), (x + 1.2, -40.48), 0.0, SEA + 0.1, SEA + 1.9, "hull_black", m,
              color=(0.4, 0.38, 0.35), w=0.4, fade=0.5, seed=x, out=0.01, chunk="far")
     # Foam and churned water where the sea meets the quay, the hull, and the
     # rock revetment.
