@@ -110,6 +110,24 @@ LOOKS: dict[str, dict] = {
     "sign_blue": _p((0.12, 0.28, 0.58), 0.5),
     "sign_green": _p((0.1, 0.42, 0.26), 0.5),
     "lamp_day": _g((1.0, 0.95, 0.85), 1.5),
+    # Shade and interiors. Painted steel is paint (a dielectric), not bare
+    # metal: metallic paint looks lost their diffuse light in the baked shade
+    # and read near black under the canopy and indoors.
+    "steel_grey": _t("painted_metal", 2.0, (0.56, 0.58, 0.58), metal=0.12, rough=0.85, grime=0.2),
+    "steel_dark": _t("painted_metal", 2.0, (0.25, 0.26, 0.27), metal=0.15, rough=0.85, grime=0.1),
+    "door_steel": _t("painted_metal", 1.5, (0.5, 0.54, 0.56), metal=0.2, rough=0.8, grime=0.25),
+    # The underside of a roof deck: galvanised profiled steel, painted off-white
+    # inside buildings and under the rack's canopy.
+    "soffit": _t("corrugated", 1.6, (0.86, 0.87, 0.86), metal=0.0, rough=1.1, grime=0.0, normal=0.6),
+    # Light fittings: powder-coated housings and opal diffusers, lit (their
+    # light is baked: layout `light`).
+    "fitting_white": _p((0.84, 0.85, 0.84), 0.45),
+    "locker_grey": _t("painted_metal", 1.5, (0.62, 0.64, 0.63), metal=0.1, rough=0.7, grime=0.15),
+    "locker_blue": _t("painted_metal", 1.5, (0.26, 0.38, 0.55), metal=0.1, rough=0.7, grime=0.15),
+    "cable_orange": _p((0.8, 0.35, 0.08), 0.6),
+    "fitting_grey": _p((0.42, 0.43, 0.44), 0.5),
+    "diffuser_lit": _g((0.95, 0.97, 1.0), 3.2),
+    "flood_lit": _g((1.0, 0.97, 0.9), 4.5),
     # The sea: its own shader (shaders/sea.gdshader).
     "sea": {"special": "sea"},
     # The foam and churned water along the walls the sea meets (layout `shore`).
@@ -650,7 +668,13 @@ def loading_arm(b: Model, look="steel_grey", reach=4.5):
     top = (0.0, 4.3 + reach * 0.8, -reach * 0.55)
     b.tube([(0.0, 4.3, 0.0), top], 0.2, look, sides=10, detail=False)
     b.tube([(0.0, 4.3, 0.0), (0.0, 3.6, 1.6)], 0.12, look, sides=8, detail=False)
-    b.box(-0.45, 0.45, 2.9, 3.7, 1.4, 2.2, "steel_dark", bevel=0.03)
+    # The counterweight: steel plates bolted in a stack, painted like the arm.
+    for k in range(4):
+        y = 2.9 + k * 0.2
+        b.box(-0.45, 0.45, y + 0.005, y + 0.195, 1.4, 2.2, look, bevel=0.025)
+    for x in (-0.3, 0.3):
+        for z in (1.55, 2.05):
+            b.cyl("y", 3.7, 3.74, (x, z), 0.035, "steel_dark", sides=6, detail=True)
     b.cyl("x", -0.25, 0.25, (top[1], top[2]), 0.28, look, sides=12)
     end = (0.0, top[1] - reach * 0.9, top[2] - reach * 0.35)
     b.tube([top, end], 0.17, look, sides=10, detail=False)
@@ -658,6 +682,87 @@ def loading_arm(b: Model, look="steel_grey", reach=4.5):
     b.cyl("y", end[1] - 0.7, end[1] - 0.6, (0.0, end[2]), 0.32, "safety_yellow", sides=12, detail=True)
     b.tube([(0.0, 1.2, 0.2), (0.0, 1.2, 1.4), (0.0, 0.5, 1.6)], 0.16, "pipe_grey", sides=8, detail=False)
     b.cyl("y", 0.9, 1.5, (0.0, 0.9), 0.24, "valve_red", sides=10, detail=True)
+
+
+@model
+def batten(b: Model, length=1.5):
+    """A twin-tube fluorescent batten on the ceiling (hung from y = 0, its
+    length along x): a pressed-steel tray with end caps and an opal
+    diffuser, lit."""
+    hl = length / 2
+    b.box(-hl, hl, -0.07, 0.0, -0.09, 0.09, "fitting_white", bevel=0.012)
+    for x in (-hl - 0.01, hl - 0.03):
+        b.box(x, x + 0.04, -0.075, -0.005, -0.095, 0.095, "fitting_grey", bevel=0.006)
+    b.cyl("x", -hl + 0.04, hl - 0.04, (-0.07, 0.0), 0.075, "diffuser_lit", sides=10)
+    for x in (-hl * 0.6, hl * 0.6):
+        b.cyl("y", -0.01, 0.0, (x, 0.0), 0.03, "fitting_grey", sides=8, detail=True)
+
+
+@model
+def cable_tray(b: Model, length=4.0, drops=()):
+    """A galvanised ladder cable tray on wall brackets (its length along x,
+    the wall at z = 0, the tray's floor at y = 0), loaded with cables, and
+    cables dropping from it at the x positions in `drops` down `drop` metres."""
+    hl = length / 2
+    for z in (0.08, 0.38):
+        b.box(-hl, hl, 0.0, 0.08, z - 0.01, z + 0.01, "steel_galv")
+    for k in range(int(length / 0.3) + 1):
+        x = -hl + k * length / int(length / 0.3)
+        b.box(x - 0.012, x + 0.012, 0.0, 0.015, 0.08, 0.38, "steel_galv", detail=True)
+    for k in range(int(length / 1.2) + 1):
+        x = -hl + 0.1 + k * (length - 0.2) / int(length / 1.2)
+        b.box(x - 0.02, x + 0.02, -0.05, 0.0, 0.0, 0.4, "steel_galv")
+        b.box(x - 0.02, x + 0.02, -0.25, 0.0, 0.0, 0.03, "steel_galv")
+    for j, (z, r, look) in enumerate(((0.13, 0.022, "cable"), (0.18, 0.018, "cable"), (0.225, 0.026, "pipe_grey"),
+                                      (0.275, 0.016, "cable"), (0.32, 0.02, "cable_orange"))):
+        b.cyl("x", -hl + 0.02, hl - 0.02, (0.018 + r, z), r, look, sides=6)
+    for x, drop in drops:
+        b.tube([(x, 0.03, 0.2), (x, 0.03, 0.06), (x, -drop, 0.06)], 0.02, "cable", sides=5, detail=True)
+
+
+@model
+def locker_bank(b: Model, length=2.4, look="locker_grey"):
+    """Steel staff lockers against a wall (the wall at z = -0.25, doors facing
+    +z): a row of 0.4 m doors with louvres, handles, and name cards."""
+    hl = length / 2
+    b.box(-hl, hl, 0.1, 1.85, -0.25, 0.22, look, bevel=0.008)
+    b.box(-hl, hl, 0.0, 0.1, -0.22, 0.18, "steel_dark")
+    n = int(length / 0.4)
+    for k in range(n):
+        x = -hl + (k + 0.5) * length / n
+        for y0, y1 in ((0.14, 0.95), (1.0, 1.81)):
+            b.box(x - 0.185, x + 0.185, y0, y1, 0.22, 0.235, look, detail=True)
+            for j in range(4):
+                y = y1 - 0.1 - j * 0.035
+                b.box(x - 0.09, x + 0.09, y, y + 0.015, 0.235, 0.24, "steel_dark", detail=True)
+            b.box(x + 0.12, x + 0.15, (y0 + y1) / 2 - 0.06, (y0 + y1) / 2 + 0.06, 0.235, 0.255, "steel_galv",
+                  detail=True)
+            b.box(x - 0.06, x + 0.06, y0 + 0.12, y0 + 0.17, 0.235, 0.24, "paper_white", detail=True)
+
+
+@model
+def filing_cabinet(b: Model, drawers=4, look="locker_grey"):
+    """A steel filing cabinet (0.47 wide, 0.62 deep, its back at z = -0.31),
+    drawers facing +z with handles and label holders."""
+    h = 0.33 * drawers + 0.04
+    b.box(-0.235, 0.235, 0.0, h, -0.31, 0.29, look, bevel=0.008)
+    for k in range(drawers):
+        y = 0.04 + k * 0.33
+        b.box(-0.225, 0.225, y + 0.01, y + 0.31, 0.29, 0.31, look, bevel=0.004)
+        b.box(-0.08, 0.08, y + 0.2, y + 0.23, 0.31, 0.33, "steel_galv", detail=True)
+        b.box(-0.05, 0.05, y + 0.25, y + 0.29, 0.31, 0.315, "paper_white", detail=True)
+
+
+@model
+def canopy_flood(b: Model):
+    """An LED canopy floodlight on the rack canopy's purlins (hung from y = 0):
+    a finned die-cast body, its lit lens facing down, on a bracket."""
+    b.box(-0.04, 0.04, -0.14, 0.0, -0.18, 0.18, "fitting_grey", bevel=0.01)
+    b.box(-0.32, 0.32, -0.24, -0.14, -0.22, 0.22, "fitting_grey", bevel=0.02)
+    for k in range(7):
+        x = -0.27 + k * 0.09
+        b.box(x - 0.012, x + 0.012, -0.14, -0.1, -0.2, 0.2, "fitting_grey", detail=True)
+    b.box(-0.28, 0.28, -0.25, -0.24, -0.18, 0.18, "flood_lit")
 
 
 @model
