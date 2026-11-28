@@ -1,7 +1,7 @@
 """Modelled soldier kit for tools/blender_characters.py: a high-cut helmet with
 a cover, rails, and a night-vision mount; ballistic glasses; face coverings; a
 plate carrier with cummerbund, shoulder straps, magazine, admin, and radio
-pouches; a battle belt with a holster; knee pads; knuckle guards; and the team
+pouches; a battle belt; a drop-leg holster; knee pads; and the team
 bands.
 
 Everything is built in Blender's axes (+Z up, -Y forward) around the fitted
@@ -28,6 +28,11 @@ from mathutils.bvhtree import BVHTree
 
 def log(*args):
     print("[gear]", *args, flush=True)
+
+
+def smoothstep(e0: float, e1: float, x: float) -> float:
+    t = min(1.0, max(0.0, (x - e0) / (e1 - e0)))
+    return t * t * (3 - 2 * t)
 
 
 # --- Mesh helpers -----------------------------------------------------------------
@@ -180,9 +185,12 @@ class Body:
             return fallback if fallback is not None else origin
         return hit
 
-    def ring(self, centre: Vector, axis: Vector, up_hint: Vector, segments: int, offset: float, start=0.0, arc=2 * math.pi, reach=0.6):
+    def ring(self, centre: Vector, axis: Vector, up_hint: Vector, segments: int, offset: float, start=0.0, arc=2 * math.pi, reach=0.6,
+             outward: bool = False):
         """Points around `axis` through `centre`, each `offset` outside the
-        body surface (cast inward from `reach` out)."""
+        body surface (cast inward from `reach` out, or with `outward` from the
+        axis out, for a limb: a ray from outside a thigh's inner side would
+        start inside the other leg)."""
         axis = axis.normalized()
         u = (up_hint - axis * up_hint.dot(axis)).normalized()
         v = axis.cross(u)
@@ -192,8 +200,11 @@ class Body:
         for i in range(count):
             t = start + arc * i / segments
             d = u * math.cos(t) + v * math.sin(t)
-            far = centre + d * reach
-            hit = self.surface(far, -d, centre + d * min(0.1, reach * 0.5))
+            if outward:
+                hit = self.surface(centre, d, centre + d * min(0.1, reach * 0.5))
+            else:
+                far = centre + d * reach
+                hit = self.surface(far, -d, centre + d * min(0.1, reach * 0.5))
             out.append(hit + d * offset)
         return out
 
@@ -201,7 +212,12 @@ class Body:
 # --- Kit --------------------------------------------------------------------------
 
 
-def helmet(head_top: float, head_centre: Vector, head_size: Vector) -> list[bpy.types.Object]:
+# How far the chin strap stands off the skin: over a balaclava (4.5 mm of
+# knit) and a face shape a little fuller than the base head's.
+STRAP_STANDOFF = 0.0075
+
+
+def helmet(head_top: float, head_centre: Vector, head_size: Vector, body: "Body | None" = None) -> list[bpy.types.Object]:
     """A high-cut ballistic helmet: the shell is cut high over the ears and
     above the brow, with a cover, side rails, a night-vision shroud, a
     counterweight pouch, a team band, and a chin strap."""
@@ -301,26 +317,56 @@ def helmet(head_top: float, head_centre: Vector, head_size: Vector) -> list[bpy.
     out[-1].modifiers.new("s", "SOLIDIFY").thickness = 0.0025
     apply_modifiers(out[-1])
     smooth(out[-1])
-    # Chin strap: from the side rails down under the jaw.
+    # Chin strap: from the shell's rim just ahead of each ear, down the cheek
+    # along the jaw, to a buckle under the chin. Every point is cast onto the
+    # face (or a covering over it) so the strap lies on it instead of hanging
+    # in the air beside the cheek.
+    chin_y, chin_z = head_centre.y - 0.042, head_centre.z - 0.116
     for sx in (-1, 1):
-        a = sx * math.radians(78)
+        a = sx * math.radians(72)
         top_p = point(a, bottom(a))
-        jaw = Vector((sx * 0.05, head_centre.y - 0.035, head_centre.z - 0.105))
-        mid = Vector((sx * (rx - 0.018), head_centre.y - 0.01, head_centre.z - 0.05))
-        # The two halves meet under the chin at a buckle.
-        chin = Vector((sx * 0.012, head_centre.y - 0.045, head_centre.z - 0.118))
-        pts = [top_p, mid, jaw, chin]
+        path = [top_p]
+        steps = 9
+        for k in range(1, steps + 1):
+            t = k / steps
+            # Down the side of the face, then in under the jaw to the chin.
+            x = top_p.x * (1 - t) ** 0.8 + sx * 0.012 * t
+            y = top_p.y * (1 - t) + chin_y * t
+            z = top_p.z * (1 - t) ** 1.3 + chin_z * (1 - (1 - t) ** 1.3)
+            q = Vector((x, y, z))
+            if body is not None:
+                # Outward from the head's middle, cast back in to the skin.
+                d = (q - Vector((0.0, head_centre.y, head_centre.z - 0.03))).normalized()
+                hit = body.surface(q + d * 0.12, -d, None)
+                if hit is not None:
+                    q = hit + d * STRAP_STANDOFF
+            path.append(q)
         verts = []
-        for q in pts:
-            side = Vector((0, 1, 0)).cross((q - head_centre).normalized()).normalized() * 0.008
+        for k, q in enumerate(path):
+            nxt = path[min(k + 1, len(path) - 1)] - path[max(k - 1, 0)]
+            out_dir = (q - Vector((0.0, head_centre.y, head_centre.z - 0.03))).normalized()
+            side = nxt.cross(out_dir).normalized() * 0.0075
             verts.extend([q - side, q + side])
-        faces = [(0, 1, 3, 2), (2, 3, 5, 4), (4, 5, 7, 6)]
+        faces = [(2 * k, 2 * k + 1, 2 * k + 3, 2 * k + 2) for k in range(len(path) - 1)]
         s = new_object(f"chinstrap_{sx}", verts, faces, "webbing", "strap", rigid="DEF-head")
+        bm = bmesh.new()
+        bm.from_mesh(s.data)
+        bm.normal_update()
+        if sum((f.calc_center_median() - Vector((0.0, head_centre.y, head_centre.z))).dot(f.normal) for f in bm.faces) < 0:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+        bm.to_mesh(s.data)
+        bm.free()
         s.modifiers.new("s", "SOLIDIFY").thickness = 0.002
         apply_modifiers(s)
+        smooth(s, 60)
         out.append(s)
-    out.append(rounded_box("chin_buckle", (0.0, head_centre.y - 0.046, head_centre.z - 0.119), (0.03, 0.012, 0.016), "metal", "polymer",
-                           bevel=0.003, rigid="DEF-head"))
+    buckle = Vector((0.0, chin_y, chin_z))
+    if body is not None:
+        hit = body.surface(buckle + Vector((0, -0.06, -0.08)), Vector((0, 0.06, 0.08)), None)
+        if hit is not None:
+            buckle = hit + Vector((0, -0.6, -0.8)).normalized() * (STRAP_STANDOFF + 0.004)
+    out.append(rounded_box("chin_buckle", buckle, (0.028, 0.012, 0.014), "metal", "polymer", bevel=0.003, rigid="DEF-head",
+                           frame=Matrix.Rotation(math.radians(-50), 3, "X")))
     return out
 
 
@@ -489,7 +535,7 @@ def tighten(obj, under, max_gap: float):
     log(f"{obj.name}: tightened {moved} vertices")
 
 
-def remove_hidden(obj, covers: list, depth: float):
+def remove_hidden(obj, covers: list, depth: float, margin: int = 0):
     """Deletes cloth faces that lie under gear (within `depth` along their
     normal at every corner): never seen, and they could poke through."""
     verts, polys = [], []
@@ -507,7 +553,17 @@ def remove_hidden(obj, covers: list, depth: float):
         hidden[v.index] = hit is not None
     bm = bmesh.new()
     bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+    # Keep a margin of cloth under each piece's edge: as the body bends, the
+    # gear slides a little over the cloth, and a hole cut right to its edge
+    # shows as a ragged tear.
+    for _ in range(margin):
+        keep = hidden.copy()
+        for v in bm.verts:
+            if hidden[v.index] and any(not hidden[e.other_vert(v).index] for e in v.link_edges):
+                keep[v.index] = False
+        hidden = keep
     gone = [f for f in bm.faces if all(hidden[v.index] for v in f.verts)]
     bmesh.ops.delete(bm, geom=gone, context="FACES")
     bm.to_mesh(me)
@@ -558,11 +614,11 @@ def panel(body: Body, name: str, xs: tuple[float, float], zs: tuple[float, float
 
 
 def band(body: Body, name: str, centre: Vector, axis: Vector, hint: Vector, height: float, offset: float,
-         thickness: float, role: str, material: str, segments=24, start=0.0, arc=2 * math.pi, reach=0.6, **props):
+         thickness: float, role: str, material: str, segments=24, start=0.0, arc=2 * math.pi, reach=0.6, outward=False, **props):
     """A strap or cummerbund around a limb or the torso."""
     a = axis.normalized()
-    lo = body.ring(centre - a * height / 2, a, hint, segments, offset, start, arc, reach)
-    hi = body.ring(centre + a * height / 2, a, hint, segments, offset, start, arc, reach)
+    lo = body.ring(centre - a * height / 2, a, hint, segments, offset, start, arc, reach, outward)
+    hi = body.ring(centre + a * height / 2, a, hint, segments, offset, start, arc, reach, outward)
     closed = abs(arc - 2 * math.pi) < 1e-6
     n = len(lo)
     obj = new_object(name, lo + hi, grid_faces(2, n, closed=closed), role, material, **props)
@@ -682,7 +738,7 @@ def belt(body: Body, z: float) -> list[bpy.types.Object]:
     for i, x in enumerate((0.07, 0.11)):
         y = body.surface(Vector((x, -0.6, z)), Vector((0, 1, 0))).y
         out.append(rounded_box(f"pistol_mag_pouch_{i}", (x, y - 0.03, z - 0.01), (0.035, 0.028, 0.085), "webbing", "cordura", bevel=0.006, rigid="DEF-hips"))
-    # A utility pouch on the left hip (the holster has the right) and a
+    # A utility pouch on the left hip (the drop-leg holster is on the right) and a
     # first-aid pouch behind the right: bulk at the hips, as a loaded belt has.
     x = body.surface(Vector((0.6, -0.03, z)), Vector((-1, 0, 0))).x
     out.append(rounded_box("utility_pouch", (x + 0.03, -0.035, z - 0.02), (0.05, 0.09, 0.1), "webbing", "cordura",
@@ -692,25 +748,100 @@ def belt(body: Body, z: float) -> list[bpy.types.Object]:
                            bevel=0.012, rigid="DEF-hips"))
     by = body.surface(Vector((0, 0.6, z)), Vector((0, -1, 0))).y
     out.append(rounded_box("dump_pouch", (0.06, by + 0.04, z - 0.04), (0.13, 0.05, 0.12), "webbing", "cordura", bevel=0.015, rigid="DEF-hips"))
-    # Holster on the right hip with the pistol's grip showing.
-    hx = body.surface(Vector((-0.6, 0.0, z - 0.1)), Vector((1, 0, 0))).x
-    tilt = Matrix.Rotation(math.radians(-8), 3, "Y")
-    out.append(rounded_box("holster", (hx - 0.03, 0.0, z - 0.1), (0.045, 0.14, 0.17), "webbing", "plastic", bevel=0.012, frame=tilt,
-                           bones=["DEF-hips", "DEF-thigh.R"]))
-    out.append(rounded_box("pistol_grip", (hx - 0.03, 0.03, z - 0.0), (0.03, 0.035, 0.07), "metal", "polymer", bevel=0.006, frame=tilt,
-                           bones=["DEF-hips", "DEF-thigh.R"]))
     return out
 
 
-def knee_pads(body: Body, knees: dict[str, Vector]) -> list[bpy.types.Object]:
+def drop_holster(body: Body, hip: Vector, knee: Vector) -> list[bpy.types.Object]:
+    """A drop-leg holster on the right thigh: a platform shaped to the outside
+    of the thigh with two leg straps, the holster on it with the pistol's grip
+    showing, all following the thigh. A hanger strap runs up to the belt."""
     out = []
-    for side, knee in knees.items():
-        # Wrapped close over the kneecap and skinned to both bones, so it
-        # stays on the knee as it bends; its weights are smoothed across the
-        # shell (see `smooth_weights`), so it hinges instead of tearing.
-        pad = band(body, f"knee_pad_{side}", knee + Vector((0, 0, 0.0)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.1, 0.004, 0.016,
-                   "webbing", "plastic", segments=12, start=-1.5, arc=3.0, reach=0.14, bones=[f"DEF-shin.{side}", f"DEF-thigh.{side}"])
-        out.append(pad)
+    down = (knee - hip).normalized()
+    rigid = "DEF-thigh.R"
+    out_dir = Vector((-1, 0, 0))
+    # The platform: a shell over the outside of the thigh, 4 to 22 cm below the hip joint.
+    centre = hip + down * 0.13
+    out.append(shell_on_limb(body, "holster_platform", centre, -down, out_dir, 0.42, 0.09, 0.09, 0.006, 0.002, 0.006,
+                             "webbing", "cordura", cols=8, rows=8, rigid=rigid))
+    for k, t in enumerate((0.1, 0.2)):
+        out.append(band(body, f"leg_strap_{k}", hip + down * t, down, out_dir, 0.03, 0.003, 0.003, "webbing", "strap",
+                        segments=22, reach=0.16, outward=True, rigid=rigid))
+    side = body.surface(centre + out_dir * 0.3, -out_dir, centre + out_dir * 0.08)
+    # The holster: a moulded body on the platform, muzzle down and a little back.
+    fwd = Vector((0, -1, 0))
+    ax = down
+    fr = Matrix((out_dir, fwd - ax * fwd.dot(ax), -ax)).transposed()
+    tilt = fr @ Matrix.Rotation(math.radians(-6), 3, "X")
+    hc = side + out_dir * 0.032 + down * 0.01
+    out.append(rounded_box("holster", hc, (0.042, 0.06, 0.17), "webbing", "plastic", bevel=0.012, segments=2, frame=tilt, rigid=rigid))
+    # Retention hood over the grip, and the grip itself standing out of it.
+    out.append(rounded_box("holster_hood", hc - ax * 0.078 + out_dir * 0.002, (0.046, 0.066, 0.03), "webbing", "plastic", bevel=0.008,
+                           frame=tilt, rigid=rigid))
+    out.append(rounded_box("pistol_grip", hc - ax * 0.1 + fwd * 0.012, (0.03, 0.034, 0.06), "metal", "polymer", bevel=0.006,
+                           frame=tilt @ Matrix.Rotation(math.radians(14), 3, "X"), rigid=rigid))
+    # Hanger: from the belt down to the platform's top, bending with the hip.
+    top = hip + down * 0.035
+    tside = body.surface(top + out_dir * 0.3, -out_dir, top + out_dir * 0.08) + out_dir * 0.006
+    belt_p = tside - down * 0.11 + out_dir * 0.004
+    out.append(rounded_box("holster_hanger", (tside + belt_p) / 2, (0.006, 0.04, (tside - belt_p).length), "webbing", "strap",
+                           bevel=0.002, frame=fr, bones=["DEF-hips", rigid]))
+    return out
+
+
+def shell_on_limb(body: Body, name: str, centre: Vector, axis: Vector, front: Vector, half_arc: float, below: float, above: float,
+                  standoff: float, dome: float, thickness: float, role: str, material: str, cols: int = 14, rows: int = 12,
+                  reach: float = 0.14, **props) -> bpy.types.Object:
+    """A moulded shell over the front of a limb: a grid cast onto the limb
+    round `axis` (half_arc radians either side of `front`, from `below` to
+    `above` metres along the axis), standing `standoff` off it and domed by
+    `dome` in the middle, with rounded corners, then thickened."""
+    a = axis.normalized()
+    u = (front - a * front.dot(a)).normalized()
+    v = a.cross(u)
+    verts = []
+    for r in range(rows):
+        t = r / (rows - 1)
+        h = -below + (below + above) * t
+        hn = 2 * t - 1
+        # Rounded outline: narrower toward the top and bottom edges.
+        arc = half_arc * (1 - abs(hn) ** 4) ** 0.25
+        for c in range(cols):
+            cn = 2 * c / (cols - 1) - 1
+            ang = arc * cn
+            d = u * math.cos(ang) + v * math.sin(ang)
+            origin = centre + a * h
+            # From the limb's axis out: the first surface is the limb's own.
+            hit = body.surface(origin, d, origin + d * 0.05)
+            # The top edge hugs the limb: it is where the shell would stand
+            # off as the joint above it bends.
+            lift = standoff * (1 - 0.6 * smoothstep(0.5, 1.0, hn)) + dome * (1 - cn * cn) * (1 - hn * hn)
+            verts.append(hit + d * lift)
+    obj = new_object(name, verts, grid_faces(rows, cols), role, material, **props)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.normal_update()
+    if sum((f.calc_center_median() - centre).dot(f.normal) for f in bm.faces) < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
+    thicken(obj, thickness, bevel=min(0.004, thickness * 0.4), segments=1, offset=-1.0)
+    smooth(obj, 50)
+    return obj
+
+
+def knee_pads(body: Body, knees: dict[str, tuple[Vector, Vector]]) -> list[bpy.types.Object]:
+    """Hard-capped knee pads: a domed shell over the kneecap and a strap round
+    the top of the calf. Both follow the shin rigidly, as a pad strapped below
+    the knee does, so nothing stretches or tears as the knee bends."""
+    out = []
+    for side, (knee, ankle) in knees.items():
+        down = (ankle - knee).normalized()
+        rigid = f"DEF-shin.{side}"
+        # The kneecap sits a little below the joint's centre.
+        out.append(shell_on_limb(body, f"knee_pad_{side}", knee + down * 0.03, -down, Vector((0, -1, 0)), 1.05, 0.075, 0.045,
+                                 0.008, 0.012, 0.012, "webbing", "plastic", rigid=rigid))
+        out.append(band(body, f"knee_strap_{side}", knee + down * 0.085, down, Vector((0, -1, 0)), 0.024, 0.004, 0.003,
+                        "webbing", "strap", segments=20, reach=0.12, outward=True, rigid=rigid))
     return out
 
 
@@ -723,19 +854,6 @@ def arm_bands(body: Body, shoulders: dict[str, tuple[Vector, Vector]]) -> list[b
         centre = shoulder + axis * 0.64
         out.append(band(body, f"arm_band_{side}", centre, axis, Vector((0, 0, 1)), 0.035, 0.003, 0.003, "accent", "band",
                         segments=16, reach=0.12, rigid=f"DEF-upper_arm.{side}"))
-    return out
-
-
-def knuckles(body: Body, hands: dict[str, tuple[Vector, Vector]]) -> list[bpy.types.Object]:
-    """Hard knuckle guards on the back of each glove."""
-    out = []
-    for side, (wrist, knuckle) in hands.items():
-        along = (knuckle - wrist).normalized()
-        top = Vector((0, 0, 1))
-        hit = body.surface(knuckle - along * 0.012 + top * 0.3, -top, knuckle)
-        f = Matrix((along, top.cross(along).normalized(), top)).transposed()
-        out.append(rounded_box(f"knuckle_{side}", hit + top * 0.006, (0.026, 0.07, 0.01), "gloves", "rubber", bevel=0.004, frame=f,
-                               rigid=f"DEF-hand.{side}"))
     return out
 
 

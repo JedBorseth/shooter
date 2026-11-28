@@ -546,13 +546,14 @@ KITS = {
                 {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
                 # Only the shape of the foot for the modelled boots.
                 {"asset": "boots", "role": "boots"},
-                {"asset": "gloves", "role": "gloves", "decimate": 0.35},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
             # A modelled combat shirt and boots (tools/blender_wardrobe.py),
-            # baked from their high-detail sources.
-            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}, "boots": {"faces": 1150}},
+            # and the first-person arms' gloves with fewer triangles
+            # (tools/blender_hilo.py), baked from their high-detail sources.
+            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}, "boots": {"faces": 1150},
+                     "gloves": True, "glove_ratio": 0.09, "glove_tuck": 0.005},
             "body_decimate": 0.32,
             # A close crop under the helmet and stubble on bare faces (paint_hair).
             "hair": {"colour": (0.12, 0.085, 0.06), "front": 0.05, "nape": 0.055, "density": 0.85, "stubble": 0.65},
@@ -564,14 +565,14 @@ KITS = {
                 "cover_decimate": 0.4,
                 "plate_carrier": [1.1, 1.4],
                 "belt": 0.99,
+                "drop_holster": 0,
                 "knee_pads": 0,
                 "blouses": 0.19,
                 "boot_soles": 0,
                 "arm_bands": 0,
-                "knuckles": 0,
             },
         },
-        "density": {"skin": 3.0, "eyes": 2.0, "uniform": 1.6},
+        "density": {"skin": 3.0, "eyes": 2.0, "uniform": 1.6, "gloves": 1.6},
         # Face coverings and the skin they replace never occlude each other.
         "ao_rounds": [[[0, 3, 4], [0, 3, 4]], [[1], [0, 1]], [[2], [0, 2]]],
         "size": 2048,
