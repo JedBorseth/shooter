@@ -22,7 +22,7 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const Shapes := preload("res://scripts/ui/hud_shapes.gd")
 const MatchPaint := preload("res://scripts/ui/match_paint.gd")
 
-const CARD_FILL := Color(0.055, 0.071, 0.086, 0.93)
+const CARD_FILL := Color(0.055, 0.071, 0.086, 0.96)
 const CARD_H := 80.0
 const MIN_W := 400.0
 ## The team passed for a death with no killer: an empty grey mark.
@@ -122,8 +122,10 @@ static func _killer_card(
 	var team := int(who[3])
 	var icon: Texture2D = how.icon
 	var name_w := Paint.text_width(Paint.LABEL, killer, 36, 0.5)
-	# One fixed box for what did it, so the card's width follows the name only.
-	var right_w := ICON_MAX_W
+	# A fixed box for what did it (a silhouette's, or a drawn mark's), so
+	# the card holds its 400 px for every cause and grows only for a long
+	# name.
+	var right_w := ICON_MAX_W if icon != null else GLYPH_W
 	var icon_h := ICON_H
 	if icon != null:
 		icon_h = minf(ICON_H, ICON_MAX_W * icon.get_height() / icon.get_width())
